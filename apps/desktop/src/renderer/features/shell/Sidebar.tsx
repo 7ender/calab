@@ -56,8 +56,8 @@ import { plural, t, useLocale } from '../../i18n';
 import { api } from '../../lib/api/endpoints';
 import { can, mayArrangeRooms, mayManageWorkspace, mayMoveMembersIn, mayMoveVoice, roomPerms } from '../../lib/permissions';
 import { voice } from '../../services/voice';
-import { groupRooms, isUnread, isVoice, roomNotify, roomsOfWorkspace, showsUnread, useRooms, workspaceNotify } from '../../stores/rooms';
-import { setRoomNotifications, setWorkspaceNotifications } from '../../services/mentions';
+import { groupRooms, isUnread, isVoice, roomNotify, roomsOfWorkspace, showsUnread, useRooms, workspaceNotify, workspaceTaskLevel } from '../../stores/rooms';
+import { setRoomNotifications, setWorkspaceNotifications, setWorkspaceTaskLevel } from '../../services/mentions';
 import { KnockBadge } from '../guests/KnockBadge';
 import { LEVEL_LABEL, NotifyMenuItems, type LevelOption } from '../chat/NotifyMenu';
 import { useSession } from '../../stores/session';
@@ -68,7 +68,8 @@ import { memberName, rolesOf, useMemberRoles, useWorkspaces } from '../../stores
 import { useConnectingRing, useVoiceStates } from '../../stores/voicePending';
 import { joinOutcome } from '../../lib/voiceEntry';
 import { formatDuration, pad2, useNow } from './voiceFormat';
-import { menuBox, menuItem, menuSeparator } from './menu';
+import { menuBox, menuItem, menuLabel, menuSeparator } from './menu';
+import { useBoards } from '../../stores/boards';
 import { MemberContextMenu } from '../people/MemberContextMenu';
 import { JustJoinedDot } from '../voice/JustJoinedDot';
 import { joinedAtMs } from '../../lib/justJoined';
@@ -487,9 +488,45 @@ function WorkspaceNotifyMenu({ workspaceId }: { workspaceId: string }): ReactNod
             defaultLevel={NotificationLevel.MENTIONS}
             onChange={(level, until) => void setWorkspaceNotifications(workspaceId, level, until)}
           />
+          <TaskNotifyItems workspaceId={workspaceId} />
         </Dropdown.SubContent>
       </Dropdown.Portal>
     </Dropdown.Sub>
+  );
+}
+
+const TASK_LEVELS: ReadonlyArray<{ level: NotificationLevel; label: 'boards.notifyAll' | 'boards.notifyMentions' | 'boards.notifyNone' }> = [
+  { level: NotificationLevel.ALL, label: 'boards.notifyAll' },
+  { level: NotificationLevel.MENTIONS, label: 'boards.notifyMentions' },
+  { level: NotificationLevel.NONE, label: 'boards.notifyNone' },
+];
+
+/**
+ * «Задачи» (ADR-0042 §4) under the workspace's levels: task notifications of its boards —
+ * everything (assigned, @me, comments, status of my tasks), only assigned / @me, or nothing.
+ * Shown once the workspace has a board the viewer sees.
+ */
+function TaskNotifyItems({ workspaceId }: { workspaceId: string }): ReactNode {
+  const level = useRooms((s) => workspaceTaskLevel(s.wsNotify[workspaceId]));
+  const any = useBoards((s) => Object.values(s.boards).some((b) => b.workspaceId === workspaceId && !b.archivedAt));
+  if (!any) return null;
+  return (
+    <>
+      <Dropdown.Separator className={menuSeparator} />
+      <Dropdown.Label className={menuLabel}>{t('boards.notifyTasks')}</Dropdown.Label>
+      <Dropdown.RadioGroup value={String(level)} onValueChange={(v) => void setWorkspaceTaskLevel(workspaceId, Number(v))}>
+        {TASK_LEVELS.map((o) => (
+          <Dropdown.RadioItem key={o.level} value={String(o.level)} className={menuItem} data-testid={`task-level-${o.level}`}>
+            <span className="grid w-4 place-items-center">
+              <Dropdown.ItemIndicator>
+                <Check className="size-4" aria-hidden />
+              </Dropdown.ItemIndicator>
+            </span>
+            <span className="truncate">{t(o.label)}</span>
+          </Dropdown.RadioItem>
+        ))}
+      </Dropdown.RadioGroup>
+    </>
   );
 }
 

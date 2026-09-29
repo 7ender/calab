@@ -202,7 +202,14 @@ const isDefaultNotify = (n: RoomNotificationSettings): boolean =>
   (n.level === NotificationLevel.INHERIT || n.level === NotificationLevel.UNSPECIFIED) && !n.mutedUntil;
 
 const isDefaultWsNotify = (n: WorkspaceNotificationSettings): boolean =>
-  (n.level === NotificationLevel.MENTIONS || n.level === NotificationLevel.UNSPECIFIED) && !n.mutedUntil;
+  (n.level === NotificationLevel.MENTIONS || n.level === NotificationLevel.UNSPECIFIED) &&
+  !n.mutedUntil &&
+  (n.taskLevel === NotificationLevel.ALL || n.taskLevel === NotificationLevel.UNSPECIFIED);
+
+/** The workspace's «Задачи» level (ADR-0042 §4): ALL unless set. */
+export function workspaceTaskLevel(n: WorkspaceNotificationSettings | undefined): NotificationLevel {
+  return !n || n.taskLevel === NotificationLevel.UNSPECIFIED ? NotificationLevel.ALL : n.taskLevel;
+}
 
 export interface RoomNotify {
   /** The stored level: a room's INHERIT / ALL / MENTIONS / NONE, a workspace's ALL / MENTIONS / NONE. */

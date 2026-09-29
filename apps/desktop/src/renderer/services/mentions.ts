@@ -4,7 +4,7 @@ import { NotificationLevel, RoomNotificationSettingsSchema, WorkspaceNotificatio
 import { api } from '../lib/api/endpoints';
 import { log } from '../lib/log';
 import { useInbox } from '../stores/inbox';
-import { useRooms } from '../stores/rooms';
+import { useRooms, workspaceNotify } from '../stores/rooms';
 import { toast } from '../stores/toasts';
 import { t } from '../i18n';
 
@@ -68,12 +68,32 @@ export async function setWorkspaceNotifications(workspaceId: string, level: Noti
   const rooms = useRooms.getState();
   const prev = rooms.wsNotify[workspaceId];
   const muted = mutedUntil ? { mutedUntil: timestampFromMs(mutedUntil) } : {};
-  rooms.setWsNotify(create(WorkspaceNotificationSettingsSchema, { workspaceId, level, ...muted }));
+  rooms.setWsNotify(create(WorkspaceNotificationSettingsSchema, { workspaceId, level, ...muted, taskLevel: prev?.taskLevel ?? NotificationLevel.UNSPECIFIED }));
   try {
     const res = await api.workspaces.setNotifications(workspaceId, { level, ...muted });
     if (res.settings) useRooms.getState().setWsNotify(res.settings);
   } catch (e) {
     log.warn('workspace notifications failed', e);
+    useRooms.getState().setWsNotify(prev ?? create(WorkspaceNotificationSettingsSchema, { workspaceId, level: NotificationLevel.MENTIONS }));
+    toast.error(t('chat.notifyFailed'));
+  }
+}
+
+/**
+ * The workspace's «Задачи» notifications (ADR-0042 §4): ALL | MENTIONS (assigned to me, @me) |
+ * NONE. Sent with the current level and mute (the PUT replaces the whole setting). Optimistic.
+ */
+export async function setWorkspaceTaskLevel(workspaceId: string, taskLevel: NotificationLevel): Promise<void> {
+  const rooms = useRooms.getState();
+  const prev = rooms.wsNotify[workspaceId];
+  const n = workspaceNotify(prev);
+  const muted = n.mutedUntil ? { mutedUntil: timestampFromMs(n.mutedUntil) } : {};
+  rooms.setWsNotify(create(WorkspaceNotificationSettingsSchema, { workspaceId, level: n.level, ...muted, taskLevel }));
+  try {
+    const res = await api.workspaces.setNotifications(workspaceId, { level: n.level, ...muted, taskLevel });
+    if (res.settings) useRooms.getState().setWsNotify(res.settings);
+  } catch (e) {
+    log.warn('workspace task notifications failed', e);
     useRooms.getState().setWsNotify(prev ?? create(WorkspaceNotificationSettingsSchema, { workspaceId, level: NotificationLevel.MENTIONS }));
     toast.error(t('chat.notifyFailed'));
   }
