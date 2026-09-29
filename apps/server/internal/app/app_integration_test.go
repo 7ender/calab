@@ -598,7 +598,7 @@ func TestRefreshRotationAndReuseDetection(t *testing.T) {
 	if st != 200 {
 		t.Fatalf("second refresh: %d", st)
 	}
-	// Previous token inside the grace window while t2 is unused (the answer was lost):
+	// Previous token while t2 is unused (the answer was lost):
 	// the same t2 again, session kept (docs/09 #89).
 	if again, st := refresh(t1.GetRefreshToken()); st != 200 || again.GetRefreshToken() != t2.GetRefreshToken() {
 		t.Fatalf("previous token: %d, want 200 with the same new token", st)

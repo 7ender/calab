@@ -1,4 +1,5 @@
 import type { LogoutReason } from '../shared/ipc';
+import { logoutReasonFromRefresh } from '../shared/logoutReason';
 import { refreshGate } from '../shared/refreshGate';
 
 /**
@@ -6,21 +7,27 @@ import { refreshGate } from '../shared/refreshGate';
  * unit-tested: single-flight refresh, which failures end the session and which are transient.
  *
  * - 2xx → new tokens (persisted);
- * - 401 → the session is gone: cleared, `onLoggedOut('expired')`;
- * - 409 → the previous refresh token within the server's 60 s grace window, but the rotation
- *   could not be replayed. Normally a retry of a refresh whose answer was lost (network cut
- *   mid-response, the app quit for an update) gets the same new token pair again (200,
- *   docs/04 «Auth», docs/09 #89); a 409 means the server's replay entry is gone. Retried once
- *   right away; a second 409 ends the session like 401 (the stale token cannot succeed and
- *   after the window it would count as reuse anyway);
+ * - 401 → the session is gone: cleared, `onLoggedOut(reason)` with the server's reason
+ *   (shared/logoutReason.ts: SESSION_REVOKED/REUSE → 'reset', other revocations → 'revoked',
+ *   an unknown / expired session → 'expired');
+ * - 409 → the previous refresh token while the new one is unused, but the rotation could not be
+ *   replayed (it predates the server's replay seal). Normally a retry of a refresh whose answer
+ *   was lost (network cut mid-response, a stuck connection, the app quit for an update) gets
+ *   the same new token pair again (200) for as long as the new token is unused, however late
+ *   (docs/04 «Auth», docs/09 #89, #123). Retried once right away; a second 409 ends the session
+ *   like 401 (the stale token cannot succeed);
+ * - network error (incl. the AUTH_TIMEOUT_MS abort) → retried once at once over a fresh
+ *   connection (`fresh: true`: auth.ts drops the pooled sockets — a stalled keep-alive
+ *   connection must not eat the retry too); still failing → transient;
  * - network error / 5xx / 429 → transient: the session is kept, `null` is returned and the
- *   caller retries later. Never a logout (review H3). A transient failure is reused for a few
- *   seconds (shared/refreshGate.ts) so an outage does not turn every API call into a refresh POST
- *   (review N3); the request itself is bounded by AUTH_TIMEOUT_MS in auth.ts.
+ *   caller retries later — however long the outage lasts. Never a logout (review H3). The next
+ *   attempt presents the same (previous) token: the server answers with the pair it already
+ *   issued. A transient failure is reused for a few seconds (shared/refreshGate.ts) so an
+ *   outage does not turn every API call into a refresh POST (review N3).
  *
  * Nothing is persisted before the answer arrives: a refresh interrupted by quit / update
  * leaves the previous refresh token on disk, and the next start retries it (restore() in
- * auth.ts) — within the grace window the server answers with the pair it already issued.
+ * auth.ts) — while the new token is unused the server answers with the pair it already issued.
  * A refresh racing a logout / login / revoke never resurrects or overwrites the newer state.
  */
 
@@ -42,13 +49,18 @@ export interface RefreshResponse {
   status: number;
   /** Parsed body of a 2xx answer. */
   tokens?: TokensJson;
-  /** Error code of a non-2xx answer (for logs). */
+  /** Error code of a non-2xx answer. */
   code?: string;
+  /** ApiError.reason of a non-2xx answer (SESSION_REVOKED: why). */
+  reason?: string;
 }
 
 export interface BrokerDeps {
-  /** POST /api/auth/refresh; throws on network errors. */
-  refresh(serverUrl: string, refreshToken: string): Promise<RefreshResponse>;
+  /**
+   * POST /api/auth/refresh; throws on network errors (and on the AUTH_TIMEOUT_MS abort).
+   * `fresh`: over a new connection, not a pooled one (the retry after a network error).
+   */
+  refresh(serverUrl: string, refreshToken: string, fresh?: boolean): Promise<RefreshResponse>;
   persist(serverUrl: string, tokens: Tokens | null): void;
   onLoggedOut(reason: LogoutReason): void;
   now?: () => number;
@@ -158,22 +170,41 @@ export class TokenBroker {
     return p;
   }
 
+  /**
+   * One refresh POST; a network error (timeout included) is retried once at once over a fresh
+   * connection. Throws when both fail. Logged with the elapsed time and the attempt number.
+   */
+  private async request(refreshToken: string): Promise<RefreshResponse> {
+    const t0 = this.now();
+    try {
+      return await this.deps.refresh(this.server, refreshToken, false);
+    } catch (e) {
+      this.deps.log?.warn('refresh network error', { attempt: 1, elapsedMs: this.now() - t0 }, e);
+    }
+    const t1 = this.now();
+    try {
+      return await this.deps.refresh(this.server, refreshToken, true);
+    } catch (e) {
+      this.deps.log?.warn('refresh network error', { attempt: 2, fresh: true, elapsedMs: this.now() - t1 }, e);
+      throw e;
+    }
+  }
+
   private async refreshNow(): Promise<Tokens | null> {
     const current = this.tokens;
     if (!current) return null;
     let res: RefreshResponse;
     try {
-      res = await this.deps.refresh(this.server, current.refreshToken);
+      res = await this.request(current.refreshToken);
       if (res.status === 409 && this.tokens === current) {
         // The rotation of this token could not be replayed right now: one more try.
         this.deps.log?.info('refresh 409, retrying once', res.code ?? '');
         await new Promise((r) => setTimeout(r, CONFLICT_RETRY_MS));
         if (this.tokens !== current) return this.tokens;
-        res = await this.deps.refresh(this.server, current.refreshToken);
+        res = await this.request(current.refreshToken);
       }
-    } catch (e) {
-      this.deps.log?.warn('refresh network error', e);
-      return null; // offline: keep the session, the caller retries later
+    } catch {
+      return null; // offline: keep the session, the caller retries later (logged in request())
     }
     // Logout / login / revoke happened while the request was in flight: theirs wins.
     if (this.tokens !== current) return this.tokens;
@@ -183,8 +214,8 @@ export class TokenBroker {
       return this.tokens;
     }
     if (res.status === 401 || res.status === 409) {
-      this.deps.log?.info('refresh rejected, session ended', res.status, res.code ?? '');
-      this.clear('expired', true);
+      this.deps.log?.info('refresh rejected, session ended', res.status, res.code ?? '', res.reason ?? '');
+      this.clear(res.status === 401 ? logoutReasonFromRefresh(res.code, res.reason) : 'expired', true);
       return null;
     }
     this.deps.log?.warn('refresh failed (transient)', res.status, res.code ?? '');
