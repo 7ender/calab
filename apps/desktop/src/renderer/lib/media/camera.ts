@@ -15,6 +15,16 @@ import { alignCaptureForH264, setH264Profile } from './h264Publish';
  * and dynacast stops encoding the layers nobody watches.
  */
 
+/**
+ * The capture behind a camera track. With a processor (the background, ADR-0035) LiveKit's
+ * `mediaStreamTrack` is the processed output, a generated track: constraints (size, frame rate,
+ * H.264 alignment, `backgroundBlur`), `contentHint` and `ended` belong to the capture.
+ * livekit-client 2.22 keeps it in `_mediaStreamTrack` (no public getter; re-check on upgrade).
+ */
+export function cameraSource(track: LocalVideoTrack): MediaStreamTrack {
+  return (track as unknown as { _mediaStreamTrack?: MediaStreamTrack })._mediaStreamTrack ?? track.mediaStreamTrack;
+}
+
 /** Opens the camera (preview sheet or straight publish). `motion`: faces and gestures, keep fps. */
 export async function captureCamera(deviceId: string | null, q: CameraQuality = CAMERA_DEFAULT_QUALITY): Promise<LocalVideoTrack> {
   const c = cameraCapture(q);
@@ -55,7 +65,7 @@ export function cameraPublishOptions(q: CameraQuality = CAMERA_DEFAULT_QUALITY, 
 export async function preparePublish(track: LocalVideoTrack, q: CameraQuality, pick: CodecPick): Promise<TrackPublishOptions> {
   const h264 = pick.codec === 'h264';
   const [low, mid] = cameraLayers(q);
-  const layout = h264 ? await alignCaptureForH264(track.mediaStreamTrack, [low.height, mid.height], cameraCapture(q).fps) : null;
+  const layout = h264 ? await alignCaptureForH264(cameraSource(track), [low.height, mid.height], cameraCapture(q).fps) : null;
   setH264Profile(track, h264 ? pick.profile : undefined);
   return cameraPublishOptions(q, pick.codec, layout);
 }
@@ -66,7 +76,7 @@ export async function preparePublish(track: LocalVideoTrack, q: CameraQuality, p
  */
 export async function limitCameraForCpu(track: LocalVideoTrack, q: CameraQuality = CAMERA_DEFAULT_QUALITY): Promise<void> {
   const fps = q.fps > 0 ? Math.min(CAMERA_CPU_CAPTURE.fps, q.fps) : CAMERA_CPU_CAPTURE.fps;
-  await track.mediaStreamTrack.applyConstraints({
+  await cameraSource(track).applyConstraints({
     width: { ideal: CAMERA_CPU_CAPTURE.width },
     height: { ideal: CAMERA_CPU_CAPTURE.height },
     frameRate: { ideal: fps, max: fps },
@@ -76,7 +86,7 @@ export async function limitCameraForCpu(track: LocalVideoTrack, q: CameraQuality
 /** Re-applies a (lower, server-granted) quality to a live capture: size and frame rate. */
 export async function applyCameraQuality(track: LocalVideoTrack, q: CameraQuality): Promise<void> {
   const c = cameraCapture(q);
-  await track.mediaStreamTrack.applyConstraints({
+  await cameraSource(track).applyConstraints({
     width: { ideal: c.width },
     height: { ideal: c.height },
     frameRate: { ideal: c.fps, max: c.fps },
@@ -90,5 +100,5 @@ export async function switchCameraDevice(track: LocalVideoTrack, deviceId: strin
     ...(deviceId ? { deviceId: { exact: deviceId } } : {}),
     resolution: { width: c.width, height: c.height, frameRate: c.fps },
   });
-  track.mediaStreamTrack.contentHint = 'motion';
+  cameraSource(track).contentHint = 'motion';
 }

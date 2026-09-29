@@ -1,0 +1,164 @@
+/**
+ * Camera background (ADR-0035): the pure decisions, unit-tested (logic.test.ts). No DOM, no GL —
+ * shared by the main thread (path choice, uploads) and the worker (scheduling, mask smoothing).
+ */
+
+export type BackgroundKind = 'none' | 'blur-light' | 'blur-strong' | 'image';
+
+/** prefs.cameraBackground: `imageId` is a built-in id (manifest.json) or `custom:<id>` (IndexedDB). */
+export interface CameraBackground {
+  kind: BackgroundKind;
+  imageId?: string;
+}
+
+export const NO_BACKGROUND: CameraBackground = { kind: 'none' };
+
+/** `TrackProcessor.name` of ours (checked without loading the lazy chunk). */
+export const BACKGROUND_PROCESSOR = 'calab-background';
+
+/** Custom pictures live in IndexedDB under this id prefix. */
+export const CUSTOM_PREFIX = 'custom:';
+export const isCustomImage = (id: string | undefined): boolean => !!id && id.startsWith(CUSTOM_PREFIX);
+
+// ------------------------------------------------------------------ path (ADR §3, §5)
+
+/** What the runtime offers; `breakoutBox` = MediaStreamTrackProcessor + MediaStreamTrackGenerator. */
+export interface BackgroundEnv {
+  breakoutBox: boolean;
+  webgl2: boolean;
+  /** Phone / tablet web: hidden (CPU and battery). */
+  mobile: boolean;
+  /** «Слабый компьютер» (docs/09 #44): the effect is off and the choice hidden. */
+  lowEnd: boolean;
+}
+
+/**
+ * Whether the «Фон» choice is shown at all. Safari / Firefox (no breakout box), phones, low-end
+ * mode and machines without WebGL2 do not get it — also when the camera could blur by itself.
+ */
+export function backgroundSupported(env: BackgroundEnv): boolean {
+  return env.breakoutBox && env.webgl2 && !env.mobile && !env.lowEnd;
+}
+
+/**
+ * How a choice is applied: `off` — the raw camera; `hardware` — the camera's own blur
+ * (`backgroundBlur` constraint, Windows Studio Effects; both levels are one system blur);
+ * `pipeline` — our segmentation + compositing in the worker (pictures always).
+ */
+export type BackgroundPath = 'off' | 'hardware' | 'pipeline';
+
+export function backgroundPath(bg: CameraBackground, o: { supported: boolean; hardwareBlur: boolean }): BackgroundPath {
+  if (!o.supported || bg.kind === 'none') return 'off';
+  if (bg.kind === 'image') return bg.imageId ? 'pipeline' : 'off';
+  return o.hardwareBlur ? 'hardware' : 'pipeline';
+}
+
+/** `backgroundBlur` is a known constraint and this camera can switch it on. */
+export function hasHardwareBlur(supported: Record<string, unknown> | undefined, caps: Record<string, unknown> | undefined): boolean {
+  if (supported?.['backgroundBlur'] !== true) return false;
+  const c = caps?.['backgroundBlur'];
+  return Array.isArray(c) && c.includes(true);
+}
+
+// ------------------------------------------------------------------ budget (ADR §2)
+
+/** Segmentation rate with the GPU delegate, and without it (software WebGL / CPU delegate). */
+export const SEG_FPS = 12;
+export const SEG_FPS_SOFTWARE = 6;
+/** Token bucket cap: after a pause at most one extra segmentation, no burst. */
+const SEG_TOKENS_MAX = 2;
+
+/**
+ * Whether this camera frame is segmented: a token bucket filled at `fps` per second, so a
+ * 15 fps camera at 12 fps segments 4 frames of 5 (a plain «every n-th frame» gives 7.5).
+ */
+export function segmentStep(tokens: number, dtMs: number, fps: number): { run: boolean; tokens: number } {
+  const t = Math.min(SEG_TOKENS_MAX, tokens + (Math.max(0, dtMs) * fps) / 1000);
+  return t >= 1 ? { run: true, tokens: t - 1 } : { run: false, tokens: t };
+}
+
+/**
+ * Temporal smoothing of the mask: the weight of the new mask for `dtMs` since the previous one
+ * (time constant `tauMs`). 12 fps → ≈ 0.75: flicker on the edge fades, a moving hand lags ≈ 1 frame.
+ */
+export const EMA_TAU_MS = 60;
+export function emaAlpha(dtMs: number, tauMs = EMA_TAU_MS): number {
+  if (!(dtMs > 0)) return 1;
+  return Math.min(1, Math.max(0.2, 1 - Math.exp(-dtMs / tauMs)));
+}
+
+/** ADR §6: a mask under 3 % of the frame is «person lost»; the last mask is held for 500 ms. */
+export const MASK_MIN_COVERAGE = 0.03;
+export const MASK_HOLD_MS = 500;
+
+/** The worker may keep the previous mask for a nearly empty one (decided per pixel on the GPU). */
+export function maskHoldAllowed(lastGoodAt: number | null, now: number): boolean {
+  return lastGoodAt !== null && now - lastGoodAt < MASK_HOLD_MS;
+}
+
+/** Background blur in 720p pixels (ADR §2) and the working scale of the blur. */
+export const BLUR_SIGMA_720: Record<'blur-light' | 'blur-strong', number> = { 'blur-light': 4, 'blur-strong': 12 };
+export const BLUR_DOWNSCALE = 4;
+export const BLUR_MAX_RADIUS = 12;
+
+/**
+ * One side of a normalized Gaussian (weights for offsets 0..r, the centre counted once) for σ in
+ * pixels of the downscaled frame. The radius is ⌈3σ⌉, at most BLUR_MAX_RADIUS.
+ */
+export function gaussianKernel(sigma: number): number[] {
+  const s = Math.max(0.5, sigma);
+  const r = Math.min(BLUR_MAX_RADIUS, Math.ceil(3 * s));
+  const w: number[] = [];
+  for (let i = 0; i <= r; i++) w.push(Math.exp(-(i * i) / (2 * s * s)));
+  const sum = w.reduce((a, b, i) => a + (i === 0 ? b : 2 * b), 0);
+  return w.map((x) => x / sum);
+}
+
+/** σ in downscaled pixels for a frame of `height` (the ADR numbers are for 720p). */
+export function blurSigma(kind: 'blur-light' | 'blur-strong', height: number): number {
+  return (BLUR_SIGMA_720[kind] * (height / 720)) / BLUR_DOWNSCALE;
+}
+
+/**
+ * Texture coordinates of a background picture filling a frame of another aspect («cover», centred):
+ * `uv_image = uv_frame * scale + offset`.
+ */
+export function coverUv(imageAspect: number, frameAspect: number): { scale: [number, number]; offset: [number, number] } {
+  if (!(imageAspect > 0) || !(frameAspect > 0)) return { scale: [1, 1], offset: [0, 0] };
+  if (frameAspect > imageAspect) {
+    const sy = imageAspect / frameAspect; // the frame is wider: crop the picture's top and bottom
+    return { scale: [1, sy], offset: [0, (1 - sy) / 2] };
+  }
+  const sx = frameAspect / imageAspect;
+  return { scale: [sx, 1], offset: [(1 - sx) / 2, 0] };
+}
+
+// ------------------------------------------------------------------ custom pictures (ADR §4)
+
+export const BG_WIDTH = 1280;
+export const BG_HEIGHT = 720;
+export const BG_THUMB_WIDTH = 320;
+export const BG_THUMB_HEIGHT = 180;
+export const MAX_CUSTOM_BACKGROUNDS = 5;
+export const MAX_UPLOAD_BYTES = 10 * 1024 * 1024;
+export const UPLOAD_TYPES = ['image/jpeg', 'image/png', 'image/webp'] as const;
+
+export type UploadProblem = 'type' | 'size' | 'limit' | null;
+
+export function uploadProblem(file: { type: string; size: number }, customCount: number): UploadProblem {
+  if (customCount >= MAX_CUSTOM_BACKGROUNDS) return 'limit';
+  if (!(UPLOAD_TYPES as readonly string[]).includes(file.type)) return 'type';
+  if (file.size > MAX_UPLOAD_BYTES) return 'size';
+  return null;
+}
+
+/** The centred 16:9 part of a `w × h` picture («cover»), in source pixels. */
+export function coverCrop(w: number, h: number, aspect = BG_WIDTH / BG_HEIGHT): { sx: number; sy: number; sw: number; sh: number } {
+  if (w <= 0 || h <= 0) return { sx: 0, sy: 0, sw: 0, sh: 0 };
+  if (w / h > aspect) {
+    const sw = Math.round(h * aspect);
+    return { sx: Math.floor((w - sw) / 2), sy: 0, sw, sh: h };
+  }
+  const sh = Math.round(w / aspect);
+  return { sx: 0, sy: Math.floor((h - sh) / 2), sw: w, sh };
+}

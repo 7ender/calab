@@ -4,7 +4,9 @@ import { t } from '../i18n';
 import { ApiError } from '../lib/api/client';
 import { api } from '../lib/api/endpoints';
 import { log } from '../lib/log';
-import { applyCameraQuality, captureCamera, limitCameraForCpu, preparePublish, switchCameraDevice } from '../lib/media/camera';
+import { applyCameraQuality, cameraSource, captureCamera, limitCameraForCpu, preparePublish, switchCameraDevice } from '../lib/media/camera';
+import type { CameraBackground } from '../lib/media/background/logic';
+import { applyCameraBackground } from './cameraBackground';
 import {
   CAMERA_DEFAULT_QUALITY,
   cameraNext,
@@ -118,6 +120,10 @@ export class CameraController {
       // 1) Capture first: a denied OS permission must not cost a camera slot.
       track ??= await this.capture();
       if (stale()) return;
+      // The background (ADR-0035): the preview's track has it already (a no-op then); a direct
+      // start gets it here, before publishing — frames pass through until the model is loaded.
+      await applyCameraBackground(track, prefs().cameraBackground);
+      if (stale()) return;
       // 2) Reserve a slot + the camera grant (409 = limit reached / cameras off in the room);
       //    the answer is the quality the plan allows — capture and encode no more than that.
       step = 'request';
@@ -148,7 +154,7 @@ export class CameraController {
       this.onEnded = () => {
         if (this.track === live) void this.stop(t('video.lost'));
       };
-      live.mediaStreamTrack.addEventListener('ended', this.onEnded);
+      cameraSource(live).addEventListener('ended', this.onEnded);
       this.step('published');
       this.bump();
     } catch (err) {
@@ -210,7 +216,7 @@ export class CameraController {
   /** Left / lost the call: the room is gone (its disconnect unpublished everything). */
   onLeave(): void {
     this.gen++;
-    if (this.track && this.onEnded) this.track.mediaStreamTrack.removeEventListener('ended', this.onEnded);
+    if (this.track && this.onEnded) cameraSource(this.track).removeEventListener('ended', this.onEnded);
     this.onEnded = null;
     this.track?.stop();
     this.track = null;
@@ -257,10 +263,17 @@ export class CameraController {
       await switchCameraDevice(track, deviceId, this.quality);
       // The restart captures at the full quality again: keep the CPU limit of this session (review L3).
       if (useVoice.getState().cameraCpuLimited) await limitCameraForCpu(track, this.quality);
+      // A new capture: the processor follows by itself (restart), the camera's own blur does not.
+      await applyCameraBackground(track, prefs().cameraBackground);
       this.bump();
     } catch (err) {
       reportMediaError(err, 'camera');
     }
+  }
+
+  /** «Фон» changed (picker, island menu): applied to the live camera in place. */
+  async setBackground(bg: CameraBackground): Promise<void> {
+    if (this.track) await applyCameraBackground(this.track, bg);
   }
 
   /** Outbound camera layers from getStats (every 2 s): CPU-bound for 3 samples → 360p capture. */
@@ -281,7 +294,7 @@ export class CameraController {
     const track = this.track;
     this.track = null;
     if (!track) return;
-    if (this.onEnded) track.mediaStreamTrack.removeEventListener('ended', this.onEnded);
+    if (this.onEnded) cameraSource(track).removeEventListener('ended', this.onEnded);
     this.onEnded = null;
     if (room) await room.localParticipant.unpublishTrack(track, true).catch(() => undefined);
     track.stop();

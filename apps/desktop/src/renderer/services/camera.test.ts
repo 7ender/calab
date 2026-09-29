@@ -38,7 +38,10 @@ vi.mock('../lib/media/camera', () => ({
   preparePublish: () => Promise.resolve({ source: 'camera' }),
   limitCameraForCpu: (...a: unknown[]) => limitCpu(...(a as [])),
   switchCameraDevice: (...a: unknown[]) => switchDevice(...(a as [])),
+  cameraSource: (t: FakeTrack) => t.mediaStreamTrack,
 }));
+const applyBg = vi.fn((_t: unknown, _bg: unknown) => Promise.resolve());
+vi.mock('./cameraBackground', () => ({ applyCameraBackground: (t: unknown, bg: unknown) => applyBg(t, bg) }));
 
 let requestGate: Promise<void> | null = null;
 let requestError: Error | null = null;
@@ -122,6 +125,8 @@ describe('CameraController', () => {
     expect(room.published).toHaveLength(1);
     expect(phase()).toBe('on');
     expect(ctl.localTrack).toBe(captured[0]);
+    // The chosen background (ADR-0035) is applied to the capture before it is published.
+    expect(applyBg).toHaveBeenCalledWith(captured[0], { kind: 'none' });
     await ctl.stop();
     expect(room.unpublished).toEqual([captured[0]]);
     expect(captured[0]?.stopped).toBe(true);

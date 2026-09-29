@@ -12,6 +12,7 @@ import { PTT_RELEASE_DEFAULT_MS } from '../lib/pttRelease';
 import type { EchoMode } from '../lib/media/echo';
 import type { CodecPref } from '../lib/media/codecSelect';
 import type { CameraPreset } from '../lib/plan';
+import { NO_BACKGROUND, type CameraBackground } from '../lib/media/background/logic';
 import type { LocalePref } from '../i18n/types';
 import type { OpenChatSound } from '../lib/chatSound';
 import type { SoundName } from '../lib/sounds';
@@ -37,6 +38,8 @@ export interface Prefs {
   cameraChecked: boolean;
   /** Camera ▾ «Качество»: 720p (default) or 1080p; the plan may lower it (ADR-0024). */
   cameraPreset: CameraPreset;
+  /** Camera «Фон» (ADR-0035): blur or a picture, for every room and call on this device. */
+  cameraBackground: CameraBackground;
   /** «Экономить трафик»: only the featured / PiP camera is received, at most 360p. */
   saveTraffic: boolean;
   /** userId → «Не показывать видео»: their camera is not subscribed (an avatar tile instead). */
@@ -103,6 +106,7 @@ const DEFAULTS: Prefs = {
   cameraDeviceId: null,
   cameraChecked: false,
   cameraPreset: ScreenSharePreset.H720,
+  cameraBackground: NO_BACKGROUND,
   saveTraffic: false,
   hiddenVideo: {},
   outputVolume: 1,
