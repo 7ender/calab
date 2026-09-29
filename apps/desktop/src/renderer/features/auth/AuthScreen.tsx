@@ -17,6 +17,7 @@ import { INSECURE_SERVER_CODE } from '../../../shared/serverUrl';
 import { GuestScreen } from './GuestScreen';
 import { AuthLegalFooter } from '../legal/Legal';
 import { ForgotPassword } from './ForgotPassword';
+import { logoutBannerKey } from '../../services/logoutNotice';
 
 function authError(e: ApiErrorJson): { text: string; field?: string } {
   switch (e.code) {
@@ -52,7 +53,7 @@ export function AuthScreen(): ReactNode {
 function LoginScreen(): ReactNode {
   const pendingRoom = useRoomLink((s) => s.code);
   const settings = useSession((s) => s.settings);
-  const reason = useSession((s) => s.loggedOutReason);
+  const banner = logoutBannerKey(useSession((s) => s.loggedOutReason));
   // An invitation link (docs/09 #36) — also one that arrives while this form is on screen.
   const invite = useInvite((s) => s.code) ?? '';
   const [mode, setMode] = useState<'login' | 'register' | 'forgot'>(invite ? 'register' : 'login');
@@ -198,9 +199,7 @@ function LoginScreen(): ReactNode {
               </div>
             </div>
           ) : null}
-          {reason === 'revoked' || reason === 'expired' ? (
-            <p className="rounded-[var(--radius-row)] bg-mention px-3 py-2 text-body">{reason === 'revoked' ? t('auth.revoked') : t('auth.expired')}</p>
-          ) : null}
+          {banner ? <p className="rounded-[var(--radius-row)] bg-mention px-3 py-2 text-body">{t(banner)}</p> : null}
           <Field label={t('auth.email')} error={fieldErr('email')} hint={emailLocked ? t('mail.invitedHint') : undefined}>
             <Input
               type="email"

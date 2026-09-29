@@ -7,6 +7,7 @@ import (
 	"context"
 	"crypto/sha256"
 	"encoding/base64"
+	"errors"
 	"fmt"
 	"image"
 	"image/color"
@@ -270,9 +271,19 @@ func (g *gw) identify(token string) *v1.Ready {
 }
 
 func (g *gw) closeStatus() websocket.StatusCode {
+	st, _ := g.closeFrame()
+	return st
+}
+
+// closeFrame reads until the socket closes; returns the close status and reason.
+func (g *gw) closeFrame() (websocket.StatusCode, string) {
 	for {
 		if _, err := g.read(5 * time.Second); err != nil {
-			return websocket.CloseStatus(err)
+			var ce websocket.CloseError
+			if errors.As(err, &ce) {
+				return ce.Code, ce.Reason
+			}
+			return websocket.CloseStatus(err), ""
 		}
 	}
 }
@@ -411,10 +422,10 @@ func TestGatewayFlow(t *testing.T) {
 		t.Fatalf("replaced session: close %d, want 4000", st)
 	}
 
-	// Logout revokes the session: its socket is closed with 4010.
+	// Logout revokes the session: its socket is closed with 4010 and the reason.
 	bob.must(204, "POST", "/api/auth/logout", &v1.LogoutRequest{}, nil)
-	if st := g2.closeStatus(); st != 4010 {
-		t.Fatalf("revoked session: close %d, want 4010", st)
+	if st, reason := g2.closeFrame(); st != 4010 || reason != "session revoked: LOGOUT" {
+		t.Fatalf("revoked session: close %d %q, want 4010 \"session revoked: LOGOUT\"", st, reason)
 	}
 }
 

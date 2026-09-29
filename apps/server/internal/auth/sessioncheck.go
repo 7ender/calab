@@ -65,12 +65,13 @@ func (c *liveCache) drop(sid uuid.UUID) {
 	c.mu.Unlock()
 }
 
-// checkSession rejects an access token whose session was revoked: ErrSessionRevoked, or a
+// checkSession rejects an access token whose session was revoked: a RevokedError
+// (errors.Is ErrSessionRevoked) with the reason, or a
 // dependency error when neither Valkey nor Postgres can tell (fail closed).
 func (s *Service) checkSession(ctx context.Context, sid uuid.UUID) error {
-	revoked, rerr := s.IsRevoked(ctx, sid)
+	reason, revoked, rerr := s.revokedReason(ctx, sid)
 	if rerr == nil && revoked {
-		return ErrSessionRevoked
+		return &RevokedError{Reason: reason}
 	}
 	now := s.now()
 	if rerr == nil && liveSessions.fresh(sid, now) {
@@ -88,7 +89,7 @@ func (s *Service) checkSession(ctx context.Context, sid uuid.UUID) error {
 		return nil
 	case sess.RevokedAt != nil:
 		liveSessions.drop(sid)
-		return ErrSessionRevoked
+		return &RevokedError{Reason: deref(sess.RevokedReason)}
 	}
 	if rerr != nil {
 		slog.WarnContext(ctx, "revocation marker unreadable, checked the session in the DB", "session_id", sid, "err", rerr)
@@ -106,3 +107,10 @@ func (s *Service) checkSession(ctx context.Context, sid uuid.UUID) error {
 // touchEvery is how stale sessions.last_seen_at may get before a request bumps it (the
 // query repeats the bound, so racing instances write once).
 const touchEvery = 5 * time.Minute
+
+func deref(p *string) string {
+	if p == nil {
+		return ""
+	}
+	return *p
+}

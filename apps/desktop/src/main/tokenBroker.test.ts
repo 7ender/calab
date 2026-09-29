@@ -8,7 +8,7 @@ function tokensJson(n: number, expiresInMs = 15 * 60_000) {
   return { accessToken: `a${n}`, accessExpiresAt: new Date(NOW + expiresInMs).toISOString(), refreshToken: `r${n}`, sessionId: 's1' };
 }
 
-function setup(refresh: (server: string, rt: string) => Promise<RefreshResponse>) {
+function setup(refresh: (server: string, rt: string, fresh?: boolean) => Promise<RefreshResponse>) {
   const persisted: Array<Tokens | null> = [];
   const loggedOut: string[] = [];
   const spy = vi.fn(refresh);
@@ -169,6 +169,60 @@ describe('TokenBroker', () => {
     spy.mockImplementation(() => Promise.resolve({ status: 200, tokens: tokensJson(1) }));
     expect(await broker.forceRefresh()).toBe('a1');
     expect(spy).toHaveBeenCalledTimes(2);
+  });
+
+  it('401 carries the server reason: reuse → reset, explicit revocations → revoked, else expired (docs/09 #123)', async () => {
+    const cases: Array<[RefreshResponse, string]> = [
+      [{ status: 401, code: 'ERROR_CODE_SESSION_REVOKED', reason: 'REUSE' }, 'reset'],
+      [{ status: 401, code: 'ERROR_CODE_SESSION_REVOKED', reason: 'LOGOUT_ALL' }, 'revoked'],
+      [{ status: 401, code: 'ERROR_CODE_SESSION_REVOKED', reason: 'OTHER_DEVICE' }, 'revoked'],
+      [{ status: 401, code: 'ERROR_CODE_SESSION_REVOKED' }, 'revoked'],
+      [{ status: 401, code: 'ERROR_CODE_SESSION_REVOKED', reason: 'GUEST_EXPIRED' }, 'expired'],
+      [{ status: 401, code: 'ERROR_CODE_INVALID_REFRESH_TOKEN' }, 'expired'],
+    ];
+    for (const [res, want] of cases) {
+      const t = setup(() => Promise.resolve(res));
+      expect(await t.broker.forceRefresh()).toBeNull();
+      expect(t.loggedOut).toEqual([want]);
+      expect(t.broker.hasSession).toBe(false);
+    }
+  });
+
+  it('a network error (the 15 s abort) is retried once at once over a fresh connection', async () => {
+    const abort = Object.assign(new Error('The operation was aborted'), { name: 'AbortError' });
+    const answers: Array<() => Promise<RefreshResponse>> = [() => Promise.reject(abort), () => Promise.resolve({ status: 200, tokens: tokensJson(1) })];
+    const t = setup(() => answers.shift()!());
+    expect(await t.broker.forceRefresh()).toBe('a1');
+    expect(t.spy.mock.calls.map((c) => [c[1], c[2]])).toEqual([
+      ['r0', false],
+      ['r0', true],
+    ]);
+    expect(t.loggedOut).toEqual([]);
+  });
+
+  it('no logout for network errors of any duration; back online the same token is replayed first', async () => {
+    let now = NOW;
+    let online = false;
+    const spy = vi.fn((_s: string, rt: string): Promise<RefreshResponse> => {
+      if (!online) return Promise.reject(new TypeError('net::ERR_INTERNET_DISCONNECTED'));
+      // The server's lost-answer replay: the previous token gets the pair it already issued.
+      return Promise.resolve(rt === 'r0' ? { status: 200, tokens: tokensJson(1) } : { status: 401 });
+    });
+    const loggedOut: string[] = [];
+    const broker = new TokenBroker({ refresh: spy, persist: () => undefined, onLoggedOut: (r) => loggedOut.push(r), now: () => now });
+    broker.set('https://x', { accessToken: 'old', accessExpiresAt: NOW - 1, refreshToken: 'r0', sessionId: 's1' });
+    // Six hours offline, a refresh attempt every 30 s.
+    for (let i = 0; i < 720; i++) {
+      now += 30_000;
+      expect(await broker.getAccessToken()).toBeNull();
+    }
+    expect(loggedOut).toEqual([]);
+    expect(broker.hasSession).toBe(true);
+    online = true;
+    now += 30_000;
+    expect(await broker.getAccessToken()).toBe('a1');
+    expect(new Set(spy.mock.calls.map((c) => c[1]))).toEqual(new Set(['r0']));
+    expect(loggedOut).toEqual([]);
   });
 
   it('a new login drops the cached failure at once', async () => {

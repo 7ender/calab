@@ -42,7 +42,9 @@ enum GatewayCloseCode {
   GATEWAY_CLOSE_CODE_INVALID_SEQ = 4007;           // new IDENTIFY
   GATEWAY_CLOSE_CODE_RATE_LIMITED = 4008;          // backoff + RESUME; before READY = too many sessions
   GATEWAY_CLOSE_CODE_SESSION_TIMED_OUT = 4009;     // new IDENTIFY
-  GATEWAY_CLOSE_CODE_SESSION_REVOKED = 4010;       // do not reconnect; login screen
+  // Do not reconnect; login screen. The close reason is "session revoked" or "session revoked:
+  // <REASON>" with the ApiError.reason of ERROR_CODE_SESSION_REVOKED (REUSE, LOGOUT_ALL, ...).
+  GATEWAY_CLOSE_CODE_SESSION_REVOKED = 4010;
 }
 
 enum PresenceStatus {

@@ -113,7 +113,9 @@ const (
 	GatewayCloseCode_GATEWAY_CLOSE_CODE_INVALID_SEQ           GatewayCloseCode = 4007 // new IDENTIFY
 	GatewayCloseCode_GATEWAY_CLOSE_CODE_RATE_LIMITED          GatewayCloseCode = 4008 // backoff + RESUME; before READY = too many sessions
 	GatewayCloseCode_GATEWAY_CLOSE_CODE_SESSION_TIMED_OUT     GatewayCloseCode = 4009 // new IDENTIFY
-	GatewayCloseCode_GATEWAY_CLOSE_CODE_SESSION_REVOKED       GatewayCloseCode = 4010 // do not reconnect; login screen
+	// Do not reconnect; login screen. The close reason is "session revoked" or "session revoked:
+	// <REASON>" with the ApiError.reason of ERROR_CODE_SESSION_REVOKED (REUSE, LOGOUT_ALL, ...).
+	GatewayCloseCode_GATEWAY_CLOSE_CODE_SESSION_REVOKED GatewayCloseCode = 4010
 )
 
 // Enum value maps for GatewayCloseCode.

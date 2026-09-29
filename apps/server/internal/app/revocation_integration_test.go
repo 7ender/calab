@@ -117,7 +117,7 @@ func TestRevocationIsInstantWithLongAccessTTL(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	tok, _, err := testApp.Auth.Tokens().Issue(g.ID, sess.ID)
+	tok, _, err := testApp.Auth.Tokens().Issue(g.ID, sess.ID, 0)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -144,7 +144,7 @@ func TestRevocationWithoutMarkerFallsBackToDB(t *testing.T) {
 	var l v1.LoginResponse
 	c.must(200, "POST", "/api/auth/login", &v1.LoginRequest{Email: email, Password: "password123", DeviceName: "lost-marker"}, &l)
 	c.token = l.GetTokens().GetAccessToken()
-	if _, err := testDB.Q.RevokeSession(context.Background(), uuid.MustParse(l.GetTokens().GetSessionId())); err != nil {
+	if _, err := testDB.Q.RevokeSession(context.Background(), sqlc.RevokeSessionParams{ID: uuid.MustParse(l.GetTokens().GetSessionId()), Reason: auth.RevokeLogout}); err != nil {
 		t.Fatal(err) // DB only: no marker, no socket event
 	}
 	c.must(401, "GET", "/api/me", nil, nil)
@@ -168,7 +168,7 @@ func TestRevocationCheckWithValkeyDown(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		tok, _, err := svc.Tokens().Issue(uid, s.ID)
+		tok, _, err := svc.Tokens().Issue(uid, s.ID, 0)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -179,7 +179,7 @@ func TestRevocationCheckWithValkeyDown(t *testing.T) {
 		t.Fatalf("live session with Valkey down: %v", err)
 	}
 	revokedID, revokedTok := mk()
-	if _, err := testDB.Q.RevokeSession(ctx, revokedID); err != nil {
+	if _, err := testDB.Q.RevokeSession(ctx, sqlc.RevokeSessionParams{ID: revokedID, Reason: auth.RevokeLogout}); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := svc.AuthenticateToken(ctx, revokedTok); !errors.Is(err, auth.ErrSessionRevoked) {

@@ -111,5 +111,7 @@ func (s *Service) AuthenticateToken(ctx context.Context, tok string) (Identity, 
 	if err := s.checkSession(ctx, id.SessionID); err != nil {
 		return Identity{}, err
 	}
+	// The pair this token came with has arrived: its previous refresh token is reuse now.
+	s.markGenUsed(ctx, id)
 	return id, nil
 }

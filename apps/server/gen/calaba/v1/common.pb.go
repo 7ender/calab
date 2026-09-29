@@ -77,6 +77,12 @@ const (
 	ErrorCode_ERROR_CODE_BUSY            ErrorCode = 41 // POST /api/dms/{id}/call: the callee is in another call
 	ErrorCode_ERROR_CODE_IN_CALL         ErrorCode = 42 // POST /api/dms/{id}/call: the caller already has a call
 	ErrorCode_ERROR_CODE_CALL_NOT_ACTIVE ErrorCode = 43 // POST /api/rooms/{id}/join of a DM without an active call of the caller
+	// 401 on POST /api/auth/refresh: the session was ended; `reason` says why: "REUSE" (a refresh
+	// token was presented after its successor had been used: possible theft, both copies are
+	// void), "LOGOUT", "LOGOUT_ALL", "OTHER_DEVICE" (ended from another device's session list),
+	// "PASSWORD_CHANGED", "ACCOUNT_DISABLED", "GUEST_EXPIRED"; absent = unknown. Older servers
+	// answer INVALID_REFRESH_TOKEN instead.
+	ErrorCode_ERROR_CODE_SESSION_REVOKED ErrorCode = 44
 )
 
 // Enum value maps for ErrorCode.
@@ -117,6 +123,7 @@ var (
 		41: "ERROR_CODE_BUSY",
 		42: "ERROR_CODE_IN_CALL",
 		43: "ERROR_CODE_CALL_NOT_ACTIVE",
+		44: "ERROR_CODE_SESSION_REVOKED",
 	}
 	ErrorCode_value = map[string]int32{
 		"ERROR_CODE_UNSPECIFIED":           0,
@@ -154,6 +161,7 @@ var (
 		"ERROR_CODE_BUSY":                  41,
 		"ERROR_CODE_IN_CALL":               42,
 		"ERROR_CODE_CALL_NOT_ACTIVE":       43,
+		"ERROR_CODE_SESSION_REVOKED":       44,
 	}
 )
 
@@ -197,7 +205,8 @@ type ApiError struct {
 	// "OWNER_ONLY" = FORBIDDEN, only the workspace owner may do this (ADR-0029: a room's
 	// restricted flag); "MESSAGE_NOT_EDITABLE" = VALIDATION on editing a forwarded copy and
 	// "NOT_FORWARDABLE" = VALIDATION on forwarding a bot command or a system message that is
-	// not a recording card (ADR-0033). Absent otherwise.
+	// not a recording card (ADR-0033); SESSION_REVOKED: why the session ended (see there).
+	// Absent otherwise.
 	Reason *string `protobuf:"bytes,4,opt,name=reason,proto3,oneof" json:"reason,omitempty"`
 	// The counter and limit that were hit, when meaningful: ROOM_FULL — users in the room and
 	// the room limit; FILE_QUOTA_EXCEEDED — bytes used and the effective quota in bytes;
@@ -556,7 +565,7 @@ const file_calaba_v1_common_proto_rawDesc = "" +
 	"\vattribution\x18\x05 \x01(\tR\vattribution\x12\x10\n" +
 	"\x03url\x18\x06 \x01(\tR\x03url\x12\x18\n" +
 	"\aproduct\x18\a \x01(\tR\aproduct\x12!\n" +
-	"\fplan_contact\x18\b \x01(\tR\vplanContact*\xa5\b\n" +
+	"\fplan_contact\x18\b \x01(\tR\vplanContact*\xc5\b\n" +
 	"\tErrorCode\x12\x1a\n" +
 	"\x16ERROR_CODE_UNSPECIFIED\x10\x00\x12\x17\n" +
 	"\x13ERROR_CODE_INTERNAL\x10\x01\x12\x1a\n" +
@@ -593,7 +602,8 @@ const file_calaba_v1_common_proto_rawDesc = "" +
 	"\x16ERROR_CODE_BOT_BLOCKED\x10(\x12\x13\n" +
 	"\x0fERROR_CODE_BUSY\x10)\x12\x16\n" +
 	"\x12ERROR_CODE_IN_CALL\x10*\x12\x1e\n" +
-	"\x1aERROR_CODE_CALL_NOT_ACTIVE\x10+B\x99\x01\n" +
+	"\x1aERROR_CODE_CALL_NOT_ACTIVE\x10+\x12\x1e\n" +
+	"\x1aERROR_CODE_SESSION_REVOKED\x10,B\x99\x01\n" +
 	"\rcom.calaba.v1B\vCommonProtoP\x01Z6github.com/calaba/calaba/server/gen/calaba/v1;calabav1\xa2\x02\x03CXX\xaa\x02\tCalaba.V1\xca\x02\tCalaba\\V1\xe2\x02\x15Calaba\\V1\\GPBMetadata\xea\x02\n" +
 	"Calaba::V1b\x06proto3"
 

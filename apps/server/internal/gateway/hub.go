@@ -152,8 +152,9 @@ func (h *Hub) onMessage(m rueidis.PubSubMessage) {
 		return
 	case strings.HasPrefix(ch, events.RevokedPrefix):
 		if sid, err := uuid.Parse(strings.TrimPrefix(ch, events.RevokedPrefix)); err == nil {
+			reason := revokedCloseReason(m.Message)
 			for _, s := range h.sessionsWhere(func(s *Session) bool { return s.asess == sid }) {
-				go h.destroy(s, 4010, "session revoked") // Redis/DB work off the fan-out path
+				go h.destroy(s, 4010, reason) // Redis/DB work off the fan-out path
 			}
 		}
 		return

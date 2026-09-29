@@ -37,7 +37,7 @@ func (p *hungPublisher) Workspaces(ctx context.Context, _ []uuid.UUID, _ *v1.Dis
 func (p *hungPublisher) WorkspaceEvents(ctx context.Context, _ uuid.UUID, _ []*v1.DispatchEvent) {
 	p.wait(ctx)
 }
-func (p *hungPublisher) SessionRevoked(ctx context.Context, _ uuid.UUID) { p.wait(ctx) }
+func (p *hungPublisher) SessionRevoked(ctx context.Context, _ uuid.UUID, _ string) { p.wait(ctx) }
 
 // Guest cleanup with a hung event bus: a guest in many workspaces (one MEMBER_REMOVE each)
 // plus a session revocation is removed within one pass budget, not 3 s per publish.

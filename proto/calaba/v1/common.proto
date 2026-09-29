@@ -55,6 +55,12 @@ enum ErrorCode {
   ERROR_CODE_BUSY = 41;            // POST /api/dms/{id}/call: the callee is in another call
   ERROR_CODE_IN_CALL = 42;         // POST /api/dms/{id}/call: the caller already has a call
   ERROR_CODE_CALL_NOT_ACTIVE = 43; // POST /api/rooms/{id}/join of a DM without an active call of the caller
+  // 401 on POST /api/auth/refresh: the session was ended; `reason` says why: "REUSE" (a refresh
+  // token was presented after its successor had been used: possible theft, both copies are
+  // void), "LOGOUT", "LOGOUT_ALL", "OTHER_DEVICE" (ended from another device's session list),
+  // "PASSWORD_CHANGED", "ACCOUNT_DISABLED", "GUEST_EXPIRED"; absent = unknown. Older servers
+  // answer INVALID_REFRESH_TOKEN instead.
+  ERROR_CODE_SESSION_REVOKED = 44;
 }
 
 // Error body of every non-2xx REST response.
@@ -69,7 +75,8 @@ message ApiError {
   // "OWNER_ONLY" = FORBIDDEN, only the workspace owner may do this (ADR-0029: a room's
   // restricted flag); "MESSAGE_NOT_EDITABLE" = VALIDATION on editing a forwarded copy and
   // "NOT_FORWARDABLE" = VALIDATION on forwarding a bot command or a system message that is
-  // not a recording card (ADR-0033). Absent otherwise.
+  // not a recording card (ADR-0033); SESSION_REVOKED: why the session ended (see there).
+  // Absent otherwise.
   optional string reason = 4;
   // The counter and limit that were hit, when meaningful: ROOM_FULL — users in the room and
   // the room limit; FILE_QUOTA_EXCEEDED — bytes used and the effective quota in bytes;

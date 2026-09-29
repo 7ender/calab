@@ -299,6 +299,10 @@ type Session struct {
 	LastSeenAt           time.Time
 	ExpiresAt            time.Time
 	RevokedAt            *time.Time
+	RefreshGen           int64
+	RefreshUsedAt        *time.Time
+	ReplaySeal           []byte
+	RevokedReason        *string
 }
 
 type Sticker struct {
