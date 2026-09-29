@@ -12,6 +12,7 @@ import {
   type RemoteTrack,
   type RemoteTrackPublication,
   type RemoteVideoTrack,
+  type RoomEventCallbacks,
   type TrackPublishOptions,
 } from 'livekit-client';
 import type { PttEvent } from '../../shared/ipc';
@@ -52,13 +53,14 @@ import { prefs, usePrefs, type Prefs } from '../stores/prefs';
 import { useSession } from '../stores/session';
 import { toast, useToasts } from '../stores/toasts';
 import { memberName, rolesOf, useWorkspaces } from '../stores/workspaces';
-import { setVoice, useVoice, type RemoteCamera, type RemoteStream, type StreamQuality, type VoiceLink } from '../stores/voice';
+import { setVoice, useVoice, type RemoteCamera, type RemoteStream, type StreamQuality, type VoiceLink, type VoicePhase } from '../stores/voice';
 import { platform } from '../platform';
 import { cameraWanted } from '../lib/media/cameraLogic';
 import { pipCamera } from '../features/voice/tileLayout';
 import { ActiveSpeaker } from '../lib/activeSpeaker';
 import { cspBlockedHost, describeConnectError, describeDisconnect, hostOfUrl } from '../lib/voiceLink';
 import { seatAction, seatRefused, type SeatView } from '../lib/voiceSeat';
+import { CONNECT_STUCK_MS, ConnectWatchdog, DISCONNECT_WAIT_MS, RECONNECT_STUCK_MS, STOP_STREAM_WAIT_MS, TEARDOWN_WAIT_MS, reconnectVerdict, settleWithin, type ConnectStage, type StuckKind } from '../lib/voiceWatchdog';
 import { annot } from './annot';
 import { ANNOT_TOPIC } from '../lib/annot/codec';
 import { CameraController, cameraGrantMissing } from './camera';
@@ -105,6 +107,17 @@ const SEAT_SELF_GRACE_MS = 3000;
  * a moderator's (docs/05 «Несколько устройств»).
  */
 const REMOVED_GRACE_MS = 500;
+
+/** One connect() attempt in flight (docs/09 #131): where it is and since when (the watchdog's reason). */
+interface ConnectAttempt {
+  stage: ConnectStage;
+  since: number;
+}
+
+/** Room.on whose listeners run only while that room is the engine's current one (VoiceEngine.wire). */
+interface GuardedRoom {
+  on<E extends keyof RoomEventCallbacks>(ev: E, fn: RoomEventCallbacks[E]): GuardedRoom;
+}
 
 /** LiveKit identity is `<user_id>:<session_id>` (rtc.proto). */
 export const userIdOf = (identity: string): string => identity.split(':')[0] ?? identity;
@@ -231,6 +244,12 @@ class VoiceEngine {
   private callMode = false;
   /** The seat of the last failed user join: a CSP report arriving after its teardown re-seats it as 'blocked'. */
   private failedSeat: { roomId: string; workspaceId: string; at: number } | null = null;
+  /** The connect() attempt in flight (the latest one; a superseded attempt never clears it). */
+  private attempt: ConnectAttempt | null = null;
+  /** Watchdog retries spent on the current intent (docs/09 #131): one fresh Room + token, then out with a toast. */
+  private stuckRetries = 0;
+  /** «Подключение…» / «Переподключение…» that nobody finishes (docs/09 #131). */
+  private readonly watchdog = new ConnectWatchdog((kind, ms) => this.onStuck(kind, ms));
 
   constructor() {
     // eslint-disable-next-line @typescript-eslint/no-this-alias -- the controller reads the live room
@@ -251,6 +270,10 @@ class VoiceEngine {
     // My camera was the last video on the call view: back to the chat.
     useVoice.subscribe((s, p) => {
       if (s.camera === 'off' && p.camera !== 'off' && s.stage === 'expanded' && !s.watching && s.cameras.length === 0) setVoice({ stage: 'pip' });
+      // Primitives only: this runs on every store change (meters, speaking).
+      const kind: StuckKind | null = s.joining !== null || s.phase === 'connecting' ? 'connecting' : s.phase === 'reconnecting' ? 'reconnecting' : null;
+      this.watchdog.update(kind, s.joining?.roomId ?? s.roomId);
+      if (s.phase === 'connected' && s.joining === null) this.stuckRetries = 0;
     });
   }
 
@@ -347,6 +370,7 @@ class VoiceEngine {
     this.rejoinRoomId = null;
     this.failedSeat = null;
     this.takenOverRoom = null;
+    this.stuckRetries = 0;
     setLink({ attempts: 0, lastError: null, blockedHost: null });
     // Optimistic join (docs/05): I am in the room's list from the click on, also while the old
     // call is still being torn down; connect() takes over with phase 'connecting'.
@@ -407,7 +431,36 @@ class VoiceEngine {
    * fallback); teardown resets it, and until the new grant arrives the UI would show «not muted».
    */
   private async connect(roomId: string, workspaceId: string, quiet: boolean, moved?: MoveCreds, keepServerMuted?: boolean, call?: boolean): Promise<void> {
-    if (this.roomId === roomId && this.room) return;
+    if (this.roomId === roomId && this.roomAlive()) return;
+    const attempt: ConnectAttempt = { stage: 'teardown', since: Date.now() };
+    this.attempt = attempt;
+    try {
+      await this.connectOnce(attempt, roomId, workspaceId, quiet, moved, keepServerMuted, call);
+    } finally {
+      if (this.attempt === attempt) this.attempt = null;
+    }
+  }
+
+  /**
+   * The current Room is worth keeping for a join of the same room: connected, resuming by itself,
+   * or a connect younger than the watchdog's limit. A dead or stuck one is never reused (docs/09 #131).
+   */
+  private roomAlive(): boolean {
+    const room = this.room;
+    if (!room) return false;
+    if (room.state === ConnectionState.Connected || room.state === ConnectionState.Reconnecting || room.state === ConnectionState.SignalReconnecting) return true;
+    return this.attempt !== null && Date.now() - this.attempt.since < CONNECT_STUCK_MS;
+  }
+
+  private async connectOnce(
+    attempt: ConnectAttempt,
+    roomId: string,
+    workspaceId: string,
+    quiet: boolean,
+    moved?: MoveCreds,
+    keepServerMuted?: boolean,
+    call?: boolean,
+  ): Promise<void> {
     // The intent token is taken *before* the teardown (which awaits a network disconnect):
     // a leave() or a newer join during that window bumps it, and this call bails out, so the
     // last click wins (review N1). The join sequence is taken after the teardown, because
@@ -415,8 +468,14 @@ class VoiceEngine {
     const intent = ++this.intentSeq;
     // A teardown still finishing (a leave or another switch) goes first: its tail resets the
     // voice store and would wipe this connect's state.
+    // Bounded (docs/09 #131): a teardown that never settles must not become a barrier for every
+    // later join (teardown bounds its own awaits; this is the belt to those braces).
     while (this.teardownRun) {
-      await this.teardownRun;
+      const run = this.teardownRun;
+      if (!(await settleWithin(run, TEARDOWN_WAIT_MS))) {
+        log.warn(`voice: a teardown did not settle in ${TEARDOWN_WAIT_MS} ms, going on without it`);
+        if (this.teardownRun === run) this.teardownRun = null;
+      }
       if (intent !== this.intentSeq) return;
     }
     if (this.room) await this.teardown(false, quiet);
@@ -449,6 +508,7 @@ class VoiceEngine {
       ...(carried !== undefined ? { serverMuted: carried } : {}),
     });
     try {
+      attempt.stage = 'join';
       // A move (ADR-0019) comes with a token for the target room: no /join round trip.
       const res = moved ? this.movedJoin(roomId, workspaceId, moved) : await this.requestJoin(roomId, seq);
       if (seq !== this.joinSeq || !res) return;
@@ -478,6 +538,9 @@ class VoiceEngine {
       annot.attach(room);
       this.wire(room);
       const relayOnly = useSession.getState().appInfo?.forceRelay === true;
+      // livekit-client prepares the publisher PC and its offer before the signalling socket and
+      // its timeout exist (RTCEngine.join): not bounded by LiveKit — the watchdog covers it.
+      attempt.stage = 'signal';
       await room.connect(res.url, res.token, {
         autoSubscribe: false,
         ...(relayOnly ? { rtcConfig: { iceTransportPolicy: 'relay' } } : {}),
@@ -638,6 +701,135 @@ class VoiceEngine {
     } finally {
       if (this.rejoinGen === gen) this.rejoinRoomId = null;
     }
+  }
+
+  // ------------------------------------------------------------ watchdog (docs/09 #131)
+
+  /**
+   * «Подключение…» or «Переподключение…» that nobody finishes (ConnectWatchdog). Connecting: the
+   * whole connection state is reset and one retry runs with a fresh Room and a fresh /join token;
+   * stuck again → out of voice with a toast and the reason in main.log. Reconnecting: see
+   * onReconnectStuck.
+   */
+  private onStuck(kind: StuckKind, ms: number): void {
+    if (useSession.getState().appInfo?.visualTest) return; // screenshots set phases by hand
+    if (kind === 'reconnecting') {
+      this.onReconnectStuck(ms);
+      return;
+    }
+    const v = useVoice.getState();
+    const target = v.joining ?? (v.roomId && v.workspaceId !== null ? { roomId: v.roomId, workspaceId: v.workspaceId } : null);
+    if (!target) return;
+    // The store missed LiveKit's Connected (nothing is connecting): just say so.
+    if (!this.attempt && !v.joining && this.roomId === target.roomId && this.room?.state === ConnectionState.Connected) {
+      log.warn('voice: phase «connecting» with a connected room and no attempt in flight, fixed');
+      setVoice({ phase: 'connected' });
+      return;
+    }
+    const stage = this.attempt?.stage ?? 'none';
+    const reason = t(`voice.stuck.${stage}`);
+    const secs = Math.round(ms / 1000);
+    if (this.stuckRetries === 0) {
+      this.stuckRetries = 1;
+      log.warn(`voice: stuck connecting to ${target.roomId} for ${secs} s (stage ${stage}), resetting and retrying with a fresh Room and token`);
+      setLink({ lastError: t('voice.stuck.retry', { reason, s: secs }) });
+      this.watchdog.rearm();
+      void this.restartConnect(target.roomId, target.workspaceId);
+      return;
+    }
+    this.failStuck(target.roomId, `stuck connecting for ${secs} s (stage ${stage})`, reason);
+  }
+
+  /** Out of voice after the watchdog's retry did not help: a toast with the reason, main.log with the stage. */
+  private failStuck(roomId: string, why: string, reason: string): void {
+    log.error(`voice: could not connect to ${roomId}: ${why}, leaving voice`);
+    toast.error(t('voice.connectFailed', { reason }));
+    this.resetConnection();
+    void this.leave(false).then(() => setLink({ lastError: reason }));
+  }
+
+  /**
+   * Forgets every in-flight connection operation (docs/09 #131): whatever a stuck attempt, rejoin
+   * loop, move or teardown still awaits is abandoned — the generation counters move on (it bails
+   * out wherever it resumes) and no barrier it holds (teardownRun, /join, /voice/leave in flight)
+   * blocks the next connect. The Room itself is dropped by the next (bounded) teardown, never reused.
+   */
+  private resetConnection(): void {
+    this.intentSeq++;
+    this.joinSeq++;
+    this.rejoinGen++;
+    this.rejoinRoomId = null;
+    this.rejoinWake?.();
+    this.rejoinWake = null;
+    this.moveIntent = null;
+    this.clearMoveTimer();
+    this.clearRemoved();
+    this.teardownRun = null;
+    this.joinReq = null;
+    this.leaveReq = null;
+    this.attempt = null;
+  }
+
+  /** The watchdog's retry: a full reset, the stuck Room dropped (bounded), then an ordinary connect with a fresh Room and /join token. */
+  private async restartConnect(roomId: string, workspaceId: string): Promise<void> {
+    const call = this.callMode;
+    const serverMuted = useVoice.getState().serverMuted;
+    this.resetConnection();
+    const intent = this.intentSeq;
+    await this.teardown(false, true);
+    if (intent !== this.intentSeq) return; // the user left or clicked elsewhere meanwhile
+    await this.connect(roomId, workspaceId, false, undefined, serverMuted, call);
+  }
+
+  /**
+   * «Переподключение…» for RECONNECT_STUCK_MS: our rejoin cycle at work (its attempts are bounded)
+   * or LiveKit still inside its own resume policy → wait; the store behind a connected room → fix
+   * it; otherwise a reset and one rejoin with a fresh token, and if that is stuck too, out of voice.
+   */
+  private onReconnectStuck(ms: number): void {
+    const v = useVoice.getState();
+    const st = this.room && this.roomId === v.roomId ? this.room.state : null;
+    const attempt = this.attempt;
+    const verdict = reconnectVerdict({
+      loop: this.rejoinRoomId !== null && (attempt === null || Date.now() - attempt.since < RECONNECT_STUCK_MS),
+      livekit: st === ConnectionState.Connected ? 'connected' : st === ConnectionState.Reconnecting || st === ConnectionState.SignalReconnecting ? 'reconnecting' : 'none',
+      ms,
+    });
+    if (verdict === 'wait') {
+      this.watchdog.rearm();
+      return;
+    }
+    if (verdict === 'connected') {
+      log.warn('voice: phase «reconnecting» with a connected room, fixed');
+      setVoice({ phase: 'connected' });
+      return;
+    }
+    if (!v.roomId || v.workspaceId === null) return;
+    const secs = Math.round(ms / 1000);
+    const reason = t('voice.stuck.reconnect');
+    if (this.stuckRetries === 0) {
+      this.stuckRetries = 1;
+      log.warn(`voice: reconnecting to ${v.roomId} for ${secs} s without progress (LiveKit ${st ?? 'none'}, stage ${attempt?.stage ?? 'none'}), resetting and rejoining with a fresh token`);
+      setLink({ lastError: t('voice.stuck.retry', { reason, s: secs }) });
+      this.watchdog.rearm();
+      this.resetConnection();
+      void this.rejoin(v.roomId, v.workspaceId);
+      return;
+    }
+    this.failStuck(v.roomId, `reconnecting for ${secs} s without progress`, reason);
+  }
+
+  /**
+   * Settings → Соединение (docs/09 #131): the voice connection as it is — the phase, how long a
+   * connect / reconnect has lasted, LiveKit's signalling RTT, the stage a connect is at.
+   */
+  linkProbe(): { phase: VoicePhase; stuckMs: number | null; rttMs: number | null; stage: ConnectStage | null } {
+    const v = useVoice.getState();
+    const e = this.watchdog.elapsed();
+    const client = (this.room?.engine as { client?: { rtt?: number } } | undefined)?.client;
+    const connected = v.phase === 'connected' && this.room?.state === ConnectionState.Connected;
+    const rttMs = connected ? client?.rtt || v.rttMs : null;
+    return { phase: v.phase, stuckMs: e ? e.ms : null, rttMs: rttMs ?? null, stage: this.attempt?.stage ?? null };
   }
 
   /** The room a running rejoin loop is trying to get back into (a move may redirect it). */
@@ -906,7 +1098,8 @@ class VoiceEngine {
     this.clearMoveTimer();
     this.stopStats();
     this.resetEcho();
-    await this.stopStream();
+    // Bounded (docs/09 #131): unpublishing over a dead link must not hold up the next connect.
+    if (!(await settleWithin(this.stopStream(), STOP_STREAM_WAIT_MS))) log.warn(`voice: stopping the stream took over ${STOP_STREAM_WAIT_MS} ms, going on`);
     const room = this.room;
     const micTrack = this.micTrack;
     this.room = null;
@@ -915,7 +1108,9 @@ class VoiceEngine {
     // disconnect(false): unpublish without stopping. disconnect(true) would stop the pipeline's
     // publish track, and a running mic test keeps that pipeline for the next call → a dead
     // mic there (review M1). The pipeline is stopped below when nobody needs it.
-    if (room) await room.disconnect(false).catch(() => undefined);
+    // Bounded (docs/09 #131): a half-open signalling socket may never let disconnect() settle;
+    // the room's events are already ignored (this.room !== room, see wire()).
+    if (room && !(await settleWithin(room.disconnect(false), DISCONNECT_WAIT_MS))) log.warn(`voice: room.disconnect() did not settle in ${DISCONNECT_WAIT_MS} ms, dropped`);
     this.camera.onLeave();
     if (!this.micTesting) {
       micTrack?.stop();
@@ -950,7 +1145,18 @@ class VoiceEngine {
   }
 
   private wire(room: Room): void {
-    room
+    // Every event of a room that is no longer ours (switched, left, torn down) is dropped here
+    // (docs/09 #131): a late Disconnected / ConnectionStateChanged / TrackUnsubscribed of the old
+    // room must never write into the new room's state.
+    const guarded: GuardedRoom = {
+      on: (ev, fn) => {
+        room.on(ev, (...a: unknown[]) => {
+          if (this.room === room) (fn as (...x: unknown[]) => void)(...a);
+        });
+        return guarded;
+      },
+    };
+    guarded
       .on(RoomEvent.ConnectionStateChanged, (st) => {
         if (this.room !== room) return;
         const was = useVoice.getState().phase;
