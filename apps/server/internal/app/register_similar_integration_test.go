@@ -92,6 +92,10 @@ func TestRegisterSimilarAccountHint(t *testing.T) {
 	if !hint.GetSimilarAccount() {
 		t.Fatal("no hint for a domain of the workspace's email invitations")
 	}
+	// No free oracle (security review): a sign-up that would fail anyway answers its usual
+	// error, never the hint — here an emailed code of ws2 bound to another address.
+	ecode := emailInviteCode(t, a, ws2.GetId(), uniq("bound")+"@"+orgB+".org")
+	newClient().wantErr(403, v1.ErrorCode_ERROR_CODE_INVITE_EMAIL_MISMATCH, "POST", "/api/auth/register", req(lp+"@"+orgB+".net", ecode, true))
 	// …but only for that workspace's code.
 	var r v1.RegisterResponse
 	newClient().must(201, "POST", "/api/auth/register", req(lp+"@"+orgB+".org", code, true), &r)
