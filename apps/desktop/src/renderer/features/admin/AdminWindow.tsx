@@ -2,10 +2,10 @@ import { Plan, ScreenSharePreset, type AdminWorkspace, type PlanLogEntry } from 
 import { timestampDate, timestampFromDate } from '@bufbuild/protobuf/wkt';
 import * as DialogP from '@radix-ui/react-dialog';
 import { keepPreviousData, useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { Search, ShieldCheck, X } from 'lucide-react';
+import { Search, ShieldCheck } from 'lucide-react';
 import { useEffect, useState, type ReactNode } from 'react';
 import { confirmAction } from '../../components/Confirm';
-import { Button, Card, Empty, IconButton, Input, Row, Segmented, Select, Spinner, cx } from '../../components/ui';
+import { Button, Card, CloseButton, Empty, Input, Row, Segmented, Select, Spinner, cx } from '../../components/ui';
 import { plural, t, type MessageKey } from '../../i18n';
 import { adminApi } from '../../lib/api/endpoints';
 import { errorText } from '../../lib/api/errors';
@@ -131,7 +131,7 @@ export function AdminWindow({ onClose, workspaceId }: { onClose: () => void; wor
   return (
     <DialogP.Root open onOpenChange={(o) => !o && onClose()}>
       <DialogP.Portal>
-        <DialogP.Overlay className="fixed inset-0 z-[var(--z-modal)] bg-scrim" />
+        <DialogP.Overlay className="no-drag fixed inset-0 z-[var(--z-modal)] bg-scrim" />
         <DialogP.Content
           aria-modal="true"
           aria-describedby={undefined}
@@ -194,9 +194,7 @@ function PaneHeader({ title, onClose, children }: { title: string; onClose: () =
         <span className="truncate">{title}</span>
         {children}
       </h2>
-      <IconButton label={t('settings.close')} shortcut="Esc" size="sm" onClick={onClose}>
-        <X className="size-4" aria-hidden />
-      </IconButton>
+      <CloseButton label={t('settings.close')} onClick={onClose} />
     </div>
   );
 }

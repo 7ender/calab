@@ -1,11 +1,11 @@
 import * as DialogP from '@radix-ui/react-dialog';
 import * as Tabs from '@radix-ui/react-tabs';
 import type { LucideIcon } from 'lucide-react';
-import { Search, X } from 'lucide-react';
+import { Search } from 'lucide-react';
 import { createContext, useContext, useEffect, useLayoutEffect, useMemo, useRef, useState, type KeyboardEvent, type ReactNode } from 'react';
 import { t } from '../i18n';
 import { highlight, hintExcerpt, labelMatches, queryWords, searchSettings, type SettingsEntry } from './settingsSearch';
-import { IconButton, cx } from './ui';
+import { CloseButton, cx } from './ui';
 
 export interface SettingsSection {
   id: string;
@@ -172,7 +172,7 @@ export function SettingsWindow({
   return (
     <DialogP.Root open onOpenChange={(o) => !o && onClose()}>
       <DialogP.Portal>
-        <DialogP.Overlay className="fixed inset-0 z-[var(--z-modal)] bg-scrim" />
+        <DialogP.Overlay className="no-drag fixed inset-0 z-[var(--z-modal)] bg-scrim" />
         <DialogP.Content
           aria-modal="true"
           aria-describedby={undefined}
@@ -309,9 +309,7 @@ export function SettingsWindow({
             <div className="flex min-h-0 min-w-0 flex-1 flex-col bg-[var(--color-sheet-pane)]">
               <div className="flex h-12 shrink-0 items-center justify-between gap-3 border-b border-line pl-6 pr-3 mobile:pl-4">
                 <h2 className="truncate text-headline font-semibold">{current?.label}</h2>
-                <IconButton label={t('settings.close')} shortcut="Esc" size="sm" onClick={onClose} className="mobile:size-10">
-                  <X className="size-4" aria-hidden />
-                </IconButton>
+                <CloseButton label={t('settings.close')} onClick={onClose} className="mobile:size-10" />
               </div>
               <div ref={panels} className="flex min-h-0 flex-1 flex-col">
                 {sections.map((s) => (

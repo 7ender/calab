@@ -1,11 +1,11 @@
 import { ScreenSharePreset, clampStreamPreset, type ConcreteScreenSharePreset } from '@calaba/protocol';
 import * as DialogP from '@radix-ui/react-dialog';
 import * as TooltipP from '@radix-ui/react-tooltip';
-import { AppWindow, Lock, Monitor, MonitorUp, Settings2, TriangleAlert, X } from 'lucide-react';
+import { AppWindow, Lock, Monitor, MonitorUp, Settings2, TriangleAlert } from 'lucide-react';
 import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react';
 import { thumbSizeFor, type ThumbRequest } from '../../../shared/captureThumb';
 import type { CaptureSource } from '../../../shared/ipc';
-import { Button, Segmented, Spinner, Toggle, cx } from '../../components/ui';
+import { Button, CloseButton, Segmented, Spinner, Toggle, cx } from '../../components/ui';
 import { t } from '../../i18n';
 import { platform } from '../../platform';
 import { allowedStreamPreset } from '../../lib/plan';
@@ -262,7 +262,7 @@ export function StreamPicker({ onClose }: { onClose: () => void }): ReactNode {
   return (
     <DialogP.Root open onOpenChange={(o) => !o && onClose()}>
       <DialogP.Portal>
-        <DialogP.Overlay className="fixed inset-0 z-[var(--z-modal)] bg-scrim" />
+        <DialogP.Overlay className="no-drag fixed inset-0 z-[var(--z-modal)] bg-scrim" />
         <DialogP.Content
           aria-modal="true"
           aria-describedby={undefined}
@@ -295,11 +295,8 @@ export function StreamPicker({ onClose }: { onClose: () => void }): ReactNode {
                   ]}
                 />
               )}
-              <DialogP.Close
-                className="-mr-1 grid size-7 shrink-0 place-items-center justify-self-end rounded-[var(--radius-icon)] text-muted hover:bg-hover hover:text-fg"
-                aria-label={t('streamPick.close')}
-              >
-                <X className="size-4" aria-hidden />
+              <DialogP.Close asChild>
+                <CloseButton label={t('streamPick.close')} className="-mr-1 justify-self-end" />
               </DialogP.Close>
             </div>
 

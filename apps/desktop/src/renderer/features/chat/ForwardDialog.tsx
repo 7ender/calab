@@ -2,7 +2,7 @@ import { WorkspaceRole, type User } from '@calaba/protocol';
 import { Check, Hash, Lock, Volume2, X } from 'lucide-react';
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { PickerPanel } from '../../components/picker/Picker';
-import { Button, Modal, cx } from '../../components/ui';
+import { Button, CLOSE_HIT, Modal, cx } from '../../components/ui';
 import { t } from '../../i18n';
 import { api } from '../../lib/api/endpoints';
 import { log } from '../../lib/log';
@@ -134,7 +134,7 @@ export function ForwardDialog({ roomId, messageId, onClose }: { roomId: string; 
                 <button
                   type="button"
                   aria-label={t('chat.fwd.remove', { name: s.name })}
-                  className="grid size-5 shrink-0 place-items-center rounded-full text-muted hover:bg-hover hover:text-fg focus-visible:outline-2 focus-visible:outline-accent"
+                  className={cx(CLOSE_HIT, 'grid size-5 shrink-0 place-items-center rounded-full text-muted hover:bg-hover hover:text-fg focus-visible:outline-2 focus-visible:outline-accent')}
                   onClick={() => setSelected((cur) => cur.filter((x) => targetKey(x) !== targetKey(s)))}
                 >
                   <X className="size-3.5" aria-hidden />
