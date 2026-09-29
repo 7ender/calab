@@ -30,7 +30,8 @@ import { createEvent, eventOf, updateEvent } from '../../services/calendar';
 import { roomsOfWorkspace, useRooms } from '../../stores/rooms';
 import { myUserId } from '../../stores/session';
 import { toast } from '../../stores/toasts';
-import type { EventDraftInit } from '../../stores/ui';
+import { MEMBERS_COLUMN_MIN, type EventDraftInit } from '../../stores/ui';
+import { useMediaQuery } from '../../lib/useMediaQuery';
 import { useMemberName, useWorkspaces } from '../../stores/workspaces';
 import { memberItems } from '../people/memberPickItems';
 import { MemberPicker } from '../people/MemberPicker';
@@ -308,6 +309,8 @@ function AttendeesField({ workspaceId, draft, onChange, error }: { workspaceId: 
   const [over, setOver] = useState(false);
   const id = useId();
   const me = myUserId();
+  // The members list stands beside the day view only from 1200 px: the drag hint only then.
+  const wide = useMediaQuery(`(min-width: ${MEMBERS_COLUMN_MIN}px)`);
   const groups = useMemo(() => {
     const taken = new Set([me, ...draft.attendees.map((a) => a.userId).filter(Boolean)]);
     const list = Object.values(members ?? {}).filter((m) => m.user && !m.user.isBot && m.role !== WorkspaceRole.GUEST);
@@ -397,9 +400,9 @@ function AttendeesField({ workspaceId, draft, onChange, error }: { workspaceId: 
         <span className="text-caption text-danger-text" role="alert">
           {emailErr ?? error}
         </span>
-      ) : (
+      ) : wide ? (
         <span className="text-caption text-faint">{t('cal.f.attendeesHint')}</span>
-      )}
+      ) : null}
     </div>
   );
 }

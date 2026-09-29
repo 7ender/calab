@@ -25,7 +25,7 @@ import { useToday } from './MiniCalendar';
 export const HOUR_PX = 48;
 const PX_PER_MIN = HOUR_PX / 60;
 /** The time scale left of the grid. */
-const GUTTER = 'w-14';
+const GUTTER = 'w-[60px]';
 /** Hold near the grid's left / right edge this long while dragging → previous / next day. */
 const EDGE_DWELL_MS = 700;
 const EDGE_PX = 24;
@@ -352,7 +352,7 @@ function AllDayRow({ keys, day, onDown }: { keys: readonly string[]; day: string
       className={cx('flex shrink-0 items-start gap-0 border-b border-line py-1 pr-2', dropping && 'bg-[color-mix(in_srgb,var(--color-accent)_14%,transparent)]')}
       data-testid="allday-row"
     >
-      <span className={cx(GUTTER, 'shrink-0 pr-2 pt-0.5 text-right text-micro text-faint')}>{t('cal.allDayRow')}</span>
+      <span className={cx(GUTTER, 'shrink-0 whitespace-nowrap pr-1.5 pt-0.5 text-right text-micro text-faint')}>{t('cal.allDayRow')}</span>
       <div className="flex min-h-6 min-w-0 flex-1 flex-col gap-0.5">
         {keys.map((k) => (
           <AllDayChip key={k} occKey={k} onDown={onDown} />

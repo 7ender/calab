@@ -65,8 +65,8 @@ export function EventPanel({ occ, floating = false, page = false }: { occ: strin
         page
           ? 'mat-content flex min-h-0 flex-1 flex-col'
           : floating
-            ? 'mat-popover anim-in absolute bottom-3 right-3 top-[60px] z-[var(--z-popover)] flex w-72 flex-col overflow-hidden rounded-[var(--radius-panel)]'
-            : 'mat-sidebar flex w-72 shrink-0 flex-col border-l border-line'
+            ? 'mat-popover anim-in absolute bottom-3 right-3 top-[60px] z-[var(--z-popover)] flex w-80 flex-col overflow-hidden rounded-[var(--radius-panel)]'
+            : 'mat-sidebar flex w-80 shrink-0 flex-col border-l border-line'
       }
     >
       <EventCard event={ev} occ={occ} onClose={close} variant={page ? 'page' : 'panel'} />
@@ -106,6 +106,19 @@ export function EventCard({
   const drop = useDropTarget(key, editable);
   const externals = ev.attendees.filter((a) => !a.userId);
 
+  // «Дублировать» and «Копировать ссылку» next to «×» (the block's context menu has them too).
+  const tools = (
+    <>
+      {!guest ? (
+        <IconButton size="sm" label={t('cal.duplicate')} onClick={() => duplicateEvent(key)}>
+          <Copy className="size-4" />
+        </IconButton>
+      ) : null}
+      <IconButton size="sm" label={t('cal.copyLink')} onClick={() => copyEventLink(ev.id)}>
+        <Link2 className="size-4" />
+      </IconButton>
+    </>
+  );
   const title = (
     <h2 className={cx('min-w-0 flex-1 break-words font-semibold', variant === 'popover' ? 'text-body' : 'text-headline')} data-testid="event-title">
       {ev.title}
@@ -121,11 +134,15 @@ export function EventCard({
               <ArrowLeft className="size-5" />
             </IconButton>
             <span className="min-w-0 flex-1 truncate text-list font-semibold">{t('cal.card')}</span>
+            {tools}
           </>
         ) : (
           <>
             {title}
-            {onClose ? <CloseButton label={t('cal.closeCard')} onClick={onClose} className="-mr-1 -mt-0.5" /> : null}
+            <span className="-mr-1 -mt-0.5 flex shrink-0 items-center">
+              {tools}
+              {onClose ? <CloseButton label={t('cal.closeCard')} onClick={onClose} /> : null}
+            </span>
           </>
         )}
       </div>
@@ -178,24 +195,13 @@ export function EventCard({
         <Attendees ev={ev} guest={guest} />
         {ev.roomId && externals.length > 0 && !ev.guestLinks && !guest ? <p className="mt-2 text-caption text-muted">{t('cal.noGuestLinks')}</p> : null}
       </div>
-      {editable || variant !== 'popover' ? (
+      {editable ? (
         <div className={cx('flex shrink-0 flex-wrap items-center gap-2 border-t border-line', variant === 'popover' ? 'px-3 py-2' : 'px-4 py-3')}>
-          {editable ? (
-            <Button size="sm" variant="secondary" onClick={() => editEvent(key)} data-testid="event-edit">
-              <Pencil className="size-3.5" aria-hidden />
-              {t('cal.edit')}
-            </Button>
-          ) : null}
-          {editable ? <CancelButton ev={ev} occ={key} /> : null}
-          <span className="flex-1" />
-          {!guest ? (
-            <IconButton size="sm" label={t('cal.duplicate')} onClick={() => duplicateEvent(key)}>
-              <Copy className="size-4" />
-            </IconButton>
-          ) : null}
-          <IconButton size="sm" label={t('cal.copyLink')} onClick={() => copyEventLink(ev.id)}>
-            <Link2 className="size-4" />
-          </IconButton>
+          <Button size="sm" variant="secondary" onClick={() => editEvent(key)} data-testid="event-edit">
+            <Pencil className="size-3.5" aria-hidden />
+            {t('cal.edit')}
+          </Button>
+          <CancelButton ev={ev} occ={key} />
         </div>
       ) : null}
       {drop.over ? (
@@ -242,7 +248,7 @@ export function RsvpButtons({ ev, mine, onAnswer }: { ev?: CalendarEvent; mine: 
               aria-pressed={on}
               onClick={() => (onAnswer ? onAnswer(r.status) : ev && void answer(ev, r.status))}
               className={cx(
-                'h-7 min-w-0 truncate rounded-full px-2 text-control font-medium transition-colors duration-[var(--motion-fast)] mobile:h-9',
+                'h-7 min-w-0 truncate rounded-full px-1 text-control font-medium transition-colors duration-[var(--motion-fast)] mobile:h-9',
                 on ? 'bg-accent-strong text-accent-fg' : 'text-fg hover:bg-[var(--color-fill)]',
               )}
             >

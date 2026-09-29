@@ -54,6 +54,12 @@ export const RoomEventBadge = memo(function RoomEventBadge({ roomId, variant, co
           align="start"
           sideOffset={8}
           collisionPadding={16}
+          // The card itself takes the focus: its «×» would show its tooltip right away.
+          onOpenAutoFocus={(e) => {
+            e.preventDefault();
+            (e.currentTarget as HTMLElement | null)?.focus();
+          }}
+          tabIndex={-1}
           className="mat-popover anim-in z-[var(--z-popover)] flex max-h-[min(560px,calc(100vh-32px))] w-80 flex-col overflow-hidden rounded-[var(--radius-panel)] text-body text-fg"
           data-testid="room-event-card"
         >
