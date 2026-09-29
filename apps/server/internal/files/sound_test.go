@@ -56,20 +56,20 @@ func TestOggOpusDurationMs(t *testing.T) {
 
 func TestSniffAudio(t *testing.T) {
 	for name, c := range map[string]struct {
-		head []byte
-		ok   bool
+		head   []byte
+		format string
 	}{
-		"ogg":  {[]byte("OggS\x00\x02"), true},
-		"id3":  {[]byte("ID3\x04\x00"), true},
-		"mp3":  {[]byte{0xFF, 0xFB, 0x90, 0x44}, true},
-		"wav":  {[]byte("RIFF\x24\x00\x00\x00WAVEfmt "), true},
-		"avi":  {[]byte("RIFF\x24\x00\x00\x00AVI LIST"), false},
-		"png":  {[]byte("\x89PNG\r\n\x1a\n"), false},
-		"sync": {[]byte{0xFF, 0xE0}, false}, // reserved layer
-		"none": {nil, false},
+		"ogg":  {[]byte("OggS\x00\x02"), "ogg"},
+		"id3":  {[]byte("ID3\x04\x00"), "mp3"},
+		"mp3":  {[]byte{0xFF, 0xFB, 0x90, 0x44}, "mp3"},
+		"wav":  {[]byte("RIFF\x24\x00\x00\x00WAVEfmt "), "wav"},
+		"avi":  {[]byte("RIFF\x24\x00\x00\x00AVI LIST"), ""},
+		"png":  {[]byte("\x89PNG\r\n\x1a\n"), ""},
+		"sync": {[]byte{0xFF, 0xE0}, ""}, // reserved layer
+		"none": {nil, ""},
 	} {
-		if got := SniffAudio(c.head); got != c.ok {
-			t.Errorf("%s: %v, want %v", name, got, c.ok)
+		if got := AudioFormat(c.head); got != c.format || SniffAudio(c.head) != (c.format != "") {
+			t.Errorf("%s: %q, want %q", name, got, c.format)
 		}
 	}
 }
@@ -108,7 +108,7 @@ func TestConvertSound(t *testing.T) {
 		seconds  float64
 		min, max int64
 	}{{1, 950, 1050}, {7, 4950, 5050}} {
-		clip, err := s.convertSound(context.Background(), wav(c.seconds))
+		clip, err := s.convertSound(context.Background(), "wav", wav(c.seconds))
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -118,7 +118,31 @@ func TestConvertSound(t *testing.T) {
 		}
 	}
 	junk := append([]byte("RIFF\x24\x00\x00\x00WAVE"), bytes.Repeat([]byte{7}, 500)...)
-	if _, err := s.convertSound(context.Background(), junk); !IsBadAudio(err) {
+	if _, err := s.convertSound(context.Background(), "wav", junk); !IsBadAudio(err) {
 		t.Fatalf("junk: %v", err)
 	}
+	// An ID3 tag in front of a concat playlist: probed, ffmpeg picks the concat demuxer (which
+	// opens other files); forced to mp3 it is just a broken MP3.
+	playlist := append([]byte("ID3\x04\x00\x00\x00\x00\x00\x00"), "ffconcat version 1.0\nfile in\n"...)
+	format := AudioFormat(playlist)
+	if format != "mp3" {
+		t.Fatalf("playlist: format %q", format)
+	}
+	if _, err := s.convertSound(context.Background(), format, playlist); !IsBadAudio(err) {
+		t.Fatalf("playlist: %v", err)
+	}
+}
+
+// TestSoundArgsForceDemuxer: the input format is never probed (see AudioFormat).
+func TestSoundArgsForceDemuxer(t *testing.T) {
+	args := SoundArgs("mp3", "in", "out.ogg")
+	for i, a := range args {
+		if a == "-i" {
+			if i < 4 || args[i-4] != "-f" || args[i-3] != "mp3" {
+				t.Fatalf("no -f mp3 before -i: %v", args)
+			}
+			return
+		}
+	}
+	t.Fatalf("no -i: %v", args)
 }

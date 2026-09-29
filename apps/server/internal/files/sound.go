@@ -45,19 +45,27 @@ func IsBadAudio(err error) bool { return errors.Is(err, errBadAudio) }
 // The ffmpeg of the HEIC converter (convert.go: FFMPEG_PATH, found at start) makes the clips, in
 // its single slot — one ffmpeg at a time bounds CPU and memory; sounds take ~0.2 s.
 
-// SniffAudio reports whether head starts an Ogg stream, a RIFF/WAVE file or an MP3 (an ID3v2
-// tag or an MPEG audio frame sync). It is a cheap filter before ffmpeg, not a validation.
-func SniffAudio(head []byte) bool {
+// AudioFormat names the ffmpeg demuxer of head: "ogg" for an Ogg stream, "wav" for a RIFF/WAVE
+// file, "mp3" for an ID3v2 tag or an MPEG audio frame sync; "" for anything else. The
+// conversion forces this demuxer (-f), so ffmpeg never probes the upload into a format that
+// opens other inputs (an HLS or concat playlist hidden after an ID3 tag, say).
+func AudioFormat(head []byte) string {
 	switch {
-	case bytes.HasPrefix(head, []byte("OggS")), bytes.HasPrefix(head, []byte("ID3")):
-		return true
+	case bytes.HasPrefix(head, []byte("OggS")):
+		return "ogg"
+	case bytes.HasPrefix(head, []byte("ID3")):
+		return "mp3"
 	case len(head) >= 12 && bytes.HasPrefix(head, []byte("RIFF")) && bytes.Equal(head[8:12], []byte("WAVE")):
-		return true
+		return "wav"
 	case len(head) >= 2 && head[0] == 0xFF && head[1]&0xE0 == 0xE0 && head[1]&0x06 != 0: // frame sync, a layer
-		return true
+		return "mp3"
 	}
-	return false
+	return ""
 }
+
+// SniffAudio reports whether head starts an Ogg stream, a RIFF/WAVE file or an MP3. It is a
+// cheap filter before ffmpeg, not a validation.
+func SniffAudio(head []byte) bool { return AudioFormat(head) != "" }
 
 // OggOpusDurationMs is the playing time of an Ogg/Opus stream: the granule position of its last
 // page minus the pre-skip of the ID header, at 48 kHz. ok=false for anything else.
@@ -99,11 +107,11 @@ func OggOpusDurationMs(b []byte) (ms int64, ok bool) {
 
 // SoundArgs are the ffmpeg arguments that turn in into the clip out: at most MaxSoundMs of the
 // first audio stream, mono 48 kHz, EBU R128 loudness −16 LUFS (true peak −1.5 dBTP), Opus in
-// Ogg without metadata.
-func SoundArgs(in, out string) []string {
+// Ogg without metadata. format is the demuxer of in (AudioFormat): it is forced, not probed.
+func SoundArgs(format, in, out string) []string {
 	return []string{
 		"-nostdin", "-hide_banner", "-loglevel", "error", "-y",
-		"-t", "5", "-i", in,
+		"-f", format, "-t", "5", "-i", in,
 		"-map", "0:a:0", "-vn", "-sn", "-dn", "-map_metadata", "-1", "-map_chapters", "-1",
 		"-af", "loudnorm=I=-16:TP=-1.5:LRA=11,aresample=48000",
 		"-ac", "1", "-ar", "48000",
@@ -131,10 +139,11 @@ func (s *Service) PrepareSound(ctx context.Context, src sqlc.File) (*PreparedFil
 	if err != nil {
 		return nil, 0, err
 	}
-	if len(data) > MaxSoundSourceBytes || !SniffAudio(data) {
+	format := AudioFormat(data)
+	if len(data) > MaxSoundSourceBytes || format == "" {
 		return nil, 0, errBadAudio
 	}
-	clip, err := s.convertSound(ctx, data)
+	clip, err := s.convertSound(ctx, format, data)
 	if err != nil {
 		return nil, 0, err
 	}
@@ -156,9 +165,9 @@ func (s *Service) PrepareSound(ctx context.Context, src sqlc.File) (*PreparedFil
 	return &PreparedFile{st: st, workspaceID: *src.WorkspaceID, uploader: src.UploaderID}, int32(ms), nil //nolint:gosec // ≤ MaxSoundMs
 }
 
-// convertSound runs ffmpeg on data in a private temp dir, in the single conversion slot, within
-// soundTimeout. A failing conversion is errBadAudio (the input is what fails, as a rule).
-func (s *Service) convertSound(ctx context.Context, data []byte) ([]byte, error) {
+// convertSound runs ffmpeg (demuxer format) on data in a private temp dir, in the single
+// conversion slot, within soundTimeout. A failing conversion is errBadAudio (the input is what fails, as a rule).
+func (s *Service) convertSound(ctx context.Context, format string, data []byte) ([]byte, error) {
 	cctx, cancel := context.WithTimeout(ctx, soundTimeout)
 	defer cancel()
 	select {
@@ -176,7 +185,7 @@ func (s *Service) convertSound(ctx context.Context, data []byte) ([]byte, error)
 	if err := os.WriteFile(in, data, 0o600); err != nil {
 		return nil, err
 	}
-	cmd := exec.CommandContext(cctx, s.conv.ffmpeg, SoundArgs(in, out)...) //nolint:gosec // FFMPEG_PATH is operator configuration
+	cmd := exec.CommandContext(cctx, s.conv.ffmpeg, SoundArgs(format, in, out)...) //nolint:gosec // FFMPEG_PATH is operator configuration
 	cmd.Dir = dir
 	var stderr bytes.Buffer
 	cmd.Stderr = &stderr
