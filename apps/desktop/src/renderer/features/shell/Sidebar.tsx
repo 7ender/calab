@@ -23,6 +23,7 @@ import {
   Bell,
   BellOff,
   Check,
+  CalendarPlus,
   CheckCheck,
   ChevronDown,
   CircleDot,
@@ -89,6 +90,7 @@ import { useRecordings } from '../../stores/recordings';
 import { startRecording, stopRecording } from '../../services/recording';
 import { CalendarButton, MiniCalendar } from '../calendar/MiniCalendar';
 import { RoomEventBadge } from '../calendar/RoomEvent';
+import { newEvent } from '../calendar/actions';
 import { DRAG_ROOM, dropRoomAt, hoverRoomAt } from '../calendar/dragState';
 
 export { menuBox, menuItem };
@@ -368,28 +370,33 @@ function WorkspaceHeader({ workspaceId, onCreateCategory }: { workspaceId: strin
         </Dropdown.Portal>
       </Dropdown.Root>
       <CalendarButton workspaceId={workspaceId} />
-      {manageRooms ? <CreateMenu workspaceId={workspaceId} onCreateCategory={onCreateCategory} /> : null}
-      {admin ? (
-        <Tip label={t('shell.invite')}>
-          <button
-            type="button"
-            aria-label={t('ws.invite')}
-            onClick={() => open({ kind: 'workspace-settings', workspaceId, tab: 'invites' })}
-            className="grid size-8 shrink-0 place-items-center rounded-[var(--radius-icon)] text-muted transition-colors duration-[var(--motion-fast)] hover:bg-hover hover:text-fg"
-          >
-            <UserPlus className="size-[18px]" aria-hidden />
-          </button>
-        </Tip>
+      {manageRooms || admin || role !== WorkspaceRole.GUEST ? (
+        <CreateMenu workspaceId={workspaceId} onCreateCategory={onCreateCategory} rooms={manageRooms} invite={admin} meeting={role !== WorkspaceRole.GUEST} />
       ) : null}
     </div>
   );
 }
 
 /**
- * «+» in the column header (owner, 28.09), MANAGE_ROOM only: «Создать комнату» (the room dialog,
- * text by default — it has the voice switch) and «Создать категорию» (goes on top).
+ * «+» in the column header (owner, 28.09 / 29.09, docs/09 #135) — the header's only action button:
+ * «Создать комнату» (the room dialog, text by default — it has the voice switch) and «Создать
+ * категорию» (goes on top) with MANAGE_ROOM; after a separator «Добавить встречу» (members, not
+ * guests: the meeting dialog for today, the next quarter hour) and, last, «Пригласить в
+ * пространство» (MANAGE_WORKSPACE) — the former separate «Пригласить» icon.
  */
-function CreateMenu({ workspaceId, onCreateCategory }: { workspaceId: string; onCreateCategory: () => void }): ReactNode {
+function CreateMenu({
+  workspaceId,
+  onCreateCategory,
+  rooms,
+  invite,
+  meeting,
+}: {
+  workspaceId: string;
+  onCreateCategory: () => void;
+  rooms: boolean;
+  invite: boolean;
+  meeting: boolean;
+}): ReactNode {
   const open = useUi((s) => s.openDialog);
   return (
     <Dropdown.Root modal={false}>
@@ -407,16 +414,38 @@ function CreateMenu({ workspaceId, onCreateCategory }: { workspaceId: string; on
       </Tip>
       <Dropdown.Portal>
         <Dropdown.Content className={cx(menuBox, 'w-56')} sideOffset={4} align="end" collisionPadding={16}>
-          <Dropdown.Item className={menuItem} onSelect={() => open({ kind: 'room-create', workspaceId, voice: false })}>
-            <Hash className="size-4" /> {t('room.create')}
-          </Dropdown.Item>
-          <Dropdown.Item className={menuItem} onSelect={onCreateCategory}>
-            <FolderPlus className="size-4" /> {t('shell.categoryCreate')}
-          </Dropdown.Item>
+          {rooms ? (
+            <>
+              <Dropdown.Item className={menuItem} onSelect={() => open({ kind: 'room-create', workspaceId, voice: false })}>
+                <Hash className="size-4" /> {t('room.create')}
+              </Dropdown.Item>
+              <Dropdown.Item className={menuItem} onSelect={onCreateCategory}>
+                <FolderPlus className="size-4" /> {t('shell.categoryCreate')}
+              </Dropdown.Item>
+            </>
+          ) : null}
+          {rooms && (meeting || invite) ? <Dropdown.Separator className={menuSeparator} /> : null}
+          {meeting ? (
+            <Dropdown.Item className={menuItem} onSelect={() => newEvent(workspaceId, nextQuarter())} data-testid="sidebar-new-event">
+              <CalendarPlus className="size-4" /> {t('shell.addMeeting')}
+            </Dropdown.Item>
+          ) : null}
+          {invite ? (
+            <Dropdown.Item className={menuItem} onSelect={() => open({ kind: 'workspace-settings', workspaceId, tab: 'invites' })} data-testid="sidebar-invite">
+              <UserPlus className="size-4" /> {t('shell.inviteToWorkspace')}
+            </Dropdown.Item>
+          ) : null}
         </Dropdown.Content>
       </Dropdown.Portal>
     </Dropdown.Root>
   );
+}
+
+/** «Добавить встречу»: today, from the next quarter hour, 30 minutes (the dialog's default length). */
+function nextQuarter(): { start: number; end: number } {
+  const q = 15 * 60_000;
+  const start = Math.ceil((Date.now() + 60_000) / q) * q;
+  return { start, end: start + 30 * 60_000 };
 }
 
 /**

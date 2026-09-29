@@ -1,31 +1,33 @@
 import * as ContextMenu from '@radix-ui/react-context-menu';
 import { AttendeeStatus, EventRepeat } from '@calaba/protocol';
-import { ChevronLeft, ChevronRight, Link2, Pencil, Plus, Copy, Repeat, Trash2, Video, X } from 'lucide-react';
-import { memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, type PointerEvent as ReactPointerEvent, type ReactNode } from 'react';
-import { Button, IconButton, cx } from '../../components/ui';
+import { CalendarSearch, ChevronLeft, ChevronRight, Link2, Pencil, Plus, Copy, Repeat, Trash2, Users, Video, X } from 'lucide-react';
+import { memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type PointerEvent as ReactPointerEvent, type ReactNode } from 'react';
+import { Button, IconButton, Modal, cx } from '../../components/ui';
 import { t, useLocale } from '../../i18n';
 import { CLICK_DURATION, DRAG_THRESHOLD_PX, createRange, minutesAt, moveRange, resizeRange, type Range } from '../../lib/calendar/drag';
-import { dayKeys, daySignature, myStatusOf, parseSignature } from '../../lib/calendar/events';
+import { dayKeys, daySignature, keyEventId, myStatusOf, parseSignature, type SigItem } from '../../lib/calendar/events';
 import { layoutDay } from '../../lib/calendar/layout';
 import { addDays, atMinutes, dayEnd, dayKey, dayStart, eventSpan, formatLongDay, formatMinutes, formatRange, formatTime, monthOf } from '../../lib/calendar/time';
+import { addPeople } from '../../lib/calendar/people';
 import { useMobile } from '../../lib/mobile';
 import { calendarAvailable, canEditEvent, copyEventLink, ensureMonth, eventOf, moveOccurrence } from '../../services/calendar';
 import { useCalendar } from '../../stores/calendar';
+import { busySignature, ensureBusy, parseBusySignature } from '../../services/freebusy';
+import { entryKey, selectPeople, useFreeBusy } from '../../stores/freebusy';
 import { useRooms } from '../../stores/rooms';
 import { myUserId } from '../../stores/session';
+import { useWorkspaces } from '../../stores/workspaces';
 import { useUi } from '../../stores/ui';
 import { menuBox, menuItem, menuSeparator } from '../shell/menu';
 import { NavButton } from '../shell/MobileShell';
-import { useNow } from '../shell/voiceFormat';
 import { cancelWithConfirm, duplicateEvent, editEvent, newEvent } from './actions';
 import { useDayDrag } from './dragState';
 import { useToday } from './MiniCalendar';
+import { FindTimePane } from './FindTime';
+import { GUTTER, HOUR_PX, HourLines, HourScale, NowLine, PX_PER_MIN } from './gridParts';
+import { PeopleBar } from './PeopleBar';
 
-/** One hour of the grid (px): 24 h = 1152 px, like Apple Calendar's default zoom. */
-export const HOUR_PX = 48;
-const PX_PER_MIN = HOUR_PX / 60;
-/** The time scale left of the grid. */
-const GUTTER = 'w-[60px]';
+export { HOUR_PX };
 /** Hold near the grid's left / right edge this long while dragging → previous / next day. */
 const EDGE_DWELL_MS = 700;
 const EDGE_PX = 24;
@@ -39,8 +41,18 @@ const EDGE_PX = 24;
  * switches the day while dragging); a press-and-drag on the empty grid selects a range for a new
  * meeting, a click proposes 30 minutes. Keys: N new, ←/→ day, T today, Delete cancels.
  * The drag lives in a leaf store (dragState.ts); the calendar store is written once, on drop.
+ * «Люди» (ADR-0041 §3): the chips over the grid narrow it to those people's meetings, their busy
+ * time I may not see as grey «Занято» blocks; my own external calendar's busy time always shows.
+ * «Подобрать время» replaces the grid with the availability columns (FindTime.tsx).
  */
 export function DayView({ workspaceId }: { workspaceId: string }): ReactNode {
+  const finding = useFreeBusy((s) => s.find?.workspaceId === workspaceId);
+  return finding ? <FindTimePane workspaceId={workspaceId} /> : <DayGrid workspaceId={workspaceId} />;
+}
+
+const NO_PEOPLE: readonly string[] = [];
+
+function DayGrid({ workspaceId }: { workspaceId: string }): ReactNode {
   useLocale();
   const today = useToday();
   const day = useUi((s) => s.calDay) ?? today;
@@ -54,10 +66,19 @@ export function DayView({ workspaceId }: { workspaceId: string }): ReactNode {
 
   // The day's meetings as one primitive signature: re-render on a change of the set or of a time,
   // not on an answer / title (the blocks subscribe to those themselves).
-  const sig = useCalendar((s) => daySignature(s.occ, dayKeys(s.occ, workspaceId, day)));
+  const people = useFreeBusy(selectPeople(workspaceId));
+  const peopleSet = useMemo(() => (people.length ? new Set(people) : undefined), [people]);
+  const sig = useCalendar((s) => daySignature(s.occ, dayKeys(s.occ, workspaceId, day, peopleSet)));
   const items = useMemo(() => parseSignature(sig), [sig]);
-  const timed = useMemo(() => items.filter((i) => !i.allDay), [items]);
-  const allDay = useMemo(() => items.filter((i) => i.allDay).map((i) => i.key), [items]);
+  // Busy time from free / busy: the selected people's (what I cannot see as a meeting), else my
+  // external calendar's. A primitive per person: a busy change of someone else re-renders nothing.
+  const me = myUserId();
+  const watched = useMemo(() => (people.length ? people : me ? [me] : NO_PEOPLE), [people, me]);
+  useEffect(() => ensureBusy(workspaceId, watched, dayStart(day), dayEnd(day)), [workspaceId, watched, day]);
+  const fbSig = useFreeBusy((s) => watched.map((u) => `${u}#${busySignature(s.entries[entryKey(workspaceId, u)], dayStart(day), dayEnd(day))}`).join('¦'));
+  const busy = useMemo(() => busyItems(fbSig, items, people.length === 0), [fbSig, items, people.length]);
+  const timed = useMemo(() => [...items.filter((i) => !i.allDay), ...busy.filter((i) => !i.allDay)], [items, busy]);
+  const allDay = useMemo(() => [...items.filter((i) => i.allDay), ...busy.filter((i) => i.allDay)].map((i) => i.key), [items, busy]);
   const placed = useMemo(() => layoutDay(timed, dayStart(day), dayEnd(day)), [timed, day]);
 
   // Open at «now» (today) or the selected meeting, else at 08:00 / the first meeting.
@@ -115,8 +136,9 @@ export function DayView({ workspaceId }: { workspaceId: string }): ReactNode {
 
   return (
     <section className="mat-content relative flex min-h-0 min-w-0 flex-1 flex-col" aria-label={t('cal.dayView')} data-testid="day-view">
-      <DayHeader workspaceId={workspaceId} day={day} today={today} creatable={creatable} mobile={mobile} />
-      <AllDayRow keys={allDay} day={day} onDown={drag.onBlockDown} />
+      <DayHeader workspaceId={workspaceId} day={day} today={today} creatable={creatable} mobile={mobile} people={people.length} />
+      {mobile ? null : <FilterRow workspaceId={workspaceId} people={people} />}
+      <AllDayRow workspaceId={workspaceId} keys={allDay} day={day} onDown={drag.onBlockDown} />
       <div ref={scroller} className="relative min-h-0 flex-1 overflow-y-auto overflow-x-hidden" data-testid="day-scroller">
         <div className="relative flex" style={{ height: 24 * HOUR_PX + 16 }}>
           <HourScale />
@@ -128,15 +150,19 @@ export function DayView({ workspaceId }: { workspaceId: string }): ReactNode {
             data-testid="day-grid"
           >
             <HourLines />
-            {placed.map((p) => (
-              <EventBlock key={p.key} occKey={p.key} top={p.top} height={p.height} col={p.col} cols={p.cols} onDown={drag.onBlockDown} />
-            ))}
+            {placed.map((p) =>
+              isBusyKey(p.key) ? (
+                <BusyBlock key={p.key} workspaceId={workspaceId} busyKey={p.key} top={p.top} height={p.height} col={p.col} cols={p.cols} />
+              ) : (
+                <EventBlock key={p.key} occKey={p.key} top={p.top} height={p.height} col={p.col} cols={p.cols} onDown={drag.onBlockDown} />
+              ),
+            )}
             {day === today ? <NowLine day={day} /> : null}
             <DragGhost />
           </div>
         </div>
       </div>
-      {items.length === 0 && creatable ? (
+      {items.length === 0 && busy.length === 0 && creatable ? (
         <p className="pointer-events-none absolute inset-x-0 top-1/2 px-6 text-center text-body text-muted" data-testid="day-empty">
           {t('cal.emptyHint')}
         </p>
@@ -152,9 +178,10 @@ function DropCursor(): ReactNode {
   return locked ? <div className="fixed inset-0 z-[var(--z-popover)] cursor-not-allowed" aria-hidden /> : null;
 }
 
-function DayHeader({ workspaceId, day, today, creatable, mobile }: { workspaceId: string; day: string; today: string; creatable: boolean; mobile: boolean }): ReactNode {
+function DayHeader({ workspaceId, day, today, creatable, mobile, people }: { workspaceId: string; day: string; today: string; creatable: boolean; mobile: boolean; people: number }): ReactNode {
   const open = useUi((s) => s.openCalendarDay);
   const close = useUi((s) => s.closeCalendar);
+  const [sheet, setSheet] = useState(false);
   const title = formatLongDay(dayStart(day));
   const touch = mobile ? 'size-10 rounded-full' : undefined;
   return (
@@ -175,6 +202,23 @@ function DayHeader({ workspaceId, day, today, creatable, mobile }: { workspaceId
         </Button>
       ) : null}
       {creatable && mobile ? (
+        // Phone: «Люди» and «Подобрать время» as icons; the filter is a sheet (ADR-0041 §3).
+        <>
+          <IconButton label={t('fb.filter')} tip={false} onClick={() => setSheet(true)} className={cx(touch, 'relative')} active={people > 0} data-testid="day-people">
+            <Users className="size-[18px]" />
+            {people > 0 ? <span className="absolute right-0.5 top-0.5 grid h-4 min-w-4 place-items-center rounded-full bg-accent-strong px-1 text-micro font-semibold tabular-nums text-accent-fg">{people}</span> : null}
+          </IconButton>
+          <IconButton label={t('fb.find')} tip={false} onClick={() => startFind(workspaceId)} className={touch} data-testid="day-find">
+            <CalendarSearch className="size-[18px]" />
+          </IconButton>
+        </>
+      ) : creatable ? (
+        <Button variant="secondary" size="sm" onClick={() => startFind(workspaceId)} data-testid="day-find">
+          <CalendarSearch className="size-3.5" aria-hidden />
+          {t('fb.find')}
+        </Button>
+      ) : null}
+      {creatable && mobile ? (
         // Phone: a 40 px round «+» (the header keeps room for the date).
         <IconButton label={t('cal.newEventLong')} tip={false} onClick={() => newEvent(workspaceId, defaultDraft(day))} data-testid="day-new-event" className="size-10 rounded-full bg-accent-strong text-accent-fg hover:bg-accent-strong hover:text-accent-fg">
           <Plus className="size-5" />
@@ -188,9 +232,141 @@ function DayHeader({ workspaceId, day, today, creatable, mobile }: { workspaceId
       <IconButton label={t('cal.close')} onClick={close} className={touch}>
         <X className="size-[18px]" />
       </IconButton>
+      {sheet ? <PeopleSheet workspaceId={workspaceId} onClose={() => setSheet(false)} /> : null}
     </header>
   );
 }
+
+/** «Подобрать время» from the day view: the filter's people (and me) as the first chips. */
+export function startFind(workspaceId: string): void {
+  const me = myUserId();
+  const fb = useFreeBusy.getState();
+  const users = addPeople(me ? [me] : [], fb.people[workspaceId] ?? []).list;
+  fb.setFind({ workspaceId, users, durationMin: 30, workHours: true });
+}
+
+/** «Люди» over the grid (desktop): the chips of the filter. */
+function FilterRow({ workspaceId, people }: { workspaceId: string; people: readonly string[] }): ReactNode {
+  const dispatch = useFreeBusy((s) => s.dispatchPeople);
+  const onAdd = useCallback((ids: readonly string[]) => dispatch({ type: 'add', workspaceId, ids }), [dispatch, workspaceId]);
+  const onRemove = useCallback((id: string) => dispatch({ type: 'remove', workspaceId, id }), [dispatch, workspaceId]);
+  const onClear = useCallback(() => dispatch({ type: 'clear', workspaceId }), [dispatch, workspaceId]);
+  return (
+    <div className="flex h-10 shrink-0 items-center gap-2 border-b border-line pl-3 pr-2" data-testid="day-filter">
+      <Users className="size-4 shrink-0 text-muted" aria-hidden />
+      <PeopleBar workspaceId={workspaceId} people={people} onAdd={onAdd} onRemove={onRemove} onClear={onClear} testId="people-filter" />
+    </div>
+  );
+}
+
+/** Phone: the filter as a bottom sheet with the chips. */
+function PeopleSheet({ workspaceId, onClose }: { workspaceId: string; onClose: () => void }): ReactNode {
+  const people = useFreeBusy(selectPeople(workspaceId));
+  const dispatch = useFreeBusy((s) => s.dispatchPeople);
+  return (
+    <Modal
+      open
+      onClose={onClose}
+      title={t('fb.filter')}
+      description={t('fb.filterHint')}
+      footer={
+        <Button onClick={onClose} data-testid="people-sheet-done">
+          {t('fb.done')}
+        </Button>
+      }
+    >
+      <PeopleBar
+        workspaceId={workspaceId}
+        people={people}
+        wrap
+        onAdd={(ids) => dispatch({ type: 'add', workspaceId, ids })}
+        onRemove={(id) => dispatch({ type: 'remove', workspaceId, id })}
+        onClear={() => dispatch({ type: 'clear', workspaceId })}
+        testId="people-filter"
+      />
+    </Modal>
+  );
+}
+
+// ---------------------------------------------------------------- busy blocks (free / busy)
+
+const BUSY = 'busy~';
+const isBusyKey = (key: string): boolean => key.startsWith(BUSY);
+
+/**
+ * Busy blocks of a day: `ownOnly` — my external calendar's; else the watched people's busy time
+ * that is not a meeting shown on the grid. The same interval of several people is one block.
+ */
+function busyItems(fbSig: string, shown: readonly SigItem[], ownOnly: boolean): SigItem[] {
+  if (!fbSig) return [];
+  const visible = new Set(shown.map((i) => keyEventId(i.key)));
+  const groups = new Map<string, { start: number; end: number; kind: string; allDay: boolean; users: string[] }>();
+  for (const part of fbSig.split('¦')) {
+    const at = part.indexOf('#');
+    const user = part.slice(0, at);
+    for (const b of parseBusySignature(part.slice(at + 1))) {
+      if (ownOnly ? b.kind !== 'external' : b.eventId && visible.has(b.eventId)) continue;
+      const g = `${b.start}~${b.end}~${b.kind}~${b.allDay ? 1 : 0}`;
+      const cur = groups.get(g);
+      if (cur) cur.users.push(user);
+      else groups.set(g, { start: b.start, end: b.end, kind: b.kind, allDay: b.allDay, users: [user] });
+    }
+  }
+  return [...groups.values()].map((g) => ({ key: `${BUSY}${g.start}~${g.end}~${g.kind}~${g.users.join(',')}`, allDay: g.allDay, start: g.start, end: g.end }));
+}
+
+function parseBusyKey(key: string): { start: number; end: number; external: boolean; users: string[] } {
+  const [, s, e, kind, users = ''] = key.split('~');
+  return { start: Number(s), end: Number(e), external: kind === 'external', users: users.split(',').filter(Boolean) };
+}
+
+/** «Занято · Анна, Борис» / mine from the external calendar: «Занято · внешний календарь». */
+function useBusyLabel(workspaceId: string, busyKey: string): { text: string; external: boolean } {
+  const b = parseBusyKey(busyKey);
+  const names = useWorkspaces((s) => b.users.map((u) => s.byId[workspaceId]?.members[u]?.nickname || s.byId[workspaceId]?.members[u]?.user?.displayName || '').join(', '));
+  const mineOnly = b.users.length === 1 && b.users[0] === myUserId();
+  const who = mineOnly ? (b.external ? t('fb.external') : '') : names;
+  return { text: who ? t('fb.busyWho', { who }) : t('fb.busy'), external: b.external };
+}
+
+/** Grey, hatched when it comes from an external calendar (docs/08 «Календарь»). */
+const busyStyle = (external: boolean): React.CSSProperties =>
+  external
+    ? { backgroundImage: 'repeating-linear-gradient(135deg, transparent 0 6px, color-mix(in srgb, var(--color-label-tertiary) 35%, transparent) 6px 8px)' }
+    : {};
+
+const BusyBlock = memo(function BusyBlock({ workspaceId, busyKey, top, height, col, cols }: { workspaceId: string; busyKey: string; top: number; height: number; col: number; cols: number }): ReactNode {
+  const { text, external } = useBusyLabel(workspaceId, busyKey);
+  const { start, end } = parseBusyKey(busyKey);
+  const px = height * PX_PER_MIN;
+  return (
+    <div
+      role="img"
+      aria-label={`${text}, ${formatTime(start)} – ${formatTime(end)}`}
+      title={text}
+      data-testid="busy-block"
+      className="pointer-events-none absolute z-[1] overflow-hidden rounded-[6px] border-l-[3px] border-[var(--color-label-tertiary)] bg-[var(--color-fill)] px-1.5 text-caption text-muted"
+      style={{
+        top: top * PX_PER_MIN + 1,
+        height: Math.max(18, px - 2),
+        left: `calc(${(col / cols) * 100}% + 2px)`,
+        width: `calc(${100 / cols}% - 4px)`,
+        ...busyStyle(external),
+      }}
+    >
+      <p className={cx('truncate font-medium', px < 38 ? 'leading-4' : 'pt-1')}>{text}</p>
+    </div>
+  );
+});
+
+const BusyChip = memo(function BusyChip({ workspaceId, busyKey }: { workspaceId: string; busyKey: string }): ReactNode {
+  const { text, external } = useBusyLabel(workspaceId, busyKey);
+  return (
+    <div role="img" aria-label={text} data-testid="busy-block" className="truncate rounded-[6px] border-l-[3px] border-[var(--color-label-tertiary)] bg-[var(--color-fill)] px-1.5 text-caption font-medium leading-5 text-muted" style={busyStyle(external)}>
+      {text}
+    </div>
+  );
+});
 
 /** «+ Встреча» on a day: the next full half hour today, 10:00 on another day; 30 minutes. */
 function defaultDraft(day: string): { start: number; end: number } {
@@ -202,43 +378,6 @@ function defaultDraft(day: string): { start: number; end: number } {
   }
   return { start, end: start + CLICK_DURATION * 60_000 };
 }
-
-const HourScale = memo(function HourScale(): ReactNode {
-  useLocale();
-  return (
-    <div className={cx(GUTTER, 'relative mt-2 shrink-0 select-none')} aria-hidden style={{ height: 24 * HOUR_PX }}>
-      {Array.from({ length: 23 }, (_, i) => i + 1).map((h) => (
-        <span key={h} className="absolute right-2 -translate-y-1/2 text-micro tabular-nums text-faint" style={{ top: h * HOUR_PX }}>
-          {formatMinutes(h * 60)}
-        </span>
-      ))}
-    </div>
-  );
-});
-
-const HourLines = memo(function HourLines(): ReactNode {
-  return (
-    <div className="pointer-events-none absolute inset-0" aria-hidden>
-      {Array.from({ length: 24 }, (_, h) => (
-        <div key={h} className="absolute inset-x-0 border-t border-line" style={{ top: h * HOUR_PX }} />
-      ))}
-      <div className="absolute inset-x-0 border-t border-line" style={{ top: 24 * HOUR_PX }} />
-    </div>
-  );
-});
-
-/** The red «now» line (Apple): its own minute ticker — the only thing re-rendered by time. */
-const NowLine = memo(function NowLine({ day }: { day: string }): ReactNode {
-  const now = useNow(60_000);
-  if (dayKey(now) !== day) return null;
-  const min = (now - dayStart(day)) / 60_000;
-  return (
-    <div className="pointer-events-none absolute inset-x-0 z-[2]" style={{ top: min * PX_PER_MIN }} data-testid="now-line" aria-label={t('cal.now', { time: formatTime(now) })} role="img">
-      <span className="absolute -left-[5px] -top-[5px] size-2.5 rounded-full bg-danger" />
-      <div className="h-0.5 -translate-y-1/2 bg-danger" />
-    </div>
-  );
-});
 
 // ---------------------------------------------------------------- blocks
 
@@ -379,7 +518,7 @@ function BlockMenu({ occKey, editable, children }: { occKey: string; editable: b
 }
 
 /** All-day meetings above the grid; a drop target that makes a dragged meeting all-day. */
-function AllDayRow({ keys, day, onDown }: { keys: readonly string[]; day: string; onDown: BlockDown }): ReactNode {
+function AllDayRow({ workspaceId, keys, day, onDown }: { workspaceId: string; keys: readonly string[]; day: string; onDown: BlockDown }): ReactNode {
   // Always there (Apple Calendar): a stable grid under a drag, and a visible drop target.
   const dropping = useDayDrag((s) => s.allDay && !s.locked && s.mode === 'move');
   return (
@@ -390,9 +529,7 @@ function AllDayRow({ keys, day, onDown }: { keys: readonly string[]; day: string
     >
       <span className={cx(GUTTER, 'shrink-0 self-center pr-2 text-right text-micro leading-3 text-faint')}>{t('cal.allDayRow')}</span>
       <div className="flex min-h-6 min-w-0 flex-1 flex-col gap-0.5">
-        {keys.map((k) => (
-          <AllDayChip key={k} occKey={k} onDown={onDown} />
-        ))}
+        {keys.map((k) => (isBusyKey(k) ? <BusyChip key={k} workspaceId={workspaceId} busyKey={k} /> : <AllDayChip key={k} occKey={k} onDown={onDown} />))}
       </div>
     </div>
   );

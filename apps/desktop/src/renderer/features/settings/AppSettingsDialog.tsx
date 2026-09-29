@@ -1,7 +1,7 @@
 import { AUDIO_TIERS_KBPS, audioTierKbps } from '@calaba/protocol';
 import { timestampDate } from '@bufbuild/protobuf/wkt';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { Bell, CircleUser, Info, Keyboard, Mic, MonitorSmartphone, SlidersHorizontal, Trash2, Wifi } from 'lucide-react';
+import { Bell, CalendarDays, CircleUser, Info, Keyboard, Mic, MonitorSmartphone, SlidersHorizontal, Trash2, Wifi } from 'lucide-react';
 import { useCallback, useEffect, useState, type ReactNode } from 'react';
 import type { AppInfo, AppSettings, PermissionStatus } from '../../../shared/ipc';
 import { Avatar } from '../../components/Avatar';
@@ -46,9 +46,11 @@ import { StreamCodecSelect, streamCodecHint } from '../voice/StreamCodecSelect';
 import { MyStickersCard } from './MyStickersCard';
 import { BirthdaySettings } from './BirthdaySettings';
 import { RemindersCard } from '../calendar/RemindersCard';
+import { CalendarTab } from './CalendarSettings';
 
 export function AppSettingsDialog({ tab, onClose }: { tab: string | undefined; onClose: () => void }): ReactNode {
   const superadmin = useSession((s) => s.me?.isSuperadmin === true);
+  const guest = useSession((s) => s.me?.user?.isGuest === true);
   // «Обновление» on «О программе» while an update waits (docs/09 #125); a boolean selector.
   const updatePending = useSession(selectUpdatePending);
   const sections: SettingsSection[] = [
@@ -59,6 +61,8 @@ export function AppSettingsDialog({ tab, onClose }: { tab: string | undefined; o
     { id: 'voice', label: t('settings.voice'), icon: Mic, content: <VoiceTab /> },
     { id: 'hotkeys', label: t('settings.hotkeys'), icon: Keyboard, content: <HotkeysTab /> },
     { id: 'notifications', label: t('settings.notifications'), icon: Bell, content: <NotificationsTab /> },
+    // Settings → Календарь (ADR-0041): work hours, the external CalDAV calendar; not for guests.
+    ...(guest ? [] : [{ id: 'calendar', label: t('settings.calendar'), icon: CalendarDays, content: <CalendarTab /> }]),
     { id: 'connection', label: t('settings.connection'), icon: Wifi, content: <ConnectionTab /> },
     { id: 'sessions', label: t('settings.sessions'), icon: MonitorSmartphone, content: <SessionsTab /> },
     {

@@ -42,6 +42,8 @@ export interface EventDraftInit {
   end?: number;
   allDay?: boolean;
   roomId?: string;
+  /** Attendees (members) prefilled: «Подобрать время», a slot picked (ADR-0041 §3); me left out. */
+  attendees?: readonly string[];
   /** Copy everything else from this occurrence («Дублировать»). */
   copyOf?: string;
 }

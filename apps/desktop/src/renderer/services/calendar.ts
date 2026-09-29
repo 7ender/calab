@@ -36,6 +36,7 @@ import { can, mayManageWorkspace, roomPerms } from '../lib/permissions';
 import { log } from '../lib/log';
 import { platform } from '../platform';
 import { useCalendar } from '../stores/calendar';
+import { useFreeBusy } from '../stores/freebusy';
 import { prefs } from '../stores/prefs';
 import { useRooms } from '../stores/rooms';
 import { myUserId, useSession } from '../stores/session';
@@ -44,6 +45,7 @@ import { useUi } from '../stores/ui';
 import { useVoice } from '../stores/voice';
 import { rolesOf, useWorkspaces } from '../stores/workspaces';
 import { voice } from './voice';
+import { invalidateBusy } from './freebusy';
 
 /**
  * Workspace calendar (ADR-0038 §7): listing month windows, the gateway events, reminders, the
@@ -182,11 +184,13 @@ const involvesMe = (ev: CalendarEvent): boolean => ev.organizerId === myUserId()
 
 export function onEventCreate(ev: CalendarEvent): void {
   applied(ev.workspaceId, applyCreate(cal().occ, ev));
+  invalidateBusy(ev.workspaceId);
   if (involvesMe(ev)) refreshToday();
 }
 
 export function onEventUpdate(ev: CalendarEvent): void {
   applied(ev.workspaceId, applyUpdate(cal().occ, ev));
+  invalidateBusy(ev.workspaceId);
   const series = cal().series;
   if (series[ev.id]) useCalendar.setState({ series: { ...series, [ev.id]: ev } });
   // A room's badge follows the meeting's title / attendees (its times: ROOM_EVENT_*).
@@ -204,6 +208,7 @@ export function onEventUpdate(ev: CalendarEvent): void {
 }
 
 export function onEventDelete(ev: CalendarEvent): void {
+  invalidateBusy(ev.workspaceId);
   useCalendar.setState((s) => {
     const series = { ...s.series };
     delete series[ev.id];
@@ -217,6 +222,8 @@ export function onEventDelete(ev: CalendarEvent): void {
 export function onEventRsvp(v: CalendarEventRsvp): void {
   const a = v.attendee;
   if (!a) return;
+  // A «declined» frees the attendee's time (ADR-0041 §1).
+  invalidateBusy(v.workspaceId);
   useCalendar.setState((s) => {
     const occ = applyRsvp(s.occ, v.eventId, a, v.counts);
     const one = s.series[v.eventId];
@@ -284,6 +291,8 @@ export function goToRoom(ev: Pick<CalendarEvent, 'workspaceId' | 'roomId'>): voi
 export function openEvent(ev: CalendarEvent): void {
   const ui = useUi.getState();
   if (ui.activeWorkspaceId !== ev.workspaceId) ui.setWorkspace(ev.workspaceId);
+  // «Подобрать время» ends with the meeting shown in its day (ADR-0041 §3).
+  if (useFreeBusy.getState().find) useFreeBusy.getState().setFind(null);
   const { start } = eventSpan(ev);
   const day = ev.allDay ? dayKey(start, ev.tz || 'UTC') : dayKey(start);
   useUi.getState().openCalendarDay(day, occKey(ev));
