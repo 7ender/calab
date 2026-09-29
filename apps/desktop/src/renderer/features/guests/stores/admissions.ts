@@ -1,6 +1,6 @@
 import type { RoomAdmission } from '@calaba/protocol';
 import { create } from 'zustand';
-import { EMPTY, focusKnock, reduce, type AdmissionAction, type AdmissionsData, type MyKnock } from '../admissionsModel';
+import { EMPTY, focusKnock, knockingKey, reduce, type AdmissionAction, type AdmissionsData, type MyKnock } from '../admissionsModel';
 
 /**
  * Guest admission state (ADR-0040): one store, updated through the pure reducer
@@ -29,6 +29,9 @@ export const useRoomKnocks = (roomId: string | null | undefined): RoomAdmission[
 
 /** How many wait for a room: the sidebar counter. */
 export const useKnockCount = (roomId: string): number => useAdmissions((s) => s.byRoom[roomId]?.length ?? 0);
+
+/** Who knocks on a room of the workspace (a sorted primitive: re-renders only when the set changes). */
+export const useKnockingKey = (workspaceId: string): string => useAdmissions((s) => knockingKey(s.byRoom, workspaceId));
 
 /** One knock (a row, a toast) by room and user. */
 export const useKnock = (roomId: string, userId: string): RoomAdmission | undefined =>

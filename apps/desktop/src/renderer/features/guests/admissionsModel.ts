@@ -50,6 +50,17 @@ export const EMPTY: AdmissionsData = { byRoom: {}, gone: {}, toasts: [], mine: {
 /** A declined knock may be repeated this long after a person's decision (ADR-0040 §2). */
 export const DECLINE_HOLD_MS = 10 * 60_000;
 
+/**
+ * The users knocking on any room of a workspace, sorted, as one primitive («a,b»): the members
+ * panel keeps them out of «В сети» / «Не в сети» until they are let in — a waiting guest is already
+ * a `guest` member of the workspace, but not in yet (they show in «Ожидают подтверждения» instead).
+ */
+export function knockingKey(byRoom: Record<string, RoomAdmission[]>, workspaceId: string): string {
+  const ids = new Set<string>();
+  for (const list of Object.values(byRoom)) for (const a of list) if (a.workspaceId === workspaceId && a.user?.id) ids.add(a.user.id);
+  return [...ids].sort().join(',');
+}
+
 export const knockKey = (roomId: string, userId: string): string => `${roomId}:${userId}`;
 export const splitKey = (key: string): { roomId: string; userId: string } => {
   const i = key.lastIndexOf(':');

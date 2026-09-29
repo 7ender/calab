@@ -30,6 +30,7 @@ import { ProfileCard } from '../people/ProfileCard';
 import { useOnCall } from '../call/CallBits';
 import { DRAG_USER } from '../calendar/dragState';
 import { AdmissionsGroup } from '../guests/AdmissionsGroup';
+import { useKnockingKey } from '../guests/stores/admissions';
 
 export const ROLE_LABEL: Record<WorkspaceRole, MessageKey> = {
   [WorkspaceRole.UNSPECIFIED]: 'role.member',
@@ -51,7 +52,13 @@ export function MembersPanel({ workspaceId, floating = false, drawer = false }: 
   const members = useWorkspaces((s) => s.byId[workspaceId]?.members);
   const presences = useWorkspaces((s) => s.presences);
   const voice = useVoiceStates(workspaceId); // + me while connecting (optimistic join)
-  const groups = useMemo(() => groupMembers(Object.values(members ?? {}), presences, voice), [members, presences, voice]);
+  // Guests still knocking (ADR-0040) are not in yet: only in «Ожидают подтверждения», not as members.
+  const knocking = useKnockingKey(workspaceId);
+  const groups = useMemo(() => {
+    const out = knocking ? new Set(knocking.split(',')) : null;
+    const list = Object.values(members ?? {});
+    return groupMembers(out ? list.filter((m) => !out.has(m.user?.id ?? '')) : list, presences, voice);
+  }, [members, presences, voice, knocking]);
   const [profile, setProfile] = useState<string | null>(null);
   // Stable: a new closure per row each render defeated MemberRow's memo (every presence change
   // re-rendered every row). A row closes only its own card: a late close from the previous row

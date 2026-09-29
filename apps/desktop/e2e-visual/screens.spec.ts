@@ -946,6 +946,8 @@ test('members-admissions', async ({ open, win, mock, shot }) => {
   const members = await membersList(win);
   const group = members.getByTestId('members-admissions');
   await expect(group).toContainText('Ожидают подтверждения — 1');
+  // Not in yet: only in the group, not also among the members («Не в сети» as a guest).
+  await expect(members.locator('section[aria-labelledby="members-on"], section[aria-labelledby="members-off"]').filter({ hasText: 'Гость Ромашка' })).toHaveCount(0);
   await expect(toast).toHaveCount(0);
   await badgesLoaded(win);
   await checkpoint(shot, 'members-admissions');

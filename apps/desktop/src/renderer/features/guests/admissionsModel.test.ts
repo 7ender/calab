@@ -2,7 +2,7 @@ import { create } from '@bufbuild/protobuf';
 import { timestampFromMs } from '@bufbuild/protobuf/wkt';
 import { RoomAdmissionSchema, RoomAdmissionStatus, UserSchema, type RoomAdmission } from '@calaba/protocol';
 import { describe, expect, it } from 'vitest';
-import { DECLINE_HOLD_MS, EMPTY, focusKnock, knockKey, reduce, waitView, type AdmissionAction, type AdmissionsData, type MyKnock } from './admissionsModel';
+import { DECLINE_HOLD_MS, EMPTY, focusKnock, knockKey, knockingKey, reduce, waitView, type AdmissionAction, type AdmissionsData, type MyKnock } from './admissionsModel';
 
 const T0 = Date.UTC(2026, 8, 29, 12, 0);
 const ME = 'guest-1';
@@ -206,5 +206,15 @@ describe('waiting screen state machine', () => {
 
   it('cancelled: the join card with «Постучать»', () => {
     expect(waitView(k('cancelled'), T0, true)).toMatchObject({ title: 'join', knock: true, cancel: false, close: true });
+  });
+});
+
+describe('knockingKey', () => {
+  it('lists the knocking users of the workspace once, sorted; other workspaces are left out', () => {
+    const other = knock('r3', 'u9', T0, { workspaceId: 'ws2' });
+    const byRoom = { r1: [knock('r1', 'u2'), knock('r1', 'u1')], r2: [knock('r2', 'u2')], r3: [other] };
+    expect(knockingKey(byRoom, 'ws')).toBe('u1,u2');
+    expect(knockingKey(byRoom, 'ws2')).toBe('u9');
+    expect(knockingKey({}, 'ws')).toBe('');
   });
 });
