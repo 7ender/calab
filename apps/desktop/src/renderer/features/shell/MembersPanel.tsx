@@ -6,7 +6,7 @@ import { memo, useCallback, useEffect, useMemo, useRef, useState, type ReactNode
 import { Avatar } from '../../components/Avatar';
 import { cx } from '../../components/ui';
 import { type MessageKey, t, useLocale } from '../../i18n';
-import { useRooms } from '../../stores/rooms';
+import { greetingRoomId, useRooms } from '../../stores/rooms';
 import { useConnectingRing, useVoiceStateOf, useVoiceStates } from '../../stores/voicePending';
 import { useVoice } from '../../stores/voice';
 import { isGuest, useMemberName, useRoleLook, useWorkspaces } from '../../stores/workspaces';
@@ -23,8 +23,8 @@ import { openProfile as openFullProfile } from '../people/actions';
 import { useUpcomingBirthdays } from '../people/upcomingBirthdays';
 import { cardDueAt, formatBirthdayShort, greetZone } from '../../lib/birthday';
 import { fmt } from '../../lib/format';
-import { startDm } from '../../services/dms';
-import { useCanDm } from '../dm/canDm';
+import { useSession } from '../../stores/session';
+import { congratulate } from '../people/congratulate';
 import { NicknameDialog } from '../people/NicknameDialog';
 import { ProfileCard } from '../people/ProfileCard';
 import { useOnCall } from '../call/CallBits';
@@ -198,15 +198,19 @@ const BirthdaysSection = memo(function BirthdaysSection({ workspaceId }: { works
 });
 
 /**
- * One celebrant on the plate: avatar 28 · **name** (opens the profile) · «Поздравить» (opens the
- * DM: canDmWith — not for myself, a guest or a guest role), and before the chat card is posted a
- * quiet «Открытка в чате появится в 09:00». Primitive props and selectors by id.
+ * One celebrant on the plate: avatar 28 · **name** (opens the profile) · «Поздравить» (docs/09
+ * #120: opens the greeting room — where the card is posted — scrolls to today's card and puts
+ * `@Имя ` in the composer; not for myself, none without a text room; the DM stays in the
+ * profile), and before the chat card is posted a quiet «Открытка в чате появится в 09:00».
+ * Primitive props and selectors by id.
  */
 const PlateRow = memo(function PlateRow({ workspaceId, userId, day, month }: { workspaceId: string; userId: string; day: number; month: number }): ReactNode {
   useLocale();
   const name = useMemberName(workspaceId, userId);
   const avatarFileId = useWorkspaces((s) => s.byId[workspaceId]?.members[userId]?.user?.avatarFileId || undefined);
-  const canDm = useCanDm(workspaceId, userId);
+  const me = useSession((s) => s.me?.user?.id ?? '');
+  // A primitive: room list changes elsewhere (unread counts…) do not re-render the row.
+  const hasRoom = useRooms((s) => !!greetingRoomId(s.byId, s.categories, workspaceId));
   return (
     // The panel is 240 px: name and hint get the full width, the button goes under them.
     <div className="flex min-w-0 items-start gap-2" data-testid="members-birthday-today">
@@ -221,13 +225,13 @@ const PlateRow = memo(function PlateRow({ workspaceId, userId, day, month }: { w
           {name}
         </button>
         <CardHint workspaceId={workspaceId} userId={userId} day={day} month={month} />
-        {canDm ? (
+        {hasRoom && userId !== me ? (
           <button
             type="button"
             aria-label={t('birthday.congratulateName', { name })}
             data-testid="members-birthday-congratulate"
             className="mt-1 h-6 rounded-[var(--radius-control)] bg-white px-2.5 text-caption font-semibold text-[color:var(--color-accent-strong)] transition-colors duration-[var(--motion-fast)] hover:bg-white/90"
-            onClick={() => void startDm(userId)}
+            onClick={() => congratulate(workspaceId, userId, { day, month })}
           >
             {t('birthday.congratulate')}
           </button>

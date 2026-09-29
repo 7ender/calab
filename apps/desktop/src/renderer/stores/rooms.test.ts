@@ -13,6 +13,7 @@ import {
   badgeCount,
   defaultRoom,
   effectiveNotify,
+  greetingRoomId,
   groupRooms,
   isUnread,
   roomNotify,
@@ -45,6 +46,20 @@ describe('groupRooms', () => {
     const rooms = [room('t1', T, 0, 'gone')];
     expect(groupRooms(rooms, [cat('a', 0)]).map((g) => g.category?.id ?? null)).toEqual([null]);
     expect(groupRooms(rooms, [cat('a', 0)], true).map((g) => g.category?.id ?? null)).toEqual([null, 'a']);
+  });
+
+  it('greetingRoomId follows the server order: public text rooms, top level, category, position, id', () => {
+    const byId = (rs: ReturnType<typeof room>[]): Record<string, ReturnType<typeof room>> => Object.fromEntries(rs.map((r) => [r.id, r]));
+    const cats = { a: cat('a', 1), b: cat('b', 0) };
+    const priv = create(RoomSchema, { id: 'p', workspaceId: 'w', type: T, name: 'p', position: -1, isPrivate: true });
+    const other = create(RoomSchema, { id: 'o', workspaceId: 'x', type: T, name: 'o', position: -5 });
+    // Voice rooms, other workspaces and private rooms lose to a public text room in a category.
+    expect(greetingRoomId(byId([room('v', V, -9), other, priv, room('ta', T, 0, 'a'), room('tb', T, 3, 'b')]), cats, 'w')).toBe('tb');
+    // Top level wins over categories; then position, then id.
+    expect(greetingRoomId(byId([room('tb', T, 0, 'b'), room('z', T, 2), room('y', T, 2)]), cats, 'w')).toBe('y');
+    // Only private text rooms: the first of them.
+    expect(greetingRoomId(byId([priv, room('v', V, 0)]), cats, 'w')).toBe('p');
+    expect(greetingRoomId(byId([room('v', V, 0)]), cats, 'w')).toBeUndefined();
   });
 
   it('defaultRoom prefers the first text room in list order', () => {

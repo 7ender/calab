@@ -293,6 +293,30 @@ export function defaultRoom(rooms: Room[], categories: RoomCategory[]): Room | u
   return ordered.find((r) => !isVoice(r)) ?? ordered[0];
 }
 
+/**
+ * The workspace's greeting room — where the server posts birthday cards (docs/09 #76, #120):
+ * the same order as the ListBirthdayRooms query — text rooms only, a room everyone can see
+ * (not private) first, then top level before categories, category position, room position,
+ * id. Derived from the rooms I can see: when the server's pick is hidden from me the next
+ * visible one by the same order is where I can write anyway. Returns an id (a primitive for
+ * store selectors).
+ */
+export function greetingRoomId(byId: Record<string, Room>, categories: Record<string, RoomCategory>, wsId: string): string | undefined {
+  let best: { r: Room; key: [number, number, number, number] } | undefined;
+  for (const r of Object.values(byId)) {
+    if (r.workspaceId !== wsId || r.type !== RoomType.TEXT) continue;
+    const c = r.categoryId ? categories[r.categoryId] : undefined;
+    const key: [number, number, number, number] = [r.isPrivate ? 1 : 0, c ? 1 : 0, c?.position ?? 0, r.position];
+    if (!best || cmpKey(key, best.key) < 0 || (cmpKey(key, best.key) === 0 && r.id < best.r.id)) best = { r, key };
+  }
+  return best?.r.id;
+}
+
+const cmpKey = (a: readonly number[], b: readonly number[]): number => {
+  for (let i = 0; i < a.length; i++) if (a[i] !== b[i]) return (a[i] ?? 0) - (b[i] ?? 0);
+  return 0;
+};
+
 export function roomsOfWorkspace(byId: Record<string, Room>, wsId: string): Room[] {
   return Object.values(byId)
     .filter((r) => r.workspaceId === wsId)

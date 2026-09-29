@@ -5,7 +5,7 @@ import { useCallback, useEffect, useId, useLayoutEffect, useMemo, useRef, useSta
 import { CLOSE_HIT, CloseButton, IconButton, Tip, cx } from '../../components/ui';
 import { t } from '../../i18n';
 import { fmt } from '../../lib/format';
-import { MENTION_EVENT, type MentionRequest } from './mentionRequest';
+import { MENTION_EVENT, takeMention, type MentionRequest } from './mentionRequest';
 import { applyMention, exactNames, filterCandidates, filterSpecial, fromWire, mentionQuery, toWire } from '../../lib/mentions';
 import { can } from '../../lib/permissions';
 import { systemPreview } from '../../lib/recording';
@@ -177,20 +177,31 @@ export function Composer({
   };
 
   // «Упомянуть» from a member menu (mentionRequest.ts): append `@name ` and focus the field.
+  // A request for a given room (birthday «Поздравить») waits for that room's composer.
+  const roomIdRef = useRef(room.id);
+  roomIdRef.current = room.id;
+  const applyMentionRequest = useCallback((d: MentionRequest): void => {
+    setText((cur) => {
+      const next = `${cur && !/\s$/.test(cur) ? `${cur} ` : cur}@${d.name} `;
+      pendingCaret.current = next.length;
+      return next;
+    });
+    setMentions((m) => new Map(m).set(d.name, d.userId));
+    ref.current?.focus();
+  }, []);
   useEffect(() => {
     const onMention = (e: Event): void => {
       const d = (e as CustomEvent<MentionRequest>).detail;
-      setText((cur) => {
-        const next = `${cur && !/\s$/.test(cur) ? `${cur} ` : cur}@${d.name} `;
-        pendingCaret.current = next.length;
-        return next;
-      });
-      setMentions((m) => new Map(m).set(d.name, d.userId));
-      ref.current?.focus();
+      const req = d.roomId ? takeMention(roomIdRef.current) : d;
+      if (req) applyMentionRequest(req);
     };
     window.addEventListener(MENTION_EVENT, onMention);
     return () => window.removeEventListener(MENTION_EVENT, onMention);
-  }, []);
+  }, [applyMentionRequest]);
+  useEffect(() => {
+    const req = takeMention(room.id);
+    if (req) applyMentionRequest(req);
+  }, [room.id, applyMentionRequest]);
 
   /** Field text → wire format: picked names and exact member names become `@<id>`. */
   const wire = (content: string): string => toWire(content, new Map([...exactNames(mentionables.all), ...mentions]));

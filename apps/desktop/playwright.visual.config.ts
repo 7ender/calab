@@ -55,6 +55,8 @@ export default defineConfig<VisualOptions>({
     { name: 'selection', testMatch: /selection\.spec\.ts/ },
     // A dialog's «×» hit at its icon centre, clear of window drag regions (docs/09 #105): behaviour only.
     { name: 'modal-close', testMatch: /modal-close\.spec\.ts/, use: { theme: 'dark', size: { width: 960, height: 600 } } },
+    // «Поздравить» → the greeting room with a ready mention (docs/09 #120): behaviour only.
+    { name: 'birthday-congratulate', testMatch: /birthday-congratulate\.spec\.ts/, use: { theme: 'dark', size: { width: 1440, height: 800 } } },
     // Deafen holds for late voices (docs/09 #70): behaviour only, web build + dev LiveKit.
     { name: 'deafen', testMatch: /deafen\.spec\.ts/ },
     // Focus walk and the web client's own screens (they start their own mock / app). Locally only

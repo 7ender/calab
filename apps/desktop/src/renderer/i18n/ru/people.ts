@@ -221,7 +221,7 @@ export const ruPeople = {
   'birthday.whenToday': 'Сегодня',
   'birthday.whenTomorrow': 'Завтра',
   'birthday.congratulate': 'Поздравить',
-  'birthday.congratulateName': 'Поздравить {name}: написать в личные сообщения',
+  'birthday.congratulateName': 'Поздравить {name} в общем чате',
   'birthday.cardAt': 'Открытка в чате появится в {time}',
   'birthday.age': { one: '{n} год', few: '{n} года', many: '{n} лет', other: '{n} года' },
   'birthday.inDays': { one: 'Через {n} день', few: 'Через {n} дня', many: 'Через {n} дней', other: 'Через {n} дня' },
