@@ -2,7 +2,7 @@
  * Camera background worker (ADR-0035 §1–2, §6). Camera frames arrive on a transferred
  * MediaStreamTrackProcessor stream and leave on a transferred MediaStreamTrackGenerator stream; the
  * UI thread takes no part per frame. Until the model is loaded, and for «none», frames pass through
- * untouched (no GL). Segmentation ≤ 12/s (6/s without a GPU delegate), compositing on every frame.
+ * untouched (no GL). Segmentation at SEG_FPS (8/s; 6/s without a GPU delegate), compositing on every frame.
  */
 import { Compositor } from './compositor';
 import { SEG_FPS, SEG_FPS_SOFTWARE, blurSigma, emaAlpha, maskHoldAllowed, MASK_MIN_COVERAGE, segmentStep } from './logic';
