@@ -67,7 +67,24 @@ export function DayView({ workspaceId }: { workspaceId: string }): ReactNode {
     const sel = selected ? placed.find((p) => p.key === selected) : undefined;
     const first = placed[0];
     const minute = sel ? sel.top : day === today ? (Date.now() - dayStart(day)) / 60_000 : first ? Math.min(first.top, 8 * 60) : 8 * 60;
-    el.scrollTop = Math.max(0, minute * PX_PER_MIN - el.clientHeight / 3);
+    const apply = (): void => {
+      el.scrollTop = Math.max(0, minute * PX_PER_MIN - el.clientHeight / 3);
+    };
+    apply();
+    // Again while the pane settles (on a phone it is laid out as the drawer closes): on its resizes
+    // during the first second, until the user scrolls it.
+    const ro = new ResizeObserver(apply);
+    ro.observe(el);
+    const stop = (): void => ro.disconnect();
+    const timer = window.setTimeout(stop, 1000);
+    el.addEventListener('wheel', stop, { once: true, passive: true });
+    el.addEventListener('touchstart', stop, { once: true, passive: true });
+    return () => {
+      stop();
+      window.clearTimeout(timer);
+      el.removeEventListener('wheel', stop);
+      el.removeEventListener('touchstart', stop);
+    };
     // Only when the day changes (not on every list refresh).
   }, [day]); // eslint-disable-line react-hooks/exhaustive-deps
 
@@ -83,7 +100,7 @@ export function DayView({ workspaceId }: { workspaceId: string }): ReactNode {
   useDayKeys(workspaceId, day, creatable);
 
   return (
-    <section className="mat-content relative flex min-w-0 flex-1 flex-col" aria-label={t('cal.dayView')} data-testid="day-view">
+    <section className="mat-content relative flex min-h-0 min-w-0 flex-1 flex-col" aria-label={t('cal.dayView')} data-testid="day-view">
       <DayHeader workspaceId={workspaceId} day={day} today={today} creatable={creatable} mobile={mobile} />
       <AllDayRow keys={allDay} day={day} onDown={drag.onBlockDown} />
       <div ref={scroller} className="relative min-h-0 flex-1 overflow-y-auto overflow-x-hidden" data-testid="day-scroller">
@@ -139,11 +156,16 @@ function DayHeader({ workspaceId, day, today, creatable, mobile }: { workspaceId
         {title}
       </h1>
       {day !== today ? (
-        <Button variant="secondary" size="sm" onClick={() => open(today)} title="T">
+        <Button variant="secondary" size={mobile ? 'md' : 'sm'} onClick={() => open(today)} title="T">
           {t('cal.today')}
         </Button>
       ) : null}
-      {creatable ? (
+      {creatable && mobile ? (
+        // Phone: a 40 px round «+» (the header keeps room for the date).
+        <IconButton label={t('cal.newEventLong')} tip={false} onClick={() => newEvent(workspaceId, defaultDraft(day))} data-testid="day-new-event" className="size-10 rounded-full bg-accent-strong text-accent-fg hover:bg-accent-strong hover:text-accent-fg">
+          <Plus className="size-5" />
+        </IconButton>
+      ) : creatable ? (
         <Button size="sm" onClick={() => newEvent(workspaceId, defaultDraft(day))} data-testid="day-new-event" title="N">
           <Plus className="size-3.5" aria-hidden />
           {t('cal.newEvent')}
@@ -352,7 +374,7 @@ function AllDayRow({ keys, day, onDown }: { keys: readonly string[]; day: string
       className={cx('flex shrink-0 items-start gap-0 border-b border-line py-1 pr-2', dropping && 'bg-[color-mix(in_srgb,var(--color-accent)_14%,transparent)]')}
       data-testid="allday-row"
     >
-      <span className={cx(GUTTER, 'shrink-0 whitespace-nowrap pr-1.5 pt-0.5 text-right text-micro text-faint')}>{t('cal.allDayRow')}</span>
+      <span className={cx(GUTTER, 'shrink-0 self-center pr-2 text-right text-micro leading-3 text-faint')}>{t('cal.allDayRow')}</span>
       <div className="flex min-h-6 min-w-0 flex-1 flex-col gap-0.5">
         {keys.map((k) => (
           <AllDayChip key={k} occKey={k} onDown={onDown} />

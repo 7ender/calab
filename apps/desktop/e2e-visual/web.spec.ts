@@ -3,6 +3,7 @@ import { join } from 'node:path';
 import { expect, test } from '@playwright/test';
 import { startMockServer, type MockServer } from '../e2e-support/mock-server';
 import { NOW, PASSWORD, THEMES, VIEWPORTS, checkpoint, type Shot } from './harness';
+import { seedDay } from './calendarWeb';
 
 /**
  * Web client chrome (docs/09 #46, ADR-0015): the production web build (dist-web, `pnpm build:web`)
@@ -147,6 +148,34 @@ for (const theme of THEMES) {
     });
   }
 }
+
+/**
+ * The public meeting page of an invited address (ADR-0038 «Диплинки для приглашённых»): no account,
+ * the card with the time in the viewer's zone, the organizer's, the room, the description, the
+ * answers and «Присоединиться к встрече» — not active yet (15 minutes before the start). Dark 960.
+ */
+test('calendar-public: dark 960', async ({ page }) => {
+  expect(existsSync(join(DIST, 'index.html')), 'dist-web is missing: run `pnpm build:web` first').toBe(true);
+  let mock: MockServer | undefined;
+  try {
+    mock = await startMockServer({ port: 0, scenario: 'data', staticDir: DIST });
+    mock.setClock(NOW.getTime());
+    const id = seedDay(mock);
+    mock.eventGuestLink(id, 'ext@example.com');
+    const viewport = { width: 960, height: 600 };
+    await page.setViewportSize(viewport);
+    await page.clock.setFixedTime(NOW);
+    await page.goto(`${mock.url}/?visual-test`);
+    await page.evaluate(() => localStorage.setItem('calaba-prefs', JSON.stringify({ state: { theme: 'dark', onboarded: true, locale: 'ru' }, version: 1 })));
+    await page.goto(`${mock.url}/e/${id}?t=${encodeURIComponent(mock.eventViewToken(id, 'ext@example.com'))}&visual-test`);
+    const card = page.getByTestId('event-public');
+    await expect(card.getByTestId('event-title')).toHaveText('Планёрка');
+    await expect(card.getByTestId('event-join-hint')).toHaveText('Ссылка станет активной за 15 минут до начала');
+    await checkpoint({ page, theme: 'dark', viewport }, 'calendar-public');
+  } finally {
+    await mock?.close();
+  }
+});
 
 test('web link card: room preview, «always in the app», signed in', async ({ page }) => {
   test.skip(!ALL, 'full matrix only (CALABA_VISUAL_ALL=1, nightly CI)');

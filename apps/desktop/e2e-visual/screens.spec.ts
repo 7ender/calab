@@ -3287,9 +3287,10 @@ test('calendar-dialog', async ({ open, win, mock, shot }) => {
   await dialog.getByTestId('event-title-input').fill('Разбор релиза');
   await dialog.getByTestId('event-room').selectOption({ label: 'Переговорка' });
   await dialog.getByTestId('event-add-people').click();
+  // The picker stays open for several people.
   await win.getByTestId('event-member-picker').getByRole('option', { name: /Борис/ }).click();
-  await dialog.getByTestId('event-add-people').click();
   await win.getByTestId('event-member-picker').getByRole('option', { name: /Вера/ }).click();
+  await win.keyboard.press('Escape');
   await dialog.getByRole('button', { name: /Сделать необязательным: Вера/ }).click();
   await dialog.getByTestId('event-email').fill('ext@example.com');
   await dialog.getByRole('button', { name: 'Добавить', exact: true }).click();
