@@ -4,6 +4,7 @@ package calaba.v1;
 import "google/protobuf/timestamp.proto";
 import "calaba/v1/bot.proto";
 import "calaba/v1/call.proto";
+import "calaba/v1/event.proto";
 import "calaba/v1/media.proto";
 import "calaba/v1/message.proto";
 import "calaba/v1/permissions.proto";
@@ -211,6 +212,16 @@ message DispatchEvent {
     BotCreate bot_create = 60;
     BotUpdate bot_update = 61;
     BotDelete bot_delete = 62;
+    // Workspace calendar (ADR-0038): EVENT_CREATE / UPDATE / DELETE / RSVP to everyone who may
+    // see the event (not guests); EVENT_REMINDER to one attendee's user channel;
+    // ROOM_EVENT_ACTIVE / ENDED to the room's viewers (not guests).
+    CalendarEventCreate event_create = 63;
+    CalendarEventUpdate event_update = 64;
+    CalendarEventDelete event_delete = 65;
+    CalendarEventRsvp event_rsvp = 66;
+    CalendarEventReminder event_reminder = 67;
+    RoomEventActive room_event_active = 68;
+    RoomEventEnded room_event_ended = 69;
   }
 }
 
@@ -293,6 +304,9 @@ message WorkspaceSnapshot {
   repeated WorkspaceBackground backgrounds = 12;
   // The workspace's soundboard (ADR-0036), in library order.
   repeated Sound sounds = 13;
+  // Meetings in visible rooms from 15 minutes before their start until their end (ADR-0038
+  // §6): the room badge after a (re)connect. Empty for guests.
+  repeated CalendarEvent active_events = 14;
 }
 
 message Ready {

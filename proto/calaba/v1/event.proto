@@ -1,0 +1,242 @@
+syntax = "proto3";
+package calaba.v1;
+
+import "google/protobuf/timestamp.proto";
+
+// Workspace calendar and meetings (ADR-0038). Messages are named CalendarEvent* (not Event*):
+// a TS export named `Event` would shadow the DOM Event type in every module importing it.
+//
+// Times are UTC instants; clients show them in the viewer's zone. An all-day event starts and
+// ends at midnight of its `tz` (ends_at exclusive: a one-day event lasts 24 h of that zone).
+//
+// Visibility: a member (not a guest) sees an event with a room when they can VIEW_ROOM that
+// room, and any event they organize or attend. Guests see no calendar. Bots (ADR-0031) may
+// list and read (external attendees' emails are empty for them) but not change anything.
+//
+// Editing: the organizer; else MANAGE_ROOM in the event's room, or MANAGE_WORKSPACE for an
+// event without a room.
+
+// An attendee's answer (informational, ADR-0038 §3).
+enum AttendeeStatus {
+  ATTENDEE_STATUS_UNSPECIFIED = 0;
+  ATTENDEE_STATUS_PENDING = 1;
+  ATTENDEE_STATUS_ACCEPTED = 2;
+  ATTENDEE_STATUS_DECLINED = 3;
+  ATTENDEE_STATUS_MAYBE = 4;
+}
+
+// Repeat of a series (a subset of RFC 5545 RRULE, ADR-0038 §1).
+enum EventRepeat {
+  EVENT_REPEAT_UNSPECIFIED = 0; // no repeat
+  EVENT_REPEAT_DAILY = 1;
+  EVENT_REPEAT_WEEKLY = 2;
+  EVENT_REPEAT_BIWEEKLY = 3;
+  EVENT_REPEAT_MONTHLY = 4; // the same day of the month; months without that day are skipped
+}
+
+// One attendee: a member of the workspace (user_id) or an external address (email,
+// ADR-0038 «Дополнение»). Exactly one of the two is set.
+message CalendarEventAttendee {
+  string user_id = 1;
+  bool required = 2; // false = optional («необязательно»)
+  AttendeeStatus status = 3;
+  google.protobuf.Timestamp responded_at = 4; // unset while PENDING
+  // External attendee's address: in full for the organizer, the attendees and those who may
+  // edit the event; masked ("a***@example.com") for other viewers; empty for bots.
+  string email = 5;
+}
+
+message CalendarEventCounts {
+  uint32 accepted = 1;
+  uint32 declined = 2;
+  uint32 maybe = 3;
+  uint32 pending = 4;
+}
+
+// A meeting, or one occurrence of a series. In lists (GET …/events) every occurrence in the
+// window is one CalendarEvent with its own starts_at / ends_at and occurrence_at; the series
+// itself (GET /api/events/{id}, gateway events) has occurrence_at unset and the first
+// occurrence's times.
+message CalendarEvent {
+  string id = 1;
+  string workspace_id = 2;
+  string room_id = 3; // voice room of the meeting; empty = none
+  string title = 4;   // 1..120 characters
+  string description = 5; // ≤ 4000 characters, markdown-lite
+  google.protobuf.Timestamp starts_at = 6;
+  google.protobuf.Timestamp ends_at = 7;
+  bool all_day = 8;
+  string tz = 9; // IANA zone of the organizer: repeats keep its wall-clock time across DST
+  string organizer_id = 10;
+  bool record = 11; // offer the organizer to record the meeting (ADR-0038 §6)
+  EventRepeat repeat = 12;
+  google.protobuf.Timestamp repeat_until = 13; // unset = no end (with a repeat)
+  google.protobuf.Timestamp occurrence_at = 14; // start of this occurrence (lists, reminders)
+  google.protobuf.Timestamp cancelled_at = 15;   // set in EVENT_DELETE (the whole event cancelled)
+  // Recording of this occurrence (ADR-0025) started by the organizer in the meeting window;
+  // empty = none. Its card / transcript: GET /api/rooms/{room_id}/recordings/{id}/transcript.
+  string recording_id = 16;
+  // The caller's own answer; UNSPECIFIED when the caller is not an attendee and in gateway
+  // events (clients take it from attendees[]).
+  AttendeeStatus my_status = 17;
+  CalendarEventCounts counts = 18;
+  repeated CalendarEventAttendee attendees = 19;
+  // Occurrences of the series cancelled one by one (DELETE /api/events/{id}?occurrence=…).
+  repeated google.protobuf.Timestamp cancelled_occurrences = 20;
+  google.protobuf.Timestamp created_at = 21;
+  google.protobuf.Timestamp updated_at = 22;
+  uint32 sequence = 23; // iCalendar SEQUENCE: +1 on every change mailed to the attendees
+  // External attendees get a guest link to the room only when the organizer may create room
+  // links (MANAGE_ROOM in the room, ADR-0016). False with externals and a room = they got the
+  // invitation without a link: the client says so («гостевая ссылка недоступна»).
+  bool guest_links = 24;
+  // The client's rights on this event (computed for the caller; false in gateway events).
+  bool can_edit = 25;
+}
+
+// Attendee as sent by the client: a member (user_id) or an external address (email).
+message CalendarEventAttendeeInput {
+  string user_id = 1;
+  string email = 2;
+  bool required = 3;
+}
+
+// GET /api/workspaces/{id}/events?from=<RFC 3339>&to=<RFC 3339> — occurrences overlapping
+// [from, to) that the caller may see, earliest first. The window is at most 62 days; guests → 403.
+message ListCalendarEventsResponse {
+  repeated CalendarEvent events = 1;
+}
+
+// POST /api/workspaces/{id}/events → 201 CalendarEventResponse. A member, not a guest, not a
+// bot. Attendees: ≤ 100 in total, ≤ 20 external addresses; members of the workspace, not bots
+// or guests; the organizer is always an attendee (accepted) and need not be listed.
+message CreateCalendarEventRequest {
+  string room_id = 1; // a voice room of the workspace the caller can see; empty = none
+  string title = 2;
+  string description = 3;
+  google.protobuf.Timestamp starts_at = 4;
+  google.protobuf.Timestamp ends_at = 5; // > starts_at, at most 7 days later
+  bool all_day = 6; // starts_at / ends_at are rounded to midnight of tz
+  string tz = 7;    // IANA zone; empty = the caller's profile zone, else UTC
+  bool record = 8;
+  EventRepeat repeat = 9;
+  google.protobuf.Timestamp repeat_until = 10;
+  repeated CalendarEventAttendeeInput attendees = 11;
+}
+
+// PATCH /api/events/{id} → CalendarEventResponse. Unset fields are unchanged; `attendees`,
+// when `set_attendees` is true, replaces the list (kept answers of those who stay). A change
+// of time, room, title, description or repeat mails the attendees again (SEQUENCE + 1).
+// Editing a series changes every occurrence (v1).
+message UpdateCalendarEventRequest {
+  optional string room_id = 1; // "" = no room
+  optional string title = 2;
+  optional string description = 3;
+  google.protobuf.Timestamp starts_at = 4;
+  google.protobuf.Timestamp ends_at = 5;
+  optional bool all_day = 6;
+  optional string tz = 7;
+  optional bool record = 8;
+  optional EventRepeat repeat = 9;
+  google.protobuf.Timestamp repeat_until = 10;
+  bool clear_repeat_until = 11;
+  bool set_attendees = 12;
+  repeated CalendarEventAttendeeInput attendees = 13;
+}
+
+// POST, GET /api/events/{id}, PATCH.
+message CalendarEventResponse {
+  CalendarEvent event = 1;
+}
+
+// DELETE /api/events/{id} → 204: cancels the event (EVENT_DELETE, CANCEL mail).
+// DELETE /api/events/{id}?occurrence=<RFC 3339 start> cancels that occurrence of a series only
+// (EVENT_UPDATE with it in cancelled_occurrences, the attendees get the updated invitation).
+
+// PUT /api/events/{id}/rsvp → CalendarEventResponse. The caller must be an attendee.
+message RsvpCalendarEventRequest {
+  AttendeeStatus status = 1; // ACCEPTED | DECLINED | MAYBE
+}
+
+// GET /api/me/events/today?tz=<IANA> — the caller's upcoming meetings of today (in tz, else the
+// profile zone, else UTC) in all their workspaces, for the calendar icon: occurrences that end
+// after now, not declined by the caller, which they organize or attend.
+message TodayCalendarEventsResponse {
+  uint32 count = 1;
+  repeated CalendarEvent events = 2;
+}
+
+// External attendee's answer without an account (ADR-0038 «Дополнение»). The invitation mail
+// has three links https://<APP_HOST>/e/<id>/rsvp?t=<token>, one per answer; the web page reads
+// the event with GET /api/event-rsvp?t=… and answers with POST /api/event-rsvp. The token is
+// signed (HMAC) and carries the event, the address, the answer and its expiry (the end of the
+// event, or of the series); 410 EVENT_OVER after it, 404 for a bad signature or an address no
+// longer invited. POST is idempotent. Public routes (no login).
+message EventRsvpTokenRequest {
+  string token = 1;
+}
+
+message EventRsvpTokenResponse {
+  string event_id = 1;
+  string title = 2;
+  google.protobuf.Timestamp starts_at = 3; // next occurrence (or the event's start)
+  google.protobuf.Timestamp ends_at = 4;
+  bool all_day = 5;
+  string tz = 6;
+  string organizer_name = 7;
+  string workspace_name = 8;
+  AttendeeStatus status = 9; // the answer of the link (after POST: stored)
+  string email = 10;
+  bool cancelled = 11;
+}
+
+// ---- gateway (docs/05) ----
+
+// EVENT_CREATE / EVENT_UPDATE / EVENT_DELETE: the series (occurrence_at unset, my_status
+// UNSPECIFIED), to everyone who may see the event (see above). EVENT_DELETE carries the
+// cancelled event (cancelled_at set) and also goes to attendees who lost the event (removed
+// from the list, or its room hidden to them).
+message CalendarEventCreate {
+  CalendarEvent event = 1;
+}
+
+message CalendarEventUpdate {
+  CalendarEvent event = 1;
+}
+
+message CalendarEventDelete {
+  CalendarEvent event = 1;
+}
+
+// EVENT_RSVP: an attendee answered; to everyone who may see the event.
+message CalendarEventRsvp {
+  string workspace_id = 1;
+  string event_id = 2;
+  CalendarEventAttendee attendee = 3;
+  CalendarEventCounts counts = 4;
+}
+
+// EVENT_REMINDER: to one attendee's devices (user channel), `minutes` before the occurrence
+// (one of the user's event_reminders). The client shows a system notification.
+message CalendarEventReminder {
+  CalendarEvent event = 1; // the occurrence (occurrence_at set)
+  google.protobuf.Timestamp occurrence_at = 2;
+  uint32 minutes = 3;
+}
+
+// ROOM_EVENT_ACTIVE: 15 minutes before an occurrence with a room starts (and at once for one
+// created or moved inside that window) until it ends; to the room's viewers (not guests). The
+// room row shows the calendar badge. WorkspaceSnapshot.active_events has the current ones.
+message RoomEventActive {
+  string workspace_id = 1;
+  string room_id = 2;
+  CalendarEvent event = 3; // the occurrence
+}
+
+// ROOM_EVENT_ENDED: the occurrence ended, was cancelled or moved away from the room / window.
+message RoomEventEnded {
+  string workspace_id = 1;
+  string room_id = 2;
+  string event_id = 3;
+  google.protobuf.Timestamp occurrence_at = 4;
+}

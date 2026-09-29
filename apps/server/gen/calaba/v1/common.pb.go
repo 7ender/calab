@@ -83,6 +83,11 @@ const (
 	// "PASSWORD_CHANGED", "ACCOUNT_DISABLED", "GUEST_EXPIRED"; absent = unknown. Older servers
 	// answer INVALID_REFRESH_TOKEN instead.
 	ErrorCode_ERROR_CODE_SESSION_REVOKED ErrorCode = 44
+	// 410: a signed meeting answer link (ADR-0038) after the end of the meeting.
+	ErrorCode_ERROR_CODE_EVENT_OVER ErrorCode = 50
+	// 409: POST /api/room-invites/{code}/join before the link's not_before (a meeting's guest
+	// link works from 15 minutes before the meeting).
+	ErrorCode_ERROR_CODE_INVITE_NOT_YET_VALID ErrorCode = 51
 )
 
 // Enum value maps for ErrorCode.
@@ -124,6 +129,8 @@ var (
 		42: "ERROR_CODE_IN_CALL",
 		43: "ERROR_CODE_CALL_NOT_ACTIVE",
 		44: "ERROR_CODE_SESSION_REVOKED",
+		50: "ERROR_CODE_EVENT_OVER",
+		51: "ERROR_CODE_INVITE_NOT_YET_VALID",
 	}
 	ErrorCode_value = map[string]int32{
 		"ERROR_CODE_UNSPECIFIED":           0,
@@ -162,6 +169,8 @@ var (
 		"ERROR_CODE_IN_CALL":               42,
 		"ERROR_CODE_CALL_NOT_ACTIVE":       43,
 		"ERROR_CODE_SESSION_REVOKED":       44,
+		"ERROR_CODE_EVENT_OVER":            50,
+		"ERROR_CODE_INVITE_NOT_YET_VALID":  51,
 	}
 )
 
@@ -565,7 +574,7 @@ const file_calaba_v1_common_proto_rawDesc = "" +
 	"\vattribution\x18\x05 \x01(\tR\vattribution\x12\x10\n" +
 	"\x03url\x18\x06 \x01(\tR\x03url\x12\x18\n" +
 	"\aproduct\x18\a \x01(\tR\aproduct\x12!\n" +
-	"\fplan_contact\x18\b \x01(\tR\vplanContact*\xc5\b\n" +
+	"\fplan_contact\x18\b \x01(\tR\vplanContact*\x85\t\n" +
 	"\tErrorCode\x12\x1a\n" +
 	"\x16ERROR_CODE_UNSPECIFIED\x10\x00\x12\x17\n" +
 	"\x13ERROR_CODE_INTERNAL\x10\x01\x12\x1a\n" +
@@ -603,7 +612,9 @@ const file_calaba_v1_common_proto_rawDesc = "" +
 	"\x0fERROR_CODE_BUSY\x10)\x12\x16\n" +
 	"\x12ERROR_CODE_IN_CALL\x10*\x12\x1e\n" +
 	"\x1aERROR_CODE_CALL_NOT_ACTIVE\x10+\x12\x1e\n" +
-	"\x1aERROR_CODE_SESSION_REVOKED\x10,B\x99\x01\n" +
+	"\x1aERROR_CODE_SESSION_REVOKED\x10,\x12\x19\n" +
+	"\x15ERROR_CODE_EVENT_OVER\x102\x12#\n" +
+	"\x1fERROR_CODE_INVITE_NOT_YET_VALID\x103B\x99\x01\n" +
 	"\rcom.calaba.v1B\vCommonProtoP\x01Z6github.com/calaba/calaba/server/gen/calaba/v1;calabav1\xa2\x02\x03CXX\xaa\x02\tCalaba.V1\xca\x02\tCalaba\\V1\xe2\x02\x15Calaba\\V1\\GPBMetadata\xea\x02\n" +
 	"Calaba::V1b\x06proto3"
 

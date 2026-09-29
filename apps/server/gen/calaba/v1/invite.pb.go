@@ -42,6 +42,11 @@ type RoomInvite struct {
 	AllowFiles    bool                   `protobuf:"varint,12,opt,name=allow_files,json=allowFiles,proto3" json:"allow_files,omitempty"`
 	AllowStream   bool                   `protobuf:"varint,13,opt,name=allow_stream,json=allowStream,proto3" json:"allow_stream,omitempty"`
 	CreatedAt     *timestamppb.Timestamp `protobuf:"bytes,14,opt,name=created_at,json=createdAt,proto3" json:"created_at,omitempty"`
+	// Meeting guest links (ADR-0038 «Дополнение»): made by the server for one external attendee
+	// of event_id, single-use, valid from not_before (15 minutes before the meeting) until 1 h
+	// after it ends.
+	NotBefore     *timestamppb.Timestamp `protobuf:"bytes,15,opt,name=not_before,json=notBefore,proto3" json:"not_before,omitempty"`
+	EventId       string                 `protobuf:"bytes,16,opt,name=event_id,json=eventId,proto3" json:"event_id,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -172,6 +177,20 @@ func (x *RoomInvite) GetCreatedAt() *timestamppb.Timestamp {
 		return x.CreatedAt
 	}
 	return nil
+}
+
+func (x *RoomInvite) GetNotBefore() *timestamppb.Timestamp {
+	if x != nil {
+		return x.NotBefore
+	}
+	return nil
+}
+
+func (x *RoomInvite) GetEventId() string {
+	if x != nil {
+		return x.EventId
+	}
+	return ""
 }
 
 // POST /api/rooms/{id}/invites (MANAGE_ROOM). Unset fields take the defaults:
@@ -366,8 +385,11 @@ type GetRoomInviteResponse struct {
 	WorkspaceIconFileId string                 `protobuf:"bytes,4,opt,name=workspace_icon_file_id,json=workspaceIconFileId,proto3" json:"workspace_icon_file_id,omitempty"`
 	AllowGuests         bool                   `protobuf:"varint,5,opt,name=allow_guests,json=allowGuests,proto3" json:"allow_guests,omitempty"`
 	ExpiresAt           *timestamppb.Timestamp `protobuf:"bytes,6,opt,name=expires_at,json=expiresAt,proto3" json:"expires_at,omitempty"`
-	unknownFields       protoimpl.UnknownFields
-	sizeCache           protoimpl.SizeCache
+	// Set = the link works only from then (a meeting's guest link): join → 409
+	// INVITE_NOT_YET_VALID before it.
+	NotBefore     *timestamppb.Timestamp `protobuf:"bytes,7,opt,name=not_before,json=notBefore,proto3" json:"not_before,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
 }
 
 func (x *GetRoomInviteResponse) Reset() {
@@ -438,6 +460,13 @@ func (x *GetRoomInviteResponse) GetAllowGuests() bool {
 func (x *GetRoomInviteResponse) GetExpiresAt() *timestamppb.Timestamp {
 	if x != nil {
 		return x.ExpiresAt
+	}
+	return nil
+}
+
+func (x *GetRoomInviteResponse) GetNotBefore() *timestamppb.Timestamp {
+	if x != nil {
+		return x.NotBefore
 	}
 	return nil
 }
@@ -569,7 +598,7 @@ var File_calaba_v1_invite_proto protoreflect.FileDescriptor
 
 const file_calaba_v1_invite_proto_rawDesc = "" +
 	"\n" +
-	"\x16calaba/v1/invite.proto\x12\tcalaba.v1\x1a\x1fgoogle/protobuf/timestamp.proto\x1a\x14calaba/v1/auth.proto\x1a\x14calaba/v1/room.proto\x1a\x14calaba/v1/user.proto\"\xdf\x03\n" +
+	"\x16calaba/v1/invite.proto\x12\tcalaba.v1\x1a\x1fgoogle/protobuf/timestamp.proto\x1a\x14calaba/v1/auth.proto\x1a\x14calaba/v1/room.proto\x1a\x14calaba/v1/user.proto\"\xb5\x04\n" +
 	"\n" +
 	"RoomInvite\x12\x0e\n" +
 	"\x02id\x18\x01 \x01(\tR\x02id\x12\x17\n" +
@@ -591,7 +620,10 @@ const file_calaba_v1_invite_proto_rawDesc = "" +
 	"allowFiles\x12!\n" +
 	"\fallow_stream\x18\r \x01(\bR\vallowStream\x129\n" +
 	"\n" +
-	"created_at\x18\x0e \x01(\v2\x1a.google.protobuf.TimestampR\tcreatedAt\"\x9b\x03\n" +
+	"created_at\x18\x0e \x01(\v2\x1a.google.protobuf.TimestampR\tcreatedAt\x129\n" +
+	"\n" +
+	"not_before\x18\x0f \x01(\v2\x1a.google.protobuf.TimestampR\tnotBefore\x12\x19\n" +
+	"\bevent_id\x18\x10 \x01(\tR\aeventId\"\x9b\x03\n" +
 	"\x17CreateRoomInviteRequest\x121\n" +
 	"\x12expires_in_seconds\x18\x01 \x01(\rH\x00R\x10expiresInSeconds\x88\x01\x01\x12\x19\n" +
 	"\bmax_uses\x18\x02 \x01(\rR\amaxUses\x12&\n" +
@@ -611,7 +643,7 @@ const file_calaba_v1_invite_proto_rawDesc = "" +
 	"\x18CreateRoomInviteResponse\x12-\n" +
 	"\x06invite\x18\x01 \x01(\v2\x15.calaba.v1.RoomInviteR\x06invite\"J\n" +
 	"\x17ListRoomInvitesResponse\x12/\n" +
-	"\ainvites\x18\x01 \x03(\v2\x15.calaba.v1.RoomInviteR\ainvites\"\xa0\x02\n" +
+	"\ainvites\x18\x01 \x03(\v2\x15.calaba.v1.RoomInviteR\ainvites\"\xdb\x02\n" +
 	"\x15GetRoomInviteResponse\x12\x1b\n" +
 	"\troom_name\x18\x01 \x01(\tR\broomName\x120\n" +
 	"\troom_type\x18\x02 \x01(\x0e2\x13.calaba.v1.RoomTypeR\broomType\x12%\n" +
@@ -619,7 +651,9 @@ const file_calaba_v1_invite_proto_rawDesc = "" +
 	"\x16workspace_icon_file_id\x18\x04 \x01(\tR\x13workspaceIconFileId\x12!\n" +
 	"\fallow_guests\x18\x05 \x01(\bR\vallowGuests\x129\n" +
 	"\n" +
-	"expires_at\x18\x06 \x01(\v2\x1a.google.protobuf.TimestampR\texpiresAt\"T\n" +
+	"expires_at\x18\x06 \x01(\v2\x1a.google.protobuf.TimestampR\texpiresAt\x129\n" +
+	"\n" +
+	"not_before\x18\a \x01(\v2\x1a.google.protobuf.TimestampR\tnotBefore\"T\n" +
 	"\x15JoinRoomInviteRequest\x12\x1a\n" +
 	"\bnickname\x18\x01 \x01(\tR\bnickname\x12\x1f\n" +
 	"\vdevice_name\x18\x02 \x01(\tR\n" +
@@ -661,17 +695,19 @@ var file_calaba_v1_invite_proto_goTypes = []any{
 var file_calaba_v1_invite_proto_depIdxs = []int32{
 	7,  // 0: calaba.v1.RoomInvite.expires_at:type_name -> google.protobuf.Timestamp
 	7,  // 1: calaba.v1.RoomInvite.created_at:type_name -> google.protobuf.Timestamp
-	0,  // 2: calaba.v1.CreateRoomInviteResponse.invite:type_name -> calaba.v1.RoomInvite
-	0,  // 3: calaba.v1.ListRoomInvitesResponse.invites:type_name -> calaba.v1.RoomInvite
-	8,  // 4: calaba.v1.GetRoomInviteResponse.room_type:type_name -> calaba.v1.RoomType
-	7,  // 5: calaba.v1.GetRoomInviteResponse.expires_at:type_name -> google.protobuf.Timestamp
-	9,  // 6: calaba.v1.JoinRoomInviteResponse.tokens:type_name -> calaba.v1.AuthTokens
-	10, // 7: calaba.v1.JoinRoomInviteResponse.me:type_name -> calaba.v1.Me
-	8,  // [8:8] is the sub-list for method output_type
-	8,  // [8:8] is the sub-list for method input_type
-	8,  // [8:8] is the sub-list for extension type_name
-	8,  // [8:8] is the sub-list for extension extendee
-	0,  // [0:8] is the sub-list for field type_name
+	7,  // 2: calaba.v1.RoomInvite.not_before:type_name -> google.protobuf.Timestamp
+	0,  // 3: calaba.v1.CreateRoomInviteResponse.invite:type_name -> calaba.v1.RoomInvite
+	0,  // 4: calaba.v1.ListRoomInvitesResponse.invites:type_name -> calaba.v1.RoomInvite
+	8,  // 5: calaba.v1.GetRoomInviteResponse.room_type:type_name -> calaba.v1.RoomType
+	7,  // 6: calaba.v1.GetRoomInviteResponse.expires_at:type_name -> google.protobuf.Timestamp
+	7,  // 7: calaba.v1.GetRoomInviteResponse.not_before:type_name -> google.protobuf.Timestamp
+	9,  // 8: calaba.v1.JoinRoomInviteResponse.tokens:type_name -> calaba.v1.AuthTokens
+	10, // 9: calaba.v1.JoinRoomInviteResponse.me:type_name -> calaba.v1.Me
+	10, // [10:10] is the sub-list for method output_type
+	10, // [10:10] is the sub-list for method input_type
+	10, // [10:10] is the sub-list for extension type_name
+	10, // [10:10] is the sub-list for extension extendee
+	0,  // [0:10] is the sub-list for field type_name
 }
 
 func init() { file_calaba_v1_invite_proto_init() }

@@ -51,6 +51,18 @@ message UserSettings {
   string push_to_talk_key = 4;   // accelerator string, client-defined format
   MicMode mic_mode = 5;          // default VAD
   optional uint32 audio_bitrate_kbps = 6; // personal cap for published voice; unset = room setting
+  // Meeting reminders (ADR-0038 §5), read-only here: stored apart from the other settings and
+  // changed with UpdateMeRequest.event_reminders (a `settings` replace leaves them as they are).
+  // Minutes before a meeting, ≤ 5 values of 5, 10, 15, 30, 60, 120, 1440; default [60, 5].
+  repeated uint32 event_reminders = 7;
+  // Remind while the user's status is «Не беспокоить» (DND); default true.
+  bool event_reminders_dnd = 8;
+}
+
+// PATCH /api/me event_reminders: replaces both values.
+message EventReminderSettings {
+  repeated uint32 minutes = 1; // ≤ 5 distinct values of 5, 10, 15, 30, 60, 120, 1440; [] = none
+  bool dnd = 2;
 }
 
 // The authenticated user: public profile + private fields.
@@ -94,6 +106,8 @@ message UpdateMeRequest {
   // year) → 422 otherwise; day = 0 and month = 0 clears it. Unset = unchanged.
   Birthday birthday = 7;
   optional bool birthday_hidden = 8;
+  // Meeting reminders (ADR-0038 §5); unset = unchanged. Not for guests and bots (403).
+  EventReminderSettings event_reminders = 9;
 }
 
 message UpdateMeResponse {

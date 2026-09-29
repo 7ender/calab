@@ -38,7 +38,8 @@ UPDATE room_invites SET uses = uses + 1
 WHERE id = $1 AND revoked_at IS NULL
   AND (expires_at IS NULL OR expires_at > now())
   AND (max_uses = 0 OR uses < max_uses)
-RETURNING id, room_id, code, created_by, expires_at, max_uses, uses, allow_guests, allow_bits, revoked_at, created_at
+  AND (not_before IS NULL OR not_before <= now())
+RETURNING id, room_id, code, created_by, expires_at, max_uses, uses, allow_guests, allow_bits, revoked_at, created_at, not_before, event_id
 `
 
 func (q *Queries) ConsumeRoomInvite(ctx context.Context, id uuid.UUID) (RoomInvite, error) {
@@ -56,6 +57,8 @@ func (q *Queries) ConsumeRoomInvite(ctx context.Context, id uuid.UUID) (RoomInvi
 		&i.AllowBits,
 		&i.RevokedAt,
 		&i.CreatedAt,
+		&i.NotBefore,
+		&i.EventID,
 	)
 	return i, err
 }
@@ -63,7 +66,7 @@ func (q *Queries) ConsumeRoomInvite(ctx context.Context, id uuid.UUID) (RoomInvi
 const createGuestUser = `-- name: CreateGuestUser :one
 INSERT INTO users (email, password_hash, display_name, settings, is_guest, guest_expires_at)
 VALUES (NULL, NULL, $1, $2, true, $3)
-RETURNING id, email, password_hash, display_name, avatar_file_id, status_text, settings, created_at, disabled_at, status_emoji, status_expires_at, is_guest, guest_expires_at, timezone, email_verified_at, pending_email, locale, presence_status, presence_until, is_bot, birthday_day, birthday_month, birthday_year, birthday_hidden
+RETURNING id, email, password_hash, display_name, avatar_file_id, status_text, settings, created_at, disabled_at, status_emoji, status_expires_at, is_guest, guest_expires_at, timezone, email_verified_at, pending_email, locale, presence_status, presence_until, is_bot, birthday_day, birthday_month, birthday_year, birthday_hidden, event_reminders, event_reminders_dnd
 `
 
 type CreateGuestUserParams struct {
@@ -100,6 +103,8 @@ func (q *Queries) CreateGuestUser(ctx context.Context, arg CreateGuestUserParams
 		&i.BirthdayMonth,
 		&i.BirthdayYear,
 		&i.BirthdayHidden,
+		&i.EventReminders,
+		&i.EventRemindersDnd,
 	)
 	return i, err
 }
@@ -107,7 +112,7 @@ func (q *Queries) CreateGuestUser(ctx context.Context, arg CreateGuestUserParams
 const createRoomInvite = `-- name: CreateRoomInvite :one
 INSERT INTO room_invites (room_id, code, created_by, expires_at, max_uses, allow_guests, allow_bits)
 VALUES ($1, $2, $3, $4, $5, $6, $7)
-RETURNING id, room_id, code, created_by, expires_at, max_uses, uses, allow_guests, allow_bits, revoked_at, created_at
+RETURNING id, room_id, code, created_by, expires_at, max_uses, uses, allow_guests, allow_bits, revoked_at, created_at, not_before, event_id
 `
 
 type CreateRoomInviteParams struct {
@@ -143,6 +148,8 @@ func (q *Queries) CreateRoomInvite(ctx context.Context, arg CreateRoomInvitePara
 		&i.AllowBits,
 		&i.RevokedAt,
 		&i.CreatedAt,
+		&i.NotBefore,
+		&i.EventID,
 	)
 	return i, err
 }
@@ -166,7 +173,7 @@ func (q *Queries) DeleteUserRoomOverrides(ctx context.Context, userID string) er
 }
 
 const getRoomInviteByCode = `-- name: GetRoomInviteByCode :one
-SELECT i.id, i.room_id, i.code, i.created_by, i.expires_at, i.max_uses, i.uses, i.allow_guests, i.allow_bits, i.revoked_at, i.created_at, r.id, r.workspace_id, r.type, r.name, r.topic, r.position, r.is_private, r.audio_bitrate_kbps, r.max_stream_preset, r.max_streams, r.created_at, r.archived_at, r.category_id, r.user_limit, r.voice_status, r.camera_limit, r.dm_key, r.allow_recording, r.restricted, w.id, w.slug, w.name, w.icon_file_id, w.visibility, w.owner_id, w.created_at, w.default_audio_bitrate_kbps, w.default_max_stream_preset, w.default_max_streams, w.storage_quota_bytes, w.storage_used_bytes, w.allow_self_nickname, w.default_camera_limit, w.suspended_at, w.suspended_reason, w.suspended_by, w.time_format
+SELECT i.id, i.room_id, i.code, i.created_by, i.expires_at, i.max_uses, i.uses, i.allow_guests, i.allow_bits, i.revoked_at, i.created_at, i.not_before, i.event_id, r.id, r.workspace_id, r.type, r.name, r.topic, r.position, r.is_private, r.audio_bitrate_kbps, r.max_stream_preset, r.max_streams, r.created_at, r.archived_at, r.category_id, r.user_limit, r.voice_status, r.camera_limit, r.dm_key, r.allow_recording, r.restricted, w.id, w.slug, w.name, w.icon_file_id, w.visibility, w.owner_id, w.created_at, w.default_audio_bitrate_kbps, w.default_max_stream_preset, w.default_max_streams, w.storage_quota_bytes, w.storage_used_bytes, w.allow_self_nickname, w.default_camera_limit, w.suspended_at, w.suspended_reason, w.suspended_by, w.time_format
 FROM room_invites i
 JOIN rooms r ON r.id = i.room_id AND r.archived_at IS NULL
 JOIN workspaces w ON w.id = r.workspace_id
@@ -196,6 +203,8 @@ func (q *Queries) GetRoomInviteByCode(ctx context.Context, code string) (GetRoom
 		&i.RoomInvite.AllowBits,
 		&i.RoomInvite.RevokedAt,
 		&i.RoomInvite.CreatedAt,
+		&i.RoomInvite.NotBefore,
+		&i.RoomInvite.EventID,
 		&i.Room.ID,
 		&i.Room.WorkspaceID,
 		&i.Room.Type,
@@ -264,7 +273,7 @@ func (q *Queries) ListExpiredGuests(ctx context.Context, guestExpiresAt *time.Ti
 }
 
 const listRoomInvites = `-- name: ListRoomInvites :many
-SELECT id, room_id, code, created_by, expires_at, max_uses, uses, allow_guests, allow_bits, revoked_at, created_at FROM room_invites
+SELECT id, room_id, code, created_by, expires_at, max_uses, uses, allow_guests, allow_bits, revoked_at, created_at, not_before, event_id FROM room_invites
 WHERE room_id = $1 AND revoked_at IS NULL AND (expires_at IS NULL OR expires_at > now())
   AND (max_uses = 0 OR uses < max_uses)
 ORDER BY created_at DESC
@@ -291,6 +300,8 @@ func (q *Queries) ListRoomInvites(ctx context.Context, roomID uuid.UUID) ([]Room
 			&i.AllowBits,
 			&i.RevokedAt,
 			&i.CreatedAt,
+			&i.NotBefore,
+			&i.EventID,
 		); err != nil {
 			return nil, err
 		}

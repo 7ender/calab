@@ -6,6 +6,7 @@ export * from './gen/calaba/v1/bot_pb.js';
 export * from './gen/calaba/v1/call_pb.js';
 export * from './gen/calaba/v1/common_pb.js';
 export * from './gen/calaba/v1/dm_pb.js';
+export * from './gen/calaba/v1/event_pb.js';
 export * from './gen/calaba/v1/file_pb.js';
 export * from './gen/calaba/v1/gateway_pb.js';
 export * from './gen/calaba/v1/invite_pb.js';

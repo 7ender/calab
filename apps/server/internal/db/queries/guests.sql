@@ -70,6 +70,7 @@ UPDATE room_invites SET uses = uses + 1
 WHERE id = $1 AND revoked_at IS NULL
   AND (expires_at IS NULL OR expires_at > now())
   AND (max_uses = 0 OR uses < max_uses)
+  AND (not_before IS NULL OR not_before <= now())
 RETURNING *;
 
 -- name: RevokeRoomInvite :execrows

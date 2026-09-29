@@ -98,6 +98,62 @@ type EmailInvite struct {
 	CreatedAt   time.Time
 }
 
+type Event struct {
+	ID          uuid.UUID
+	WorkspaceID uuid.UUID
+	RoomID      *uuid.UUID
+	Title       string
+	Description string
+	StartsAt    time.Time
+	EndsAt      time.Time
+	AllDay      bool
+	Tz          string
+	OrganizerID uuid.UUID
+	Record      bool
+	Rrule       *string
+	UntilAt     *time.Time
+	Sequence    int32
+	CreatedAt   time.Time
+	UpdatedAt   time.Time
+	CancelledAt *time.Time
+}
+
+type EventAttendee struct {
+	EventID     uuid.UUID
+	UserID      *uuid.UUID
+	Email       *string
+	Required    bool
+	Status      string
+	RespondedAt *time.Time
+	InviteID    *uuid.UUID
+}
+
+type EventException struct {
+	EventID      uuid.UUID
+	OccurrenceAt time.Time
+}
+
+type EventRecording struct {
+	EventID      uuid.UUID
+	OccurrenceAt time.Time
+	RecordingID  uuid.UUID
+}
+
+type EventRemindersSent struct {
+	EventID      uuid.UUID
+	OccurrenceAt time.Time
+	UserID       uuid.UUID
+	Minutes      int16
+	SentAt       time.Time
+}
+
+type EventRoomSignal struct {
+	EventID      uuid.UUID
+	OccurrenceAt time.Time
+	Kind         string
+	SentAt       time.Time
+}
+
 type File struct {
 	ID              uuid.UUID
 	WorkspaceID     *uuid.UUID
@@ -231,6 +287,8 @@ type RoomInvite struct {
 	AllowBits   int64
 	RevokedAt   *time.Time
 	CreatedAt   time.Time
+	NotBefore   *time.Time
+	EventID     *uuid.UUID
 }
 
 type RoomNotificationSetting struct {
@@ -331,30 +389,32 @@ type StickerPack struct {
 }
 
 type User struct {
-	ID              uuid.UUID
-	Email           *string
-	PasswordHash    *string
-	DisplayName     string
-	AvatarFileID    *uuid.UUID
-	StatusText      string
-	Settings        []byte
-	CreatedAt       time.Time
-	DisabledAt      *time.Time
-	StatusEmoji     string
-	StatusExpiresAt *time.Time
-	IsGuest         bool
-	GuestExpiresAt  *time.Time
-	Timezone        *string
-	EmailVerifiedAt *time.Time
-	PendingEmail    *string
-	Locale          *string
-	PresenceStatus  *int16
-	PresenceUntil   *time.Time
-	IsBot           bool
-	BirthdayDay     *int16
-	BirthdayMonth   *int16
-	BirthdayYear    *int16
-	BirthdayHidden  bool
+	ID                uuid.UUID
+	Email             *string
+	PasswordHash      *string
+	DisplayName       string
+	AvatarFileID      *uuid.UUID
+	StatusText        string
+	Settings          []byte
+	CreatedAt         time.Time
+	DisabledAt        *time.Time
+	StatusEmoji       string
+	StatusExpiresAt   *time.Time
+	IsGuest           bool
+	GuestExpiresAt    *time.Time
+	Timezone          *string
+	EmailVerifiedAt   *time.Time
+	PendingEmail      *string
+	Locale            *string
+	PresenceStatus    *int16
+	PresenceUntil     *time.Time
+	IsBot             bool
+	BirthdayDay       *int16
+	BirthdayMonth     *int16
+	BirthdayYear      *int16
+	BirthdayHidden    bool
+	EventReminders    []int16
+	EventRemindersDnd bool
 }
 
 type UserNote struct {

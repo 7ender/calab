@@ -61,6 +61,11 @@ enum ErrorCode {
   // "PASSWORD_CHANGED", "ACCOUNT_DISABLED", "GUEST_EXPIRED"; absent = unknown. Older servers
   // answer INVALID_REFRESH_TOKEN instead.
   ERROR_CODE_SESSION_REVOKED = 44;
+  // 410: a signed meeting answer link (ADR-0038) after the end of the meeting.
+  ERROR_CODE_EVENT_OVER = 50;
+  // 409: POST /api/room-invites/{code}/join before the link's not_before (a meeting's guest
+  // link works from 15 minutes before the meeting).
+  ERROR_CODE_INVITE_NOT_YET_VALID = 51;
 }
 
 // Error body of every non-2xx REST response.

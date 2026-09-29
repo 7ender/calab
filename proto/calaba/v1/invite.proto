@@ -25,6 +25,11 @@ message RoomInvite {
   bool allow_files = 12;
   bool allow_stream = 13;
   google.protobuf.Timestamp created_at = 14;
+  // Meeting guest links (ADR-0038 «Дополнение»): made by the server for one external attendee
+  // of event_id, single-use, valid from not_before (15 minutes before the meeting) until 1 h
+  // after it ends.
+  google.protobuf.Timestamp not_before = 15;
+  string event_id = 16;
 }
 
 // POST /api/rooms/{id}/invites (MANAGE_ROOM). Unset fields take the defaults:
@@ -56,6 +61,9 @@ message GetRoomInviteResponse {
   string workspace_icon_file_id = 4;
   bool allow_guests = 5;
   google.protobuf.Timestamp expires_at = 6;
+  // Set = the link works only from then (a meeting's guest link): join → 409
+  // INVITE_NOT_YET_VALID before it.
+  google.protobuf.Timestamp not_before = 7;
 }
 
 // POST /api/room-invites/{code}/join. With an access token: joins as the current user.
