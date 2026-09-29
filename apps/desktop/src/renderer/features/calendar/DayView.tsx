@@ -95,6 +95,20 @@ export function DayView({ workspaceId }: { workspaceId: string }): ReactNode {
     el?.scrollIntoView({ block: 'nearest' });
   }, [selected]);
 
+  // Another day (‹ ›, ←/→, T, the mini month): a card of a meeting not on it closes (Apple). Not
+  // while dragging (holding at the edge flips days with the dragged meeting still selected); an
+  // occurrence not loaded yet (a deep link) stays.
+  const shownDay = useRef(day);
+  useEffect(() => {
+    if (shownDay.current === day) return;
+    shownDay.current = day;
+    const ui = useUi.getState();
+    const ev = ui.calEvent ? eventOf(ui.calEvent) : undefined;
+    if (!ev || useDayDrag.getState().mode) return;
+    const span = eventSpan(ev);
+    if (span.end <= dayStart(day) || span.start >= dayEnd(day)) ui.selectCalEvent(null);
+  }, [day]);
+
   const drag = useDragController({ workspaceId, day, grid, scroller, creatable, mobile });
 
   useDayKeys(workspaceId, day, creatable);
@@ -587,6 +601,9 @@ function useDragController({
     const viewDay = dayRef.current;
     if (!p.moved) {
       if (p.kind === 'block' && p.key) useUi.getState().selectCalEvent(p.key);
+      // With a meeting selected, a click on the empty grid first closes its card (below 1200 px it
+      // floats over the grid); the next click (or a drag) creates.
+      else if (p.kind === 'grid' && useUi.getState().calEvent) useUi.getState().selectCalEvent(null);
       else if (p.kind === 'grid' && creatable) {
         const r = createRange(p.anchor, p.anchor, false);
         newEvent(workspaceId, { start: atMinutes(viewDay, r.start).getTime(), end: atMinutes(viewDay, r.end).getTime() });
@@ -700,7 +717,7 @@ function useDragController({
 
 // ---------------------------------------------------------------- keys
 
-/** N new, ←/→ day, T today, Delete cancels the selected meeting (not while typing or in a dialog). */
+/** N new, ←/→ day, T today, Delete cancels the selected meeting, Esc closes its card (not while typing or in a dialog). */
 function useDayKeys(workspaceId: string, day: string, creatable: boolean): void {
   const dayRef = useRef(day);
   useEffect(() => {
@@ -728,8 +745,26 @@ function useDayKeys(workspaceId: string, day: string, creatable: boolean): void 
         void cancelWithConfirm(ui.calEvent);
       }
     };
+    // Esc closes the meeting's card (column or floating panel) and gives the focus back to its block.
+    // Capture phase: an open dialog, confirmation or menu is still in the DOM and closes itself first.
+    const onEsc = (e: KeyboardEvent): void => {
+      if (e.key !== 'Escape' || e.defaultPrevented || e.metaKey || e.ctrlKey || e.altKey) return;
+      const ui = useUi.getState();
+      const key = ui.calEvent;
+      if (!key || ui.dialog || useDayDrag.getState().mode) return;
+      if (document.querySelector('[role="dialog"], [role="alertdialog"], [role="menu"], [role="listbox"]')) return;
+      const el = e.target as HTMLElement | null;
+      if (el?.closest('input, textarea, select, [contenteditable="true"]')) return;
+      ui.selectCalEvent(null);
+      const block = document.querySelector<HTMLElement>(`[data-testid="day-view"] [data-occ="${CSS.escape(key)}"]`);
+      if (!el || el === document.body || el.closest('[data-testid="event-panel"]')) block?.focus();
+    };
     window.addEventListener('keydown', onKey);
-    return () => window.removeEventListener('keydown', onKey);
+    window.addEventListener('keydown', onEsc, true);
+    return () => {
+      window.removeEventListener('keydown', onKey);
+      window.removeEventListener('keydown', onEsc, true);
+    };
   }, [workspaceId, creatable]);
 }
 
