@@ -81,9 +81,13 @@ type Config struct {
 	MaxDevicesPerUser int           `env:"GATEWAY_MAX_SESSIONS_PER_USER" envDefault:"5"`
 
 	// File bytes (ADR-0011): fs = local directory; s3 is planned.
-	StorageDriver  string `env:"STORAGE_DRIVER" envDefault:"fs"`
-	StoragePath    string `env:"STORAGE_PATH" envDefault:"./data/files"`
-	MaxFileSizeMB  int64  `env:"MAX_FILE_SIZE_MB" envDefault:"50"`
+	StorageDriver string `env:"STORAGE_DRIVER" envDefault:"fs"`
+	StoragePath   string `env:"STORAGE_PATH" envDefault:"./data/files"`
+	MaxFileSizeMB int64  `env:"MAX_FILE_SIZE_MB" envDefault:"50"`
+	// HEIC → JPEG for clients without a HEIF decoder (POST /api/files/convert); ffmpeg ≥ 7.1.
+	// Not found → the endpoint answers 501 and the client says HEIC is not supported.
+	FFmpegPath     string `env:"FFMPEG_PATH" envDefault:"ffmpeg"`
+	FFprobePath    string `env:"FFPROBE_PATH" envDefault:"ffprobe"`
 	MigrateOnStart bool   `env:"MIGRATE_ON_START" envDefault:"true"`
 
 	// Plans (ADR-0024). JSON limits over the built-in defaults, e.g.
