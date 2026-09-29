@@ -334,6 +334,10 @@ func owner(t *testing.T) *user {
 		bootstrapUser = register(t, "")
 	}
 	bootstrapUser.t = t
+	// The shared owner uploads in many tests (badges, backgrounds, thumbnails, voice, …): reset
+	// its upload bucket (30 at once, 120/h) so the order and number of tests never turn a valid
+	// upload into a 429 (2026-09-29: TestVoiceMessages after the guest-admission tests).
+	_ = testRedis.Do(context.Background(), testRedis.B().Del().Key(redisx.Key("rl:upload:"+bootstrapUser.id)).Build()).Error()
 	return bootstrapUser
 }
 
