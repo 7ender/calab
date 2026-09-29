@@ -171,6 +171,12 @@ import {
   InviteSchema,
   JoinRoomInviteRequestSchema,
   JoinRoomInviteResponseSchema,
+  ListRoomAdmissionsResponseSchema,
+  DecideRoomAdmissionRequestSchema,
+  DecideRoomAdmissionResponseSchema,
+  UpdateRoomInviteRequestSchema,
+  UpdateRoomInviteResponseSchema,
+  RoomAdmissionStatus,
   JoinVoiceResponseSchema,
   JoinWorkspaceResponseSchema,
   ListCategoriesResponseSchema,
@@ -289,6 +295,7 @@ import {
   type WorkspaceNotificationSettings,
   type RoomCategory,
   type RoomInvite,
+  type RoomAdmission,
   type Session,
   type VoiceState,
   type WorkspaceMember,
@@ -357,6 +364,7 @@ import {
   type Occurrence,
 } from './mock-calendar';
 import { cardPicture, encodePng, pngSize } from './png';
+import { admissionKey, admissionOutcome, deciderView, guestView, requiresApproval, type AdmissionRec } from './mock-admissions';
 
 export {
   IDS,
@@ -567,6 +575,21 @@ export interface MockServer {
   setEventRecording(eventId: string, occurrenceAtMs: number, recordingId: string): void;
   /** The answer link token of an external attendee (the page /e/<id>/rsvp?t=…). */
   eventRsvpToken(eventId: string, email: string, status: AttendeeStatus): string;
+  /** ADR-0040: the room's «Подтверждение входа гостей» (ROOM_UPDATE), as PATCH /api/rooms/{id}. */
+  setGuestApproval(roomId: string, on: boolean): void;
+  /**
+   * ADR-0040: a new guest account `nickname` knocks on `roomId` (as a link join with approval):
+   * `guest` membership without the room, the knock, ROOM_ADMISSION_REQUEST to the deciders.
+   * Returns the guest's user id. `inviteId`: the link used (default: none, the author is Анна).
+   */
+  knock(roomId: string, nickname: string, inviteId?: string): string;
+  /**
+   * ADR-0040: decides a waiting knock like POST …/admissions/{userId} by `byUserId` (default
+   * Анна): `admitted` gives the room (ROOM_CREATE), `declined` / `no_answer` (the server's 30-min
+   * sweep) drop the membership when the guest has no other room; `cancelled` = the guest withdrew.
+   * ROOM_ADMISSION_DECIDED to the deciders and the guest.
+   */
+  decideAdmission(roomId: string, userId: string, status: 'admitted' | 'declined' | 'no_answer' | 'cancelled', byUserId?: string): void;
 }
 
 export async function startMockServer(opts: MockServerOptions = {}): Promise<MockServer> {
@@ -616,6 +639,9 @@ export async function startMockServer(opts: MockServerOptions = {}): Promise<Moc
     setEventActive: (id, active, at) => impl.setEventActive(id, active, at),
     setEventRecording: (id, at, rec) => impl.setEventRecording(id, at, rec),
     eventRsvpToken: (id, email, st) => rsvpToken(id, email, st),
+    setGuestApproval: (roomId, on) => impl.setGuestApproval(roomId, on),
+    knock: (roomId, nickname, inviteId) => impl.knock(roomId, nickname, inviteId),
+    decideAdmission: (roomId, userId, status, by) => impl.decideAdmission(roomId, userId, status, by),
   };
 }
 
@@ -928,6 +954,7 @@ class MockImpl {
     this.registerRoutes();
     this.registerCallRoutes();
     this.calendarRoutes();
+    this.admissionRoutes();
     this.http.on('upgrade', (req, socket, head) => {
       const path = new URL(req.url ?? '/', 'http://mock').pathname;
       if (path !== '/gateway' || Date.now() < this.gatewayDownUntil) {
@@ -1322,7 +1349,8 @@ class MockImpl {
           sessionId: conn.gatewaySessionId,
           me: this.me(u),
           planContact: MOCK_PLAN_CONTACT,
-          workspaces: wsIds.map((w) => this.snapshot(w, u.user.id)),
+          workspaces: wsIds.map((w) => this.withAdmissions(this.snapshot(w, u.user.id), u.user.id)),
+          pendingAdmissions: this.ownAdmissions(u.user.id),
           // Every visible room (server contract): never read → empty marker.
           readStates: [...this.state.rooms.values()]
             .filter((r) => (wsIds.includes(r.workspaceId) || r.type === RoomType.DM) && this.canView(r, u.user.id))
@@ -3520,6 +3548,7 @@ class MockImpl {
         if (b.restricted && !room.isPrivate) throw invalid('restricted', 'only private rooms can be restricted');
         room.restricted = b.restricted;
       }
+      if (b.guestApproval !== undefined) room.guestApproval = b.guestApproval; // ADR-0040
       this.emitRoomChange(before, room, { event: { case: 'roomUpdate', value: { room } } });
       if (b.allowRecording === false && s().recordings.has(room.id)) this.stopRecording(room, 'disabled', '');
       sendMsg(c.res, 200, UpdateRoomResponseSchema, { room });
@@ -4559,11 +4588,26 @@ class MockImpl {
         allowMessages: b.allowMessages ?? true,
         allowFiles: b.allowFiles ?? false,
         allowStream: b.allowStream ?? false,
+        ...(b.requireApproval !== undefined ? { requireApproval: b.requireApproval } : {}),
         ...(expiresIn ? { expiresAt: timestampFromMs(timestampMs(at) + expiresIn * 1000) } : {}),
         createdAt: at,
       });
       s().roomInvites.set(id, invite);
       sendMsg(c.res, 201, CreateRoomInviteResponseSchema, { invite });
+    });
+    // ADR-0040: the link's approval setting (inherit_approval = back to the room's).
+    this.route('PATCH', '/api/rooms/:id/invites/:inviteId', (c) => {
+      const me = this.uid(c);
+      const room = this.roomFor(c.params[0] ?? '', me);
+      this.requireRoomPerm(room, me, MANAGE_ROOM);
+      const inv = s().roomInvites.get(c.params[1] ?? '');
+      if (inv?.roomId !== room.id) throw notFound('invite not found');
+      const b = parseBody(c, UpdateRoomInviteRequestSchema);
+      if (b.inheritApproval && b.requireApproval !== undefined) throw invalid('requireApproval', 'requireApproval and inheritApproval exclude each other');
+      if (!b.inheritApproval && b.requireApproval === undefined) throw invalid('requireApproval', 'nothing to change');
+      if (b.inheritApproval) delete inv.requireApproval;
+      else inv.requireApproval = b.requireApproval;
+      sendMsg(c.res, 200, UpdateRoomInviteResponseSchema, { invite: inv });
     });
     this.route('DELETE', '/api/rooms/:id/invites/:inviteId', (c) => {
       const me = this.uid(c);
@@ -4584,6 +4628,7 @@ class MockImpl {
         workspaceIconFileId: ws.iconFileId,
         allowGuests: inv.allowGuests,
         ...(inv.expiresAt ? { expiresAt: inv.expiresAt } : {}),
+        requiresApproval: requiresApproval(room.guestApproval, inv.requireApproval),
       });
     });
     // With a bearer: join as the current user; without one (allow_guests): a guest account.
@@ -4591,8 +4636,8 @@ class MockImpl {
       const { inv, room, ws } = roomInvite(c.params[0] ?? '');
       const b = parseBody(c, JoinRoomInviteRequestSchema);
       if ((c.req.headers.authorization ?? '').startsWith('Bearer ')) {
-        this.grantRoomLink(inv, this.uid(c));
-        sendMsg(c.res, 200, JoinRoomInviteResponseSchema, { roomId: room.id, workspaceId: ws.id });
+        const admission = this.joinByLink(inv, this.uid(c));
+        sendMsg(c.res, 200, JoinRoomInviteResponseSchema, { roomId: room.id, workspaceId: ws.id, ...(admission ? { admission } : {}) });
         return;
       }
       if (!inv.allowGuests) throw new HttpError(401, ErrorCode.UNAUTHENTICATED, 'sign in to use this link');
@@ -4615,8 +4660,14 @@ class MockImpl {
       s().sessions.set(id, [
         create(SessionSchema, { id: sessionId, deviceName: b.deviceName || 'Guest', ip: '192.0.2.10', userAgent: 'mock', createdAt: at, lastSeenAt: at, expiresAt: FAR_FUTURE }),
       ]);
-      this.grantRoomLink(inv, id);
-      sendMsg(c.res, 201, JoinRoomInviteResponseSchema, { roomId: room.id, workspaceId: ws.id, tokens: this.tokensJson(c, sessionId), me: this.me(rec) });
+      const admission = this.joinByLink(inv, id);
+      sendMsg(c.res, 201, JoinRoomInviteResponseSchema, {
+        roomId: room.id,
+        workspaceId: ws.id,
+        tokens: this.tokensJson(c, sessionId),
+        me: this.me(rec),
+        ...(admission ? { admission } : {}),
+      });
     });
 
     // ---------------- mock control (tests; no auth)
@@ -5403,33 +5454,220 @@ class MockImpl {
     if (!room) return;
     const existing = this.member(inv.workspaceId, userId);
     if (existing && this.canView(room, userId)) return;
+    inv.uses += 1;
+    if (!existing) this.addGuestMember(inv.workspaceId, userId);
+    this.grantOverride(room, userId, inv);
+  }
+
+  /** A new `guest` member: WORKSPACE_CREATE to them, WORKSPACE_MEMBER_ADD to the others. */
+  private addGuestMember(wsId: string, userId: string): void {
+    const m: MemberRec = { workspaceId: wsId, userId, role: WorkspaceRole.GUEST, nickname: '', joinedAt: tick(this.state) };
+    this.state.members.push(m);
+    const member = this.memberOut(m);
+    this.fanout((u) =>
+      u === userId
+        ? { event: { case: 'workspaceCreate', value: { snapshot: this.snapshot(wsId, userId) } } }
+        : this.member(wsId, u)
+          ? { event: { case: 'workspaceMemberAdd', value: { member } } }
+          : null,
+    );
+  }
+
+  /** The user override a link grants (its rights; no link = a default link's) → ROOM_PERMISSIONS_UPDATE. */
+  private grantOverride(room: Room, userId: string, inv: RoomInvite | undefined): void {
     const allow =
       VIEW_ROOM |
       CONNECT |
-      (inv.allowSpeak ? SPEAK : 0n) |
-      (inv.allowMessages ? SEND_MESSAGES : 0n) |
-      (inv.allowFiles ? ATTACH_FILES : 0n) |
-      (inv.allowStream ? STREAM : 0n);
+      ((inv?.allowSpeak ?? true) ? SPEAK : 0n) |
+      ((inv?.allowMessages ?? true) ? SEND_MESSAGES : 0n) |
+      (inv?.allowFiles ? ATTACH_FILES : 0n) |
+      (inv?.allowStream ? STREAM : 0n);
     const before = clone(RoomSchema, room); // create() would return the same instance
     room.permissionOverrides = [
       ...room.permissionOverrides.filter((o) => !(o.targetType === PermissionTargetType.USER && o.targetId === userId)),
       create(RoomPermissionOverrideSchema, { targetType: PermissionTargetType.USER, targetId: userId, allow, deny: 0n }),
     ];
-    inv.uses += 1;
-    if (!existing) {
-      const m: MemberRec = { workspaceId: inv.workspaceId, userId, role: WorkspaceRole.GUEST, nickname: '', joinedAt: tick(this.state) };
-      this.state.members.push(m);
-      const member = this.memberOut(m);
-      this.fanout((u) =>
-        u === userId
-          ? { event: { case: 'workspaceCreate', value: { snapshot: this.snapshot(inv.workspaceId, userId) } } }
-          : this.member(inv.workspaceId, u)
-            ? { event: { case: 'workspaceMemberAdd', value: { member } } }
-            : null,
-      );
-    }
     this.emitRoomChange(before, room, {
       event: { case: 'roomPermissionsUpdate', value: { workspaceId: room.workspaceId, roomId: room.id, permissions: room.permissionOverrides } },
+    });
+  }
+
+  // ------------------------------------------------ guest admission (ADR-0040)
+
+  /**
+   * A link join (ADR-0016) that may wait (ADR-0040): guests on a link requiring approval (its
+   * own setting, else the room's) become `guest` without the room and knock. Returns the guest's
+   * view of the knock, or undefined when the join granted the room (or nothing changed).
+   */
+  private joinByLink(inv: RoomInvite, userId: string): RoomAdmission | undefined {
+    const room = this.state.rooms.get(inv.roomId);
+    const ws = this.state.workspaces.get(inv.workspaceId);
+    if (!room || !ws) return undefined;
+    const existing = this.member(inv.workspaceId, userId);
+    if (existing && this.canView(room, userId)) return undefined;
+    const wait = requiresApproval(room.guestApproval, inv.requireApproval) && (!existing || existing.role === WorkspaceRole.GUEST);
+    if (!wait) {
+      this.grantRoomLink(inv, userId);
+      return undefined;
+    }
+    const cur = this.state.admissions.get(admissionKey(room.id, userId));
+    if (cur) return guestView(cur, room.name, ws.name); // knocking again while waiting
+    inv.uses += 1;
+    if (!existing) this.addGuestMember(inv.workspaceId, userId);
+    return this.addKnock(room, userId, inv.id, inv.createdBy);
+  }
+
+  private addKnock(room: Room, userId: string, inviteId: string, inviteCreatedBy: string): RoomAdmission {
+    const a: AdmissionRec = { roomId: room.id, workspaceId: room.workspaceId, userId, inviteId, inviteCreatedBy, requestedAt: tick(this.state) };
+    this.state.admissions.set(admissionKey(room.id, userId), a);
+    const out = deciderView(a, this.state.users.get(userId)?.user);
+    this.fanout((u) => (this.decides(a, u) ? { event: { case: 'roomAdmissionRequest', value: { admission: out } } } : null));
+    return guestView(a, room.name, this.state.workspaces.get(room.workspaceId)?.name ?? '');
+  }
+
+  /** Deciders of a knock: MANAGE_ROOM in the room, or the link's author (not a guest). */
+  private decides(a: AdmissionRec, userId: string): boolean {
+    const m = this.member(a.workspaceId, userId);
+    const room = this.state.rooms.get(a.roomId);
+    if (!m || !room) return false;
+    return has(this.perms(room, userId), MANAGE_ROOM) || (userId === a.inviteCreatedBy && m.role !== WorkspaceRole.GUEST);
+  }
+
+  /** READY: the user's own waiting knocks (declines are not kept by the mock). */
+  private ownAdmissions(userId: string): RoomAdmission[] {
+    return [...this.state.admissions.values()]
+      .filter((a) => a.userId === userId)
+      .map((a) => guestView(a, this.state.rooms.get(a.roomId)?.name ?? '', this.state.workspaces.get(a.workspaceId)?.name ?? ''));
+  }
+
+  /** READY: the knocks the recipient decides, in each workspace snapshot. */
+  private withAdmissions(snap: WorkspaceSnapshot, userId: string): WorkspaceSnapshot {
+    const wsId = snap.workspace?.id ?? '';
+    snap.admissions = [...this.state.admissions.values()]
+      .filter((a) => a.workspaceId === wsId && this.decides(a, userId))
+      .map((a) => deciderView(a, this.state.users.get(a.userId)?.user));
+    return snap;
+  }
+
+  setGuestApproval(roomId: string, on: boolean): void {
+    const room = this.state.rooms.get(roomId);
+    if (!room) throw new Error(`no room ${roomId}`);
+    room.guestApproval = on;
+    this.toWorkspace(room.workspaceId, { event: { case: 'roomUpdate', value: { room: this.roomOut(room) } } }, room.id);
+  }
+
+  knock(roomId: string, nickname: string, inviteId?: string): string {
+    const room = this.state.rooms.get(roomId);
+    if (!room) throw new Error(`no room ${roomId}`);
+    const id = nextId(this.state, 'user');
+    const at = tick(this.state);
+    this.state.users.set(id, {
+      user: create(UserSchema, { id, displayName: nickname, avatarFileId: '', statusText: '', createdAt: at, isGuest: true }),
+      email: '',
+      password: '',
+      settings: defaultSettings(),
+      emailVerified: true,
+      pendingEmail: '',
+      locale: '',
+    });
+    this.state.presences.set(id, create(PresenceSchema, { userId: id, status: PresenceStatus.ONLINE, lastSeen: at }));
+    this.addGuestMember(room.workspaceId, id);
+    const inv = inviteId ? this.state.roomInvites.get(inviteId) : undefined;
+    this.addKnock(room, id, inv?.id ?? '', inv?.createdBy ?? IDS.users.anna);
+    return id;
+  }
+
+  decideAdmission(roomId: string, userId: string, status: 'admitted' | 'declined' | 'no_answer' | 'cancelled', byUserId: string = IDS.users.anna): void {
+    const key = admissionKey(roomId, userId);
+    const a = this.state.admissions.get(key);
+    const room = this.state.rooms.get(roomId);
+    if (!a || !room) throw new Error(`no knock of ${userId} on ${roomId}`);
+    const outcome = admissionOutcome(status, byUserId, tick(this.state));
+    // Deciders are computed before the knock goes (the link's author may decide it).
+    const deciders = new Set([...this.conns].map((c) => c.userId).filter((u): u is string => !!u && this.decides(a, u)));
+    this.state.admissions.delete(key);
+    if (status === 'admitted') this.grantOverride(room, userId, this.state.roomInvites.get(a.inviteId));
+    const dv = deciderView(a, create(UserSchema, { id: userId }), outcome);
+    this.fanout((u) => (deciders.has(u) ? { event: { case: 'roomAdmissionDecided', value: { admission: dv } } } : null));
+    this.toUser(userId, {
+      event: { case: 'roomAdmissionDecided', value: { admission: guestView(a, room.name, this.state.workspaces.get(a.workspaceId)?.name ?? '', outcome) } },
+    });
+    if (status !== 'admitted') this.dropIdleGuest(a.workspaceId, userId);
+  }
+
+  /** A guest membership with no room left (no personal override, no other knock) goes. */
+  private dropIdleGuest(wsId: string, userId: string): void {
+    const m = this.member(wsId, userId);
+    if (m?.role !== WorkspaceRole.GUEST) return;
+    const hasRoom = [...this.state.rooms.values()].some(
+      (r) => r.workspaceId === wsId && r.permissionOverrides.some((o) => o.targetType === PermissionTargetType.USER && o.targetId === userId),
+    );
+    const knocks = [...this.state.admissions.values()].some((x) => x.workspaceId === wsId && x.userId === userId);
+    if (hasRoom || knocks) return;
+    this.toUser(userId, { event: { case: 'workspaceDelete', value: { workspaceId: wsId } } });
+    this.state.members = this.state.members.filter((x) => x !== m);
+    this.toWorkspace(wsId, { event: { case: 'workspaceMemberRemove', value: { workspaceId: wsId, userId } } });
+  }
+
+  private admissionRoutes(): void {
+    const s = (): MockState => this.state;
+    const knockOf = (roomId: string, userId: string): AdmissionRec => {
+      const a = s().admissions.get(admissionKey(roomId, userId));
+      if (!a) throw notFound('admission not found');
+      return a;
+    };
+    // MANAGE_ROOM in the room, or the author of one of its links (a member, not a guest).
+    const deciderRoom = (roomId: string, me: string): Room => {
+      const room = s().rooms.get(roomId);
+      const m = room ? this.member(room.workspaceId, me) : undefined;
+      if (!room || room.type === RoomType.DM || !m) throw notFound('room not found');
+      const author = m.role !== WorkspaceRole.GUEST && [...s().roomInvites.values()].some((i) => i.roomId === room.id && i.createdBy === me);
+      if (!has(this.perms(room, me), MANAGE_ROOM) && !author) {
+        if (!this.canView(room, me)) throw notFound('room not found');
+        throw forbidden('MANAGE_ROOM required');
+      }
+      return room;
+    };
+    this.route('GET', '/api/rooms/:id/admissions', (c) => {
+      const me = this.uid(c);
+      const room = deciderRoom(c.params[0] ?? '', me);
+      const admissions = [...s().admissions.values()]
+        .filter((a) => a.roomId === room.id && this.decides(a, me))
+        .sort((a, b) => timestampMs(a.requestedAt) - timestampMs(b.requestedAt))
+        .map((a) => deciderView(a, s().users.get(a.userId)?.user));
+      sendMsg(c.res, 200, ListRoomAdmissionsResponseSchema, { admissions });
+    });
+    this.route('POST', '/api/rooms/:id/admissions/:userId', (c) => {
+      const me = this.uid(c);
+      if (s().users.get(me)?.user.isBot) throw new HttpError(403, ErrorCode.FORBIDDEN, 'not available for bots', '', { reason: 'BOT_NOT_ALLOWED' });
+      const room = deciderRoom(c.params[0] ?? '', me);
+      const target = c.params[1] ?? '';
+      const b = parseBody(c, DecideRoomAdmissionRequestSchema);
+      const admit = b.status === RoomAdmissionStatus.ADMITTED;
+      if (!admit && b.status !== RoomAdmissionStatus.DECLINED) throw invalid('status', 'status must be ADMITTED or DECLINED');
+      const name = admit && b.displayName !== undefined ? b.displayName.trim() : undefined;
+      if (name !== undefined && (!name || Array.from(name).length > 40)) throw invalid('displayName', 'name must be 1..40 characters');
+      const a = knockOf(room.id, target);
+      if (!this.decides(a, me)) throw forbidden('MANAGE_ROOM required');
+      const guest = s().users.get(target);
+      if (name !== undefined && !guest?.user.isGuest) throw invalid('displayName', 'only a guest account can be renamed');
+      if (admit && b.badgeId && !this.badgesOf(room.workspaceId).some((x) => x.id === b.badgeId)) throw invalid('badgeId', 'unknown badge');
+      if (name !== undefined && guest) {
+        guest.user.displayName = name;
+        const user = guest.user;
+        this.fanout((u) => (u === target || this.shareWorkspace(u, target) ? { event: { case: 'userUpdate', value: { user } } } : null));
+      }
+      if (admit && b.badgeId !== undefined) this.setMemberBadge(room.workspaceId, target, b.badgeId);
+      this.decideAdmission(room.id, target, admit ? 'admitted' : 'declined', me);
+      const outcome = admissionOutcome(admit ? 'admitted' : 'declined', me, tick(s()));
+      sendMsg(c.res, 200, DecideRoomAdmissionResponseSchema, { admission: deciderView(a, guest?.user, outcome) });
+    });
+    this.route('DELETE', '/api/rooms/:id/admissions/me', (c) => {
+      const me = this.uid(c);
+      const roomId = c.params[0] ?? '';
+      knockOf(roomId, me);
+      this.decideAdmission(roomId, me, 'cancelled', me);
+      noContent(c.res);
     });
   }
 
