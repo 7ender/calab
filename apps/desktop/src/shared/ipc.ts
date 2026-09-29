@@ -159,6 +159,21 @@ export interface RegisterArgs extends LoginArgs {
   inviteCode: string;
   /** UI language (BCP 47) → the language of emails (ADR-0023); '' = the server decides. */
   locale?: string;
+  /**
+   * Ask the server whether the address looks like another account's first (docs/09 #119): on a
+   * hit nothing is created and the result is an error with SIMILAR_ACCOUNT_CODE.
+   */
+  checkSimilar?: boolean;
+}
+
+/** Register result «an account on a sibling domain exists» (a hint, not a server error). */
+export const SIMILAR_ACCOUNT_CODE = 'ERROR_CODE_SIMILAR_ACCOUNT';
+
+/** A 2xx auth answer without tokens: the similar-account hint, else a broken response. */
+export function noSession(similar: boolean | undefined, status: number): ApiErrorJson {
+  return similar
+    ? { code: SIMILAR_ACCOUNT_CODE, message: 'similar account exists', status }
+    : { code: 'ERROR_CODE_INTERNAL', message: 'no session in the response', status };
 }
 
 /** 'reset' = ended by reuse detection (after a connection loss), shared/logoutReason.ts. */

@@ -35,6 +35,7 @@ const ALL = process.env['CALABA_VISUAL_ALL'] === '1';
  */
 const KEY = new Set([
   'auth-login',
+  'auth-login-failed',
   'auth-forgot',
   'verify-banner',
   'invite-email',
@@ -339,6 +340,17 @@ test('auth-login', async ({ open, win, shot }) => {
   await open({ auth: 'out' });
   await expect(win.getByRole('button', { name: 'Войти', exact: true })).toBeVisible();
   await checkpoint(shot, 'auth-login');
+});
+
+/** A wrong password (401): the recovery becomes the error line's action (docs/09 #119). */
+test('auth-login-failed', async ({ open, win, shot }) => {
+  await open({ auth: 'out' });
+  await win.getByLabel('Email').fill('owner@calaba.test');
+  await win.getByLabel('Пароль', { exact: true }).fill('wrong-password');
+  await win.getByRole('button', { name: 'Войти', exact: true }).click();
+  await expect(win.getByTestId('auth-login-failed')).toBeVisible();
+  await expect(win.getByRole('button', { name: 'Восстановить пароль?' })).toBeVisible();
+  await checkpoint(shot, 'auth-login-failed');
 });
 
 test('auth-server', async ({ open, win, shot }) => {
