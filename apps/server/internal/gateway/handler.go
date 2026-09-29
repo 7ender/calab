@@ -23,6 +23,7 @@ import (
 	"github.com/calaba/calaba/server/internal/db"
 	"github.com/calaba/calaba/server/internal/db/sqlc"
 	"github.com/calaba/calaba/server/internal/dms"
+	"github.com/calaba/calaba/server/internal/notes"
 	"github.com/calaba/calaba/server/internal/pbconv"
 	"github.com/calaba/calaba/server/internal/perm"
 	"github.com/calaba/calaba/server/internal/redisx"
@@ -457,6 +458,12 @@ func (h *Hub) buildReady(ctx context.Context, s *Session, uid uuid.UUID) (*v1.Re
 		dmRooms = append(dmRooms, rid)
 		s.rememberDM(rid, parseID(d.GetPeer().GetId()))
 		ready.ReadStates = append(ready.ReadStates, d.GetReadState())
+	}
+	// Notes shelves (ADR-0039): people only; nothing in them is ever unread (own messages).
+	if !u.IsBot && !u.IsGuest {
+		if ready.Notes, err = notes.List(ctx, h.db.Q, uid); err != nil {
+			return nil, err
+		}
 	}
 	rs, err := h.db.Q.ListReadStates(ctx, sqlc.ListReadStatesParams{UserID: uid, RoomIds: visible})
 	if err != nil {

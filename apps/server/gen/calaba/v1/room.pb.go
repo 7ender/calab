@@ -29,6 +29,7 @@ const (
 	RoomType_ROOM_TYPE_VOICE       RoomType = 1 // voice room with its own text chat
 	RoomType_ROOM_TYPE_TEXT        RoomType = 2
 	RoomType_ROOM_TYPE_DM          RoomType = 3 // direct message (ADR-0020): no workspace, two participants
+	RoomType_ROOM_TYPE_NOTES       RoomType = 4 // notes shelf (ADR-0039): no workspace, only its owner
 )
 
 // Enum value maps for RoomType.
@@ -38,12 +39,14 @@ var (
 		1: "ROOM_TYPE_VOICE",
 		2: "ROOM_TYPE_TEXT",
 		3: "ROOM_TYPE_DM",
+		4: "ROOM_TYPE_NOTES",
 	}
 	RoomType_value = map[string]int32{
 		"ROOM_TYPE_UNSPECIFIED": 0,
 		"ROOM_TYPE_VOICE":       1,
 		"ROOM_TYPE_TEXT":        2,
 		"ROOM_TYPE_DM":          3,
+		"ROOM_TYPE_NOTES":       4,
 	}
 )
 
@@ -2063,12 +2066,13 @@ const file_calaba_v1_room_proto_rawDesc = "" +
 	"\x19SetRoomPermissionsRequest\x12?\n" +
 	"\toverrides\x18\x01 \x03(\v2!.calaba.v1.RoomPermissionOverrideR\toverrides\"A\n" +
 	"\x1aSetRoomPermissionsResponse\x12#\n" +
-	"\x04room\x18\x01 \x01(\v2\x0f.calaba.v1.RoomR\x04room*`\n" +
+	"\x04room\x18\x01 \x01(\v2\x0f.calaba.v1.RoomR\x04room*u\n" +
 	"\bRoomType\x12\x19\n" +
 	"\x15ROOM_TYPE_UNSPECIFIED\x10\x00\x12\x13\n" +
 	"\x0fROOM_TYPE_VOICE\x10\x01\x12\x12\n" +
 	"\x0eROOM_TYPE_TEXT\x10\x02\x12\x10\n" +
-	"\fROOM_TYPE_DM\x10\x03*\x80\x01\n" +
+	"\fROOM_TYPE_DM\x10\x03\x12\x13\n" +
+	"\x0fROOM_TYPE_NOTES\x10\x04*\x80\x01\n" +
 	"\x14PermissionTargetType\x12&\n" +
 	"\"PERMISSION_TARGET_TYPE_UNSPECIFIED\x10\x00\x12\x1f\n" +
 	"\x1bPERMISSION_TARGET_TYPE_ROLE\x10\x01\x12\x1f\n" +

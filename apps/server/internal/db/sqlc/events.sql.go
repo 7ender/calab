@@ -968,7 +968,7 @@ func (q *Queries) SetExternalAttendeeStatus(ctx context.Context, arg SetExternal
 
 const setUserEventReminders = `-- name: SetUserEventReminders :one
 UPDATE users SET event_reminders = $2, event_reminders_dnd = $3 WHERE id = $1
-RETURNING id, email, password_hash, display_name, avatar_file_id, status_text, settings, created_at, disabled_at, status_emoji, status_expires_at, is_guest, guest_expires_at, timezone, email_verified_at, pending_email, locale, presence_status, presence_until, is_bot, birthday_day, birthday_month, birthday_year, birthday_hidden, event_reminders, event_reminders_dnd
+RETURNING id, email, password_hash, display_name, avatar_file_id, status_text, settings, created_at, disabled_at, status_emoji, status_expires_at, is_guest, guest_expires_at, timezone, email_verified_at, pending_email, locale, presence_status, presence_until, is_bot, birthday_day, birthday_month, birthday_year, birthday_hidden, event_reminders, event_reminders_dnd, storage_quota_bytes
 `
 
 type SetUserEventRemindersParams struct {
@@ -1007,6 +1007,7 @@ func (q *Queries) SetUserEventReminders(ctx context.Context, arg SetUserEventRem
 		&i.BirthdayHidden,
 		&i.EventReminders,
 		&i.EventRemindersDnd,
+		&i.StorageQuotaBytes,
 	)
 	return i, err
 }

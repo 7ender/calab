@@ -30,6 +30,9 @@ type Admin struct {
 	plans   *Service
 	events  events.Publisher
 	limiter *redisx.RateLimiter // per superadmin (60/min)
+	// StorageQuota returns a user's personal quota and usage (ADR-0039 §5; set by the app:
+	// the notes package depends on this one).
+	StorageQuota func(ctx context.Context, q *sqlc.Queries, userID uuid.UUID) (*v1.UserStorageQuota, error)
 }
 
 // NewAdmin creates the admin handlers.
@@ -45,6 +48,56 @@ func (a *Admin) Routes(mux httpx.Router, wrap func(http.Handler) http.Handler) {
 	handle("PUT /api/admin/workspaces/{id}/plan", a.setPlan)
 	handle("GET /api/admin/workspaces/{id}/plan/log", a.log)
 	handle("PUT /api/admin/workspaces/{id}/suspension", a.setSuspension)
+	handle("GET /api/admin/users/{id}/storage-quota", a.storageQuota)
+	handle("PUT /api/admin/users/{id}/storage-quota", a.setStorageQuota)
+}
+
+// storageQuota: GET /api/admin/users/{id}/storage-quota — a user's personal quota (ADR-0039).
+func (a *Admin) storageQuota(w http.ResponseWriter, r *http.Request) error {
+	id, err := httpx.PathUUID(r, "id", "user")
+	if err != nil {
+		return err
+	}
+	if _, err := a.db.Q.GetUser(r.Context(), id); err != nil {
+		if db.IsNotFound(err) {
+			return httpx.NotFound("user")
+		}
+		return err
+	}
+	out, err := a.StorageQuota(r.Context(), a.db.Q, id)
+	if err != nil {
+		return err
+	}
+	httpx.Write(w, http.StatusOK, out)
+	return nil
+}
+
+// setStorageQuota: PUT /api/admin/users/{id}/storage-quota {quota_bytes?} — unset = the default.
+func (a *Admin) setStorageQuota(w http.ResponseWriter, r *http.Request) error {
+	id, err := httpx.PathUUID(r, "id", "user")
+	if err != nil {
+		return err
+	}
+	var req v1.SetUserStorageQuotaRequest
+	if err := httpx.Decode(w, r, &req); err != nil {
+		return err
+	}
+	var quota *int64
+	if req.QuotaBytes != nil {
+		if req.GetQuotaBytes() > 1<<50 {
+			return httpx.Validation("quotaBytes", "quota must be at most 1 PiB")
+		}
+		v := int64(req.GetQuotaBytes()) //nolint:gosec // checked above
+		quota = &v
+	}
+	if _, err := a.db.Q.SetUserStorageQuota(r.Context(), sqlc.SetUserStorageQuotaParams{ID: id, Quota: quota}); err != nil {
+		if db.IsNotFound(err) {
+			return httpx.NotFound("user")
+		}
+		return err
+	}
+	slog.InfoContext(r.Context(), "admin: personal storage quota", "user", id, "quota", quota)
+	return a.storageQuota(w, r)
 }
 
 const maxNote = 500

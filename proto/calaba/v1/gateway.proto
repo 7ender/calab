@@ -222,6 +222,10 @@ message DispatchEvent {
     CalendarEventReminder event_reminder = 67;
     RoomEventActive room_event_active = 68;
     RoomEventEnded room_event_ended = 69;
+    // Notes shelves (ADR-0039); to the owner's user channel only (all their devices).
+    NotesCreate notes_create = 70;
+    NotesUpdate notes_update = 71;
+    NotesDelete notes_delete = 72;
   }
 }
 
@@ -334,6 +338,8 @@ message Ready {
   // Read receipts of workspace rooms (docs/09 #92): how far the other members (bots excluded)
   // read, for visible rooms someone else has read. DMs carry theirs in dms[].peer_read_message_id.
   repeated PeerRead peer_reads = 11;
+  // The user's notes shelves (ADR-0039) by position; empty for bots and guest accounts.
+  repeated NotesShelf notes = 12;
 }
 
 // How far others read a room (docs/09 #92): in a DM the peer's read marker, in a workspace
@@ -374,7 +380,18 @@ message DmSummary {
   string peer_read_message_id = 8;
 }
 
-// Preview of a DM's newest live message (DmSummary.last_message).
+// A notes shelf (ADR-0039) as its owner sees it. In READY, GET/POST/PATCH /api/notes and
+// NOTES_CREATE / NOTES_UPDATE. Messages, files, pins, reactions and search use the room
+// endpoints like a DM; its events come on the owner's user channel with an empty workspace_id.
+message NotesShelf {
+  // type NOTES, empty workspace_id; name (1..40 characters) and position (list order, ascending)
+  // are the shelf's; last_message_id / last_message_at as in READY (empty = no messages).
+  Room room = 1;
+  string emoji = 2;               // one emoji or empty
+  DmLastMessage last_message = 3; // the newest live message for the list preview; unset = none
+}
+
+// Preview of a DM's newest live message (DmSummary.last_message, NotesShelf.last_message).
 message DmLastMessage {
   string id = 1;
   string author_id = 2;
@@ -668,6 +685,21 @@ message ReadStateUpdate {
 // the participants' user channels, with an empty workspace_id.
 message DmCreate {
   DmSummary dm = 1;
+}
+
+// A shelf was created on one of the owner's devices (POST /api/notes).
+message NotesCreate {
+  NotesShelf shelf = 1;
+}
+
+// A shelf was renamed, got another emoji or moved (PATCH /api/notes/{id}).
+message NotesUpdate {
+  NotesShelf shelf = 1;
+}
+
+// A shelf was deleted with all its messages (DELETE /api/notes/{id}).
+message NotesDelete {
+  string room_id = 1;
 }
 
 // The user's own state of a DM (DmSummary.archived_at / cleared_before_message_id): after

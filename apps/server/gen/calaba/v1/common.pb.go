@@ -214,12 +214,15 @@ type ApiError struct {
 	// "OWNER_ONLY" = FORBIDDEN, only the workspace owner may do this (ADR-0029: a room's
 	// restricted flag); "MESSAGE_NOT_EDITABLE" = VALIDATION on editing a forwarded copy and
 	// "NOT_FORWARDABLE" = VALIDATION on forwarding a bot command or a system message that is
-	// not a recording card (ADR-0033); SESSION_REVOKED: why the session ended (see there).
+	// not a recording card (ADR-0033); SESSION_REVOKED: why the session ended (see there);
+	// "NOTES_LIMIT" = CONFLICT on creating a 21st notes shelf and "PERSONAL_QUOTA" =
+	// FILE_QUOTA_EXCEEDED of the uploader's personal quota in a shelf (ADR-0039).
 	// Absent otherwise.
 	Reason *string `protobuf:"bytes,4,opt,name=reason,proto3,oneof" json:"reason,omitempty"`
 	// The counter and limit that were hit, when meaningful: ROOM_FULL — users in the room and
 	// the room limit; FILE_QUOTA_EXCEEDED — bytes used and the effective quota in bytes;
-	// REACTION_LIMIT — the caller's different emojis on the message and the per-user cap (3).
+	// REACTION_LIMIT — the caller's different emojis on the message and the per-user cap (3);
+	// NOTES_LIMIT — the caller's shelves and the cap (20).
 	// Absent when not meaningful.
 	Used          *uint64 `protobuf:"varint,5,opt,name=used,proto3,oneof" json:"used,omitempty"`
 	Limit         *uint64 `protobuf:"varint,6,opt,name=limit,proto3,oneof" json:"limit,omitempty"`

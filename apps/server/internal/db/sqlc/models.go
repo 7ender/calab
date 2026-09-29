@@ -265,6 +265,7 @@ type Room struct {
 	DmKey            *string
 	AllowRecording   bool
 	Restricted       bool
+	Emoji            string
 }
 
 type RoomCategory struct {
@@ -415,6 +416,7 @@ type User struct {
 	BirthdayHidden    bool
 	EventReminders    []int16
 	EventRemindersDnd bool
+	StorageQuotaBytes *int64
 }
 
 type UserNote struct {

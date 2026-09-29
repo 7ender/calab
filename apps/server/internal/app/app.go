@@ -12,6 +12,7 @@ import (
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 	"github.com/redis/rueidis"
 
+	v1 "github.com/calaba/calaba/server/gen/calaba/v1"
 	"github.com/calaba/calaba/server/internal/auth"
 	"github.com/calaba/calaba/server/internal/birthdays"
 	"github.com/calaba/calaba/server/internal/blob"
@@ -33,6 +34,7 @@ import (
 	"github.com/calaba/calaba/server/internal/mail"
 	"github.com/calaba/calaba/server/internal/messages"
 	"github.com/calaba/calaba/server/internal/moderation"
+	"github.com/calaba/calaba/server/internal/notes"
 	"github.com/calaba/calaba/server/internal/perm"
 	"github.com/calaba/calaba/server/internal/plans"
 	"github.com/calaba/calaba/server/internal/recording"
@@ -219,6 +221,7 @@ func New(d Deps) *App {
 	filesSvc := files.NewService(d.DB, d.Blob, pub, d.Config.MaxFileSizeMB<<20, d.Config.StorageMaxTotalBytes)
 	filesSvc.SetLimiter(redisx.NewRateLimiter(d.Redis, "rl:upload:", 30, 2)) // 30 at once, 120 per hour
 	filesSvc.SetPlans(planSvc)
+	filesSvc.SetPersonalQuota(d.Config.DefaultPersonalQuotaBytes)
 	filesSvc.SetConverter(files.NewConverter(context.Background(), d.Config.FFmpegPath, d.Config.FFprobePath))
 	botSvc.SetAvatars(filesSvc)
 	recSvc.SetFiles(filesSvc)
@@ -283,6 +286,7 @@ func New(d Deps) *App {
 	msgHandlers.Receipts = messages.NewReceipts(d.DB, pub, d.Redis)
 	msgHandlers.Routes(mux, private)
 	dms.NewHandlers(d.DB, pub, redisx.NewRateLimiter(d.Redis, "rl:dm-create:", 10, 0.5)).Routes(mux, private) // 10 at once, 30 per hour
+	notes.NewHandlers(d.DB, pub, d.Config.DefaultPersonalQuotaBytes).Routes(mux, private)
 	filesSvc.Routes(mux, private)
 	stickers.NewHandlers(d.DB, pub, filesSvc, planSvc,
 		redisx.NewRateLimiter(d.Redis, "rl:sticker-upload:", 10, 1)).Routes(mux, private) // 10 batches at once, 60 per hour
@@ -291,7 +295,12 @@ func New(d Deps) *App {
 		redisx.NewRateLimiter(d.Redis, "rl:guest:", 5, 5.0/60), d.Config.AllowedOrigins()) // 5 guests/h per IP
 	guestSvc.Plans = planSvc
 	guestSvc.Routes(mux, private)
-	plans.NewAdmin(d.DB, planSvc, pub, redisx.NewRateLimiter(d.Redis, "rl:admin:", 60, 60)).Routes(mux, private) // 60 per minute
+	admin := plans.NewAdmin(d.DB, planSvc, pub, redisx.NewRateLimiter(d.Redis, "rl:admin:", 60, 60)) // 60 per minute
+	admin.StorageQuota = func(ctx context.Context, q *sqlc.Queries, userID uuid.UUID) (*v1.UserStorageQuota, error) {
+		qt, err := notes.PersonalQuota(ctx, q, userID, d.Config.DefaultPersonalQuotaBytes)
+		return qt.Proto(), err
+	}
+	admin.Routes(mux, private)
 	unfurl.NewService(d.Redis, []byte(d.Config.JWTSecret),
 		redisx.NewRateLimiter(d.Redis, "rl:unfurl:", 30, 120), unfurl.Options{AllowAddr: unfurlPolicy(d)}).Routes(mux, private)
 	recSvc.Routes(mux, private)
