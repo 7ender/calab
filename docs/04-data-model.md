@@ -66,6 +66,9 @@ workspace_notification_settings user_id, workspace_id, level (all|mentions|none)
 room_categories     id, workspace_id, name, position            (rooms.category_id → ON DELETE SET NULL)
 room_invites        id, room_id, code (unique, 12 символов), created_by, expires_at?, max_uses, uses,
                     allow_guests, allow_bits, revoked_at?       — ссылка на комнату (ADR-0016)
+                    + require_approval? (NULL — как у комнаты; ADR-0040);  rooms += guest_approval (false)
+room_admissions     room_id, user_id, invite_id?, status (pending|admitted|declined), requested_at,
+                    decided_by?, decided_at?                     PK (room_id, user_id) — стук гостя (ADR-0040)
                     rooms += user_limit (0..99);  workspaces += allow_self_nickname (true)
                     users += is_guest, guest_expires_at?;  users.email nullable (только у гостей)
 message_reactions   message_id, emoji, user_id, created_at      PK (message_id, emoji, user_id)
@@ -360,3 +363,4 @@ roomAdmin           = MUTE_MEMBERS (позволяет серверные mute/r
 - Гость без активности 7 дней (`guest_expires_at`, сдвигается при refresh) **анонимизируется**, а не удаляется: членства, overrides, файлы и сессии удаляются, имя → «Гость (удалён)», сообщения остаются. Фоновая чистка — раз в час.
 - Гостевой аккаунт не может: создавать и находить workspace, входить в открытые workspace, менять статус и аватар (только имя и настройки). Роль `guest` не видит комнат без override, поэтому не создаёт ссылок и не видит чужих комнат.
 - `POST …/members/{userId}/promote` (MANAGE_WORKSPACE): `guest` → `member`. Аккаунт гостя после этого не чистится.
+- **Подтверждение входа (ADR-0040).** `rooms.guest_approval` (настройки комнаты, `MANAGE_ROOM`) и `room_invites.require_approval` (`NULL` — как у комнаты; гостевые ссылки встреч — `NULL`). Если подтверждение нужно, (b)/(c) дают членство `guest` **без** override и строку `room_admissions` `pending` (использование ссылки тратится; при отклонении / «нет ответа» / отмене — возвращается). Участник пространства (не гость) не ждёт никогда. Решают `MANAGE_ROOM` в комнате и автор ссылки (не гость): `admitted` → override с битами ссылки (ссылки нет — биты ссылки по умолчанию), строка удаляется, опционально имя гостевого аккаунта (1..40) и бейдж из библиотеки; `declined` → строка живёт 10 мин (новый стук — `429 ADMISSION_DECLINED`), членство гостя снимается, если у него нет других комнат и стуков. Метёлка раз в 30 с: `pending` старше 30 мин → `declined` без `decided_by` («Никто не ответил», стучать снова можно сразу), `declined` старше 10 мин удаляются. На комнату ≤ 50 ожидающих (`429 ADMISSION_QUEUE_FULL`).

@@ -111,9 +111,13 @@ EVENT_RSVP                    { workspace_id, event_id, attendee, counts, event 
 EVENT_REMINDER                { event (вхождение), occurrence_at, minutes } — напоминание, в user:<id>
 ROOM_EVENT_ACTIVE             { workspace_id, room_id, event (вхождение) } — за 15 мин до начала и до конца: значок встречи у комнаты
 ROOM_EVENT_ENDED              { workspace_id, room_id, event_id, occurrence_at } — вхождение закончилось, отменено или перенесено
+ROOM_ADMISSION_REQUEST        { admission: RoomAdmission } — гость стучится в комнату (ADR-0040), решающим
+ROOM_ADMISSION_DECIDED        { admission } — ADMITTED | DECLINED (no_answer — никто не ответил за 30 мин) | CANCELLED (гость
+                                передумал): решающим (user — только id) и гостю в user:<id> (с room_name / workspace_name)
 ```
 
 Фильтрация по получателю (выполняет gateway, без запросов в БД — у инстанса кэш комнат и ролей каждого workspace, обновляемый самими событиями):
+- `ROOM_ADMISSION_*` (ADR-0040) — решающим: `MANAGE_ROOM` в комнате или автор ссылки (`admission.invite_created_by`, не гость). Гость получает `ROOM_ADMISSION_DECIDED` в `user:<id>`; после `ADMITTED` комната приходит обычным `ROOM_CREATE` (из `ROOM_PERMISSIONS_UPDATE`) — порядок между этими двумя событиями не гарантирован.
 - `BOT_*` — участникам с `MANAGE_WORKSPACE` и владельцу бота (ему `BOT_UPDATE` приходит и в `user:<id>`). `MESSAGE_CREATE` с `Message.command` — команда остаётся только у адресованного бота, остальные получают обычное сообщение (и в DM).
 - `MESSAGE_*`, `VOICE_STREAM_*`, `ROOM_RECORDING` — только тем, у кого `VIEW_ROOM` в комнате; `TYPING_START` — кроме того только сессиям, подписанным на комнату через `SUBSCRIBE` (и не самому печатающему).
 - `ROOM_UPDATE` / `ROOM_PERMISSIONS_UPDATE` / `WORKSPACE_MEMBER_UPDATE` (смена ролей) / `ROLE_UPDATE` / `ROLE_DELETE` (права, порядок, удаление роли — для всех её держателей) пересчитывают видимость: доступ появился → получатель видит `ROOM_CREATE` с комнатой (голосовая с идущим звонком — с `voice_started_at`, за ней `VOICE_STATE_UPDATE` каждого участника: раньше их состояния приходили ему без комнаты), пропал → `ROOM_DELETE` (клиент убирает и голосовые состояния этой комнаты), остался → исходное событие. Смена `Room.restricted` (ADR-0029) — `ROOM_UPDATE` и следом `ROOM_PERMISSIONS_UPDATE` с теми же переопределениями (пересчёт грантов звонка).
@@ -385,8 +389,14 @@ POST   /api/workspaces/{id}/members/{userId}/promote   гость → member (MA
 POST   /api/rooms/{id}/invites                 CreateRoomInviteRequest → 201 RoomInvite   (MANAGE_ROOM)
 GET    /api/rooms/{id}/invites                 активные ссылки;  DELETE /api/rooms/{id}/invites/{inviteId} — отзыв
 GET    /api/room-invites/{code}                превью для страницы /r/<code> (без auth)
-POST   /api/room-invites/{code}/join           JoinRoomInviteRequest{nickname} → {roomId, workspaceId[, tokens, me]}
+POST   /api/room-invites/{code}/join           JoinRoomInviteRequest{nickname} → {roomId, workspaceId[, tokens, me][, admission]}
+PATCH  /api/rooms/{id}/invites/{inviteId}      UpdateRoomInviteRequest{requireApproval | inheritApproval} → {invite}   (MANAGE_ROOM)
+GET    /api/rooms/{id}/admissions              ожидающие стуки (ADR-0040): MANAGE_ROOM — все, автор ссылки — по своим ссылкам
+POST   /api/rooms/{id}/admissions/{userId}     DecideRoomAdmissionRequest{status ADMITTED|DECLINED, displayName?, badgeId?} → {admission}
+DELETE /api/rooms/{id}/admissions/me           гость отменяет ожидание → 204
 ```
+
+- **Подтверждение входа гостей (ADR-0040).** `PATCH /api/rooms/{id} {guestApproval}` (MANAGE_ROOM) — `Room.guest_approval`; ссылка: `CreateRoomInviteRequest.require_approval` / PATCH выше (`RoomInvite.require_approval` не задан — как у комнаты); превью — `requires_approval` (итоговое). Если подтверждение нужно, join отвечает `admission` (`PENDING`): гость — член пространства `guest` без комнаты (READY: пространство без неё, `Ready.pending_admissions[]` — свои `PENDING` и `DECLINED` за последние 10 мин), история и LiveKit-токен комнаты — `404`. Повторный join во время ожидания — тот же стук, использование не тратится. Решающим — `WorkspaceSnapshot.admissions[]` в READY. `POST …/admissions/{userId}`: `displayName` 1..40 — только гостевому аккаунту (иначе 422), пишется в `users.display_name` (`USER_UPDATE`); `badgeId` (`""` — снять) — из библиотеки пространства (`WORKSPACE_MEMBER_UPDATE`); не ожидает — `404`, не решающий — `403`, бот — `403 BOT_NOT_ALLOWED` (боты — только `GET`). Отклонение снимает членство гостя без других комнат (`WORKSPACE_MEMBER_REMOVE`, гостю `WORKSPACE_DELETE`). Стук: `429` с `reason` `ADMISSION_DECLINED` (≤ 10 мин после отклонения человеком) или `ADMISSION_QUEUE_FULL` (50 ожидающих, `used`/`limit`).
 
 - Публичные пути — `/api/room-invites/…`, а не `/api/rooms/invites/…`: второй вариант конфликтует в `net/http.ServeMux` с `/api/rooms/{id}/invites` (путь `/api/rooms/invites/invites` подходит под оба шаблона, и mux паникует).
 - **Перемещение** (ADR-0019). Проверки прав и лимитов прежние. Voice-state устройства сразу записывается в целевую комнату (все получают `VOICE_STATE_UPDATE`). Дальше зависит от LiveKit:

@@ -125,6 +125,7 @@ with the decision for bots is `apps/server/internal/app/botroutes.go`.
 | `POST /api/rooms/{id}/stream/request` · `…/camera/request` · `…/camera/stop` | screen share, camera | `STREAM` / `VIDEO` |
 | `PATCH /api/voice/self` · `PATCH /api/rooms/{id}/voice-status` | own mute/deafen, call status | in the call |
 | `POST /api/rooms/{id}/voice/{userId}/mute · unmute · disconnect · move · stop-stream · stop-camera · allow-camera` | voice moderation | `MUTE_MEMBERS` / `MOVE_MEMBERS` |
+| `GET /api/rooms/{id}/admissions` | guests waiting for approval to enter (ADR-0040); admit/decline — 403 `BOT_NOT_ALLOWED` | `MANAGE_ROOM` |
 | `GET /api/workspaces/{id}/events?from=&to=` · `GET /api/events/{id}` | calendar (ADR-0038): meetings in rooms the bot can see; read-only (create, change, answer — 403 `BOT_NOT_ALLOWED`); external attendees' addresses are not shown to bots | `VIEW_ROOM` |
 | `GET /api/workspaces/{id}/sounds` · `POST /api/rooms/{id}/sounds/play {soundId}` | soundboard (ADR-0036): the workspace's sounds; play one to everyone in the call (`builtin:<name>` or a sound id; 1 per 2 s per bot, 5 per 10 s per room) | the bot is in the room's call; managing sounds — 403 |
 | stickers: `GET/POST /api/workspaces/{id}/sticker-packs`, `/api/sticker-packs/{id}…`, `/api/stickers/{id}`, `/api/me/sticker-packs…` | see [Stickers](#stickers-over-the-api) | member / `MANAGE_STICKERS` |
