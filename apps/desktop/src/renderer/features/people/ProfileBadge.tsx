@@ -5,24 +5,8 @@ import { errorText } from '../../lib/api/errors';
 import { api } from '../../lib/api/endpoints';
 import { useSession } from '../../stores/session';
 import { toast } from '../../stores/toasts';
-import { rolesOf, useBadgeList, useMemberBadge, useWorkspaces } from '../../stores/workspaces';
-import { BadgeImage } from './MemberBadge';
+import { rolesOf, useBadgeList, useWorkspaces } from '../../stores/workspaces';
 import { canSetMemberBadge } from './members';
-
-/**
- * The member's badge in a profile (docs/09 #82, docs/08 «Бейдж»): the 20 px picture and its name
- * as text, under the name. Nothing without a badge.
- */
-export function ProfileBadge({ workspaceId, userId }: { workspaceId: string; userId: string }): ReactNode {
-  const badge = useMemberBadge(workspaceId, userId);
-  if (!badge) return null;
-  return (
-    <div className="mt-1 flex min-w-0 items-center gap-1.5 text-caption text-muted" data-testid="profile-badge">
-      <BadgeImage fileId={badge.fileId} name={badge.name} size={20} />
-      <span className="truncate">{badge.name}</span>
-    </div>
-  );
-}
 
 /**
  * «Бейдж» select in the member profile (docs/09 #82), for who may set it (canSetMemberBadge:

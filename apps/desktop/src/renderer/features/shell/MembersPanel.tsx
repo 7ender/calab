@@ -2,7 +2,7 @@ import * as Popover from '@radix-ui/react-popover';
 import { WorkspaceRole, type UpcomingBirthday, type WorkspaceMember } from '@calaba/protocol';
 import { ChevronRight, MonitorUp, Phone, Video, Volume2 } from 'lucide-react';
 import { useShallow } from 'zustand/react/shallow';
-import { memo, useCallback, useEffect, useMemo, useState, type ReactNode } from 'react';
+import { memo, useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { Avatar } from '../../components/Avatar';
 import { cx } from '../../components/ui';
 import { type MessageKey, t, useLocale } from '../../i18n';
@@ -50,8 +50,9 @@ export function MembersPanel({ workspaceId, floating = false, drawer = false }: 
   const groups = useMemo(() => groupMembers(Object.values(members ?? {}), presences, voice), [members, presences, voice]);
   const [profile, setProfile] = useState<string | null>(null);
   // Stable: a new closure per row each render defeated MemberRow's memo (every presence change
-  // re-rendered every row).
-  const openProfile = useCallback((userId: string | null, open: boolean) => setProfile(open ? userId : null), []);
+  // re-rendered every row). A row closes only its own card: a late close from the previous row
+  // (Radix dismiss / close focus) must not wipe the card another row just opened.
+  const openProfile = useCallback((userId: string | null, open: boolean) => setProfile((cur) => (open ? userId : cur === userId ? null : cur)), []);
 
   const section = (key: 'on' | 'off' | 'bots', title: string, list: WorkspaceMember[]): ReactNode =>
     list.length > 0 ? (
@@ -290,6 +291,22 @@ const MemberRow = memo(function MemberRow({
   // In a one-to-one call (ADR-0034, Presence.on_call): a primitive per row.
   const onCall = useOnCall(userId);
   const [renaming, setRenaming] = useState(false);
+  // A press on another member row moves the card there (docs/08 «Карточка участника»): not an
+  // outside click — that row's own click opens its card, which closes this one via `open`. The
+  // close must then not return focus to this row's trigger (Radix does on a non-outside close):
+  // that focus would land outside the new card and dismiss it at once.
+  const switching = useRef(false);
+  const onInteractOutside = useCallback((e: Event) => {
+    const row = (e.target as Element | null)?.closest('[data-member-row]');
+    if (row && row.getAttribute('data-member-row') !== userId) {
+      switching.current = true;
+      e.preventDefault();
+    }
+  }, [userId]);
+  const onCloseAutoFocus = useCallback((e: Event) => {
+    if (switching.current) e.preventDefault();
+    switching.current = false;
+  }, []);
   if (!u) return null;
   const name = nameOf(m);
   const statusLine = [u.statusEmoji, u.statusText].filter(Boolean).join(' ');
@@ -328,6 +345,7 @@ const MemberRow = memo(function MemberRow({
           <button
             type="button"
             aria-label={t('people.openProfile', { name })}
+            data-member-row={userId}
             title={connectingRing ? `${name} · ${t('voice.pendingMember')}` : name}
             className={cx(
               'flex h-[42px] w-full items-center gap-3 rounded-[var(--radius-row)] px-2 text-left transition-colors duration-[var(--motion-fast)] hover:bg-hover',
@@ -367,6 +385,8 @@ const MemberRow = memo(function MemberRow({
           collisionPadding={16}
           className="mat-popover dense anim-in z-[var(--z-popover)] rounded-[var(--radius-panel)] text-fg focus:outline-none"
           aria-label={name}
+          onInteractOutside={onInteractOutside}
+          onCloseAutoFocus={onCloseAutoFocus}
         >
           <ProfileCard
             workspaceId={workspaceId}
