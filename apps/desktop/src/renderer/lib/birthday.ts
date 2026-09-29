@@ -60,6 +60,44 @@ export function isBirthdayToday(b: BirthdayLike | undefined, tz: string, at: Dat
   return isBirthdayOn(b, dateIn(at, tz));
 }
 
+/** The local hour from which the server posts the chat card (birthdays.GreetAt). */
+export const GREET_AT = 9;
+
+const knownZone = (tz: string | undefined): tz is string => {
+  if (!tz) return false;
+  try {
+    new Intl.DateTimeFormat('en-US', { timeZone: tz });
+    return true;
+  } catch {
+    return false;
+  }
+};
+
+/**
+ * The zone whose 09:00 the chat card waits for (the server's birthdays.GreetZone): the
+ * celebrant's, else the workspace owner's, else UTC; an unknown name counts as unset.
+ */
+export function greetZone(celebrantTz: string | undefined, ownerTz: string | undefined): string {
+  if (knownZone(celebrantTz)) return celebrantTz;
+  return knownZone(ownerTz) ? ownerTz : 'UTC';
+}
+
+/**
+ * When the chat card of today's birthday will appear, if not yet: it is the birthday in `tz`
+ * (greetZone) and before GREET_AT there → that moment (whole minute), else null (posted already,
+ * or not the day there).
+ */
+export function cardDueAt(b: BirthdayLike | undefined, tz: string, at: Date = new Date()): Date | null {
+  if (!isBirthdayOn(b, dateIn(at, tz))) return null;
+  const parts = new Intl.DateTimeFormat('en-US', { timeZone: tz, hour: 'numeric', minute: 'numeric', hourCycle: 'h23' }).formatToParts(at);
+  const n = (type: Intl.DateTimeFormatPartTypes): number => Number(parts.find((p) => p.type === type)?.value);
+  const minutes = n('hour') * 60 + n('minute');
+  if (!(minutes < GREET_AT * 60)) return null;
+  const start = new Date(at);
+  start.setSeconds(0, 0);
+  return new Date(start.getTime() + (GREET_AT * 60 - minutes) * 60_000);
+}
+
 /** Full years on `today` (null without a year of birth). */
 export function ageOn(b: BirthdayLike | undefined, today: Ymd): number | null {
   if (!b?.year || !b.day || !b.month) return null;

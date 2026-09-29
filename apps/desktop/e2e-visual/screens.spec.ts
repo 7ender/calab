@@ -1806,18 +1806,25 @@ test('chat-recording-card', async ({ open, win, mock, shot }) => {
   await checkpoint(shot, 'chat-recording-card');
 });
 
-// docs/09 #76: «🎂 Дни рождения» above «В сети» in the members panel — Борис today (a member
-// row), Вера in 3 days under the opened «Скоро» (the mock's clock = the page clock, 15 January).
+// docs/09 #76, #100: the birthday plate at the top of the members panel — Борис today (avatar,
+// name, «Поздравить», and — at 06:30 MSK = 08:30 in his Yekaterinburg — «Открытка в
+// чате появится в 07:00» of my Moscow clock), Вера in 3 days under the opened «Скоро» (the mock's clock = the page
+// clock, 15 January).
 test('main-members-birthday', async ({ open, win, mock, shot }) => {
   await open();
   await mainWindow(win, mock);
-  mock.setClock(NOW.getTime());
+  const morning = new Date('2026-01-15T06:30:00+03:00');
+  await win.clock.setFixedTime(morning);
+  mock.setClock(morning.getTime());
   mock.setBirthday(IDS.users.boris, { day: 15, month: 1, year: 1990 });
   mock.setBirthday(IDS.users.vera, { day: 18, month: 1 });
   const members = await membersList(win);
   const section = members.getByTestId('members-birthdays');
-  await expect(section.getByRole('heading')).toHaveText('🎂 Дни рождения — 2');
-  await expect(section.getByRole('button', { name: /Борис Петров/ })).toBeVisible();
+  const plate = section.getByTestId('members-birthday-plate');
+  await expect(plate.getByRole('heading')).toContainText('Сегодня день рождения!');
+  await expect(plate.getByRole('button', { name: 'Профиль Борис Петров' })).toBeVisible();
+  await expect(plate.getByTestId('members-birthday-congratulate')).toHaveText('Поздравить');
+  await expect(plate.getByTestId('members-birthday-hint')).toHaveText('Открытка в чате появится в 07:00');
   await section.getByTestId('members-birthdays-soon').click();
   await expect(section.getByRole('button', { name: /Вера Ким · 18 янв\./ })).toBeVisible();
   await win.mouse.move(0, 0);
