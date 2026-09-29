@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { ageOn, birthdayLine, daysInMonth, formatBirthday, formatBirthdayField, formatBirthdayShort, isBirthdayOn, isBirthdayToday, parseBirthdayField } from './birthday';
+import { ageOn, birthdayLine, cardDueAt, daysInMonth, greetZone, formatBirthday, formatBirthdayField, formatBirthdayShort, isBirthdayOn, isBirthdayToday, parseBirthdayField } from './birthday';
 
 describe('birthdays (docs/09 #76)', () => {
   it('«today» is the person’s own calendar day, by their time zone', () => {
@@ -67,5 +67,26 @@ describe('the inline birthday field (docs/09 #77)', () => {
     for (const bad of ['29.02.2023', '31.04', '15', '15.13', '1.1.1899', '1.1.2027', '30.09.2026', '1.1.90', 'abc']) {
       expect(parseBirthdayField(bad, now, 'ru'), bad).toBe('invalid');
     }
+  });
+});
+
+describe('the chat card time (birthdays.GreetZone)', () => {
+  it('zone: the celebrant’s, else the workspace owner’s, else UTC', () => {
+    expect(greetZone('Asia/Tokyo', 'Europe/Moscow')).toBe('Asia/Tokyo');
+    expect(greetZone('', 'Europe/Moscow')).toBe('Europe/Moscow');
+    expect(greetZone(undefined, 'Europe/Moscow')).toBe('Europe/Moscow');
+    expect(greetZone('Mars/Olympus', 'Europe/Moscow')).toBe('Europe/Moscow');
+    expect(greetZone(undefined, undefined)).toBe('UTC');
+    expect(greetZone('Nowhere/X', '')).toBe('UTC');
+  });
+
+  it('due at 09:00 of that zone, null once it is past or not the day there', () => {
+    const b = { day: 29, month: 9 };
+    // 03:30:20 UTC = 06:30 MSK: the card at 09:00 MSK = 06:00 UTC.
+    expect(cardDueAt(b, 'Europe/Moscow', new Date(Date.UTC(2026, 8, 29, 3, 30, 20)))?.toISOString()).toBe('2026-09-29T06:00:00.000Z');
+    expect(cardDueAt(b, 'Europe/Moscow', new Date(Date.UTC(2026, 8, 29, 6, 0)))).toBeNull();
+    expect(cardDueAt(b, 'UTC', new Date(Date.UTC(2026, 8, 29, 8, 59)))?.toISOString()).toBe('2026-09-29T09:00:00.000Z');
+    expect(cardDueAt(b, 'UTC', new Date(Date.UTC(2026, 8, 28, 8, 0)))).toBeNull();
+    expect(cardDueAt(undefined, 'UTC', new Date(Date.UTC(2026, 8, 29, 8, 0)))).toBeNull();
   });
 });

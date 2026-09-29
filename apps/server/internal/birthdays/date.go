@@ -1,5 +1,5 @@
 // Package birthdays handles users' birthdays (docs/09 #76, as in Telegram): validation of the date,
-// "is it today" in the owner's time zone, the hourly worker that posts a card into every
+// "is it today" in the celebrant's time zone (else the workspace owner's), the hourly worker that posts a card into every
 // shared workspace, and GET /api/workspaces/{id}/birthdays (upcoming birthdays).
 package birthdays
 
@@ -92,14 +92,33 @@ func DaysUntil(day, month int, today time.Time) int {
 
 // Zone is the user's time zone: the IANA name, else UTC (unset or unknown).
 func Zone(tz *string) *time.Location {
+	if loc, ok := loadZone(tz); ok {
+		return loc
+	}
+	return time.UTC
+}
+
+// GreetZone is the zone whose GreetAt o'clock the birthday card waits for: the celebrant's,
+// else the workspace owner's (a team in one city gets it at 09:00 of its city, not of UTC),
+// else UTC. An unknown name counts as unset. The client repeats it for the «card at 09:00» hint
+// (lib/birthday.ts greetZone).
+func GreetZone(user, owner *string) *time.Location {
+	if loc, ok := loadZone(user); ok {
+		return loc
+	}
+	return Zone(owner)
+}
+
+// loadZone loads an IANA zone name; false when unset or unknown.
+func loadZone(tz *string) (*time.Location, bool) {
 	if tz == nil || *tz == "" {
-		return time.UTC
+		return nil, false
 	}
 	loc, err := time.LoadLocation(*tz)
 	if err != nil {
-		return time.UTC
+		return nil, false
 	}
-	return loc
+	return loc, true
 }
 
 // candidateKeys are the month*100+day keys of the dates that are "today" somewhere on Earth

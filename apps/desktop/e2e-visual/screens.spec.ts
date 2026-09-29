@@ -114,6 +114,7 @@ const KEY = new Set([
   'workspace-suspended',
   'chat-sticker',
   'sticker-picker',
+  'chat-sticker-suggest',
   'settings-stickers',
   'settings-stickers-upload',
   'settings-stickers-emoji',
@@ -1811,18 +1812,25 @@ test('chat-recording-card', async ({ open, win, mock, shot }) => {
   await checkpoint(shot, 'chat-recording-card');
 });
 
-// docs/09 #76: «🎂 Дни рождения» above «В сети» in the members panel — Борис today (a member
-// row), Вера in 3 days under the opened «Скоро» (the mock's clock = the page clock, 15 January).
+// docs/09 #76, #100: the birthday plate at the top of the members panel — Борис today (avatar,
+// name, «Поздравить», and — at 06:30 MSK = 08:30 in his Yekaterinburg — «Открытка в
+// чате появится в 07:00» of my Moscow clock), Вера in 3 days under the opened «Скоро» (the mock's clock = the page
+// clock, 15 January).
 test('main-members-birthday', async ({ open, win, mock, shot }) => {
   await open();
   await mainWindow(win, mock);
-  mock.setClock(NOW.getTime());
+  const morning = new Date('2026-01-15T06:30:00+03:00');
+  await win.clock.setFixedTime(morning);
+  mock.setClock(morning.getTime());
   mock.setBirthday(IDS.users.boris, { day: 15, month: 1, year: 1990 });
   mock.setBirthday(IDS.users.vera, { day: 18, month: 1 });
   const members = await membersList(win);
   const section = members.getByTestId('members-birthdays');
-  await expect(section.getByRole('heading')).toHaveText('🎂 Дни рождения — 2');
-  await expect(section.getByRole('button', { name: /Борис Петров/ })).toBeVisible();
+  const plate = section.getByTestId('members-birthday-plate');
+  await expect(plate.getByRole('heading')).toContainText('Сегодня день рождения!');
+  await expect(plate.getByRole('button', { name: 'Профиль Борис Петров' })).toBeVisible();
+  await expect(plate.getByTestId('members-birthday-congratulate')).toHaveText('Поздравить');
+  await expect(plate.getByTestId('members-birthday-hint')).toHaveText('Открытка в чате появится в 07:00');
   await section.getByTestId('members-birthdays-soon').click();
   await expect(section.getByRole('button', { name: /Вера Ким · 18 янв\./ })).toBeVisible();
   await win.mouse.move(0, 0);
@@ -2861,6 +2869,34 @@ test('sticker-picker', async ({ open, win, mock, shot }) => {
   await grid.getByRole('button', { name: 'Стикер 💎' }).click();
   await expect(panel).toHaveCount(0);
   await expect(win.getByTestId('sticker-message')).toHaveCount(1);
+});
+
+// Stickers by emoji above the field (docs/08 «Композер — подсказка стикеров», like Telegram): 😂
+// typed → the three 😂 of «Смех» in 64 px tiles; → highlights the first, Enter sends it and
+// clears the field; typing more text or Esc hides the strip.
+test('chat-sticker-suggest', async ({ open, win, mock, shot }) => {
+  await open(); // resets the mock: the pack is seeded after it, before the client loads its packs
+  await win.emulateMedia({ reducedMotion: 'reduce' });
+  mock.seedLaughStickers();
+  await mainWindow(win, mock);
+  const field = win.getByRole('textbox', { name: /^Сообщение в/ });
+  await field.fill('😂');
+  const strip = win.getByTestId('sticker-suggest');
+  await expect(strip.locator('[data-sticker-suggest]')).toHaveCount(3);
+  await field.press('ArrowRight');
+  await expect(strip.getByRole('option', { selected: true })).toHaveCount(1);
+  await stillStickers(win, 1);
+  await checkpoint(shot, 'chat-sticker-suggest');
+  await field.press('Escape');
+  await expect(strip).toHaveCount(0);
+  await field.fill('😂 ок');
+  await expect(strip).toHaveCount(0);
+  await field.fill('😂');
+  await field.press('ArrowRight');
+  await field.press('Enter');
+  await expect(win.getByTestId('sticker-message')).toHaveCount(1);
+  await expect(field).toHaveValue('');
+  await expect(strip).toHaveCount(0);
 });
 
 // Workspace settings → «Стикеры» → the pack «Calab»: name, the drop zone, the stickers with their

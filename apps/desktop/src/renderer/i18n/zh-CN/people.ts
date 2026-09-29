@@ -222,6 +222,9 @@ export const zhPeople: DictShape<typeof enPeople> = {
   'birthday.upcomingNone': '未来 7 天没有人过生日',
   'birthday.whenToday': '今天',
   'birthday.whenTomorrow': '明天',
+  'birthday.congratulate': '送上祝福',
+  'birthday.congratulateName': '祝福 {name}：发送私信',
+  'birthday.cardAt': '贺卡将于 {time} 出现在聊天中',
   'birthday.age': { other: '{n} 岁' },
   'birthday.inDays': { other: '{n} 天后' },
 } as const;
