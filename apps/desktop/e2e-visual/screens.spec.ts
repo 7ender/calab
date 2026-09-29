@@ -81,6 +81,7 @@ const KEY = new Set([
   'voice-camera-grid',
   'voice-camera-pip',
   'camera-preview',
+  'camera-bg-live',
   'voice-noise-popover',
   'voice-soundboard',
   'main-members-toggled',
@@ -2678,6 +2679,33 @@ test('camera-preview', async ({ open, win, mock, shot }) => {
   await expect(win.getByTestId('camera-bg-workspace').getByRole('radio')).toHaveCount(2);
   await backgroundThumbsLoaded(win);
   await checkpoint(shot, 'camera-preview');
+});
+
+// docs/09 #121: a workspace background added while the app runs shows up at once — in the open
+// preview (BACKGROUND_CREATE → store → «Фоны пространства») and in camera ▾ «Фоны пространства ▸»;
+// choosing it there checks it. Assertions only, no screenshot.
+test('camera-bg-live', async ({ open, win, mock }) => {
+  await open();
+  await inVoiceWithStatus(win, mock);
+  await hideCameraPixels(win);
+  await win.getByTestId('camera-button').click();
+  await expect(win.getByTestId('camera-preview-enable')).toBeEnabled({ timeout: 15_000 });
+  await expect(win.getByTestId('camera-bg-workspace')).toHaveCount(0);
+  mock.addBackground(IDS.workspaces.main, 'Офис', { from: [44, 62, 80], to: [189, 195, 199] });
+  await expect(win.getByTestId('camera-bg-workspace').getByRole('radio', { name: 'Офис' })).toBeVisible();
+  await win.keyboard.press('Escape');
+  await expect(win.getByTestId('camera-preview-enable')).toBeHidden();
+  mock.addBackground(IDS.workspaces.main, 'Логотип', { from: [10, 132, 255], to: [94, 92, 230] });
+  await win.getByRole('button', { name: 'Выбор камеры' }).click();
+  await win.getByTestId('camera-bg-workspace-menu').hover();
+  const logo = win.getByRole('menuitemradio', { name: 'Логотип' });
+  await expect(logo).toBeVisible();
+  await expect(win.getByRole('menuitemradio', { name: 'Офис' })).toBeVisible();
+  await logo.click();
+  await win.getByRole('button', { name: 'Выбор камеры' }).click();
+  await win.getByTestId('camera-bg-workspace-menu').hover();
+  await expect(win.getByRole('menuitemradio', { name: 'Логотип' })).toHaveAttribute('aria-checked', 'true');
+  await expect(win.getByRole('menuitemradio', { name: 'Офис' })).toHaveAttribute('aria-checked', 'false');
 });
 
 test('voice-camera-pip', async ({ open, win, mock, shot }) => {
