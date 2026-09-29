@@ -42,9 +42,12 @@ type Config struct {
 	// (docs/06 «Общий Valkey»). Empty = none: the historical names.
 	RedisKeyPrefix string `env:"REDIS_KEY_PREFIX"`
 
-	JWTSecret       string        `env:"JWT_SECRET,required"`
-	AccessTokenTTL  time.Duration `env:"ACCESS_TOKEN_TTL" envDefault:"15m"`
-	RefreshTokenTTL time.Duration `env:"REFRESH_TOKEN_TTL" envDefault:"720h"`
+	JWTSecret string `env:"JWT_SECRET,required"`
+	// Token lifetimes (owner, 2026-09-29: lenient — sign in once a year). Revocation does not
+	// wait for expiry: a revoked session's access tokens die at once (Valkey marker + DB
+	// recheck, auth/sessioncheck.go). Self-hosted installs may tighten both.
+	AccessTokenTTL  time.Duration `env:"ACCESS_TOKEN_TTL" envDefault:"24h"`
+	RefreshTokenTTL time.Duration `env:"REFRESH_TOKEN_TTL" envDefault:"8760h"`
 
 	RegistrationMode RegistrationMode `env:"REGISTRATION_MODE" envDefault:"invite"`
 

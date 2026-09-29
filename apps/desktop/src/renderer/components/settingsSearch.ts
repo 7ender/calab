@@ -42,7 +42,7 @@ const hasAll = (text: string, words: string[]): boolean => {
  * when every word of the query occurs in its label or hint; rows matching by label come
  * before rows matching only by hint; the same label is listed once per section.
  */
-export function searchSettings(sections: Array<{ id: string; label: string }>, entries: SettingsEntry[], query: string): SettingsHitGroup[] {
+export function searchSettings(sections: Array<{ id: string; label: string; keywords?: string | undefined; badge?: string | undefined }>, entries: SettingsEntry[], query: string): SettingsHitGroup[] {
   const words = queryWords(query);
   if (words.length === 0) return [];
   const out: SettingsHitGroup[] = [];
@@ -59,7 +59,8 @@ export function searchSettings(sections: Array<{ id: string; label: string }>, e
       else continue;
       seen.add(label);
     }
-    const sectionHit = hasAll(s.label, words);
+    // Keywords and the badge («Обновление») find a section whose title does not say it.
+    const sectionHit = hasAll(`${s.label} ${s.keywords ?? ''} ${s.badge ?? ''}`, words);
     const rows = [...byLabel, ...byHint];
     if (sectionHit || rows.length > 0) out.push({ section: s.id, sectionHit, rows });
   }

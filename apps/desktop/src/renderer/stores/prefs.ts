@@ -19,6 +19,7 @@ import type { OpenChatSound } from '../lib/chatSound';
 import type { SoundName } from '../lib/sounds';
 import type { Combo, HotkeyAction } from '../lib/shortcuts';
 import type { StatusChoice } from '../services/customStatus';
+import type { UpdateNag } from '../features/shell/updateBarModel';
 
 /**
  * Device-local preferences (localStorage — nothing secret here). Settings that
@@ -107,6 +108,8 @@ export interface Prefs {
   soundboardFavorites: string[];
   /** Presses per sound id on this device («Часто используемые»). */
   soundboardUsage: Record<string, number>;
+  /** The update bar's «Позже» / «×» (features/shell/updateBarModel.ts, docs/09 #125); null = never pressed. */
+  updateNag: UpdateNag | null;
 }
 
 const DEFAULTS: Prefs = {
@@ -156,6 +159,7 @@ const DEFAULTS: Prefs = {
   soundboardMuteOthers: false,
   soundboardFavorites: [],
   soundboardUsage: {},
+  updateNag: null,
 };
 
 interface PrefsState extends Prefs {

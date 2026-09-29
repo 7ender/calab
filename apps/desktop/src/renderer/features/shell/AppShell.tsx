@@ -10,6 +10,7 @@ import { installHotkeys } from '../../services/hotkeys';
 import { installEmail } from '../../services/email';
 import { VerifyBanner } from '../auth/VerifyEmail';
 import { SuspendedBanner } from '../workspace/SuspendedBanner';
+import { UpdateBar } from './UpdateBar';
 import { defaultRoom, roomsOfWorkspace, useRooms } from '../../stores/rooms';
 import { usePrefs } from '../../stores/prefs';
 import { useSession } from '../../stores/session';
@@ -107,6 +108,8 @@ export function AppShell(): ReactNode {
           {t('gateway.reconnecting')}
         </div>
       ) : null}
+      {/* An update waits: the accent bar under the title bar (docs/08 «Обновление», docs/09 #125). */}
+      <UpdateBar />
       {/* The rail sits on the window layer (same material as the title bar); the room column and
           the chat are one «island» with a 12 px top-left corner and a hairline edge (docs/09 v0.2). */}
       <div className="mat-rail relative flex min-h-0 flex-1">

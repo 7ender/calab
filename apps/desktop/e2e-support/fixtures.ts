@@ -364,6 +364,8 @@ export interface FileRec {
 
 export interface MockState {
   scenario: Scenario;
+  /** GET /api/version `version` ('dev' = never newer than a bundle; a test sets e.g. '99.0.0'). */
+  serverVersion: string;
   users: Map<string, UserRec>;
   workspaces: Map<string, Workspace>;
   members: MemberRec[];
@@ -697,6 +699,7 @@ export const GENERAL_MESSAGE_COUNT = MESSAGES.filter((m) => m.room === R.general
 export function buildState(scenario: Scenario): MockState {
   const s: MockState = {
     scenario,
+    serverVersion: 'dev',
     users: new Map(),
     workspaces: new Map(),
     members: [],
