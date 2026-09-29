@@ -29,6 +29,8 @@ import { onCallRing, onCallState, onReadyCall } from './call';
 import { applySnapshotRecordings, dropRecordings, onRoomRecording, resetRecordings } from './recording';
 import { t } from '../i18n';
 import { dropStaleWorkspaceBackground } from './cameraBackground';
+import { applySnapshotSounds, useSounds } from '../stores/sounds';
+import { onSoundPlay } from './soundboard';
 
 /** «печатает» lives 5 s after the last TYPING_START: senders repeat it every 3 s while typing (services/chat.ts), so a stuck indicator (a lost stop, a closed tab) fades fast (docs/09 #64). */
 export const TYPING_MS = 5000;
@@ -67,6 +69,7 @@ export function applyDispatch(ev: DispatchEvent): void {
       const prevMentions = rooms.mentions;
       ws.reset();
       rooms.reset();
+      useSounds.getState().reset();
       // Read receipts (docs/09 #92): workspace rooms here, DMs with their summaries (applyDm).
       useReadReceipts.getState().reset();
       for (const pr of r.peerReads) useReadReceipts.getState().set(pr.roomId, pr.lastReadMessageId);
@@ -77,6 +80,7 @@ export function applyDispatch(ev: DispatchEvent): void {
         rooms.upsertMany(snap.rooms);
         for (const room of snap.rooms) if (room.lastMessageId) rooms.setLastMessage(room.id, room.lastMessageId);
         applySnapshotExtras(snap);
+        applySnapshotSounds(snap);
       }
       // DMs (ADR-0020): rooms without a workspace; their read states are in read_states below.
       for (const dm of r.dms) applyDm(dm, false);
@@ -125,6 +129,7 @@ export function applyDispatch(ev: DispatchEvent): void {
       useRooms.getState().upsertMany(snap.rooms);
       for (const room of snap.rooms) if (room.lastMessageId) useRooms.getState().setLastMessage(room.id, room.lastMessageId);
       applySnapshotExtras(snap);
+      applySnapshotSounds(snap);
       applySnapshotRecordings(snap);
       ensureActiveWorkspace();
       return;
@@ -142,6 +147,7 @@ export function applyDispatch(ev: DispatchEvent): void {
       const id = e.value.workspaceId;
       useWorkspaces.getState().remove(id);
       useRooms.getState().removeWorkspace(id);
+      useSounds.getState().dropWorkspace(id);
       dropRecordings((_room, rec) => rec.workspaceId === id);
       if (useVoice.getState().workspaceId === id) void voice.leave();
       if (useUi.getState().activeWorkspaceId === id) useUi.getState().setWorkspace(null);
@@ -191,6 +197,17 @@ export function applyDispatch(ev: DispatchEvent): void {
     case 'backgroundDelete':
       useWorkspaces.getState().removeBackground(e.value.workspaceId, e.value.backgroundId);
       dropStaleWorkspaceBackground();
+      return;
+    // Soundboard (ADR-0036): the library of the workspace; SOUND_PLAY only reaches the call.
+    case 'soundCreate':
+    case 'soundUpdate':
+      if (e.value.sound) useSounds.getState().upsert(e.value.sound);
+      return;
+    case 'soundDelete':
+      useSounds.getState().remove(e.value.workspaceId, e.value.soundId);
+      return;
+    case 'soundPlay':
+      onSoundPlay(e.value);
       return;
     case 'workspaceMemberRemove':
       if (useWorkspaces.getState().users[e.value.userId]?.isBot) useBots.getState().dropCommands();

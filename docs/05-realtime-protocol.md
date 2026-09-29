@@ -95,6 +95,9 @@ BADGE_CREATE / UPDATE         { badge } — бейдж библиотеки пр
 BADGE_DELETE                  { workspace_id, badge_id } — бейдж удалён; его участники перед этим получили WORKSPACE_MEMBER_UPDATE без badge_id
 BACKGROUND_CREATE / UPDATE    { background } — фон камеры пространства (ADR-0035), всем участникам; в READY — WorkspaceSnapshot.backgrounds
 BACKGROUND_DELETE             { workspace_id, background_id } — фон удалён; клиенты, выбравшие его, сбрасывают фон на «Нет»
+SOUND_CREATE / UPDATE         { sound } — звук саундборда пространства (ADR-0036), всем участникам; в READY — WorkspaceSnapshot.sounds; перенос — UPDATE каждому сдвинутому
+SOUND_DELETE                  { workspace_id, sound_id } — звук удалён
+SOUND_PLAY                    { room_id, sound_id, user_id, at } — кто-то в звонке нажал звук (`builtin:<имя>` или id звука): только тем, кто в звонке комнаты (их user-каналы), нажавшему тоже; клиент играет клип сам через <audio>, опоздание > 3 с — пропускает
 ROOM_RECORDING                { workspace_id, room_id, recording_id, state: ACTIVE | STOPPED, by_user_id, since,
                                 stop_reason, stopped_by } — запись встречи началась / остановилась (ADR-0025)
 BOT_CREATE / BOT_UPDATE       { workspace_id, bot } — бот вступил / изменился (профиль, команды, токен, webhook; ADR-0031)

@@ -63,6 +63,7 @@ import {
   type RoomRecording,
   type Badge,
   type WorkspaceBackground,
+  type Sound,
   type Session,
   type User,
   type UserSettings,
@@ -85,7 +86,7 @@ import { avatarPicture, cardPicture, encodePng } from './png';
 export type Scenario = 'data' | 'empty' | 'marketing';
 export const SCENARIOS: readonly Scenario[] = ['data', 'empty', 'marketing'];
 
-const KIND = { user: 1, workspace: 2, room: 3, message: 4, file: 5, invite: 6, session: 7, category: 8, role: 9, sticker: 10, stickerPack: 11, badge: 12, background: 13 } as const;
+const KIND = { user: 1, workspace: 2, room: 3, message: 4, file: 5, invite: 6, session: 7, category: 8, role: 9, sticker: 10, stickerPack: 11, badge: 12, background: 13, sound: 14 } as const;
 export type IdKind = keyof typeof KIND;
 
 export function mockId(kind: IdKind, n: number): string {
@@ -416,6 +417,8 @@ export interface MockState {
   badges: Map<string, Badge>;
   /** Camera backgrounds of workspaces (ADR-0035 addendum) by id, in creation order; empty until MockServer.addBackground(). */
   backgrounds: Map<string, WorkspaceBackground>;
+  /** Soundboard of workspaces (ADR-0036) by id; empty until MockServer.addSound(). */
+  sounds: Map<string, Sound>;
   /** Email codes (ADR-0023): `verify:<userId>` (also the email change) and `reset:<email>`. */
   emailCodes: Map<string, EmailCodeRec>;
   /** Pending invitations by email, by id. */
@@ -722,6 +725,7 @@ export function buildState(scenario: Scenario): MockState {
     roles: new Map(),
     badges: new Map(),
     backgrounds: new Map(),
+    sounds: new Map(),
     emailCodes: new Map(),
     emailInvites: new Map(),
     gptunnel: new Map(),
@@ -731,7 +735,7 @@ export function buildState(scenario: Scenario): MockState {
     userStickerPacks: new Map(),
     bots: new Map(),
     blockedBots: new Map(),
-    next: { user: 0x100, workspace: 0x100, room: 0x100, message: 0x1000, file: 0x100, invite: 0x100, session: 0x100, category: 0x100, role: 0x100, sticker: 0x100, stickerPack: 0x100, badge: 0x100, background: 0x100 },
+    next: { user: 0x100, workspace: 0x100, room: 0x100, message: 0x1000, file: 0x100, invite: 0x100, session: 0x100, category: 0x100, role: 0x100, sticker: 0x100, stickerPack: 0x100, badge: 0x100, background: 0x100, sound: 0x100 },
     clock: 0,
   };
   if (scenario === 'marketing') return buildMarketingState(s);

@@ -8,6 +8,7 @@
  * CLI: tsx e2e-support/mock-server.ts --port 3900 --scenario data|empty|marketing --static dist-web
  */
 import { createServer, type IncomingMessage, type ServerResponse } from 'node:http';
+import { readFileSync } from 'node:fs';
 import { readFile, stat } from 'node:fs/promises';
 import { extname, join, resolve, sep } from 'node:path';
 import { pathToFileURL } from 'node:url';
@@ -48,6 +49,13 @@ import {
   UpdateBackgroundRequestSchema,
   UpdateBackgroundResponseSchema,
   type WorkspaceBackground,
+  SoundSchema,
+  ListSoundsResponseSchema,
+  CreateSoundRequestSchema,
+  SoundResponseSchema,
+  UpdateSoundRequestSchema,
+  PlaySoundRequestSchema,
+  type Sound,
   AdminPlanLogResponseSchema,
   AdminSearchWorkspacesResponseSchema,
   AdminSetPlanRequestSchema,
@@ -421,6 +429,10 @@ export interface MockServer {
   setMemberBadge(workspaceId: string, userId: string, badgeId: string): void;
   /** ADR-0035 addendum: a camera background of the workspace with a generated 16:9 picture (a diagonal gradient) → BACKGROUND_CREATE; its id. */
   addBackground(workspaceId: string, name: string, colors: { from: [number, number, number]; to: [number, number, number] }): string;
+  /** ADR-0036: a sound of the workspace's soundboard (a copy of a built-in clip) → SOUND_CREATE; its id. */
+  addSound(workspaceId: string, name: string, emoji: string): string;
+  /** ADR-0036: `userId` pressed `soundId` (`builtin:<id>` or a workspace sound) in `roomId` → SOUND_PLAY to the room's call. */
+  playSound(roomId: string, userId: string, soundId: string): void;
   /** ADR-0025: connects the workspace to GPTunneL as if an admin paired it (`null` = disconnect). */
   setGptunnel(workspaceId: string, pairedBy: string | null): void;
   /**
@@ -514,6 +526,8 @@ export async function startMockServer(opts: MockServerOptions = {}): Promise<Moc
     addBadge: (w, name, colors) => impl.addBadge(w, name, colors),
     setMemberBadge: (w, u, id) => impl.setMemberBadge(w, u, id),
     addBackground: (w, name, colors) => impl.addBackground(w, name, colors),
+    addSound: (w, name, emoji) => impl.addSound(w, name, emoji),
+    playSound: (roomId, u, soundId) => impl.playSound(roomId, u, soundId),
     stopCamera: (u, r) => impl.stopCamera(u, r),
     setEmailState: (u, st) => impl.setEmailState(u, st),
     setRecording: (roomId, rec) => impl.setRecording(roomId, rec),
@@ -1206,6 +1220,7 @@ class MockImpl {
       roles: this.rolesOfWs(wsId),
       badges: this.badgesOf(wsId),
       backgrounds: this.backgroundsOf(wsId),
+      sounds: this.soundsOf(wsId),
     });
   }
 
@@ -1678,6 +1693,29 @@ class MockImpl {
     this.state.backgrounds.set(background.id, background);
     this.toWorkspace(workspaceId, { event: { case: 'backgroundCreate', value: { background } } });
     return background.id;
+  }
+
+  addSound(workspaceId: string, name: string, emoji: string): string {
+    const ws = this.state.workspaces.get(workspaceId);
+    if (!ws) throw new Error(`no workspace ${workspaceId}`);
+    const bytes = readFileSync(new URL('../src/renderer/assets/sounds/quack.ogg', import.meta.url));
+    const fileId = this.storeFile(workspaceId, ws.ownerId, { name: 'sound.ogg', mime: 'audio/ogg', bytes });
+    const position = this.soundsOf(workspaceId).length;
+    const sound = create(SoundSchema, { id: nextId(this.state, 'sound'), workspaceId, name, emoji, fileId, durationMs: 1097, position });
+    this.state.sounds.set(sound.id, sound);
+    this.toWorkspace(workspaceId, { event: { case: 'soundCreate', value: { sound } } });
+    return sound.id;
+  }
+
+  playSound(roomId: string, userId: string, soundId: string): void {
+    const at = timestampFromMs(Date.now());
+    for (const v of this.state.voiceStates.values()) {
+      if (v.roomId === roomId) this.toUser(v.userId, { event: { case: 'soundPlay', value: { roomId, soundId, userId, at } } });
+    }
+  }
+
+  private soundsOf(wsId: string): Sound[] {
+    return [...this.state.sounds.values()].filter((x) => x.workspaceId === wsId).sort((a, b) => a.position - b.position);
   }
 
   private backgroundsOf(wsId: string): WorkspaceBackground[] {
@@ -2847,6 +2885,91 @@ class MockImpl {
       if (!background || background.workspaceId !== ws.id) throw notFound('background not found');
       s().backgrounds.delete(background.id);
       this.toWorkspace(ws.id, { event: { case: 'backgroundDelete', value: { workspaceId: ws.id, backgroundId: background.id } } });
+      noContent(c.res);
+    });
+
+    // ---------------- soundboard (ADR-0036): the library for members, the rest MANAGE_STICKERS; play for the call.
+    // The server converts the upload to an Ogg/Opus clip; the mock keeps the uploaded file.
+    this.route('GET', '/api/workspaces/:id/sounds', (c) => {
+      const { ws } = this.workspaceFor(c.params[0] ?? '', this.uid(c));
+      sendMsg(c.res, 200, ListSoundsResponseSchema, { sounds: this.soundsOf(ws.id) });
+    });
+    const soundName = (raw: string): string => {
+      const name = raw.trim();
+      if (!name || Array.from(name).length > 32) throw invalid('name', 'name must be 1..32 characters');
+      return name;
+    };
+    const soundManager = (c: Ctx): Workspace => {
+      const { ws } = this.workspaceFor(c.params[0] ?? '', this.uid(c));
+      this.stickerManager(ws.id, this.uid(c));
+      return ws;
+    };
+    const soundFile = (c: Ctx, wsId: string, id: string): string => {
+      const f = s().files.get(id);
+      if (!f || f.meta.workspaceId !== wsId || f.meta.uploaderId !== this.uid(c) || f.bytes.length > 2 * 1024 * 1024) {
+        throw invalid('fileId', 'an MP3, Ogg or WAV file you uploaded to this workspace, at most 2 MB');
+      }
+      return id;
+    };
+    this.route('POST', '/api/workspaces/:id/sounds', (c) => {
+      const ws = soundManager(c);
+      const b = parseBody(c, CreateSoundRequestSchema);
+      if (this.soundsOf(ws.id).length >= 50) throw conflict('a workspace has at most 50 sounds');
+      const sound = create(SoundSchema, {
+        id: nextId(s(), 'sound'),
+        workspaceId: ws.id,
+        name: soundName(b.name),
+        emoji: b.emoji.trim(),
+        fileId: soundFile(c, ws.id, b.fileId),
+        durationMs: 1500,
+        position: this.soundsOf(ws.id).length,
+      });
+      s().sounds.set(sound.id, sound);
+      this.toWorkspace(ws.id, { event: { case: 'soundCreate', value: { sound } } });
+      sendMsg(c.res, 201, SoundResponseSchema, { sound });
+    });
+    this.route('PATCH', '/api/workspaces/:id/sounds/:soundId', (c) => {
+      const ws = soundManager(c);
+      const sound = s().sounds.get(c.params[1] ?? '');
+      if (!sound || sound.workspaceId !== ws.id) throw notFound('sound not found');
+      const b = parseBody(c, UpdateSoundRequestSchema);
+      if (b.name !== undefined) sound.name = soundName(b.name);
+      if (b.emoji !== undefined) sound.emoji = b.emoji.trim();
+      if (b.fileId !== undefined) sound.fileId = soundFile(c, ws.id, b.fileId);
+      const changed = [sound];
+      if (b.position !== undefined) {
+        const order = this.soundsOf(ws.id).filter((x) => x.id !== sound.id);
+        order.splice(Math.min(b.position, order.length), 0, sound);
+        order.forEach((x, i) => {
+          if (x.position !== i && x !== sound) changed.push(x);
+          x.position = i;
+        });
+      }
+      for (const x of changed) this.toWorkspace(ws.id, { event: { case: 'soundUpdate', value: { sound: x } } });
+      sendMsg(c.res, 200, SoundResponseSchema, { sound });
+    });
+    this.route('DELETE', '/api/workspaces/:id/sounds/:soundId', (c) => {
+      const ws = soundManager(c);
+      const sound = s().sounds.get(c.params[1] ?? '');
+      if (!sound || sound.workspaceId !== ws.id) throw notFound('sound not found');
+      s().sounds.delete(sound.id);
+      this.toWorkspace(ws.id, { event: { case: 'soundDelete', value: { workspaceId: ws.id, soundId: sound.id } } });
+      noContent(c.res);
+    });
+    const lastPress = new Map<string, number>();
+    this.route('POST', '/api/rooms/:id/sounds/play', (c) => {
+      const me = this.uid(c);
+      const roomId = c.params[0] ?? '';
+      const room = s().rooms.get(roomId);
+      if (!room || !room.workspaceId || !this.canView(room, me)) throw notFound('room not found');
+      if (s().voiceStates.get(me)?.roomId !== roomId) throw forbidden('join the voice call of this room first');
+      const b = parseBody(c, PlaySoundRequestSchema);
+      const ok = /^builtin:[a-z0-9_]{1,32}$/.test(b.soundId) || s().sounds.get(b.soundId)?.workspaceId === room.workspaceId;
+      if (!ok) throw notFound('sound not found');
+      const now = Date.now();
+      if (now - (lastPress.get(me) ?? 0) < 2000) throw tooMany('too many requests', 2);
+      lastPress.set(me, now);
+      this.playSound(roomId, me, b.soundId);
       noContent(c.res);
     });
 

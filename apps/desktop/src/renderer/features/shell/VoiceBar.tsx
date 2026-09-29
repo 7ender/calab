@@ -19,6 +19,7 @@ import { useRooms } from '../../stores/rooms';
 import { useUi } from '../../stores/ui';
 import { setVoice, useVoice, type LinkQuality, type VoicePhase } from '../../stores/voice';
 import { RecordingPill } from '../voice/Recording';
+import { SoundChip, SoundboardButton } from '../voice/Soundboard';
 import { MyStreamAnnot } from '../voice/Annotations';
 import { useMemberName, useWorkspaces } from '../../stores/workspaces';
 import { dmPeer } from '../../stores/dms';
@@ -568,6 +569,8 @@ export function VoiceBar(): ReactNode {
       {/* A recording (docs/09 #30): the red «● Запись · 12:34» pill on a line under the header,
           aligned with its text (36 px square + 8 px); who started it — in the tooltip. */}
       <RecordingPill roomId={roomId} workspaceId={wsId} className="mt-1 pl-11" />
+      {/* Soundboard (ADR-0036): «🥁 Ba dum tss · Илья» for 2 s after a sound played in the call. */}
+      {call ? null : <SoundChip className="mt-1 pl-11" />}
 
       {phase === 'reconnecting' || phase === 'blocked' ? (
         // Connection lost (docs/09 #15): yellow notice inside the panel; LiveKit / rejoin brings it
@@ -594,9 +597,10 @@ export function VoiceBar(): ReactNode {
         </div>
       ) : null}
 
-      {/* Three equal 36 px buttons 10 px apart across the island (docs/09 #12): camera ▾, screen,
-          more. Noise suppression lives in the header's popover and in Settings. */}
-      <div className="mt-2 grid grid-cols-3 gap-2.5">
+      {/* Equal 36 px buttons 10 px apart across the island (docs/09 #12): camera ▾, screen,
+          sounds (ADR-0036; not in a one-to-one call), more. Noise suppression lives in the
+          header's popover and in Settings. */}
+      <div className={cx('mt-2 grid gap-2.5', call ? 'grid-cols-3' : 'grid-cols-4')}>
         <CameraButton roomId={roomId} />
         {myStream ? (
           <PanelButton label={t('shell.stopShare')} active onClick={() => void voice.stopStream()}>
@@ -607,6 +611,7 @@ export function VoiceBar(): ReactNode {
             <MonitorUp className="size-5" aria-hidden />
           </PanelButton>
         )}
+        {call ? null : <SoundboardButton className={cx(panelBtn(false), 'data-[state=open]:bg-[var(--color-fill-hover)]')} />}
         <Dropdown.Root modal={false}>
           <Tip label={t('shell.more')}>
             <Dropdown.Trigger asChild>

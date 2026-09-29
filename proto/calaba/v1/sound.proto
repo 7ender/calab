@@ -1,0 +1,66 @@
+syntax = "proto3";
+package calaba.v1;
+
+// Soundboard (ADR-0036): short clips a participant of a voice room plays to everyone in the
+// call. A clip never goes through a media track: POST …/sounds/play sends SOUND_PLAY to the
+// room's voice participants and each client plays the clip itself through an <audio> element.
+// Built-in clips ship with the app (sound ids "builtin:<name>"); a workspace's own sounds are
+// managed with MANAGE_STICKERS («Стикеры и звуки») and read by every member, guests too.
+
+// A sound of a workspace: an Ogg/Opus clip (48 kHz mono, −16 LUFS, at most 5 s) the server made
+// from an admin's upload.
+message Sound {
+  string id = 1;
+  string workspace_id = 2;
+  string name = 3;  // 1..32 characters
+  string emoji = 4; // one emoji sequence shown on the tile; may be empty
+  // The clip: GET /api/files/{file_id} (Authorization header required); readable by the
+  // members of the workspace, guests too.
+  string file_id = 5;
+  uint32 duration_ms = 6; // measured by the server from the file, 1..5000
+  uint32 position = 7;    // order in the library, 0 = first
+}
+
+// GET /api/workspaces/{id}/sounds (any member, guests and bots too): the library in order.
+message ListSoundsResponse {
+  repeated Sound sounds = 1;
+}
+
+// POST /api/workspaces/{id}/sounds (MANAGE_STICKERS) → 201 SoundResponse; SOUND_CREATE.
+// file_id: an audio file the caller uploaded to this workspace (POST /api/workspaces/{id}/files),
+// not a sticker, badge, camera background or sound; MP3 / Ogg / WAV, at most 2 MB. The server
+// converts it with ffmpeg into a new file (Ogg/Opus 48 kHz mono, loudness −16 LUFS, cut to
+// 5 s) counted in the storage quota (413 when full); the upload itself stays unattached.
+// 422 on file_id when it is not such a file or ffmpeg cannot read it; 503 without ffmpeg.
+// 409 CONFLICT: 50 sounds already.
+message CreateSoundRequest {
+  string name = 1;  // 1..32 characters after trimming
+  string emoji = 2; // at most one emoji sequence (≤ 64 bytes); "" = none
+  string file_id = 3;
+}
+
+message SoundResponse {
+  Sound sound = 1;
+}
+
+// PATCH /api/workspaces/{id}/sounds/{sound_id} (MANAGE_STICKERS) → SoundResponse. Unset fields
+// are left unchanged; file_id replaces the clip (the same rules as on create). position moves
+// the sound to that index (clamped to the end); the sounds it passes get their new positions.
+// Every changed sound is announced with SOUND_UPDATE.
+// DELETE /api/workspaces/{id}/sounds/{sound_id} → 204; SOUND_DELETE. The file is left to the
+// orphan cleanup.
+message UpdateSoundRequest {
+  optional string name = 1;
+  optional string emoji = 2;
+  optional string file_id = 3;
+  optional uint32 position = 4;
+}
+
+// POST /api/rooms/{id}/sounds/play → 204. The caller (a person or a bot) must be in the voice
+// call of this workspace room (a connected device), else 403. sound_id: "builtin:<name>"
+// (a clip of the app, [a-z0-9_]{1,32}) or a sound of the room's workspace (404 otherwise).
+// Limits: one sound per 2 s per user and 5 per 10 s per room (429 with Retry-After). Sends
+// SOUND_PLAY to the users in the call, the caller included; a server mute does not stop it.
+message PlaySoundRequest {
+  string sound_id = 1;
+}

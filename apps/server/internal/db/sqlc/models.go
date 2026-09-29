@@ -496,3 +496,14 @@ type WorkspaceRole struct {
 	Mentionable bool
 	CreatedAt   time.Time
 }
+
+type WorkspaceSound struct {
+	ID          uuid.UUID
+	WorkspaceID uuid.UUID
+	Name        string
+	Emoji       string
+	FileID      uuid.UUID
+	DurationMs  int32
+	Position    int16
+	CreatedAt   time.Time
+}
