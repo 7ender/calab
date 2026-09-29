@@ -29,7 +29,7 @@ export const IPC = {
   appCheckUpdates: 'app:check-updates',
   /** The current update status (a reloaded renderer does not miss a downloaded update). */
   appGetUpdateStatus: 'app:get-update-status',
-  /** Restart now and install the downloaded update. */
+  /** Restart and install the downloaded update; arg `true` during a call: when the call ends. */
   appInstallUpdate: 'app:install-update',
   /** «Скачать и установить» in «О программе»: download an `installable` available update now. */
   appDownloadUpdate: 'app:download-update',
@@ -394,8 +394,11 @@ export type UpdateStatus =
     }
   /** Download in progress; `percent` is an integer 0–100, `bytesPerSecond` once progress is known. */
   | { state: 'downloading'; version: string; percent: number; bytesPerSecond?: number }
-  /** Ready: installs on «Перезапустить» or on quit. */
-  | { state: 'downloaded'; version: string }
+  /**
+   * Ready: installs on «Перезапустить» or on quit. `afterCall`: «Перезапустить после звонка» was
+   * pressed — main installs when the call ends (docs/09 #125).
+   */
+  | { state: 'downloaded'; version: string; afterCall?: true }
   | { state: 'error'; message: string };
 
 export interface TrayState {

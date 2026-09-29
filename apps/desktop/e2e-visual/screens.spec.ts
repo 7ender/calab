@@ -104,6 +104,7 @@ const KEY = new Set([
   'settings-voice',
   'settings-hotkeys',
   'settings-about',
+  'update-bar',
   'room-settings-1',
   'room-settings-restricted',
   'i18n-en-main-chat',
@@ -793,18 +794,27 @@ test('members-menu-call', async ({ open, win, mock, shot }) => {
   await checkpoint(shot, 'members-menu-call', { keepPointer: true });
 });
 
-test('update-banner', async ({ open, win, mock, shot }) => {
+/**
+ * docs/09 #125 (owner, 29.09: «обновление слабо видят»): a downloaded update — the 32 px accent bar
+ * under the title bar («Доступна версия X — обновление уже загружено · Перезапустить и обновить ·
+ * Позже») and the accent dot on the title-bar gear (faked status).
+ */
+test('update-bar', async ({ open, win, mock, shot }) => {
   await open();
   await mainWindow(win, mock);
-  // Auto-update: «Calab X готова · Перезапустить ✕» in the bottom island (faked status).
-  await win.evaluate(() => (window as unknown as { __calabaUpdateStatus?: (s: object) => void }).__calabaUpdateStatus?.({ state: 'downloaded', version: '0.1.1' }));
-  await expect(win.getByTestId('update-banner')).toBeVisible();
-  await checkpoint(shot, 'update-banner');
+  await win.evaluate(() => (window as unknown as { __calabaUpdateStatus?: (s: object) => void }).__calabaUpdateStatus?.({ state: 'downloaded', version: '0.9.1' }));
+  const bar = win.getByTestId('update-bar');
+  await expect(bar).toContainText('Доступна версия 0.9.1 — обновление уже загружено');
+  await expect(bar.getByRole('button', { name: 'Перезапустить Calab и установить версию 0.9.1' })).toHaveText('Перезапустить и обновить');
+  await expect(bar.getByRole('button', { name: 'Позже' })).toBeVisible();
+  await expect(win.getByTestId('settings-update-dot')).toBeVisible();
+  await checkpoint(shot, 'update-bar');
 });
 
 /**
  * «О программе» with an available update (docs/09 #93): «Версия X» + «Скачать и установить 0.9.0»
- * (faked status). The real app / Electron versions are masked — they change with every release.
+ * (faked status), «Обновление» on the section (docs/09 #125). The real app / Electron versions are
+ * masked — they change with every release.
  */
 test('settings-about', async ({ open, win, mock, shot }) => {
   await open();
@@ -820,6 +830,7 @@ test('settings-about', async ({ open, win, mock, shot }) => {
   );
   const dialog = win.getByRole('dialog');
   await expect(dialog.getByTestId('update-install')).toHaveText('Скачать и установить 0.9.0');
+  await expect(dialog.getByTestId('settings-section-badge')).toHaveText('Обновление');
   await checkpoint(shot, 'settings-about', {
     mask: [dialog.locator('[data-settings-label]', { hasText: /^Версия / }), dialog.getByText(/^Electron /)],
   });

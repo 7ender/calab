@@ -69,6 +69,7 @@ export function EmojiPicker({
       </Tip>
       <Popover.Portal>
         <Popover.Content
+          ref={keepOwnScroll}
           side={side ?? (inModal ? 'bottom' : 'top')}
           align={inModal ? 'start' : 'end'}
           sideOffset={inModal ? 6 : 10}
@@ -96,6 +97,25 @@ export function EmojiPicker({
       </Popover.Portal>
     </Popover.Root>
   );
+}
+
+/**
+ * docs/09 #118: inside a modal Radix Dialog (settings → «Стикеры», «Свой статус») the list did not
+ * scroll. The dialog's scroll lock (react-remove-scroll) sits on its Overlay with the Content as a
+ * shard, and cancels every wheel/touchmove at the document unless the target is in the overlay's
+ * React subtree or inside the Content's DOM — this popover is portaled to <body>, so it is neither.
+ * The picker scrolls only its own list (overscroll-contain, nothing behind it moves), so its wheel
+ * and touchmove stop at the popover: the lock never sees them, whatever sheet the picker opens over.
+ * The idle tracker listens in the capture phase on window and still sees them.
+ */
+function keepOwnScroll(el: HTMLDivElement | null): void {
+  // One module-level listener: a repeated ref call on the same element adds nothing.
+  el?.addEventListener('wheel', stopHere, { passive: true });
+  el?.addEventListener('touchmove', stopHere, { passive: true });
+}
+
+function stopHere(e: Event): void {
+  e.stopPropagation();
 }
 
 function PickerBody({ onPick, canPick, hint }: { onPick: (emoji: string) => void; canPick?: (emoji: string) => boolean; hint?: string }): ReactNode {
@@ -165,7 +185,7 @@ function PickerBody({ onPick, canPick, hint }: { onPick: (emoji: string) => void
         </p>
       ) : null}
       {/* 12 px inset on both sides: 9 × 36 px cells fill the 348 px popover (narrower if a classic scrollbar takes room). */}
-      <div ref={scroller} className="min-h-0 flex-1 overflow-y-auto px-3 pb-2" onKeyDown={onGridKey} onScroll={onScroll}>
+      <div ref={scroller} data-testid="emoji-picker-list" className="min-h-0 flex-1 overflow-y-auto overscroll-contain px-3 pb-2" onKeyDown={onGridKey} onScroll={onScroll}>
         {sections.map((s) => (
           <section key={s.id} id={`emoji-${s.id}`} data-group={s.id} aria-label={s.label} className="-mx-3 px-3">
             {/* The section bleeds into the scroller's 12 px padding, so the band spans the whole

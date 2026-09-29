@@ -25,6 +25,12 @@ UPDATE sessions SET
 WHERE id = $1
 RETURNING *;
 
+-- name: TouchSession :exec
+-- "Last activity" of a session between refreshes (access tokens live 24 h): bumped by the
+-- periodic session recheck (auth/sessioncheck.go), at most every 5 minutes.
+UPDATE sessions SET last_seen_at = now()
+WHERE id = $1 AND revoked_at IS NULL AND last_seen_at < now() - interval '5 minutes';
+
 -- name: MarkRefreshGenUsed :exec
 -- The first use of refresh generation refresh_gen (an access token minted for it was presented).
 -- The seal is not needed any more: the previous token is reuse from now on.

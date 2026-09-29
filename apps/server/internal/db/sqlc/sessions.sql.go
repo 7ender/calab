@@ -330,3 +330,15 @@ func (q *Queries) RotateSession(ctx context.Context, arg RotateSessionParams) (S
 	)
 	return i, err
 }
+
+const touchSession = `-- name: TouchSession :exec
+UPDATE sessions SET last_seen_at = now()
+WHERE id = $1 AND revoked_at IS NULL AND last_seen_at < now() - interval '5 minutes'
+`
+
+// "Last activity" of a session between refreshes (access tokens live 24 h): bumped by the
+// periodic session recheck (auth/sessioncheck.go), at most every 5 minutes.
+func (q *Queries) TouchSession(ctx context.Context, id uuid.UUID) error {
+	_, err := q.db.Exec(ctx, touchSession, id)
+	return err
+}

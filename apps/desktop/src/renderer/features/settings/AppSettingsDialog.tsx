@@ -23,7 +23,7 @@ import { shortcutHelp } from '../../services/hotkeys';
 import { logout } from '../../services/session';
 import { voice } from '../../services/voice';
 import { usePrefs, type Theme } from '../../stores/prefs';
-import { useSession } from '../../stores/session';
+import { selectUpdatePending, useSession } from '../../stores/session';
 import { toast } from '../../stores/toasts';
 import { useUi } from '../../stores/ui';
 import { useVoice } from '../../stores/voice';
@@ -47,6 +47,8 @@ import { BirthdaySettings } from './BirthdaySettings';
 
 export function AppSettingsDialog({ tab, onClose }: { tab: string | undefined; onClose: () => void }): ReactNode {
   const superadmin = useSession((s) => s.me?.isSuperadmin === true);
+  // «Обновление» on «О программе» while an update waits (docs/09 #125); a boolean selector.
+  const updatePending = useSession(selectUpdatePending);
   const sections: SettingsSection[] = [
     // «Основное» first (owner, 29.09): theme, language, startup / updates. The web has no startup /
     // updates, but the theme and the language live here too (ADR-0022).
@@ -57,7 +59,14 @@ export function AppSettingsDialog({ tab, onClose }: { tab: string | undefined; o
     { id: 'notifications', label: t('settings.notifications'), icon: Bell, content: <NotificationsTab /> },
     { id: 'connection', label: t('settings.connection'), icon: Wifi, content: <ConnectionTab /> },
     { id: 'sessions', label: t('settings.sessions'), icon: MonitorSmartphone, content: <SessionsTab /> },
-    { id: 'about', label: t('settings.about'), icon: Info, content: <AboutTab /> },
+    {
+      id: 'about',
+      label: t('settings.about'),
+      icon: Info,
+      content: <AboutTab />,
+      keywords: t('settings.aboutKeywords'),
+      ...(updatePending ? { badge: t('update.badge') } : {}),
+    },
   ];
   return (
     <SettingsWindow

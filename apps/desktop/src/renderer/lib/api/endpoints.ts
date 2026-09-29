@@ -1,4 +1,5 @@
 import {
+  GetVersionResponseSchema,
   CreateSoundRequestSchema,
   ListSoundsResponseSchema,
   PlaySoundRequestSchema,
@@ -161,6 +162,8 @@ import { fromJson, type JsonValue } from '@bufbuild/protobuf';
 // Every REST endpoint the client uses, typed by the generated contract (docs/05, "REST").
 
 export const api = {
+  /** Public build info; the web compares its bundle with it (docs/09 #125, «Обновить страницу»). */
+  version: () => call('GET', '/api/version', GetVersionResponseSchema),
   /** Email verification and password reset (ADR-0023). */
   auth: {
     /** 204: a code to me.pendingEmail or me.email; 409 = already verified; 429 + Retry-After. */
