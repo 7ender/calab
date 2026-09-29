@@ -24,6 +24,10 @@
  *
  * `--bench K --bg none|blur-light|blur-strong|image`: my own camera 720p15 (Chromium's fake device)
  * turned on through «Проверьте камеру» with that background (ADR-0035, docs/14 «Фон камеры»).
+ * Nobody subscribes, so dynacast pauses every layer within seconds: that is the camera without an
+ * encoder. `--viewer` adds a subscriber at the top layer (all layers encode, like in a call) and
+ * waits 30 s for bandwidth estimation. The encoder (implementation, fps per layer) is printed before
+ * and after the run: check that both variants being compared encode the same.
  *
  * `--recording`: «Созвон» is being recorded (ROOM_RECORDING, Борис 12:34 ago) — the REC dot on the
  * card, the «Запись» pill in the island (docs/09 #64). A bench also samples WindowServer: the
@@ -63,6 +67,8 @@ const SPEAKER = argv.includes('--speaker');
 const POPOVER = argv.includes('--popover');
 const RECORDING = argv.includes('--recording');
 const DM_CALL = argv.includes('--dm-call');
+/** `--viewer` (K): a second participant watches my camera at full size, so the encoder runs (dynacast). */
+const VIEWER = argv.includes('--viewer');
 const ROOT = resolve(import.meta.dirname, '..');
 const DESKTOP = resolve(ROOT, 'apps/desktop');
 process.env['MOCK_LIVEKIT_ROOM_PREFIX'] ||= `perfcall${PORT}_`;
@@ -247,6 +253,34 @@ function silentWav(path: string): void {
   writeFileSync(path, b);
 }
 
+/** K `--viewer`: subscribes to every video in the room at the top layer and plays it (a 1280×720 element). */
+async function startViewer(roomId: string): Promise<Browser> {
+  const at = new AccessToken(process.env['MOCK_LIVEKIT_KEY'] ?? 'devkey', process.env['MOCK_LIVEKIT_SECRET'] ?? 'secret', { identity: 'bench-viewer', name: 'viewer', ttl: '10m' });
+  at.addGrant({ roomJoin: true, room: `${livekitRoomPrefix()}${roomId}`, canPublish: false, canSubscribe: true });
+  const token = await at.toJwt();
+  const browser = await chromium.launch({ args: ['--mute-audio', '--autoplay-policy=no-user-gesture-required'] });
+  const page = await browser.newPage({ viewport: { width: 1300, height: 760 } });
+  const umd = createRequire(import.meta.url).resolve('livekit-client');
+  await page.addScriptTag({ path: umd.replace(/[^/]+$/, 'livekit-client.umd.js') });
+  await page.evaluate(
+    async ({ url, token }) => {
+      const LK = (window as unknown as { LivekitClient: typeof import('livekit-client') }).LivekitClient;
+      const room = new LK.Room({ adaptiveStream: false, dynacast: false });
+      room.on(LK.RoomEvent.TrackSubscribed, (track, pub) => {
+        if (track.kind !== 'video') return;
+        (pub as import('livekit-client').RemoteTrackPublication).setVideoQuality(LK.VideoQuality.HIGH);
+        const el = track.attach() as HTMLVideoElement;
+        el.style.width = '1280px';
+        el.style.height = '720px';
+        document.body.appendChild(el);
+      });
+      await room.connect(url, token);
+    },
+    { url: process.env['MOCK_LIVEKIT_URL'] ?? 'ws://127.0.0.1:7880', token },
+  );
+  return browser;
+}
+
 /**
  * A second participant publishing Chromium's fake devices: the microphone (a beep every second)
  * or a 720p camera (a moving test pattern). No named functions inside `evaluate` (tsx would wrap
@@ -302,6 +336,7 @@ async function main(): Promise<void> {
   const timers: NodeJS.Timeout[] = [];
   let publisher: Browser | null = null;
   let speaker: Browser | null = null;
+  let viewer: Browser | null = null;
   let app: ElectronApplication | null = null;
   try {
     // Sign in once, then relaunch with the hook installed from the first script.
@@ -325,6 +360,14 @@ async function main(): Promise<void> {
     if (SECONDS > 0) {
       await cdp.send('Page.enable');
       await cdp.send('Page.addScriptToEvaluateOnNewDocument', { source: `var __name = (f) => f; (${INIT.toString()})()` });
+      await page.reload();
+    }
+    // K: keep the peer connections reachable, to report what the encoder really does.
+    if (BENCH === 'K') {
+      await cdp.send('Page.enable');
+      await cdp.send('Page.addScriptToEvaluateOnNewDocument', {
+        source: `(() => { const P = window.RTCPeerConnection; window.__pcs = []; window.RTCPeerConnection = function (...a) { const pc = new P(...a); window.__pcs.push(pc); return pc; }; window.RTCPeerConnection.prototype = P.prototype; })()`,
+      });
       await page.reload();
     }
     const aside = page.locator('aside').first();
@@ -371,6 +414,11 @@ async function main(): Promise<void> {
       await page.getByTestId('camera-preview-enable').click();
       await page.getByTestId('camera-button').and(page.locator('[aria-pressed="true"]')).waitFor({ timeout: 15_000 });
       await page.waitForTimeout(5000);
+      // The viewer: bandwidth estimation ramps every layer up in the first ~30 s (keyframes, reconfigs).
+      if (VIEWER) {
+        viewer = await startViewer(IDS.rooms.call);
+        await page.waitForTimeout(30_000);
+      }
     }
     if (BENCH === 'E') {
       mock.setVoiceState({ userId: IDS.users.boris, roomId: IDS.rooms.call, muted: false, camera: true });
@@ -498,6 +546,25 @@ async function main(): Promise<void> {
     }
     process.stdout.write(`{\n${Object.entries(out).map(([k, v]) => ` ${JSON.stringify(k)}: ${JSON.stringify(v)}`).join(',\n')}\n}\n`);
 
+    const encoder = async (): Promise<void> => {
+      const enc = async (): Promise<Record<string, { frames: number; impl: string; w: number; limit: string }>> =>
+        page.evaluate(async () => {
+          const o: Record<string, { frames: number; impl: string; w: number; limit: string }> = {};
+          for (const pc of (window as unknown as { __pcs: RTCPeerConnection[] }).__pcs ?? []) {
+            const st = await pc.getStats();
+            st.forEach((r: Record<string, unknown>) => {
+              if (r['type'] === 'outbound-rtp' && r['kind'] === 'video') o[String(r['rid'] ?? r['ssrc'])] = { frames: Number(r['framesEncoded'] ?? 0), impl: String(r['encoderImplementation'] ?? ''), w: Number(r['frameWidth'] ?? 0), limit: String(r['qualityLimitationReason'] ?? '') };
+            });
+          }
+          return o;
+        });
+      const a = await enc();
+      await page.waitForTimeout(5000);
+      const b = await enc();
+      process.stdout.write(`encoder: ${JSON.stringify(Object.fromEntries(Object.entries(b).map(([k, v]) => [k, { ...v, fps: round((v.frames - (a[k]?.frames ?? 0)) / 5) }])))}\n`);
+    };
+    // K: what the encoder does (dynacast pauses every layer while nobody watches) before and after.
+    if (BENCH === 'K') await encoder();
     if (BENCH) {
       const bundle = resolve(ROOT, 'node_modules/electron/dist/Electron.app');
       const outDir = opt('bench-out', join(tmpdir(), 'calaba-energy'));
@@ -506,11 +573,13 @@ async function main(): Promise<void> {
         stdio: 'inherit',
       });
       if (r.status !== 0) process.exitCode = 1;
+      if (BENCH === 'K') await encoder();
     }
   } finally {
     for (const t of timers) clearInterval(t);
     await publisher?.close().catch(() => undefined);
     await speaker?.close().catch(() => undefined);
+    await viewer?.close().catch(() => undefined);
     await app?.close().catch(() => undefined);
     await mock.close();
     rmSync(userData, { recursive: true, force: true });
