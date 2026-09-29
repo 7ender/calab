@@ -60,6 +60,14 @@ describe('camera publish options', () => {
     expect(o.videoSimulcastLayers).toHaveLength(2);
   });
 
+  it('with the background: two layers, the low and the top one (docs/02 «Камера: фон»)', () => {
+    const three = cameraPublishOptions(undefined, 'h264');
+    const two = cameraPublishOptions(undefined, 'h264', null, true);
+    expect(two.videoSimulcastLayers).toHaveLength(1);
+    expect(two.videoSimulcastLayers?.[0]).toEqual(three.videoSimulcastLayers?.[0]);
+    expect(two.videoEncoding).toEqual(three.videoEncoding);
+  });
+
   it('VP9 / AV1: L1T3 per rid', () => {
     expect(cameraPublishOptions(undefined, 'vp9').scalabilityMode).toBe('L1T3');
     expect(cameraPublishOptions(undefined, 'av1').scalabilityMode).toBe('L1T3');

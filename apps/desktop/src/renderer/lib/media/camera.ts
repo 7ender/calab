@@ -1,5 +1,6 @@
 import { LocalVideoTrack, Track, VideoPreset, createLocalVideoTrack, type TrackPublishOptions } from 'livekit-client';
 import { CAMERA_CPU_CAPTURE, CAMERA_DEFAULT_QUALITY, cameraCapture, cameraLayers, type CameraQuality } from './cameraLogic';
+import { BACKGROUND_PROCESSOR } from './background/logic';
 import type { CodecPick, PublishCodec } from './codecSelect';
 import { layerSize, type H264Layout } from './h264';
 import { alignCaptureForH264, setH264Profile } from './h264Publish';
@@ -40,8 +41,11 @@ export async function captureCamera(deviceId: string | null, q: CameraQuality = 
  * Publish options for a quality: its ladder, every layer ≤ the granted fps (ADR-0024).
  * `layout` (H.264 only, `h264Layout` of the aligned capture): the lower layers are exactly capture /
  * their integer scale, so all three are even (hardware H.264 takes nothing else).
+ * `background` (the camera starts with our background processor, ADR-0035): two layers, the low and
+ * the top one — the processed RGBA frame is converted for the encoder per layer in the GPU process,
+ * the 360p layer costs ≈ 3 % of a core on M4 (docs/02 «Камера: фон», docs/14 «Фон камеры»).
  */
-export function cameraPublishOptions(q: CameraQuality = CAMERA_DEFAULT_QUALITY, codec: PublishCodec = 'vp9', layout?: H264Layout | null): TrackPublishOptions {
+export function cameraPublishOptions(q: CameraQuality = CAMERA_DEFAULT_QUALITY, codec: PublishCodec = 'vp9', layout?: H264Layout | null, background = false): TrackPublishOptions {
   const [low, mid, top] = cameraLayers(q);
   const lowSize = codec === 'h264' && layout ? layerSize(layout, 0) : low;
   const midSize = codec === 'h264' && layout ? layerSize(layout, 1) : mid;
@@ -53,7 +57,10 @@ export function cameraPublishOptions(q: CameraQuality = CAMERA_DEFAULT_QUALITY, 
     // VP8 / H.264: plain simulcast; VP9 / AV1: one L1T3 stream per rid (see the module doc).
     ...(codec === 'vp8' || codec === 'h264' ? {} : { scalabilityMode: 'L1T3' as const }),
     videoEncoding: { maxBitrate: top.maxBitrate, maxFramerate: top.fps },
-    videoSimulcastLayers: [new VideoPreset(lowSize.width, lowSize.height, low.maxBitrate, low.fps), new VideoPreset(midSize.width, midSize.height, mid.maxBitrate, mid.fps)],
+    videoSimulcastLayers: [
+      new VideoPreset(lowSize.width, lowSize.height, low.maxBitrate, low.fps),
+      ...(background ? [] : [new VideoPreset(midSize.width, midSize.height, mid.maxBitrate, mid.fps)]),
+    ],
     degradationPreference: 'balanced',
   };
 }
@@ -67,7 +74,8 @@ export async function preparePublish(track: LocalVideoTrack, q: CameraQuality, p
   const [low, mid] = cameraLayers(q);
   const layout = h264 ? await alignCaptureForH264(cameraSource(track), [low.height, mid.height], cameraCapture(q).fps) : null;
   setH264Profile(track, h264 ? pick.profile : undefined);
-  return cameraPublishOptions(q, pick.codec, layout);
+  // The layers are fixed at publish: an effect switched on later keeps three until the camera restarts.
+  return cameraPublishOptions(q, pick.codec, layout, track.getProcessor()?.name === BACKGROUND_PROCESSOR);
 }
 
 /**
