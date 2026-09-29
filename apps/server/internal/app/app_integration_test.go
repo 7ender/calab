@@ -16,6 +16,7 @@ import (
 	"bytes"
 	"context"
 	"crypto/rand"
+	"encoding/base64"
 	"encoding/hex"
 	"flag"
 	"fmt"
@@ -26,6 +27,7 @@ import (
 	"net/netip"
 	"net/url"
 	"os"
+	"strings"
 	"testing"
 	"time"
 
@@ -626,9 +628,11 @@ func TestRefreshRotationAndReuseDetection(t *testing.T) {
 	}
 }
 
-// A refresh whose answer never reached the client (network cut, app quit for an update):
-// the retry with the old token gets the same new pair within the grace window; after the
-// window, or once the new token was used, it is reuse as before (docs/09 #89).
+// A refresh whose answer never reached the client (network cut, stuck connection, app quit
+// for an update): the retry with the old token gets the same new pair for as long as the new
+// one is unused — no time limit. Once the new token was used (a refresh with it, or a request
+// with its access token), the old one is reuse: 401 SESSION_REVOKED/REUSE, session revoked
+// (docs/09 #89, #123).
 func TestRefreshLostAnswerReplay(t *testing.T) {
 	o := owner(t)
 	email := mustEmail(t, o)
@@ -646,12 +650,33 @@ func TestRefreshLostAnswerReplay(t *testing.T) {
 		st := c.do("POST", "/api/auth/refresh", &v1.RefreshRequest{RefreshToken: tok}, &r)
 		return r.GetTokens(), st
 	}
+	// revokedAs: 401 SESSION_REVOKED with the reason.
+	revokedAs := func(c *client, tok, reason, what string) {
+		t.Helper()
+		if _, st := refresh(c, tok); st != 401 {
+			t.Fatalf("%s: %d, want 401", what, st)
+		}
+		var e v1.ApiError
+		if err := protojson.Unmarshal(c.lastBody, &e); err != nil {
+			t.Fatal(err)
+		}
+		if e.GetCode() != v1.ErrorCode_ERROR_CODE_SESSION_REVOKED || e.GetReason() != reason {
+			t.Fatalf("%s: %v %q, want SESSION_REVOKED %q", what, e.GetCode(), e.GetReason(), reason)
+		}
+	}
 	alive := func(tok *v1.AuthTokens, want int) {
 		t.Helper()
 		(&client{t: t, token: tok.GetAccessToken()}).must(want, "GET", "/api/me", nil, nil)
 	}
+	backdate := func(sid string, d string) {
+		t.Helper()
+		if _, err := testDB.Pool.Exec(ctx, "UPDATE sessions SET rotated_at = rotated_at - $2::interval, last_seen_at = last_seen_at - $2::interval WHERE id = $1",
+			sid, d); err != nil {
+			t.Fatal(err)
+		}
+	}
 
-	// Lost answer, retried within the window (twice): the same refresh token every time.
+	// Lost answer, retried twice: the same refresh token every time, the session not extended.
 	c, t0 := login()
 	lost, st := refresh(c, t0)
 	if st != 200 {
@@ -665,76 +690,81 @@ func TestRefreshLostAnswerReplay(t *testing.T) {
 		if !again.GetRefreshExpiresAt().AsTime().Equal(lost.GetRefreshExpiresAt().AsTime()) {
 			t.Fatalf("retry %d: the replay must not extend the session", i)
 		}
-		alive(again, 200)
 	}
 	next, st := refresh(c, lost.GetRefreshToken())
 	if st != 200 {
 		t.Fatalf("the replayed token must work: %d", st)
 	}
 	alive(next, 200)
-	// The replayed pair was used: the old token again is reuse → the session is revoked.
-	if _, st := refresh(c, t0); st != 401 {
-		t.Fatalf("t0 after the new token was used: %d, want 401", st)
-	}
-	if _, st := refresh(c, next.GetRefreshToken()); st != 401 {
-		t.Fatalf("session must be revoked after reuse: %d", st)
-	}
+	// Two generations old (t0 → lost → next): reuse, the whole session is revoked.
+	revokedAs(c, t0, "REUSE", "two generations old")
+	revokedAs(c, next.GetRefreshToken(), "REUSE", "current token after reuse")
 	alive(next, 401)
 
-	// Lost answer, retried after the grace window: reuse as before (401, session revoked).
+	// The incident of 29.09: the answer was lost and the connection came back 2 hours later.
+	// The new token was never used: 200 with the same pair, the session lives on.
 	c, t0 = login()
 	lost, st = refresh(c, t0)
 	if st != 200 {
 		t.Fatalf("refresh: %d", st)
 	}
-	if _, err := testDB.Pool.Exec(ctx, "UPDATE sessions SET rotated_at = rotated_at - interval '2 minutes' WHERE id = $1",
-		lost.GetSessionId()); err != nil {
-		t.Fatal(err)
+	backdate(lost.GetSessionId(), "2 hours")
+	late, st := refresh(c, t0)
+	if st != 200 || late.GetRefreshToken() != lost.GetRefreshToken() {
+		t.Fatalf("lost answer replayed after 2 h: %d, want 200 with the same token", st)
 	}
-	if _, st := refresh(c, t0); st != 401 {
-		t.Fatalf("retry after the window: %d, want 401", st)
-	}
-	if _, st := refresh(c, lost.GetRefreshToken()); st != 401 {
-		t.Fatalf("session must be revoked after a late replay: %d", st)
+	alive(late, 200)
+	if _, st := refresh(c, late.GetRefreshToken()); st != 200 {
+		t.Fatalf("the session must survive a late replay: %d", st)
 	}
 
-	// Within the window but the replay entry is gone (Valkey flushed / evicted): 409, the
+	// The new pair arrived and its access token was used (no refresh with it yet): the old
+	// token is reuse now — someone else holds a copy. Both copies die.
+	c, t0 = login()
+	lost, st = refresh(c, t0)
+	if st != 200 {
+		t.Fatalf("refresh: %d", st)
+	}
+	alive(lost, 200)
+	revokedAs(c, t0, "REUSE", "old token after the new access token was used")
+	revokedAs(c, lost.GetRefreshToken(), "REUSE", "new token after reuse")
+	alive(lost, 401)
+
+	// Legacy rotation (before migration 00040: no seal) with the new token unused: 409, the
 	// session is kept and the new token still works.
 	c, t0 = login()
 	lost, st = refresh(c, t0)
 	if st != 200 {
 		t.Fatalf("refresh: %d", st)
 	}
-	if err := testRedis.Do(ctx, testRedis.B().Del().Key(redisx.Key("auth:refresh_replay:"+lost.GetSessionId())).Build()).Error(); err != nil {
+	if _, err := testDB.Pool.Exec(ctx, "UPDATE sessions SET replay_seal = NULL WHERE id = $1", lost.GetSessionId()); err != nil {
 		t.Fatal(err)
 	}
 	if _, st := refresh(c, t0); st != 409 {
-		t.Fatalf("no replay entry: %d, want 409", st)
+		t.Fatalf("no seal: %d, want 409", st)
 	}
 	if _, st := refresh(c, lost.GetRefreshToken()); st != 200 {
 		t.Fatalf("session must survive a 409: %d", st)
 	}
 
-	// The session ends within the window (logout / revoke / disabled account): the old token
-	// must not resurrect it through the replay entry.
+	// The session ends while the answer is lost (logout / revoke / disabled account): the old
+	// token must not resurrect it, and the reason is told to its holder.
 	c, t0 = login()
 	lost, st = refresh(c, t0)
 	if st != 200 {
 		t.Fatalf("refresh: %d", st)
 	}
 	c.must(204, "POST", "/api/auth/logout", &v1.LogoutRequest{RefreshToken: lost.GetRefreshToken()}, nil)
-	if _, st := refresh(c, t0); st != 401 {
-		t.Fatalf("replay after logout: %d, want 401", st)
-	}
+	revokedAs(c, t0, "LOGOUT", "replay after logout")
 	c, t0 = login()
 	lost, st = refresh(c, t0)
 	if st != 200 {
 		t.Fatalf("refresh: %d", st)
 	}
-	(&client{t: t, token: lost.GetAccessToken()}).must(204, "DELETE", "/api/me/sessions/"+lost.GetSessionId(), nil, nil)
-	if _, st := refresh(c, t0); st != 401 {
-		t.Fatalf("replay after session revoke: %d, want 401", st)
-	}
+	// From another device's session list (an access token of another session).
+	o.must(204, "DELETE", "/api/me/sessions/"+lost.GetSessionId(), nil, nil)
+	revokedAs(c, t0, "OTHER_DEVICE", "replay after session revoke")
+	revokedAs(c, lost.GetRefreshToken(), "OTHER_DEVICE", "current after session revoke")
 	c, t0 = login()
 	lost, st = refresh(c, t0)
 	if st != 200 {
@@ -750,12 +780,31 @@ func TestRefreshLostAnswerReplay(t *testing.T) {
 	if st != 401 {
 		t.Fatalf("replay for a disabled account: %d, want 401", st)
 	}
-	if _, st := refresh(c, lost.GetRefreshToken()); st != 401 {
-		t.Fatalf("the disabled account's session must be revoked: %d", st)
+	revokedAs(c, lost.GetRefreshToken(), "ACCOUNT_DISABLED", "the disabled account's session")
+
+	// An unknown secret for a live session is reuse too (a forgery or a very old copy); a
+	// garbage token is just invalid.
+	c, t0 = login()
+	var junk [32]byte
+	sid, _, _ := strings.Cut(t0, ".")
+	revokedAs(c, sid+"."+base64.RawURLEncoding.EncodeToString(junk[:]), "REUSE", "forged secret")
+	if _, st := refresh(c, "not-a-token"); st != 401 {
+		t.Fatalf("garbage: %d", st)
 	}
 
+	// Logout with a stale token: the previous one ends only this session, never "everywhere".
+	c, t0 = login()
+	lost, st = refresh(c, t0)
+	if st != 200 {
+		t.Fatalf("refresh: %d", st)
+	}
+	c.must(401, "POST", "/api/auth/logout", &v1.LogoutRequest{RefreshToken: t0, AllSessions: true}, nil)
+	o.must(200, "GET", "/api/me", nil, nil)
+	c.must(204, "POST", "/api/auth/logout", &v1.LogoutRequest{RefreshToken: t0}, nil)
+	revokedAs(c, lost.GetRefreshToken(), "LOGOUT", "after logout by the previous token")
+
 	// The retry races the original (several API instances): one rotation, everyone gets the
-	// same new token (the row lock serializes; the replay entry is written before the commit).
+	// same new token (the row lock serializes; the seal is written with the rotation).
 	c, t0 = login()
 	const n = 6
 	got := make([]string, n)
@@ -776,9 +825,18 @@ func TestRefreshLostAnswerReplay(t *testing.T) {
 			t.Fatalf("concurrent refresh %d: %d, token same=%v", i, codes[i], got[i] == got[0])
 		}
 	}
+	var gen int64
+	if err := testDB.Pool.QueryRow(ctx, "SELECT refresh_gen FROM sessions WHERE id = $1", sid0(got[0])).Scan(&gen); err != nil || gen != 2 {
+		t.Fatalf("concurrent refreshes: generation %d (%v), want exactly one rotation (2)", gen, err)
+	}
 	if _, st := refresh(c, got[0]); st != 200 {
 		t.Fatalf("the shared new token must work: %d", st)
 	}
+}
+
+func sid0(tok string) string {
+	sid, _, _ := strings.Cut(tok, ".")
+	return sid
 }
 
 func TestLogoutAndSessions(t *testing.T) {

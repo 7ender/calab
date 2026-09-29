@@ -22,7 +22,7 @@ type revokeProbe struct {
 	live map[uuid.UUID]bool
 }
 
-func (p *revokeProbe) SessionRevoked(ctx context.Context, sid uuid.UUID) {
+func (p *revokeProbe) SessionRevoked(ctx context.Context, sid uuid.UUID, _ string) {
 	dctx, done := events.Detached(ctx, time.Hour)
 	defer done()
 	p.mu.Lock()

@@ -15,7 +15,7 @@ import (
 const createSession = `-- name: CreateSession :one
 INSERT INTO sessions (user_id, refresh_token_hash, device_name, ip, user_agent, expires_at)
 VALUES ($1, $2, $3, $4, $5, $6)
-RETURNING id, user_id, refresh_token_hash, prev_refresh_token_hash, rotated_at, device_name, ip, user_agent, created_at, last_seen_at, expires_at, revoked_at
+RETURNING id, user_id, refresh_token_hash, prev_refresh_token_hash, rotated_at, device_name, ip, user_agent, created_at, last_seen_at, expires_at, revoked_at, refresh_gen, refresh_used_at, replay_seal, revoked_reason
 `
 
 type CreateSessionParams struct {
@@ -50,12 +50,16 @@ func (q *Queries) CreateSession(ctx context.Context, arg CreateSessionParams) (S
 		&i.LastSeenAt,
 		&i.ExpiresAt,
 		&i.RevokedAt,
+		&i.RefreshGen,
+		&i.RefreshUsedAt,
+		&i.ReplaySeal,
+		&i.RevokedReason,
 	)
 	return i, err
 }
 
 const getSession = `-- name: GetSession :one
-SELECT id, user_id, refresh_token_hash, prev_refresh_token_hash, rotated_at, device_name, ip, user_agent, created_at, last_seen_at, expires_at, revoked_at FROM sessions WHERE id = $1
+SELECT id, user_id, refresh_token_hash, prev_refresh_token_hash, rotated_at, device_name, ip, user_agent, created_at, last_seen_at, expires_at, revoked_at, refresh_gen, refresh_used_at, replay_seal, revoked_reason FROM sessions WHERE id = $1
 `
 
 func (q *Queries) GetSession(ctx context.Context, id uuid.UUID) (Session, error) {
@@ -74,12 +78,16 @@ func (q *Queries) GetSession(ctx context.Context, id uuid.UUID) (Session, error)
 		&i.LastSeenAt,
 		&i.ExpiresAt,
 		&i.RevokedAt,
+		&i.RefreshGen,
+		&i.RefreshUsedAt,
+		&i.ReplaySeal,
+		&i.RevokedReason,
 	)
 	return i, err
 }
 
 const getSessionForUpdate = `-- name: GetSessionForUpdate :one
-SELECT id, user_id, refresh_token_hash, prev_refresh_token_hash, rotated_at, device_name, ip, user_agent, created_at, last_seen_at, expires_at, revoked_at FROM sessions WHERE id = $1 FOR UPDATE
+SELECT id, user_id, refresh_token_hash, prev_refresh_token_hash, rotated_at, device_name, ip, user_agent, created_at, last_seen_at, expires_at, revoked_at, refresh_gen, refresh_used_at, replay_seal, revoked_reason FROM sessions WHERE id = $1 FOR UPDATE
 `
 
 func (q *Queries) GetSessionForUpdate(ctx context.Context, id uuid.UUID) (Session, error) {
@@ -98,12 +106,16 @@ func (q *Queries) GetSessionForUpdate(ctx context.Context, id uuid.UUID) (Sessio
 		&i.LastSeenAt,
 		&i.ExpiresAt,
 		&i.RevokedAt,
+		&i.RefreshGen,
+		&i.RefreshUsedAt,
+		&i.ReplaySeal,
+		&i.RevokedReason,
 	)
 	return i, err
 }
 
 const listActiveSessions = `-- name: ListActiveSessions :many
-SELECT id, user_id, refresh_token_hash, prev_refresh_token_hash, rotated_at, device_name, ip, user_agent, created_at, last_seen_at, expires_at, revoked_at FROM sessions
+SELECT id, user_id, refresh_token_hash, prev_refresh_token_hash, rotated_at, device_name, ip, user_agent, created_at, last_seen_at, expires_at, revoked_at, refresh_gen, refresh_used_at, replay_seal, revoked_reason FROM sessions
 WHERE user_id = $1 AND revoked_at IS NULL AND expires_at > now()
 ORDER BY last_seen_at DESC
 `
@@ -130,6 +142,10 @@ func (q *Queries) ListActiveSessions(ctx context.Context, userID uuid.UUID) ([]S
 			&i.LastSeenAt,
 			&i.ExpiresAt,
 			&i.RevokedAt,
+			&i.RefreshGen,
+			&i.RefreshUsedAt,
+			&i.ReplaySeal,
+			&i.RevokedReason,
 		); err != nil {
 			return nil, err
 		}
@@ -141,14 +157,35 @@ func (q *Queries) ListActiveSessions(ctx context.Context, userID uuid.UUID) ([]S
 	return items, nil
 }
 
+const markRefreshGenUsed = `-- name: MarkRefreshGenUsed :exec
+UPDATE sessions SET refresh_used_at = now()
+WHERE id = $1 AND refresh_gen = $2 AND refresh_used_at IS NULL AND revoked_at IS NULL
+`
+
+type MarkRefreshGenUsedParams struct {
+	ID         uuid.UUID
+	RefreshGen int64
+}
+
+// The first use of refresh generation refresh_gen (an access token minted for it was presented).
+func (q *Queries) MarkRefreshGenUsed(ctx context.Context, arg MarkRefreshGenUsedParams) error {
+	_, err := q.db.Exec(ctx, markRefreshGenUsed, arg.ID, arg.RefreshGen)
+	return err
+}
+
 const revokeAllUserSessions = `-- name: RevokeAllUserSessions :many
-UPDATE sessions SET revoked_at = now()
+UPDATE sessions SET revoked_at = now(), revoked_reason = $2::text
 WHERE user_id = $1 AND revoked_at IS NULL
 RETURNING id
 `
 
-func (q *Queries) RevokeAllUserSessions(ctx context.Context, userID uuid.UUID) ([]uuid.UUID, error) {
-	rows, err := q.db.Query(ctx, revokeAllUserSessions, userID)
+type RevokeAllUserSessionsParams struct {
+	UserID uuid.UUID
+	Reason string
+}
+
+func (q *Queries) RevokeAllUserSessions(ctx context.Context, arg RevokeAllUserSessionsParams) ([]uuid.UUID, error) {
+	rows, err := q.db.Query(ctx, revokeAllUserSessions, arg.UserID, arg.Reason)
 	if err != nil {
 		return nil, err
 	}
@@ -168,7 +205,7 @@ func (q *Queries) RevokeAllUserSessions(ctx context.Context, userID uuid.UUID) (
 }
 
 const revokeOtherUserSessions = `-- name: RevokeOtherUserSessions :many
-UPDATE sessions SET revoked_at = now()
+UPDATE sessions SET revoked_at = now(), revoked_reason = $3::text
 WHERE user_id = $1 AND id <> $2 AND revoked_at IS NULL
 RETURNING id
 `
@@ -176,10 +213,11 @@ RETURNING id
 type RevokeOtherUserSessionsParams struct {
 	UserID uuid.UUID
 	ID     uuid.UUID
+	Reason string
 }
 
 func (q *Queries) RevokeOtherUserSessions(ctx context.Context, arg RevokeOtherUserSessionsParams) ([]uuid.UUID, error) {
-	rows, err := q.db.Query(ctx, revokeOtherUserSessions, arg.UserID, arg.ID)
+	rows, err := q.db.Query(ctx, revokeOtherUserSessions, arg.UserID, arg.ID, arg.Reason)
 	if err != nil {
 		return nil, err
 	}
@@ -199,12 +237,17 @@ func (q *Queries) RevokeOtherUserSessions(ctx context.Context, arg RevokeOtherUs
 }
 
 const revokeSession = `-- name: RevokeSession :execrows
-UPDATE sessions SET revoked_at = now()
+UPDATE sessions SET revoked_at = now(), revoked_reason = $2::text
 WHERE id = $1 AND revoked_at IS NULL
 `
 
-func (q *Queries) RevokeSession(ctx context.Context, id uuid.UUID) (int64, error) {
-	result, err := q.db.Exec(ctx, revokeSession, id)
+type RevokeSessionParams struct {
+	ID     uuid.UUID
+	Reason string
+}
+
+func (q *Queries) RevokeSession(ctx context.Context, arg RevokeSessionParams) (int64, error) {
+	result, err := q.db.Exec(ctx, revokeSession, arg.ID, arg.Reason)
 	if err != nil {
 		return 0, err
 	}
@@ -212,17 +255,18 @@ func (q *Queries) RevokeSession(ctx context.Context, id uuid.UUID) (int64, error
 }
 
 const revokeUserSession = `-- name: RevokeUserSession :execrows
-UPDATE sessions SET revoked_at = now()
+UPDATE sessions SET revoked_at = now(), revoked_reason = $3::text
 WHERE id = $1 AND user_id = $2 AND revoked_at IS NULL
 `
 
 type RevokeUserSessionParams struct {
 	ID     uuid.UUID
 	UserID uuid.UUID
+	Reason string
 }
 
 func (q *Queries) RevokeUserSession(ctx context.Context, arg RevokeUserSessionParams) (int64, error) {
-	result, err := q.db.Exec(ctx, revokeUserSession, arg.ID, arg.UserID)
+	result, err := q.db.Exec(ctx, revokeUserSession, arg.ID, arg.UserID, arg.Reason)
 	if err != nil {
 		return 0, err
 	}
@@ -233,13 +277,16 @@ const rotateSession = `-- name: RotateSession :one
 UPDATE sessions SET
     prev_refresh_token_hash = refresh_token_hash,
     refresh_token_hash      = $2,
+    refresh_gen             = refresh_gen + 1,
+    refresh_used_at         = NULL,
+    replay_seal             = $6,
     rotated_at              = now(),
     last_seen_at            = now(),
     expires_at              = $3,
     ip                      = $4,
     user_agent              = $5
 WHERE id = $1
-RETURNING id, user_id, refresh_token_hash, prev_refresh_token_hash, rotated_at, device_name, ip, user_agent, created_at, last_seen_at, expires_at, revoked_at
+RETURNING id, user_id, refresh_token_hash, prev_refresh_token_hash, rotated_at, device_name, ip, user_agent, created_at, last_seen_at, expires_at, revoked_at, refresh_gen, refresh_used_at, replay_seal, revoked_reason
 `
 
 type RotateSessionParams struct {
@@ -248,8 +295,10 @@ type RotateSessionParams struct {
 	ExpiresAt        time.Time
 	Ip               string
 	UserAgent        string
+	ReplaySeal       []byte
 }
 
+// A new refresh generation: unused, with its secret sealed under the previous one (replay.go).
 func (q *Queries) RotateSession(ctx context.Context, arg RotateSessionParams) (Session, error) {
 	row := q.db.QueryRow(ctx, rotateSession,
 		arg.ID,
@@ -257,6 +306,7 @@ func (q *Queries) RotateSession(ctx context.Context, arg RotateSessionParams) (S
 		arg.ExpiresAt,
 		arg.Ip,
 		arg.UserAgent,
+		arg.ReplaySeal,
 	)
 	var i Session
 	err := row.Scan(
@@ -272,6 +322,10 @@ func (q *Queries) RotateSession(ctx context.Context, arg RotateSessionParams) (S
 		&i.LastSeenAt,
 		&i.ExpiresAt,
 		&i.RevokedAt,
+		&i.RefreshGen,
+		&i.RefreshUsedAt,
+		&i.ReplaySeal,
+		&i.RevokedReason,
 	)
 	return i, err
 }

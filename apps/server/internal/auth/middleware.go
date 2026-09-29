@@ -107,12 +107,14 @@ func (s *Service) AuthenticateToken(ctx context.Context, tok string) (Identity, 
 	if err != nil {
 		return Identity{}, ErrInvalidToken
 	}
-	revoked, err := s.IsRevoked(ctx, id.SessionID)
+	reason, revoked, err := s.revokedReason(ctx, id.SessionID)
 	if err != nil {
 		return Identity{}, err
 	}
 	if revoked {
-		return Identity{}, ErrSessionRevoked
+		return Identity{}, &RevokedError{Reason: reason}
 	}
+	// The pair this token came with has arrived: its previous refresh token is reuse now.
+	s.markGenUsed(ctx, id)
 	return id, nil
 }
