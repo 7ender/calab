@@ -301,7 +301,9 @@ func (BoardTemplate) EnumDescriptor() ([]byte, []int) {
 // (or none | low | medium | high | urgent). ESTIMATE: number (or values). LABEL / MILESTONE /
 // PARENT: ids. RELATION: "blocks" | "blocked" | "relates" | "duplicates". CREATED_AT /
 // UPDATED_AT: from / to. START_ON / DUE_ON: values "YYYY-MM-DD" (BETWEEN: two), else from / to
-// (their UTC date). HAS_ATTACHMENTS / HAS_COMMENTS / ARCHIVED: IS "true" | "false" (or
+// (their UTC date). Date values may be relative (saved views): "today", "week_start",
+// "week_end" (Monday..Sunday), "month_end", "-7d" / "+14d" (days from today), today in the
+// caller's profile zone. HAS_ATTACHMENTS / HAS_COMMENTS / ARCHIVED: IS "true" | "false" (or
 // NOT_EMPTY / EMPTY). TEXT: CONTAINS values[0] (title and description words, or the key).
 type TaskField int32
 
@@ -3007,6 +3009,7 @@ type TaskResponse struct {
 	Related       []*Task                `protobuf:"bytes,3,rep,name=related,proto3" json:"related,omitempty"`   // the other sides of task.relations that the caller can see
 	Parent        *Task                  `protobuf:"bytes,4,opt,name=parent,proto3" json:"parent,omitempty"`
 	Board         *Board                 `protobuf:"bytes,5,opt,name=board,proto3" json:"board,omitempty"` // GET /api/t/{key} only
+	Room          *Room                  `protobuf:"bytes,6,opt,name=room,proto3" json:"room,omitempty"`   // the task room (type TASK): GET /tasks/{id} and GET /api/t/{key}
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -3072,6 +3075,13 @@ func (x *TaskResponse) GetParent() *Task {
 func (x *TaskResponse) GetBoard() *Board {
 	if x != nil {
 		return x.Board
+	}
+	return nil
+}
+
+func (x *TaskResponse) GetRoom() *Room {
+	if x != nil {
+		return x.Room
 	}
 	return nil
 }
@@ -4581,13 +4591,14 @@ const file_calaba_v1_boards_proto_rawDesc = "" +
 	"\fmilestone_id\x18\v \x01(\tR\vmilestoneId\x12\"\n" +
 	"\rafter_task_id\x18\f \x01(\tR\vafterTaskId\x12&\n" +
 	"\x0ffrom_message_id\x18\r \x01(\tR\rfromMessageId\x12%\n" +
-	"\x0eattachment_ids\x18\x0e \x03(\tR\rattachmentIds\"\xdc\x01\n" +
+	"\x0eattachment_ids\x18\x0e \x03(\tR\rattachmentIds\"\x81\x02\n" +
 	"\fTaskResponse\x12#\n" +
 	"\x04task\x18\x01 \x01(\v2\x0f.calaba.v1.TaskR\x04task\x12+\n" +
 	"\bsubtasks\x18\x02 \x03(\v2\x0f.calaba.v1.TaskR\bsubtasks\x12)\n" +
 	"\arelated\x18\x03 \x03(\v2\x0f.calaba.v1.TaskR\arelated\x12'\n" +
 	"\x06parent\x18\x04 \x01(\v2\x0f.calaba.v1.TaskR\x06parent\x12&\n" +
-	"\x05board\x18\x05 \x01(\v2\x10.calaba.v1.BoardR\x05board\"\xd4\x05\n" +
+	"\x05board\x18\x05 \x01(\v2\x10.calaba.v1.BoardR\x05board\x12#\n" +
+	"\x04room\x18\x06 \x01(\v2\x0f.calaba.v1.RoomR\x04room\"\xd4\x05\n" +
 	"\x11UpdateTaskRequest\x12\x19\n" +
 	"\x05title\x18\x01 \x01(\tH\x00R\x05title\x88\x01\x01\x12%\n" +
 	"\vdescription\x18\x02 \x01(\tH\x01R\vdescription\x88\x01\x01\x12 \n" +
@@ -4856,6 +4867,7 @@ var file_calaba_v1_boards_proto_goTypes = []any{
 	(*FileMeta)(nil),                    // 59: calaba.v1.FileMeta
 	(*structpb.Struct)(nil),             // 60: google.protobuf.Struct
 	(*Message)(nil),                     // 61: calaba.v1.Message
+	(*Room)(nil),                        // 62: calaba.v1.Room
 }
 var file_calaba_v1_boards_proto_depIdxs = []int32{
 	0,  // 0: calaba.v1.BoardStatus.type:type_name -> calaba.v1.BoardStatusType
@@ -4905,31 +4917,32 @@ var file_calaba_v1_boards_proto_depIdxs = []int32{
 	16, // 44: calaba.v1.TaskResponse.related:type_name -> calaba.v1.Task
 	16, // 45: calaba.v1.TaskResponse.parent:type_name -> calaba.v1.Task
 	12, // 46: calaba.v1.TaskResponse.board:type_name -> calaba.v1.Board
-	1,  // 47: calaba.v1.UpdateTaskRequest.priority:type_name -> calaba.v1.TaskPriority
-	14, // 48: calaba.v1.SetAssigneesRequest.assignees:type_name -> calaba.v1.TaskAssigneeInput
-	3,  // 49: calaba.v1.SetTaskRelationRequest.kind:type_name -> calaba.v1.TaskRelationKind
-	18, // 50: calaba.v1.TaskActivityPage.items:type_name -> calaba.v1.TaskActivityItem
-	17, // 51: calaba.v1.BoardActivityResponse.activities:type_name -> calaba.v1.TaskActivity
-	16, // 52: calaba.v1.MyTasksResponse.tasks:type_name -> calaba.v1.Task
-	16, // 53: calaba.v1.SearchTasksResponse.tasks:type_name -> calaba.v1.Task
-	11, // 54: calaba.v1.ListBoardViewsResponse.views:type_name -> calaba.v1.BoardView
-	2,  // 55: calaba.v1.CreateBoardViewRequest.kind:type_name -> calaba.v1.BoardViewKind
-	20, // 56: calaba.v1.CreateBoardViewRequest.filter:type_name -> calaba.v1.TaskFilter
-	2,  // 57: calaba.v1.UpdateBoardViewRequest.kind:type_name -> calaba.v1.BoardViewKind
-	20, // 58: calaba.v1.UpdateBoardViewRequest.filter:type_name -> calaba.v1.TaskFilter
-	11, // 59: calaba.v1.BoardViewResponse.view:type_name -> calaba.v1.BoardView
-	12, // 60: calaba.v1.BoardCreate.board:type_name -> calaba.v1.Board
-	12, // 61: calaba.v1.BoardUpdate.board:type_name -> calaba.v1.Board
-	16, // 62: calaba.v1.TaskCreate.task:type_name -> calaba.v1.Task
-	16, // 63: calaba.v1.TaskUpdate.task:type_name -> calaba.v1.Task
-	54, // 64: calaba.v1.TaskUpdate.notice:type_name -> calaba.v1.TaskNotice
-	7,  // 65: calaba.v1.TaskNotice.kind:type_name -> calaba.v1.TaskNoticeKind
-	17, // 66: calaba.v1.TaskActivityAppend.activity:type_name -> calaba.v1.TaskActivity
-	67, // [67:67] is the sub-list for method output_type
-	67, // [67:67] is the sub-list for method input_type
-	67, // [67:67] is the sub-list for extension type_name
-	67, // [67:67] is the sub-list for extension extendee
-	0,  // [0:67] is the sub-list for field type_name
+	62, // 47: calaba.v1.TaskResponse.room:type_name -> calaba.v1.Room
+	1,  // 48: calaba.v1.UpdateTaskRequest.priority:type_name -> calaba.v1.TaskPriority
+	14, // 49: calaba.v1.SetAssigneesRequest.assignees:type_name -> calaba.v1.TaskAssigneeInput
+	3,  // 50: calaba.v1.SetTaskRelationRequest.kind:type_name -> calaba.v1.TaskRelationKind
+	18, // 51: calaba.v1.TaskActivityPage.items:type_name -> calaba.v1.TaskActivityItem
+	17, // 52: calaba.v1.BoardActivityResponse.activities:type_name -> calaba.v1.TaskActivity
+	16, // 53: calaba.v1.MyTasksResponse.tasks:type_name -> calaba.v1.Task
+	16, // 54: calaba.v1.SearchTasksResponse.tasks:type_name -> calaba.v1.Task
+	11, // 55: calaba.v1.ListBoardViewsResponse.views:type_name -> calaba.v1.BoardView
+	2,  // 56: calaba.v1.CreateBoardViewRequest.kind:type_name -> calaba.v1.BoardViewKind
+	20, // 57: calaba.v1.CreateBoardViewRequest.filter:type_name -> calaba.v1.TaskFilter
+	2,  // 58: calaba.v1.UpdateBoardViewRequest.kind:type_name -> calaba.v1.BoardViewKind
+	20, // 59: calaba.v1.UpdateBoardViewRequest.filter:type_name -> calaba.v1.TaskFilter
+	11, // 60: calaba.v1.BoardViewResponse.view:type_name -> calaba.v1.BoardView
+	12, // 61: calaba.v1.BoardCreate.board:type_name -> calaba.v1.Board
+	12, // 62: calaba.v1.BoardUpdate.board:type_name -> calaba.v1.Board
+	16, // 63: calaba.v1.TaskCreate.task:type_name -> calaba.v1.Task
+	16, // 64: calaba.v1.TaskUpdate.task:type_name -> calaba.v1.Task
+	54, // 65: calaba.v1.TaskUpdate.notice:type_name -> calaba.v1.TaskNotice
+	7,  // 66: calaba.v1.TaskNotice.kind:type_name -> calaba.v1.TaskNoticeKind
+	17, // 67: calaba.v1.TaskActivityAppend.activity:type_name -> calaba.v1.TaskActivity
+	68, // [68:68] is the sub-list for method output_type
+	68, // [68:68] is the sub-list for method input_type
+	68, // [68:68] is the sub-list for extension type_name
+	68, // [68:68] is the sub-list for extension extendee
+	0,  // [0:68] is the sub-list for field type_name
 }
 
 func init() { file_calaba_v1_boards_proto_init() }

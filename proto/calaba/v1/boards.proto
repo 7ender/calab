@@ -236,7 +236,9 @@ message TaskActivityItem {
 // (or none | low | medium | high | urgent). ESTIMATE: number (or values). LABEL / MILESTONE /
 // PARENT: ids. RELATION: "blocks" | "blocked" | "relates" | "duplicates". CREATED_AT /
 // UPDATED_AT: from / to. START_ON / DUE_ON: values "YYYY-MM-DD" (BETWEEN: two), else from / to
-// (their UTC date). HAS_ATTACHMENTS / HAS_COMMENTS / ARCHIVED: IS "true" | "false" (or
+// (their UTC date). Date values may be relative (saved views): "today", "week_start",
+// "week_end" (Monday..Sunday), "month_end", "-7d" / "+14d" (days from today), today in the
+// caller's profile zone. HAS_ATTACHMENTS / HAS_COMMENTS / ARCHIVED: IS "true" | "false" (or
 // NOT_EMPTY / EMPTY). TEXT: CONTAINS values[0] (title and description words, or the key).
 enum TaskField {
   TASK_FIELD_UNSPECIFIED = 0;
@@ -443,6 +445,7 @@ message TaskResponse {
   repeated Task related = 3;  // the other sides of task.relations that the caller can see
   Task parent = 4;
   Board board = 5;            // GET /api/t/{key} only
+  Room room = 6;              // the task room (type TASK): GET /tasks/{id} and GET /api/t/{key}
 }
 
 // PATCH /api/tasks/{id} → TaskResponse. Unset fields are unchanged. CREATE_TASKS may edit tasks
