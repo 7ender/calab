@@ -380,8 +380,12 @@ export interface MockServer {
    * READ_RECEIPT to the others (e.g. the DM peer reads Анна's message → ✓✓). False = not moved.
    */
   markRead(userId: string, roomId: string, messageId: string): boolean;
-  /** Sets a user's voice state (roomId '' = left voice) and fans out VOICE_STATE_UPDATE. */
-  setVoiceState(args: { userId: string; roomId: string; muted?: boolean; deafened?: boolean; streaming?: boolean; camera?: boolean; pending?: boolean }): void;
+  /**
+   * Sets a user's voice state (roomId '' = left voice) and fans out VOICE_STATE_UPDATE.
+   * `joinedAtMs`: VoiceState.joined_at (client clock — a visual test's page clock is fixed); kept
+   * within the same room, none by default.
+   */
+  setVoiceState(args: { userId: string; roomId: string; muted?: boolean; deafened?: boolean; streaming?: boolean; camera?: boolean; pending?: boolean; joinedAtMs?: number }): void;
   /** Sets a user's presence and fans out PRESENCE_UPDATE. */
   setPresence(userId: string, status: PresenceStatus): void;
   /**
@@ -1664,7 +1668,7 @@ class MockImpl {
     this.fanout((u) => (u === userId || this.shareWorkspace(u, userId) ? { event: { case: 'presenceUpdate', value: { presence } } } : null));
   }
 
-  setVoice(userId: string, roomId: string, patch: { muted?: boolean; deafened?: boolean; streaming?: boolean; serverMuted?: boolean; camera?: boolean; pending?: boolean }): void {
+  setVoice(userId: string, roomId: string, patch: { muted?: boolean; deafened?: boolean; streaming?: boolean; serverMuted?: boolean; camera?: boolean; pending?: boolean; joinedAtMs?: number }): void {
     const prev = this.state.voiceStates.get(userId);
     const room = roomId ? this.state.rooms.get(roomId) : undefined;
     // ADR-0034: a DM call's voice session — no workspace; its events go to the two participants.
@@ -1687,6 +1691,7 @@ class MockImpl {
       serverMuted: patch.serverMuted ?? (sameRoom ? prev.serverMuted : false),
       camera: patch.camera ?? (sameRoom ? prev.camera : false),
       pending: patch.pending ?? (sameRoom ? prev.pending : false),
+      joinedAt: patch.joinedAtMs !== undefined ? timestampFromMs(patch.joinedAtMs) : sameRoom ? prev.joinedAt : undefined,
     });
     // Moving to another workspace's room: tell the old workspace the user left.
     if (prev?.roomId && prev.workspaceId !== workspaceId) {

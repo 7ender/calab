@@ -16,6 +16,8 @@ import { MemberContextMenu } from '../people/MemberContextMenu';
 import { BirthdayMark } from '../people/Birthday';
 import { MutedByMe } from '../../components/SpeakerIdentity';
 import { VoiceStateIcons } from '../voice/VoiceStateIcons';
+import { JustJoinedDot } from '../voice/JustJoinedDot';
+import { joinedAtMs } from '../../lib/justJoined';
 import { groupMembers, nameOf } from '../people/members';
 import { openProfile as openFullProfile } from '../people/actions';
 import { useUpcomingBirthdays } from '../people/upcomingBirthdays';
@@ -330,10 +332,12 @@ const MemberRow = memo(function MemberRow({
             aria-label={t('people.openProfile', { name })}
             title={connectingRing ? `${name} · ${t('voice.pendingMember')}` : name}
             className={cx(
-              'flex h-[42px] w-full items-center gap-3 rounded-[var(--radius-row)] px-2 text-left transition-colors duration-[var(--motion-fast)] hover:bg-hover',
+              'relative flex h-[42px] w-full items-center gap-3 rounded-[var(--radius-row)] px-2 text-left transition-colors duration-[var(--motion-fast)] hover:bg-hover',
               open && 'bg-active',
             )}
           >
+            {/* «Только вошёл» in voice: in the 8 px row padding, 2 px left of the 32 px avatar. */}
+            {v?.roomId ? <JustJoinedDot joinedAt={joinedAtMs(v.joinedAt)} className="absolute left-0 top-1/2 -translate-y-1/2" /> : null}
             {/* Offline: grey, faded avatar + secondary text — never opacity on text (≥ 4.5:1). */}
             <span className={cx('flex shrink-0', offline && 'opacity-60 grayscale')}>
               <Avatar userId={userId} name={name} fileId={u.avatarFileId || undefined} size={32} presence speaking={speaking && !v?.muted} connecting={connectingRing} />

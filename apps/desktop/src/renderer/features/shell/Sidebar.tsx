@@ -68,6 +68,8 @@ import { joinOutcome } from '../../lib/voiceEntry';
 import { formatDuration, pad2, useNow } from './voiceFormat';
 import { menuBox, menuItem, menuSeparator } from './menu';
 import { MemberContextMenu } from '../people/MemberContextMenu';
+import { JustJoinedDot } from '../voice/JustJoinedDot';
+import { joinedAtMs } from '../../lib/justJoined';
 import { moveMember } from '../people/actions';
 import { errorText } from '../../lib/api/errors';
 import { VoiceInviteRow, VoiceStatusLine, useStatusLine } from './VoiceRoomRows';
@@ -1303,7 +1305,7 @@ function VoiceMember({
       className={cx(
         // Discord (2x reference): 28 px rows, 24 px avatars (speaking ring inside) starting where
         // the room name starts (8 + 18 + 6 = 32 px), 8 px to the 14 px name.
-        'group/member flex h-7 items-center gap-2 rounded-[var(--radius-row)] pl-8 pr-2.5 text-body transition-colors duration-[var(--motion-fast)] hover:bg-hover',
+        'group/member relative flex h-7 items-center gap-2 rounded-[var(--radius-row)] pl-8 pr-2.5 text-body transition-colors duration-[var(--motion-fast)] hover:bg-hover',
         draggable ? 'cursor-grab active:cursor-grabbing' : 'cursor-default',
         isDragging && 'opacity-40',
       )}
@@ -1311,6 +1313,8 @@ function VoiceMember({
       data-speaking={talking || undefined}
       data-pending={state.pending || undefined}
     >
+      {/* «Только вошёл»: 6 px dot 4 px left of the 24 px avatar (32 px), outside the flex flow. */}
+      <JustJoinedDot joinedAt={joinedAtMs(state.joinedAt)} className="absolute left-[22px] top-1/2 -translate-y-1/2" />
       <SpeakerIdentity userId={state.userId} name={name} fileId={user?.avatarFileId || undefined} size={24} talking={talking} pending={connectingRing} suffix={tz} role={role} workspaceId={workspaceId} />
       {state.streaming ? (
         <Badge tone="danger" title={t('voice.streaming')}>

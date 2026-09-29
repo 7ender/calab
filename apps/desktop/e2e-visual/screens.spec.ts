@@ -75,6 +75,7 @@ const KEY = new Set([
   'chat-voice-bubble',
   'voice-room-speaking',
   'voice-room-pending',
+  'voice-room-joined',
   'voice-stream',
   'voice-pip',
   'voice-camera-grid',
@@ -2479,6 +2480,20 @@ test('voice-room-pending', async ({ open, win, mock, shot }) => {
   await expect(row).toHaveAttribute('data-pending', 'true');
   await expect(row.getByTestId('connect-ring')).toBeVisible({ timeout: 6000 }); // after 3 s
   await checkpoint(shot, 'voice-room-pending');
+});
+
+// «Только вошёл» (owner, 29.09; docs/08): Григорий joined 2 s ago by the page's fixed clock — a
+// 6 px muted-accent dot left of his avatar (10 s window; the frozen clock keeps it in the shot).
+// Борис and Вера have no joined_at in the fixture: no dot.
+test('voice-room-joined', async ({ open, win, mock, shot }) => {
+  await open();
+  await inVoice(win, mock);
+  const now = await win.evaluate(() => Date.now());
+  mock.setVoiceState({ userId: IDS.users.grigory, roomId: IDS.rooms.meeting, joinedAtMs: now - 2_000 });
+  const sidebar = win.locator('aside').first();
+  await expect(sidebar.getByRole('listitem', { name: /Григорий/ }).getByTestId('just-joined-dot')).toHaveAttribute('data-shown', 'true');
+  await expect(sidebar.getByRole('listitem', { name: /Борис Петров/ }).getByTestId('just-joined-dot')).toHaveCount(0);
+  await checkpoint(shot, 'voice-room-joined');
 });
 
 test('toast-device', async ({ open, win, mock, shot }) => {
