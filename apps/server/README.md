@@ -90,6 +90,7 @@ KV-хранилище — **Valkey (совместим с Redis)**, ADR-0017. В
 | `SMTP_FROM` | — | обязателен при `SMTP_HOST`: `Calab <noreply@calab.ru>` |
 | `MAIL_PER_ADDRESS_PER_HOUR` / `MAIL_PER_HOUR` | `3` / `200` | писем на адрес и на сервер в час (Valkey) |
 | `MAIL_EVENTS_PER_ADDRESS_PER_HOUR` | `10` | писем встреч (приглашение/изменение/отмена) на адрес в час — отдельно от кодов |
+| `CALDAV_SYNC_INTERVAL` | `15m` | как часто импортируется занятость подключённого CalDAV-календаря пользователя (ADR-0041), 1m..24h |
 | `GPTUNNEL_API_URL` | `https://gptunnel.ai` | запись встреч (ADR-0025): API устройств GPTunneL (pairing, загрузка, статус) |
 | `RECORDING_MAX_CONCURRENT` | `3` | одновременных записей на сервер (egress ≈ 0.5 CPU на запись) |
 | `RECORDINGS_PATH` / `RECORDING_EGRESS_DIR` | `./data/recordings` / `/out` | том записей глазами API и контейнера egress (один volume) |
