@@ -1,5 +1,7 @@
+import { create, fromBinary, toBinary } from '@bufbuild/protobuf';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
-import { AttendeeStatus, EventRepeat } from '@calaba/protocol';
+import WebSocket from 'ws';
+import { AttendeeStatus, EventRepeat, GatewayFrameSchema, GatewayOpcode, type Ready } from '@calaba/protocol';
 import { IDS, startMockServer, type MockServer } from './mock-server';
 
 // Calendar in the mock (ADR-0038): pnpm -F @calaba/desktop exec vitest run --config e2e-support/vitest.config.ts
@@ -122,4 +124,68 @@ describe('calendar (ADR-0038)', () => {
     expect((await api(vera, '/api/me', { method: 'PATCH', body: JSON.stringify({ eventReminders: { minutes: [7] } }) })).status).toBe(422);
     server.setClock(null);
   });
+
+  it('deep links: the view token page and a guest of the room (ADR-0038 «Диплинки для приглашённых»)', async () => {
+    server.reset();
+    const now = Date.UTC(2030, 0, 7, 9, 50);
+    server.setClock(now);
+    const start = now + 10 * 60_000;
+    const ev = server.addEvent({
+      workspaceId: IDS.workspaces.main, title: 'Демо', description: '**Повестка**', startMs: start, endMs: start + HOUR, roomId: IDS.rooms.meeting,
+      repeat: EventRepeat.UNSPECIFIED, attendees: [{ userId: IDS.users.vera }, { email: 'partner@outside.org' }],
+    });
+    const guestUrl = server.eventGuestLink(ev.id, 'partner@outside.org');
+    expect(server.eventGuestLink(ev.id, 'partner@outside.org')).toBe(guestUrl);
+
+    // The view token: the page with answer tokens and the guest window; it cannot answer itself.
+    const view = server.eventViewToken(ev.id, 'partner@outside.org');
+    const pg = (await (await api('', `/api/event-rsvp?t=${encodeURIComponent(view)}`)).json()) as Record<string, string | undefined>;
+    expect(pg).toMatchObject({ title: 'Демо', description: '**Повестка**', myStatus: 'ATTENDEE_STATUS_PENDING', guestUrl, email: 'partner@outside.org' });
+    expect(pg.status ?? 'ATTENDEE_STATUS_UNSPECIFIED').toBe('ATTENDEE_STATUS_UNSPECIFIED');
+    expect(pg.roomName).toBeTruthy();
+    expect(pg.organizerEmail).toBe('owner@calaba.test');
+    expect(Date.parse(pg.guestFrom ?? '')).toBe(start - 15 * 60_000);
+    expect(Date.parse(pg.guestUntil ?? '')).toBe(start + 2 * HOUR);
+    expect((await api('', '/api/event-rsvp', { method: 'POST', body: JSON.stringify({ token: view }) })).status).toBe(400);
+    const ans = await api('', '/api/event-rsvp', { method: 'POST', body: JSON.stringify({ token: pg.acceptToken }) });
+    expect(((await ans.json()) as { myStatus: string }).myStatus).toBe('ATTENDEE_STATUS_ACCEPTED');
+
+    // The partner joins with the guest link: the active meeting without attendees; the calendar stays closed.
+    const code = guestUrl.split('/r/')[1] ?? '';
+    const joined = await api('', `/api/room-invites/${code}/join`, { method: 'POST', body: JSON.stringify({ nickname: 'Partner' }) });
+    const guest = ((await joined.json()) as { tokens: { accessToken: string } }).tokens.accessToken;
+    const card = await api(guest, `/api/events/${ev.id}`);
+    expect(card.status).toBe(200);
+    const e = ((await card.json()) as { event: Ev & { description?: string } }).event;
+    expect(e.attendees).toHaveLength(0);
+    expect(e.description).toBe('**Повестка**');
+    expect(e.counts?.accepted).toBe(2);
+    expect((await api(guest, `/api/workspaces/${IDS.workspaces.main}/events?from=${iso(start)}&to=${iso(start + HOUR)}`)).status).toBe(403);
+    expect((await api(guest, `/api/events/${ev.id}/rsvp`, { method: 'PUT', body: JSON.stringify({ status: 'ATTENDEE_STATUS_MAYBE' }) })).status).toBe(403);
+    // READY of the guest carries it too.
+    const ready = await readyOf(guest);
+    const snap = ready.workspaces.find((w) => w.workspace?.id === IDS.workspaces.main);
+    expect(snap?.activeEvents.map((x) => [x.id, x.attendees.length])).toEqual([[ev.id, 0]]);
+    // Outside the window: 404.
+    server.setClock(start + 2 * HOUR);
+    expect((await api(guest, `/api/events/${ev.id}`)).status).toBe(404);
+    server.setClock(null);
+  });
 });
+
+async function readyOf(token: string): Promise<Ready> {
+  const ws = new WebSocket(`${server.url.replace('http', 'ws')}/gateway?v=1`);
+  try {
+    return await new Promise<Ready>((resolve, reject) => {
+      setTimeout(() => reject(new Error('no READY')), 5000);
+      ws.on('open', () => ws.send(toBinary(GatewayFrameSchema, create(GatewayFrameSchema, { op: GatewayOpcode.IDENTIFY, payload: { case: 'identify', value: { token } } }))));
+      ws.on('message', (data: Buffer) => {
+        const f = fromBinary(GatewayFrameSchema, new Uint8Array(data));
+        if (f.payload.case === 'dispatch' && f.payload.value.event.case === 'ready') resolve(f.payload.value.event.value);
+      });
+      ws.once('error', reject);
+    });
+  } finally {
+    ws.close();
+  }
+}

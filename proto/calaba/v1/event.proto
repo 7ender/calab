@@ -10,7 +10,9 @@ import "google/protobuf/timestamp.proto";
 // ends at midnight of its `tz` (ends_at exclusive: a one-day event lasts 24 h of that zone).
 //
 // Visibility: a member (not a guest) sees an event with a room when they can VIEW_ROOM that
-// room, and any event they organize or attend. Guests see no calendar. Bots (ADR-0031) may
+// room, and any event they organize or attend. Guests see no calendar, only the meeting active
+// in a room they can view (WorkspaceSnapshot.active_events, ROOM_EVENT_ACTIVE / ENDED,
+// GET /api/events/{id}) without its attendees (empty list, counts only). Bots (ADR-0031) may
 // list and read (external attendees' emails are empty for them) but not change anything.
 //
 // Editing: the organizer; else MANAGE_ROOM in the event's room, or MANAGE_WORKSPACE for an
@@ -145,7 +147,9 @@ message UpdateCalendarEventRequest {
   repeated CalendarEventAttendeeInput attendees = 13;
 }
 
-// POST, GET /api/events/{id}, PATCH.
+// POST, GET /api/events/{id}, PATCH. A guest of the workspace (ADR-0016) gets GET only for
+// the meeting active in a room they can view: that occurrence, attendees empty, can_edit false,
+// no recording_id; otherwise 404. PATCH / DELETE / rsvp → 403 for a guest who sees the room.
 message CalendarEventResponse {
   CalendarEvent event = 1;
 }
@@ -173,6 +177,13 @@ message TodayCalendarEventsResponse {
 // signed (HMAC) and carries the event, the address, the answer and its expiry (the end of the
 // event, or of the series); 410 EVENT_OVER after it, 404 for a bad signature or an address no
 // longer invited. POST is idempotent. Public routes (no login).
+//
+// Deep link for invited people without an account («Диплинки для приглашённых»): the mail of an
+// external attendee links the meeting (main button, invite.ics URL) as
+// https://<APP_HOST>/e/<id>?t=<view token>. A view token is signed the same way with the answer
+// `view`, valid until the end of the meeting (series) + 1 h; GET accepts it (status UNSPECIFIED),
+// POST with it → 400 (answers need an answer token: take accept_token / maybe_token /
+// decline_token of the response). Other attendees are never listed (privacy, ADR-0038).
 message EventRsvpTokenRequest {
   string token = 1;
 }
@@ -186,9 +197,27 @@ message EventRsvpTokenResponse {
   string tz = 6;
   string organizer_name = 7;
   string workspace_name = 8;
-  AttendeeStatus status = 9; // the answer of the link (after POST: stored)
+  AttendeeStatus status = 9; // the answer of the link (after POST: stored); UNSPECIFIED for a view token
   string email = 10;
   bool cancelled = 11;
+  string description = 12; // markdown-lite, as stored
+  string room_name = 13;   // empty = no room
+  AttendeeStatus my_status = 14; // the stored answer of this address
+  // Signed answer tokens of this address (POST /api/event-rsvp {token}); empty once the meeting
+  // is over or cancelled.
+  string accept_token = 15;
+  string maybe_token = 16;
+  string decline_token = 17;
+  // The guest link of this address into the meeting's room (https://<APP_HOST>/r/<code>);
+  // empty without a room or when links are unavailable (no MANAGE_ROOM of the organizer,
+  // revoked). It works in [guest_from, guest_until): «ссылка станет активной за 15 минут до
+  // начала».
+  string guest_url = 18;
+  google.protobuf.Timestamp guest_from = 19;
+  google.protobuf.Timestamp guest_until = 20;
+  EventRepeat repeat = 21;
+  google.protobuf.Timestamp repeat_until = 22;
+  string organizer_email = 23; // only a confirmed address, else empty
 }
 
 // ---- gateway (docs/05) ----
@@ -227,8 +256,9 @@ message CalendarEventReminder {
 }
 
 // ROOM_EVENT_ACTIVE: 15 minutes before an occurrence with a room starts (and at once for one
-// created or moved inside that window) until it ends; to the room's viewers (not guests). The
+// created or moved inside that window) until it ends; to the room's viewers. The
 // room row shows the calendar badge. WorkspaceSnapshot.active_events has the current ones.
+// Guests who see the room get it too, without attendees (see CalendarEventResponse).
 message RoomEventActive {
   string workspace_id = 1;
   string room_id = 2;

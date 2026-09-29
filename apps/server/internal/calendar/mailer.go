@@ -26,6 +26,26 @@ func (s *Service) eventURL(id uuid.UUID) string {
 	return strings.TrimRight(s.cfg.PublicURL, "/") + "/e/" + id.String()
 }
 
+func (s *Service) guestURL(code string) string {
+	return strings.TrimRight(s.cfg.PublicURL, "/") + "/r/" + code
+}
+
+// viewURL is the meeting link of an external attendee's mail («Диплинки для приглашённых»):
+// /e/<id>?t=<view token>, valid until the end of the meeting (series) + 1 h like its guest link.
+func (s *Service) viewURL(b *bundle, email string) string {
+	tok := signRSVP(s.key, rsvpClaims{Event: b.ev.ID, Status: statusView, Email: email, Exp: s.tokenExpiry(b).Add(guestLinkAfter)})
+	return s.eventURL(b.ev.ID) + "?t=" + url.QueryEscape(tok)
+}
+
+// usableLink returns the guest link of the external attendee a, unless revoked.
+func (s *Service) usableLink(ctx context.Context, b *bundle, a sqlc.EventAttendee) (sqlc.RoomInvite, bool) {
+	if a.InviteID == nil || b.ev.RoomID == nil {
+		return sqlc.RoomInvite{}, false
+	}
+	inv, err := s.db.Q.GetRoomInvite(ctx, *a.InviteID)
+	return inv, err == nil && inv.RevokedAt == nil
+}
+
 // sendMails queues tmpl to the recipients among `to` (attendees of b).
 func (s *Service) sendMails(ctx context.Context, b *bundle, tmpl mail.Template, method string, to []sqlc.EventAttendee) {
 	if !s.mail.Enabled() || len(to) == 0 {
@@ -62,7 +82,7 @@ func (s *Service) sendMails(ctx context.Context, b *bundle, tmpl mail.Template, 
 	if !ok {
 		occ = Occurrence{b.series.Start, b.series.End}
 	}
-	ics := BuildICS(s.icsEvent(b, method, users, org, roomName, ""))
+	ics := BuildICS(s.icsEvent(b, method, users, org, roomName, "", s.eventURL(b.ev.ID)))
 	var names, members []string
 	for _, a := range b.att {
 		if a.UserID != nil {
@@ -93,17 +113,19 @@ func (s *Service) sendMails(ctx context.Context, b *bundle, tmpl mail.Template, 
 				locale = *org.Locale
 			}
 		}
-		attendees, invite := strings.Join(names, ", "), ics
+		attendees, invite, link := strings.Join(names, ", "), ics, s.eventURL(b.ev.ID)
 		if a.UserID == nil {
 			// An outside recipient sees colleagues by name only and no other outside address:
-			// its invite.ics lists the organizer and its own line (RFC 5546 needs no more).
+			// its invite.ics lists the organizer and its own line (RFC 5546 needs no more). Its
+			// meeting link carries a view token: it has no account to open /e/<id> with.
 			own := deref(a.Email)
 			attendees = strings.Join(append(slices.Clone(members), own), ", ")
-			invite = BuildICS(s.icsEvent(b, method, users, org, roomName, own))
+			link = s.viewURL(b, own)
+			invite = BuildICS(s.icsEvent(b, method, users, org, roomName, own, link))
 		}
 		date, when := formatWhen(locale, occ, b.ev.AllDay, loc)
 		p := mail.Params{
-			"title": b.ev.Title, "date": date, "when": when, "organizer": org.DisplayName, "url": s.eventURL(b.ev.ID),
+			"title": b.ev.Title, "date": date, "when": when, "organizer": org.DisplayName, "url": link,
 			"room": roomName, "repeat": repeatText(locale, b.series.Rule.Repeat), "attendees": attendees,
 			mail.ParamICS: invite, mail.ParamICSMethod: method,
 		}
@@ -132,10 +154,8 @@ func (s *Service) externalLinks(ctx context.Context, b *bundle, a sqlc.EventAtte
 	for param, st := range map[string]string{"rsvp_accept": StatusAccepted, "rsvp_decline": StatusDeclined, "rsvp_maybe": StatusMaybe} {
 		p[param] = base + url.QueryEscape(signRSVP(s.key, rsvpClaims{Event: b.ev.ID, Status: st, Email: deref(a.Email), Exp: exp}))
 	}
-	if a.InviteID != nil {
-		if inv, err := s.db.Q.GetRoomInvite(ctx, *a.InviteID); err == nil && inv.RevokedAt == nil {
-			p["guest_url"] = strings.TrimRight(s.cfg.PublicURL, "/") + "/r/" + inv.Code
-		}
+	if inv, ok := s.usableLink(ctx, b, a); ok {
+		p["guest_url"] = s.guestURL(inv.Code)
 	}
 }
 
@@ -148,11 +168,12 @@ func (s *Service) tokenExpiry(b *bundle) time.Time {
 	return s.Now().Add(365 * 24 * time.Hour)
 }
 
-// icsEvent describes b for invite.ics; only != "" keeps that external attendee's line alone.
-func (s *Service) icsEvent(b *bundle, method string, users map[uuid.UUID]sqlc.ListEventUsersRow, org sqlc.ListEventUsersRow, roomName, only string) ICSEvent {
+// icsEvent describes b for invite.ics with the meeting link; only != "" keeps that external
+// attendee's line alone.
+func (s *Service) icsEvent(b *bundle, method string, users map[uuid.UUID]sqlc.ListEventUsersRow, org sqlc.ListEventUsersRow, roomName, only, link string) ICSEvent {
 	e := ICSEvent{
 		UID: b.ev.ID.String() + "@calab", Sequence: int(b.ev.Sequence), Method: method, Series: b.series,
-		Title: b.ev.Title, Description: b.ev.Description, URL: s.eventURL(b.ev.ID), Stamp: s.Now(),
+		Title: b.ev.Title, Description: b.ev.Description, URL: link, Stamp: s.Now(),
 		Organizer: ICSPerson{Name: org.DisplayName, Email: s.organizerAddress(org)},
 	}
 	if roomName != "" {

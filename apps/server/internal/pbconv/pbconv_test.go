@@ -6,6 +6,26 @@ import (
 	v1 "github.com/calaba/calaba/server/gen/calaba/v1"
 )
 
+func TestEventForGuest(t *testing.T) {
+	ev := &v1.CalendarEvent{Id: "e", Title: "Демо", Description: "Повестка", RoomId: "r", RecordingId: "rec", CanEdit: true, GuestLinks: true,
+		MyStatus: v1.AttendeeStatus_ATTENDEE_STATUS_ACCEPTED, Counts: &v1.CalendarEventCounts{Accepted: 1, Pending: 1},
+		Attendees: []*v1.CalendarEventAttendee{{UserId: "u"}, {Email: "partner@outside.org"}}}
+	g := EventForGuest(ev)
+	if len(g.GetAttendees()) != 0 || g.GetRecordingId() != "" || g.GetCanEdit() || g.GetGuestLinks() ||
+		g.GetMyStatus() != v1.AttendeeStatus_ATTENDEE_STATUS_UNSPECIFIED {
+		t.Fatalf("guest view leaks: %v", g)
+	}
+	if g.GetTitle() != "Демо" || g.GetDescription() != "Повестка" || g.GetCounts().GetAccepted() != 1 || g.GetRoomId() != "r" {
+		t.Fatalf("guest view lost the card: %v", g)
+	}
+	if len(ev.GetAttendees()) != 2 || ev.GetRecordingId() != "rec" {
+		t.Fatal("the original changed")
+	}
+	if EventForGuest(nil) != nil {
+		t.Fatal("nil")
+	}
+}
+
 func TestSettingsDefaults(t *testing.T) {
 	for name, c := range map[string]struct {
 		raw   string

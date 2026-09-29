@@ -1146,7 +1146,7 @@ export type WorkspaceSnapshot = Message<"calaba.v1.WorkspaceSnapshot"> & {
 
   /**
    * Meetings in visible rooms from 15 minutes before their start until their end (ADR-0038
-   * §6): the room badge after a (re)connect. Empty for guests.
+   * §6): the room badge after a (re)connect. Guests get them without attendees.
    *
    * @generated from field: repeated calaba.v1.CalendarEvent active_events = 14;
    */

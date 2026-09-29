@@ -910,7 +910,9 @@ func (x *UpdateCalendarEventRequest) GetAttendees() []*CalendarEventAttendeeInpu
 	return nil
 }
 
-// POST, GET /api/events/{id}, PATCH.
+// POST, GET /api/events/{id}, PATCH. A guest of the workspace (ADR-0016) gets GET only for
+// the meeting active in a room they can view: that occurrence, attendees empty, can_edit false,
+// no recording_id; otherwise 404. PATCH / DELETE / rsvp → 403 for a guest who sees the room.
 type CalendarEventResponse struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	Event         *CalendarEvent         `protobuf:"bytes,1,opt,name=event,proto3" json:"event,omitempty"`
@@ -1061,6 +1063,13 @@ func (x *TodayCalendarEventsResponse) GetEvents() []*CalendarEvent {
 // signed (HMAC) and carries the event, the address, the answer and its expiry (the end of the
 // event, or of the series); 410 EVENT_OVER after it, 404 for a bad signature or an address no
 // longer invited. POST is idempotent. Public routes (no login).
+//
+// Deep link for invited people without an account («Диплинки для приглашённых»): the mail of an
+// external attendee links the meeting (main button, invite.ics URL) as
+// https://<APP_HOST>/e/<id>?t=<view token>. A view token is signed the same way with the answer
+// `view`, valid until the end of the meeting (series) + 1 h; GET accepts it (status UNSPECIFIED),
+// POST with it → 400 (answers need an answer token: take accept_token / maybe_token /
+// decline_token of the response). Other attendees are never listed (privacy, ADR-0038).
 type EventRsvpTokenRequest struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	Token         string                 `protobuf:"bytes,1,opt,name=token,proto3" json:"token,omitempty"`
@@ -1115,11 +1124,29 @@ type EventRsvpTokenResponse struct {
 	Tz            string                 `protobuf:"bytes,6,opt,name=tz,proto3" json:"tz,omitempty"`
 	OrganizerName string                 `protobuf:"bytes,7,opt,name=organizer_name,json=organizerName,proto3" json:"organizer_name,omitempty"`
 	WorkspaceName string                 `protobuf:"bytes,8,opt,name=workspace_name,json=workspaceName,proto3" json:"workspace_name,omitempty"`
-	Status        AttendeeStatus         `protobuf:"varint,9,opt,name=status,proto3,enum=calaba.v1.AttendeeStatus" json:"status,omitempty"` // the answer of the link (after POST: stored)
+	Status        AttendeeStatus         `protobuf:"varint,9,opt,name=status,proto3,enum=calaba.v1.AttendeeStatus" json:"status,omitempty"` // the answer of the link (after POST: stored); UNSPECIFIED for a view token
 	Email         string                 `protobuf:"bytes,10,opt,name=email,proto3" json:"email,omitempty"`
 	Cancelled     bool                   `protobuf:"varint,11,opt,name=cancelled,proto3" json:"cancelled,omitempty"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
+	Description   string                 `protobuf:"bytes,12,opt,name=description,proto3" json:"description,omitempty"`                                          // markdown-lite, as stored
+	RoomName      string                 `protobuf:"bytes,13,opt,name=room_name,json=roomName,proto3" json:"room_name,omitempty"`                                // empty = no room
+	MyStatus      AttendeeStatus         `protobuf:"varint,14,opt,name=my_status,json=myStatus,proto3,enum=calaba.v1.AttendeeStatus" json:"my_status,omitempty"` // the stored answer of this address
+	// Signed answer tokens of this address (POST /api/event-rsvp {token}); empty once the meeting
+	// is over or cancelled.
+	AcceptToken  string `protobuf:"bytes,15,opt,name=accept_token,json=acceptToken,proto3" json:"accept_token,omitempty"`
+	MaybeToken   string `protobuf:"bytes,16,opt,name=maybe_token,json=maybeToken,proto3" json:"maybe_token,omitempty"`
+	DeclineToken string `protobuf:"bytes,17,opt,name=decline_token,json=declineToken,proto3" json:"decline_token,omitempty"`
+	// The guest link of this address into the meeting's room (https://<APP_HOST>/r/<code>);
+	// empty without a room or when links are unavailable (no MANAGE_ROOM of the organizer,
+	// revoked). It works in [guest_from, guest_until): «ссылка станет активной за 15 минут до
+	// начала».
+	GuestUrl       string                 `protobuf:"bytes,18,opt,name=guest_url,json=guestUrl,proto3" json:"guest_url,omitempty"`
+	GuestFrom      *timestamppb.Timestamp `protobuf:"bytes,19,opt,name=guest_from,json=guestFrom,proto3" json:"guest_from,omitempty"`
+	GuestUntil     *timestamppb.Timestamp `protobuf:"bytes,20,opt,name=guest_until,json=guestUntil,proto3" json:"guest_until,omitempty"`
+	Repeat         EventRepeat            `protobuf:"varint,21,opt,name=repeat,proto3,enum=calaba.v1.EventRepeat" json:"repeat,omitempty"`
+	RepeatUntil    *timestamppb.Timestamp `protobuf:"bytes,22,opt,name=repeat_until,json=repeatUntil,proto3" json:"repeat_until,omitempty"`
+	OrganizerEmail string                 `protobuf:"bytes,23,opt,name=organizer_email,json=organizerEmail,proto3" json:"organizer_email,omitempty"` // only a confirmed address, else empty
+	unknownFields  protoimpl.UnknownFields
+	sizeCache      protoimpl.SizeCache
 }
 
 func (x *EventRsvpTokenResponse) Reset() {
@@ -1227,6 +1254,90 @@ func (x *EventRsvpTokenResponse) GetCancelled() bool {
 		return x.Cancelled
 	}
 	return false
+}
+
+func (x *EventRsvpTokenResponse) GetDescription() string {
+	if x != nil {
+		return x.Description
+	}
+	return ""
+}
+
+func (x *EventRsvpTokenResponse) GetRoomName() string {
+	if x != nil {
+		return x.RoomName
+	}
+	return ""
+}
+
+func (x *EventRsvpTokenResponse) GetMyStatus() AttendeeStatus {
+	if x != nil {
+		return x.MyStatus
+	}
+	return AttendeeStatus_ATTENDEE_STATUS_UNSPECIFIED
+}
+
+func (x *EventRsvpTokenResponse) GetAcceptToken() string {
+	if x != nil {
+		return x.AcceptToken
+	}
+	return ""
+}
+
+func (x *EventRsvpTokenResponse) GetMaybeToken() string {
+	if x != nil {
+		return x.MaybeToken
+	}
+	return ""
+}
+
+func (x *EventRsvpTokenResponse) GetDeclineToken() string {
+	if x != nil {
+		return x.DeclineToken
+	}
+	return ""
+}
+
+func (x *EventRsvpTokenResponse) GetGuestUrl() string {
+	if x != nil {
+		return x.GuestUrl
+	}
+	return ""
+}
+
+func (x *EventRsvpTokenResponse) GetGuestFrom() *timestamppb.Timestamp {
+	if x != nil {
+		return x.GuestFrom
+	}
+	return nil
+}
+
+func (x *EventRsvpTokenResponse) GetGuestUntil() *timestamppb.Timestamp {
+	if x != nil {
+		return x.GuestUntil
+	}
+	return nil
+}
+
+func (x *EventRsvpTokenResponse) GetRepeat() EventRepeat {
+	if x != nil {
+		return x.Repeat
+	}
+	return EventRepeat_EVENT_REPEAT_UNSPECIFIED
+}
+
+func (x *EventRsvpTokenResponse) GetRepeatUntil() *timestamppb.Timestamp {
+	if x != nil {
+		return x.RepeatUntil
+	}
+	return nil
+}
+
+func (x *EventRsvpTokenResponse) GetOrganizerEmail() string {
+	if x != nil {
+		return x.OrganizerEmail
+	}
+	return ""
 }
 
 // EVENT_CREATE / EVENT_UPDATE / EVENT_DELETE: the series (occurrence_at unset, my_status
@@ -1505,8 +1616,9 @@ func (x *CalendarEventReminder) GetMinutes() uint32 {
 }
 
 // ROOM_EVENT_ACTIVE: 15 minutes before an occurrence with a room starts (and at once for one
-// created or moved inside that window) until it ends; to the room's viewers (not guests). The
+// created or moved inside that window) until it ends; to the room's viewers. The
 // room row shows the calendar badge. WorkspaceSnapshot.active_events has the current ones.
+// Guests who see the room get it too, without attendees (see CalendarEventResponse).
 type RoomEventActive struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	WorkspaceId   string                 `protobuf:"bytes,1,opt,name=workspace_id,json=workspaceId,proto3" json:"workspace_id,omitempty"`
@@ -1733,7 +1845,7 @@ const file_calaba_v1_event_proto_rawDesc = "" +
 	"\x05count\x18\x01 \x01(\rR\x05count\x120\n" +
 	"\x06events\x18\x02 \x03(\v2\x18.calaba.v1.CalendarEventR\x06events\"-\n" +
 	"\x15EventRsvpTokenRequest\x12\x14\n" +
-	"\x05token\x18\x01 \x01(\tR\x05token\"\x95\x03\n" +
+	"\x05token\x18\x01 \x01(\tR\x05token\"\xa2\a\n" +
 	"\x16EventRsvpTokenResponse\x12\x19\n" +
 	"\bevent_id\x18\x01 \x01(\tR\aeventId\x12\x14\n" +
 	"\x05title\x18\x02 \x01(\tR\x05title\x127\n" +
@@ -1746,7 +1858,22 @@ const file_calaba_v1_event_proto_rawDesc = "" +
 	"\x06status\x18\t \x01(\x0e2\x19.calaba.v1.AttendeeStatusR\x06status\x12\x14\n" +
 	"\x05email\x18\n" +
 	" \x01(\tR\x05email\x12\x1c\n" +
-	"\tcancelled\x18\v \x01(\bR\tcancelled\"E\n" +
+	"\tcancelled\x18\v \x01(\bR\tcancelled\x12 \n" +
+	"\vdescription\x18\f \x01(\tR\vdescription\x12\x1b\n" +
+	"\troom_name\x18\r \x01(\tR\broomName\x126\n" +
+	"\tmy_status\x18\x0e \x01(\x0e2\x19.calaba.v1.AttendeeStatusR\bmyStatus\x12!\n" +
+	"\faccept_token\x18\x0f \x01(\tR\vacceptToken\x12\x1f\n" +
+	"\vmaybe_token\x18\x10 \x01(\tR\n" +
+	"maybeToken\x12#\n" +
+	"\rdecline_token\x18\x11 \x01(\tR\fdeclineToken\x12\x1b\n" +
+	"\tguest_url\x18\x12 \x01(\tR\bguestUrl\x129\n" +
+	"\n" +
+	"guest_from\x18\x13 \x01(\v2\x1a.google.protobuf.TimestampR\tguestFrom\x12;\n" +
+	"\vguest_until\x18\x14 \x01(\v2\x1a.google.protobuf.TimestampR\n" +
+	"guestUntil\x12.\n" +
+	"\x06repeat\x18\x15 \x01(\x0e2\x16.calaba.v1.EventRepeatR\x06repeat\x12=\n" +
+	"\frepeat_until\x18\x16 \x01(\v2\x1a.google.protobuf.TimestampR\vrepeatUntil\x12'\n" +
+	"\x0forganizer_email\x18\x17 \x01(\tR\x0eorganizerEmail\"E\n" +
 	"\x13CalendarEventCreate\x12.\n" +
 	"\x05event\x18\x01 \x01(\v2\x18.calaba.v1.CalendarEventR\x05event\"E\n" +
 	"\x13CalendarEventUpdate\x12.\n" +
@@ -1858,21 +1985,26 @@ var file_calaba_v1_event_proto_depIdxs = []int32{
 	21, // 28: calaba.v1.EventRsvpTokenResponse.starts_at:type_name -> google.protobuf.Timestamp
 	21, // 29: calaba.v1.EventRsvpTokenResponse.ends_at:type_name -> google.protobuf.Timestamp
 	0,  // 30: calaba.v1.EventRsvpTokenResponse.status:type_name -> calaba.v1.AttendeeStatus
-	4,  // 31: calaba.v1.CalendarEventCreate.event:type_name -> calaba.v1.CalendarEvent
-	4,  // 32: calaba.v1.CalendarEventUpdate.event:type_name -> calaba.v1.CalendarEvent
-	4,  // 33: calaba.v1.CalendarEventDelete.event:type_name -> calaba.v1.CalendarEvent
-	2,  // 34: calaba.v1.CalendarEventRsvp.attendee:type_name -> calaba.v1.CalendarEventAttendee
-	3,  // 35: calaba.v1.CalendarEventRsvp.counts:type_name -> calaba.v1.CalendarEventCounts
-	4,  // 36: calaba.v1.CalendarEventRsvp.event:type_name -> calaba.v1.CalendarEvent
-	4,  // 37: calaba.v1.CalendarEventReminder.event:type_name -> calaba.v1.CalendarEvent
-	21, // 38: calaba.v1.CalendarEventReminder.occurrence_at:type_name -> google.protobuf.Timestamp
-	4,  // 39: calaba.v1.RoomEventActive.event:type_name -> calaba.v1.CalendarEvent
-	21, // 40: calaba.v1.RoomEventEnded.occurrence_at:type_name -> google.protobuf.Timestamp
-	41, // [41:41] is the sub-list for method output_type
-	41, // [41:41] is the sub-list for method input_type
-	41, // [41:41] is the sub-list for extension type_name
-	41, // [41:41] is the sub-list for extension extendee
-	0,  // [0:41] is the sub-list for field type_name
+	0,  // 31: calaba.v1.EventRsvpTokenResponse.my_status:type_name -> calaba.v1.AttendeeStatus
+	21, // 32: calaba.v1.EventRsvpTokenResponse.guest_from:type_name -> google.protobuf.Timestamp
+	21, // 33: calaba.v1.EventRsvpTokenResponse.guest_until:type_name -> google.protobuf.Timestamp
+	1,  // 34: calaba.v1.EventRsvpTokenResponse.repeat:type_name -> calaba.v1.EventRepeat
+	21, // 35: calaba.v1.EventRsvpTokenResponse.repeat_until:type_name -> google.protobuf.Timestamp
+	4,  // 36: calaba.v1.CalendarEventCreate.event:type_name -> calaba.v1.CalendarEvent
+	4,  // 37: calaba.v1.CalendarEventUpdate.event:type_name -> calaba.v1.CalendarEvent
+	4,  // 38: calaba.v1.CalendarEventDelete.event:type_name -> calaba.v1.CalendarEvent
+	2,  // 39: calaba.v1.CalendarEventRsvp.attendee:type_name -> calaba.v1.CalendarEventAttendee
+	3,  // 40: calaba.v1.CalendarEventRsvp.counts:type_name -> calaba.v1.CalendarEventCounts
+	4,  // 41: calaba.v1.CalendarEventRsvp.event:type_name -> calaba.v1.CalendarEvent
+	4,  // 42: calaba.v1.CalendarEventReminder.event:type_name -> calaba.v1.CalendarEvent
+	21, // 43: calaba.v1.CalendarEventReminder.occurrence_at:type_name -> google.protobuf.Timestamp
+	4,  // 44: calaba.v1.RoomEventActive.event:type_name -> calaba.v1.CalendarEvent
+	21, // 45: calaba.v1.RoomEventEnded.occurrence_at:type_name -> google.protobuf.Timestamp
+	46, // [46:46] is the sub-list for method output_type
+	46, // [46:46] is the sub-list for method input_type
+	46, // [46:46] is the sub-list for extension type_name
+	46, // [46:46] is the sub-list for extension extendee
+	0,  // [0:46] is the sub-list for field type_name
 }
 
 func init() { file_calaba_v1_event_proto_init() }

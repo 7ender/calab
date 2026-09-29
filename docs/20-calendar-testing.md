@@ -1,7 +1,7 @@
 # 20 — Календарь: автоматическая матрица тестов (ADR-0038, 1.0.0)
 
 Главная фича релиза 1.0.0 — тестируется тщательно, по всем каналам. Ручные сценарии — `TESTING.md`
-«Календарь и встречи (1.0.0)», C.1–C.18. Этот файл — какой автотест (или его отсутствие) стоит за
+«Календарь и встречи (1.0.0)», C.1–C.20. Этот файл — какой автотест (или его отсутствие) стоит за
 каждым C.n, чтобы имплементирующие агенты писали тест одновременно с кодом, а не «потом».
 
 Столбцы: **(a)** Go-интеграционные (`internal/app/events_*_integration_test.go`) · **(b)** десктоп unit
@@ -30,6 +30,8 @@
 | C.16 | `.ics` в Apple Calendar и Google Calendar | — | — | — | — | полностью: сторонние приложения не автоматизируем; проверка раз на релиз с реальным внешним ящиком |
 | C.17 | Права: участник/организатор/админ/гость/бот | `TestEventPermissions` (таблица действие × кто, по образцу `permissions_matrix_integration_test.go`) | — | — | — | — |
 | C.18 | Лимиты (100/20/120/4000) | `TestEventLimits` | — | — | — | — |
+| C.19 | Диплинк внешнего `/e/<id>?t=` (view-токен → страница, ответ, гостевая ссылка с окном) | `TestEventDeepLinks` (письмо/`.ics` с `?t=`, GET по view- и answer-токену, POST view → 400, answer-токены из ответа, `guest_from/until`), unit `TestRSVPToken` (статус `view`) | — | страница `/e/<id>?t=` против мока (`server.eventViewToken`, `server.eventGuestLink`), пишет клиентская задача | — | клик по ссылке из реального письма — вместе с C.5 |
+| C.20 | Гость комнаты видит активную встречу | `TestEventDeepLinks` (READY `active_events` без участников, `GET /api/events/{id}` 200 в окне / 404 вне, 403 на список/RSVP/правку, `ROOM_EVENT_ACTIVE/ENDED` гостю), unit `TestEventForGuest` | — | `mock-calendar.test.ts` (гость по ссылке встречи: карточка, READY, 403/404); клиентский спек — клиентская задача | — | — |
 
 ## (a) Go-интеграционные
 
@@ -41,6 +43,8 @@
 - `TestEventRemindersAndRoomBadge` — C.7, C.8, C.9: настройки напоминаний (валидация, `settings`-замена их не затирает, умолчания 60/5), метёлка с заданным временем (`Calendar.Sweep(ctx, now)`): `EVENT_REMINDER{minutes}`, DND-флаг, дедуп, отклонивший не получает; `ROOM_EVENT_ACTIVE` / `ENDED`, сразу при создании в окне, `active_events` в READY (гостю пусто), привязка записи организатора к вхождению (`recording_id`), чужая запись не привязывается, отмена активной → `ENDED`.
 - `TestEventBotsReadOnly` — C.17 (боты): чтение без адресов внешних, изменения → 403 `BOT_NOT_ALLOWED`; `TestBotRouteTable` — маршруты календаря в таблице.
 - Unit: C.10–C.11 `TestExpandDailyWeeklyUntil`, `TestExpandMonthlySkipsShortMonths`, `TestExpandAcrossDST` (Europe/Berlin, 29.03 и 25.10.2026); C.16 (формат) `TestBuildICS` (минимальный RFC 5545-парсер: складка строк ≤ 75 октетов, BEGIN/END, экранирование, `VTIMEZONE` для серии в DST-зоне, `VALUE=DATE`); C.5 `TestRSVPToken`; C.18 `TestInputLimits` (120/4000, 101 участник, 21 внешний, дубли, синтаксис адреса); письмо `TestEventInviteMIME` (multipart/mixed, inline `text/calendar; method=REQUEST`, `invite.ics`, Reply-To, длинные подписанные ссылки не обрезаются).
+
+- `TestEventDeepLinks` — C.19, C.20 («Диплинки для приглашённых»).
 
 Прогон: `go test -tags integration -run 'Event' ./internal/app/` (+ `go test ./internal/calendar/ ./internal/mail/`).
 
