@@ -62,6 +62,8 @@ export const boardsApi = {
     call('PATCH', `/api/boards/${boardId}`, BoardResponseSchema, body(UpdateBoardRequestSchema, init)),
   /** Archive; `purge` deletes for good (MANAGE_BOARD, people only). */
   remove: (boardId: string, purge = false) => callEmpty('DELETE', `/api/boards/${boardId}${qs({ purge: purge ? 1 : undefined })}`),
+  /** Back from the archive (MANAGE_BOARD). */
+  restore: (boardId: string) => call('POST', `/api/boards/${boardId}/restore`, BoardResponseSchema),
   move: (boardId: string, position: number) =>
     call('PUT', `/api/boards/${boardId}/position`, BoardResponseSchema, body(SetBoardPositionRequestSchema, { position })),
   permissions: (boardId: string) => call('GET', `/api/boards/${boardId}/permissions`, BoardPermissionsResponseSchema),

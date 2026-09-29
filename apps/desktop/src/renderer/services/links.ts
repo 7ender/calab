@@ -127,7 +127,35 @@ export function parseBoardLink(input: string): { kind: 'board' | 'task'; id: str
   return null;
 }
 
+/**
+ * Message links (the «задача из сообщения» description, ADR-0042): `https://<server>/m/<room id>/
+ * <message id>` and `calab://m/…` — the room opens scrolled to the message.
+ */
+export function parseMessageLink(input: string): { roomId: string; messageId: string } | null {
+  const s = input.trim();
+  const ID = '([0-9a-fA-F-]{36})';
+  const m = new RegExp(`^${SCHEME}://m/${ID}/${ID}/?$`).exec(s) ?? new RegExp(`^https?://[^/\\s]+/m/${ID}/${ID}/?(?:[?#].*)?$`).exec(s);
+  return m?.[1] && m[2] ? { roomId: m[1].toLowerCase(), messageId: m[2].toLowerCase() } : null;
+}
+
+/**
+ * A link clicked in a message: our own /m/, /t/, /b/ links (this server) open in the app instead
+ * of the browser. False = not ours (the caller opens it outside).
+ */
+export function openOwnLink(href: string): boolean {
+  const origin = shareOrigin('');
+  if (!origin || !href.startsWith(`${origin}/`)) return false;
+  if (!parseMessageLink(href) && !parseBoardLink(href)) return false;
+  handleDeepLink(href);
+  return true;
+}
+
 export function handleDeepLink(url: string): void {
+  const msg = parseMessageLink(url);
+  if (msg) {
+    void import('./messageLink').then((m) => m.openMessageLink(msg.roomId, msg.messageId)).catch(() => undefined);
+    return;
+  }
   const board = parseBoardLink(url);
   if (board) {
     // Loaded lazily, like the calendar: links.ts stays free of the API / platform graph.
