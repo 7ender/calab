@@ -20,17 +20,21 @@ WHERE id = sqlc.arg('id');
 SELECT * FROM files WHERE id = $1;
 
 -- name: GetFilesWithUsage :many
-SELECT f.*, EXISTS (SELECT 1 FROM message_attachments ma WHERE ma.file_id = f.id) AS attached
+SELECT f.*, (EXISTS (SELECT 1 FROM message_attachments ma WHERE ma.file_id = f.id)
+    OR EXISTS (SELECT 1 FROM task_attachments ta WHERE ta.file_id = f.id))::boolean AS attached
 FROM files f WHERE f.id = ANY(sqlc.arg('ids')::uuid[]);
 
 -- name: FileRooms :many
--- Rooms where the file is attached to a live message.
+-- Rooms where the file is attached to a live message, and the room of a task whose description
+-- shows it (ADR-0042).
 SELECT DISTINCT m.room_id FROM message_attachments ma
 JOIN messages m ON m.id = ma.message_id AND m.deleted_at IS NULL
-WHERE ma.file_id = $1;
+WHERE ma.file_id = $1
+UNION
+SELECT t.room_id FROM task_attachments ta JOIN tasks t ON t.id = ta.task_id WHERE ta.file_id = $1;
 
 -- name: IsWorkspaceIcon :one
-SELECT EXISTS (SELECT 1 FROM workspaces WHERE icon_file_id = $1);
+SELECT (EXISTS (SELECT 1 FROM workspaces w WHERE w.icon_file_id = $1) OR EXISTS (SELECT 1 FROM boards b WHERE b.icon_file_id = $1))::boolean;
 
 -- name: ListOrphanFiles :many
 -- Not attached, not an avatar, icon, sticker (ADR-0030), badge (docs/09 #82), camera background
@@ -44,6 +48,8 @@ WHERE f.created_at < $1
   AND NOT EXISTS (SELECT 1 FROM workspace_badges b WHERE b.file_id = f.id)
   AND NOT EXISTS (SELECT 1 FROM workspace_backgrounds wb WHERE wb.file_id = f.id)
   AND NOT EXISTS (SELECT 1 FROM workspace_sounds ss WHERE ss.file_id = f.id)
+  AND NOT EXISTS (SELECT 1 FROM task_attachments ta WHERE ta.file_id = f.id)
+  AND NOT EXISTS (SELECT 1 FROM boards bi WHERE bi.icon_file_id = f.id)
 ORDER BY f.created_at
 LIMIT 500;
 
@@ -71,6 +77,7 @@ SELECT ((SELECT coalesce(sum(storage_used_bytes), 0) FROM workspaces)
 SELECT coalesce(sum(f.size), 0)::bigint FROM files f
 WHERE f.uploader_id = $1 AND f.workspace_id = $2
   AND NOT EXISTS (SELECT 1 FROM message_attachments ma WHERE ma.file_id = f.id)
+  AND NOT EXISTS (SELECT 1 FROM task_attachments ta WHERE ta.file_id = f.id)
   AND NOT EXISTS (SELECT 1 FROM stickers s WHERE s.file_id = f.id)
   AND NOT EXISTS (SELECT 1 FROM workspace_badges b WHERE b.file_id = f.id)
   AND NOT EXISTS (SELECT 1 FROM workspace_backgrounds wb WHERE wb.file_id = f.id)

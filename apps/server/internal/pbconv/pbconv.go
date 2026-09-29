@@ -651,6 +651,7 @@ func RoomNotificationSettings(s sqlc.RoomNotificationSetting) *v1.RoomNotificati
 func WorkspaceNotificationSettings(s sqlc.WorkspaceNotificationSetting) *v1.WorkspaceNotificationSettings {
 	return &v1.WorkspaceNotificationSettings{
 		WorkspaceId: s.WorkspaceID.String(), MutedUntil: tsp(s.MutedUntil),
-		Level: notifications.LevelFromDB(s.Level, v1.NotificationLevel_NOTIFICATION_LEVEL_MENTIONS),
+		Level:     notifications.LevelFromDB(s.Level, v1.NotificationLevel_NOTIFICATION_LEVEL_MENTIONS),
+		TaskLevel: notifications.LevelFromDB(s.TaskLevel, v1.NotificationLevel_NOTIFICATION_LEVEL_ALL),
 	}
 }
