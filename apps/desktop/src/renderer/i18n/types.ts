@@ -11,7 +11,7 @@ export const LOCALE_NAMES: Record<Locale, string> = {
   'zh-CN': '中文（简体）',
 };
 
-/** The user's choice in «Настройки → Приложение → Язык»; 'auto' = follow the OS. */
+/** The user's choice in «Настройки → Основное → Язык»; 'auto' = follow the OS. */
 export type LocalePref = 'auto' | Locale;
 
 /**

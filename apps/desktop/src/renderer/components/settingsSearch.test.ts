@@ -3,7 +3,7 @@ import { highlight, hintExcerpt, labelMatches, normalize, queryWords, searchSett
 
 const sections = [
   { id: 'voice', label: 'Голос и устройства' },
-  { id: 'appearance', label: 'Внешний вид' },
+  { id: 'general', label: 'Основное' },
   { id: 'hotkeys', label: 'Горячие клавиши' },
 ];
 const e = (section: string, n: number, label: string, hint?: string): SettingsEntry => ({ key: `${section}:${n}`, section, label, hint });
@@ -11,7 +11,7 @@ const entries = [
   e('voice', 0, 'Микрофон'),
   e('voice', 1, 'Порог активации', 'Микрофон включается, когда уровень выше порога'),
   e('voice', 2, 'Клавиша push-to-talk'),
-  e('appearance', 0, 'Тема'),
+  e('general', 0, 'Тема'),
   e('hotkeys', 0, 'Клавиша push-to-talk'),
   e('hotkeys', 1, 'Быстрый переход'),
   e('hotkeys', 2, 'Быстрый переход'),

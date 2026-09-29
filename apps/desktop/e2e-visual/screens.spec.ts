@@ -29,9 +29,9 @@ import { startPublisher } from './publisher';
 const ALL = process.env['CALABA_VISUAL_ALL'] === '1';
 
 /**
- * The local set (~25): one shot per screen family, no per-menu-item or per-tab shots. Settings:
- * 2 = «Голос и устройства», 3 = «Горячие клавиши», 8 = «Приложение» (language); «О программе» —
- * `settings-about` (an available update, docs/09 #93).
+ * The local set (~25): one shot per screen family, no per-menu-item or per-tab shots. Settings
+ * (named by tab id): «Основное» (theme, language), «Голос и устройства», «Горячие клавиши»;
+ * «О программе» — `settings-about` (an available update, docs/09 #93).
  */
 const KEY = new Set([
   'auth-login',
@@ -94,9 +94,9 @@ const KEY = new Set([
   'self-status-menu',
   'self-custom-status',
   'quick-switcher',
-  'settings-2',
-  'settings-3',
-  'settings-8',
+  'settings-general',
+  'settings-voice',
+  'settings-hotkeys',
   'settings-about',
   'room-settings-1',
   'room-settings-restricted',
@@ -182,6 +182,11 @@ async function membersList(page: Page): Promise<Locator> {
   if (!(await members.isVisible())) await page.getByRole('button', { name: 'Участники' }).click();
   return members;
 }
+
+/** App settings tabs in order (AppSettingsDialog); «О программе» (last) is `settings-about`. */
+const SETTINGS_TABS = ['general', 'profile', 'voice', 'hotkeys', 'notifications', 'connection', 'sessions'] as const;
+/** 1-based position of an app settings tab, for openSettingsTab. */
+const appTab = (id: (typeof SETTINGS_TABS)[number]): number => SETTINGS_TABS.indexOf(id) + 1;
 
 async function openSettingsTab(page: Page, opener: () => Promise<void>, index: number): Promise<void> {
   await opener();
@@ -875,7 +880,7 @@ test('profile-menu', async ({ open, win, mock, shot }) => {
 test('profile-birthday', async ({ open, win, mock, shot }) => {
   await open();
   await mainWindow(win, mock);
-  await openSettingsTab(win, openAppSettings(win), 1);
+  await openSettingsTab(win, openAppSettings(win), appTab('profile'));
   const picker = win.getByTestId('birthday-picker');
   await picker.scrollIntoViewIfNeeded();
   await picker.getByRole('combobox', { name: 'Месяц' }).selectOption('3');
@@ -1204,7 +1209,7 @@ test('sidebar-create-menu', async ({ open, win, mock, shot }) => {
 });
 
 /** Settings windows: one test per section (left list = role «tab»), numbered like the snapshots. */
-const TABS = { 'workspace-settings': 6, 'room-settings': 3, settings: 9, 'voice-room-settings': 4 } as const;
+const TABS = { 'workspace-settings': 6, 'room-settings': 3, settings: 8, 'voice-room-settings': 4 } as const;
 
 for (let i = 1; i <= TABS['workspace-settings']; i++) {
   test(`workspace-settings-${i}`, async ({ open, win, mock, shot }) => {
@@ -1485,14 +1490,14 @@ const openAppSettings = (page: Page) => async (): Promise<void> => {
   await page.getByRole('button', { name: 'Настройки', exact: true }).click();
 };
 
-for (let i = 1; i <= TABS.settings; i++) {
-  test(`settings-${i}`, async ({ open, win, mock, shot }) => {
+SETTINGS_TABS.forEach((id, i) => {
+  test(`settings-${id}`, async ({ open, win, mock, shot }) => {
     await open();
     await mainWindow(win, mock);
-    await openSettingsTab(win, openAppSettings(win), i);
-    await checkpoint(shot, `settings-${i}`);
+    await openSettingsTab(win, openAppSettings(win), i + 1);
+    await checkpoint(shot, `settings-${id}`);
   });
-}
+});
 
 async function settingsSearch(page: Page): Promise<Locator> {
   await openSettingsTab(page, openAppSettings(page), TABS.settings);
@@ -1535,7 +1540,7 @@ test('settings-profile-password', async ({ open, win, mock, shot }) => {
   await open();
   await mainWindow(win, mock);
   // Profile → «Изменить пароль…»: the sheet over the settings window (current password required).
-  await openSettingsTab(win, openAppSettings(win), 1);
+  await openSettingsTab(win, openAppSettings(win), appTab('profile'));
   await win.getByRole('button', { name: 'Изменить пароль…' }).click();
   await expect(win.getByRole('dialog', { name: 'Смена пароля' })).toBeVisible();
   await checkpoint(shot, 'settings-profile-password');
@@ -1543,7 +1548,7 @@ test('settings-profile-password', async ({ open, win, mock, shot }) => {
 
 /** The pop-up button itself (owner bug: chevron flush right): a long value ends with «…» before the ↕. */
 async function longSelect(page: Page): Promise<Locator> {
-  await openSettingsTab(page, openAppSettings(page), 2);
+  await openSettingsTab(page, openAppSettings(page), appTab('voice'));
   const select = page.getByRole('dialog').getByRole('combobox', { name: 'Микрофон' });
   await select.evaluate((el: HTMLSelectElement) => {
     // The value is React-controlled: change the text of the selected option instead.

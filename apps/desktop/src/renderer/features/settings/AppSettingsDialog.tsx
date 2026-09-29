@@ -1,7 +1,7 @@
 import { AUDIO_TIERS_KBPS, audioTierKbps } from '@calaba/protocol';
 import { timestampDate } from '@bufbuild/protobuf/wkt';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { AppWindow, Bell, CircleUser, Info, Keyboard, Mic, MonitorSmartphone, Palette, Trash2, Wifi } from 'lucide-react';
+import { Bell, CircleUser, Info, Keyboard, Mic, MonitorSmartphone, SlidersHorizontal, Trash2, Wifi } from 'lucide-react';
 import { useCallback, useEffect, useState, type ReactNode } from 'react';
 import type { AppInfo, AppSettings, PermissionStatus } from '../../../shared/ipc';
 import { Avatar } from '../../components/Avatar';
@@ -48,21 +48,21 @@ import { BirthdaySettings } from './BirthdaySettings';
 export function AppSettingsDialog({ tab, onClose }: { tab: string | undefined; onClose: () => void }): ReactNode {
   const superadmin = useSession((s) => s.me?.isSuperadmin === true);
   const sections: SettingsSection[] = [
+    // «Основное» first (owner, 29.09): theme, language, startup / updates. The web has no startup /
+    // updates, but the theme and the language live here too (ADR-0022).
+    { id: 'general', label: t('settings.general'), icon: SlidersHorizontal, content: <GeneralTab /> },
     { id: 'profile', label: t('settings.profile'), icon: CircleUser, content: <ProfileTab /> },
     { id: 'voice', label: t('settings.voice'), icon: Mic, content: <VoiceTab /> },
     { id: 'hotkeys', label: t('settings.hotkeys'), icon: Keyboard, content: <HotkeysTab /> },
-    { id: 'appearance', label: t('settings.appearance'), icon: Palette, content: <AppearanceTab /> },
     { id: 'notifications', label: t('settings.notifications'), icon: Bell, content: <NotificationsTab /> },
     { id: 'connection', label: t('settings.connection'), icon: Wifi, content: <ConnectionTab /> },
     { id: 'sessions', label: t('settings.sessions'), icon: MonitorSmartphone, content: <SessionsTab /> },
-    // The web has no startup / updates, but the language lives here too (ADR-0022).
-    { id: 'app', label: t('settings.app'), icon: AppWindow, content: <AppTab /> },
     { id: 'about', label: t('settings.about'), icon: Info, content: <AboutTab /> },
   ];
   return (
     <SettingsWindow
       title={t('settings.title')}
-      initial={tab ?? 'voice'}
+      initial={tab ?? 'general'}
       onClose={onClose}
       sections={sections}
       footer={
@@ -440,28 +440,7 @@ function HotkeysTab(): ReactNode {
   );
 }
 
-// ---------------------------------------------------------------- appearance / notifications
-
-function AppearanceTab(): ReactNode {
-  const theme = usePrefs((s) => s.theme);
-  const set = usePrefs((s) => s.setPrefs);
-  return (
-    <Card title={t('card.look')}>
-      <Row label={t('settings.theme')}>
-        <Segmented<Theme>
-          label={t('settings.theme')}
-          value={theme}
-          onChange={(v) => set({ theme: v })}
-          options={[
-            { value: 'light', label: t('theme.light') },
-            { value: 'dark', label: t('theme.dark') },
-            { value: 'system', label: t('theme.system') },
-          ]}
-        />
-      </Row>
-    </Card>
-  );
-}
+// ---------------------------------------------------------------- notifications
 
 function NotificationsTab(): ReactNode {
   const p = usePrefs();
@@ -705,9 +684,9 @@ function SessionsTab(): ReactNode {
   );
 }
 
-// ---------------------------------------------------------------- app (desktop) / about
+// ---------------------------------------------------------------- general (theme, language, desktop) / about
 
-function AppTab(): ReactNode {
+function GeneralTab(): ReactNode {
   const info = useSession((s) => s.appInfo);
   const settings = useSession((s) => s.settings);
   const save = async (patch: Parameters<typeof platform.app.setSettings>[0]): Promise<void> => {
@@ -717,9 +696,31 @@ function AppTab(): ReactNode {
   const desktop = platform.kind === 'electron';
   return (
     <>
+      <ThemeCard />
       <LanguageCard />
       {desktop ? <DesktopAppCards info={info} settings={settings} save={save} /> : null}
     </>
+  );
+}
+
+function ThemeCard(): ReactNode {
+  const theme = usePrefs((s) => s.theme);
+  const set = usePrefs((s) => s.setPrefs);
+  return (
+    <Card title={t('card.look')}>
+      <Row label={t('settings.theme')}>
+        <Segmented<Theme>
+          label={t('settings.theme')}
+          value={theme}
+          onChange={(v) => set({ theme: v })}
+          options={[
+            { value: 'light', label: t('theme.light') },
+            { value: 'dark', label: t('theme.dark') },
+            { value: 'system', label: t('theme.system') },
+          ]}
+        />
+      </Row>
+    </Card>
   );
 }
 
