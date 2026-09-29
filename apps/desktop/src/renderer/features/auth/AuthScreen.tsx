@@ -1,5 +1,6 @@
 import { useEffect, useState, type ReactNode } from 'react';
-import type { ApiErrorJson } from '../../../shared/ipc';
+import { TriangleAlert } from 'lucide-react';
+import { SIMILAR_ACCOUNT_CODE, type ApiErrorJson } from '../../../shared/ipc';
 import { Logo } from '../../components/Logo';
 import { Button, Field, Input, PasswordInput, cx } from '../../components/ui';
 import { getLocale, t } from '../../i18n';
@@ -71,6 +72,10 @@ function LoginScreen(): ReactNode {
   }
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<{ text: string; field?: string } | null>(null);
+  // A 401 on sign-in: «Забыли пароль?» turns into the way out (docs/09 #119).
+  const [loginFailed, setLoginFailed] = useState(false);
+  // The server saw the same login at a sibling domain (kv@x.ai vs kv@x.ru): ask before creating.
+  const [similar, setSimilar] = useState(false);
   // Web: the API is the page's own origin — nothing to configure.
   const [showServer, setShowServer] = useState(platform.kind === 'electron' && !settings?.serverUrl);
   // The link's workspace (public preview, ADR-0023): a card on top instead of a code field. An
@@ -106,9 +111,11 @@ function LoginScreen(): ReactNode {
     return false;
   };
 
-  const submit = async (e: { preventDefault(): void }): Promise<void> => {
+  const submit = async (e: { preventDefault(): void }, createAnyway = false): Promise<void> => {
     e.preventDefault();
     setErr(null);
+    setLoginFailed(false);
+    setSimilar(false);
     if (!serverOk()) return;
     setBusy(true);
     const args = { serverUrl: serverUrl.trim(), email: email.trim(), password };
@@ -116,10 +123,12 @@ function LoginScreen(): ReactNode {
     const res =
       mode === 'login'
         ? await platform.auth.login(args)
-        : await platform.auth.register({ ...args, displayName: name.trim(), inviteCode: code, locale: getLocale() });
+        : await platform.auth.register({ ...args, displayName: name.trim(), inviteCode: code, locale: getLocale(), checkSimilar: !createAnyway });
     setBusy(false);
     if (!res.ok) {
-      setErr(authError(res.error));
+      if (res.error.code === SIMILAR_ACCOUNT_CODE) setSimilar(true);
+      else if (mode === 'login' && res.error.code === 'ERROR_CODE_INVALID_CREDENTIALS') setLoginFailed(true);
+      else setErr(authError(res.error));
       return;
     }
     // The sign-up used the code (joined, or joins once the address is confirmed): no join dialog
@@ -129,6 +138,11 @@ function LoginScreen(): ReactNode {
   };
 
   const fieldErr = (f: string): string | null => (err?.field === f ? err.text : null);
+  const toForgot = (): void => {
+    setErr(null);
+    setLoginFailed(false);
+    setMode('forgot');
+  };
   const desktop = platform.kind === 'electron';
 
   if (mode === 'forgot') {
@@ -155,6 +169,7 @@ function LoginScreen(): ReactNode {
             onBack={() => {
               setMode('login');
               setErr(null);
+              setLoginFailed(false);
             }}
             onReset={async (em, pw) => {
               // The server revoked every session: sign in with the new password right away.
@@ -207,7 +222,10 @@ function LoginScreen(): ReactNode {
               required
               readOnly={emailLocked}
               value={email}
-              onChange={(e) => setEmail(e.target.value)}
+              onChange={(e) => {
+                setEmail(e.target.value);
+                setSimilar(false);
+              }}
               autoComplete="username"
               className={cx('h-8', emailLocked && 'text-muted')}
             />
@@ -217,27 +235,31 @@ function LoginScreen(): ReactNode {
               <Input required value={name} maxLength={100} onChange={(e) => setName(e.target.value)} className="h-8" />
             </Field>
           ) : null}
-          <div className="relative">
+          <div className="flex flex-col gap-1.5">
             <Field label={t('auth.password')} error={fieldErr('password')} hint={mode === 'register' ? t('auth.passwordHint') : undefined}>
               <PasswordInput
                 required
                 minLength={mode === 'register' ? 8 : 1}
                 value={password}
-                onChange={(e) => setPassword(e.target.value)}
+                onChange={(e) => {
+                  setPassword(e.target.value);
+                  setLoginFailed(false);
+                }}
                 autoComplete={mode === 'login' ? 'current-password' : 'new-password'}
                 className="h-8"
               />
             </Field>
-            {/* «Забыли пароль?» on the label row, right (ADR-0023): no extra line in the card. */}
-            {mode === 'login' ? (
-              <button
-                type="button"
-                className="absolute right-0 top-0 rounded-[var(--radius-control)] text-caption text-accent-text hover:underline"
-                onClick={() => {
-                  setErr(null);
-                  setMode('forgot');
-                }}
-              >
+            {/* «Забыли пароль?» right under the password, next in tab order (docs/09 #119); after a
+                wrong password — the error line with the recovery as its action. */}
+            {mode === 'login' && loginFailed ? (
+              <p className="text-body text-danger-text" role="alert" data-testid="auth-login-failed">
+                {t('mail.forgot.failed')}{' '}
+                <button type="button" className="rounded-[var(--radius-control)] font-semibold text-accent-text hover:underline" onClick={toForgot}>
+                  {t('mail.forgot.recover')}
+                </button>
+              </p>
+            ) : mode === 'login' ? (
+              <button type="button" className="self-start rounded-[var(--radius-control)] text-body text-accent-text hover:underline" onClick={toForgot}>
                 {t('mail.forgot.link')}
               </button>
             ) : null}
@@ -257,9 +279,34 @@ function LoginScreen(): ReactNode {
               {err.text}
             </p>
           ) : null}
-          <Button type="submit" busy={busy} className="mt-1 h-9 w-full text-body font-semibold">
-            {mode === 'login' ? t('auth.login') : t('auth.register')}
-          </Button>
+          {similar ? (
+            // Non-blocking hint (docs/09 #119): the other address is never shown.
+            <div className="flex flex-col gap-2.5 rounded-[var(--radius-row)] bg-mention px-3 py-2.5 text-body" role="alert" data-testid="auth-similar">
+              <p className="flex gap-2">
+                <TriangleAlert className="mt-px size-4 shrink-0 text-warn" aria-hidden />
+                <span>{t('mail.similar.text')}</span>
+              </p>
+              <div className="flex justify-end gap-2">
+                <Button type="button" variant="secondary" busy={busy} onClick={(e) => void submit(e, true)}>
+                  {t('mail.similar.create')}
+                </Button>
+                <Button
+                  type="button"
+                  autoFocus
+                  onClick={() => {
+                    setSimilar(false);
+                    setMode('login');
+                  }}
+                >
+                  {t('mail.similar.login')}
+                </Button>
+              </div>
+            </div>
+          ) : (
+            <Button type="submit" busy={busy} className="mt-1 h-9 w-full text-body font-semibold">
+              {mode === 'login' ? t('auth.login') : t('auth.register')}
+            </Button>
+          )}
         </div>
         <div className="mt-4 flex flex-col items-center gap-2 text-body text-muted">
           <p>
@@ -270,6 +317,8 @@ function LoginScreen(): ReactNode {
               onClick={() => {
                 setMode(mode === 'login' ? 'register' : 'login');
                 setErr(null);
+                setLoginFailed(false);
+                setSimilar(false);
               }}
             >
               {mode === 'login' ? t('auth.toRegister') : t('auth.toLogin')}

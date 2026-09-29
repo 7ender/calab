@@ -214,9 +214,15 @@ type RegisterRequest struct {
 	DeviceName string `protobuf:"bytes,5,opt,name=device_name,json=deviceName,proto3" json:"device_name,omitempty"`
 	// Language of emails (BCP 47, e.g. "ru-RU"); empty = from Accept-Language, else English.
 	// Registration sends a verification code to `email` (ADR-0023, ADR-0027).
-	Locale        string `protobuf:"bytes,6,opt,name=locale,proto3" json:"locale,omitempty"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
+	Locale string `protobuf:"bytes,6,opt,name=locale,proto3" json:"locale,omitempty"`
+	// Opt-in similar-address check (docs/09 #119). When set and another account has the same
+	// local part at a sibling domain of the same organisation (same name, different last label:
+	// kv@gptunnel.ai vs kv@gptunnel.ru; or a domain of the invite's workspace email invitations),
+	// nothing is created: the response carries only similar_account = true. The client asks the
+	// user and repeats the request without the flag to create the account anyway.
+	CheckSimilarAccount bool `protobuf:"varint,7,opt,name=check_similar_account,json=checkSimilarAccount,proto3" json:"check_similar_account,omitempty"`
+	unknownFields       protoimpl.UnknownFields
+	sizeCache           protoimpl.SizeCache
 }
 
 func (x *RegisterRequest) Reset() {
@@ -291,12 +297,22 @@ func (x *RegisterRequest) GetLocale() string {
 	return ""
 }
 
+func (x *RegisterRequest) GetCheckSimilarAccount() bool {
+	if x != nil {
+		return x.CheckSimilarAccount
+	}
+	return false
+}
+
 type RegisterResponse struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	Tokens        *AuthTokens            `protobuf:"bytes,1,opt,name=tokens,proto3" json:"tokens,omitempty"`
-	Me            *Me                    `protobuf:"bytes,2,opt,name=me,proto3" json:"me,omitempty"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
+	state  protoimpl.MessageState `protogen:"open.v1"`
+	Tokens *AuthTokens            `protobuf:"bytes,1,opt,name=tokens,proto3" json:"tokens,omitempty"`
+	Me     *Me                    `protobuf:"bytes,2,opt,name=me,proto3" json:"me,omitempty"`
+	// Set only for check_similar_account (then tokens and me are empty). Never names the other
+	// address.
+	SimilarAccount bool `protobuf:"varint,3,opt,name=similar_account,json=similarAccount,proto3" json:"similar_account,omitempty"`
+	unknownFields  protoimpl.UnknownFields
+	sizeCache      protoimpl.SizeCache
 }
 
 func (x *RegisterResponse) Reset() {
@@ -341,6 +357,13 @@ func (x *RegisterResponse) GetMe() *Me {
 		return x.Me
 	}
 	return nil
+}
+
+func (x *RegisterResponse) GetSimilarAccount() bool {
+	if x != nil {
+		return x.SimilarAccount
+	}
+	return false
 }
 
 // POST /api/auth/login
@@ -895,7 +918,7 @@ const file_calaba_v1_auth_proto_rawDesc = "" +
 	"\rrefresh_token\x18\x03 \x01(\tR\frefreshToken\x12H\n" +
 	"\x12refresh_expires_at\x18\x04 \x01(\v2\x1a.google.protobuf.TimestampR\x10refreshExpiresAt\x12\x1d\n" +
 	"\n" +
-	"session_id\x18\x05 \x01(\tR\tsessionId\"\xc0\x01\n" +
+	"session_id\x18\x05 \x01(\tR\tsessionId\"\xf4\x01\n" +
 	"\x0fRegisterRequest\x12\x14\n" +
 	"\x05email\x18\x01 \x01(\tR\x05email\x12\x1a\n" +
 	"\bpassword\x18\x02 \x01(\tR\bpassword\x12!\n" +
@@ -904,10 +927,12 @@ const file_calaba_v1_auth_proto_rawDesc = "" +
 	"inviteCode\x12\x1f\n" +
 	"\vdevice_name\x18\x05 \x01(\tR\n" +
 	"deviceName\x12\x16\n" +
-	"\x06locale\x18\x06 \x01(\tR\x06locale\"`\n" +
+	"\x06locale\x18\x06 \x01(\tR\x06locale\x122\n" +
+	"\x15check_similar_account\x18\a \x01(\bR\x13checkSimilarAccount\"\x89\x01\n" +
 	"\x10RegisterResponse\x12-\n" +
 	"\x06tokens\x18\x01 \x01(\v2\x15.calaba.v1.AuthTokensR\x06tokens\x12\x1d\n" +
-	"\x02me\x18\x02 \x01(\v2\r.calaba.v1.MeR\x02me\"a\n" +
+	"\x02me\x18\x02 \x01(\v2\r.calaba.v1.MeR\x02me\x12'\n" +
+	"\x0fsimilar_account\x18\x03 \x01(\bR\x0esimilarAccount\"a\n" +
 	"\fLoginRequest\x12\x14\n" +
 	"\x05email\x18\x01 \x01(\tR\x05email\x12\x1a\n" +
 	"\bpassword\x18\x02 \x01(\tR\bpassword\x12\x1f\n" +

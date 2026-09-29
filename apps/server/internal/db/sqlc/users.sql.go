@@ -287,6 +287,45 @@ func (q *Queries) GetUserByEmail(ctx context.Context, email *string) (User, erro
 	return i, err
 }
 
+const hasSimilarAccount = `-- name: HasSimilarAccount :one
+SELECT EXISTS (
+    SELECT 1 FROM users u
+    WHERE u.email IS NOT NULL AND u.email <> $1::citext
+      AND NOT u.is_guest AND NOT u.is_bot AND u.disabled_at IS NULL
+      AND lower(split_part(u.email::text, '@', 1)) = lower($2::text)
+      AND (
+          lower(regexp_replace(split_part(u.email::text, '@', 2), '\.[^.]*$', '')) = lower($3::text)
+          OR lower(split_part(u.email::text, '@', 2)) IN (
+              SELECT lower(split_part(e.email::text, '@', 2)) FROM email_invites e
+              WHERE e.workspace_id = $4::uuid
+          )
+      )
+)::boolean
+`
+
+type HasSimilarAccountParams struct {
+	Email       string
+	Local       string
+	DomainName  string
+	WorkspaceID *uuid.UUID
+}
+
+// Registration hint (docs/09 #119): an active, non-guest, non-bot account with the same local
+// part at a sibling domain of the same organisation — same name with a different last label
+// (kv@gptunnel.ai vs kv@gptunnel.ru), or a domain of the email invitations of workspace_id
+// (the sign-up's invite). Never the exact address. A scan of users: registration is rare.
+func (q *Queries) HasSimilarAccount(ctx context.Context, arg HasSimilarAccountParams) (bool, error) {
+	row := q.db.QueryRow(ctx, hasSimilarAccount,
+		arg.Email,
+		arg.Local,
+		arg.DomainName,
+		arg.WorkspaceID,
+	)
+	var column_1 bool
+	err := row.Scan(&column_1)
+	return column_1, err
+}
+
 const listManualPresence = `-- name: ListManualPresence :many
 SELECT id, presence_status, presence_until FROM users
 WHERE presence_status IS NOT NULL AND (presence_until IS NULL OR presence_until > now())

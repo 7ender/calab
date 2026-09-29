@@ -70,6 +70,7 @@ function parseRegister(v: unknown): RegisterArgs {
     displayName: str(r['displayName'], 100),
     inviteCode: str(r['inviteCode'], 128, true),
     locale: r['locale'] === undefined ? '' : str(r['locale'], 35, true),
+    checkSimilar: r['checkSimilar'] === true,
   };
 }
 

@@ -104,3 +104,22 @@ RETURNING *;
 -- Live manual statuses, to restore Valkey at startup.
 SELECT id, presence_status, presence_until FROM users
 WHERE presence_status IS NOT NULL AND (presence_until IS NULL OR presence_until > now());
+
+-- name: HasSimilarAccount :one
+-- Registration hint (docs/09 #119): an active, non-guest, non-bot account with the same local
+-- part at a sibling domain of the same organisation — same name with a different last label
+-- (kv@gptunnel.ai vs kv@gptunnel.ru), or a domain of the email invitations of workspace_id
+-- (the sign-up's invite). Never the exact address. A scan of users: registration is rare.
+SELECT EXISTS (
+    SELECT 1 FROM users u
+    WHERE u.email IS NOT NULL AND u.email <> sqlc.arg('email')::citext
+      AND NOT u.is_guest AND NOT u.is_bot AND u.disabled_at IS NULL
+      AND lower(split_part(u.email::text, '@', 1)) = lower(sqlc.arg('local')::text)
+      AND (
+          lower(regexp_replace(split_part(u.email::text, '@', 2), '\.[^.]*$', '')) = lower(sqlc.arg('domain_name')::text)
+          OR lower(split_part(u.email::text, '@', 2)) IN (
+              SELECT lower(split_part(e.email::text, '@', 2)) FROM email_invites e
+              WHERE e.workspace_id = sqlc.narg('workspace_id')::uuid
+          )
+      )
+)::boolean;

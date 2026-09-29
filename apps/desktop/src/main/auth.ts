@@ -5,6 +5,7 @@ import { app, BrowserWindow, net, safeStorage, session, type Session } from 'ele
 import log from 'electron-log/main';
 import {
   IPC,
+  noSession,
   type ApiErrorJson,
   type AuthSession,
   type IpcResult,
@@ -214,7 +215,8 @@ async function authenticate(
   try {
     const res = await postJson(base, path, body);
     if (!res.ok) return { ok: false, error: await readError(res) };
-    const data = (await res.json()) as { tokens: TokensJson; me: unknown };
+    const data = (await res.json()) as { tokens?: TokensJson; me: unknown; similarAccount?: boolean };
+    if (!data.tokens) return { ok: false, error: noSession(data.similarAccount, res.status) };
     const tokens = toTokens(data.tokens);
     broker.set(base, tokens);
     if (getSettings().serverUrl !== base) updateSettings({ serverUrl: base });
@@ -240,6 +242,7 @@ export function register(args: RegisterArgs): Promise<IpcResult<AuthSession>> {
     inviteCode: args.inviteCode,
     locale: args.locale ?? '',
     deviceName: deviceName(),
+    ...(args.checkSimilar ? { checkSimilarAccount: true } : {}),
   });
 }
 
