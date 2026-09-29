@@ -70,6 +70,8 @@ export default defineConfig<VisualOptions>({
       testMatch: /calendar-[a-z-]+\.spec\.ts/,
       use: { browserName: 'chromium', timezoneId: 'Europe/Moscow', colorScheme: 'dark', viewport: { width: 1280, height: 800 } },
     },
+    // A room switch never hangs in «Подключение…» (docs/09 #131): behaviour only, web build + dev LiveKit.
+    { name: 'voice-switch', testMatch: /voice-switch\.spec\.ts/ },
     // Focus walk and the web client's own screens (they start their own mock / app). Locally only
     // web.spec.ts, where everything but the dark-960 join card is skipped (see above).
     { name: 'misc', testMatch: ALL_CONFIGS ? /(focus|web)\.spec\.ts/ : /web\.spec\.ts/ },

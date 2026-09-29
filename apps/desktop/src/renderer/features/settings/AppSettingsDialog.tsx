@@ -15,13 +15,14 @@ import { errorText } from '../../lib/api/errors';
 import { audioTierLabel } from '../../lib/audioTierLabel';
 import { api, uploadAvatar } from '../../lib/api/endpoints';
 import { fmt } from '../../lib/format';
-import { CHECK_IDS, runConnectionCheck, type CheckId, type CheckRow } from '../../lib/connCheck';
+import { CHECK_IDS, runConnectionCheck, voiceProbeLine, type CheckId, type CheckRow } from '../../lib/connCheck';
 import { log } from '../../lib/log';
 import { METER_MIN_DB } from '../../lib/media/vad';
 import { platform } from '../../platform';
 import { shortcutHelp } from '../../services/hotkeys';
 import { logout } from '../../services/session';
 import { voice } from '../../services/voice';
+import { useNow } from '../shell/voiceFormat';
 import { usePrefs, type Theme } from '../../stores/prefs';
 import { selectUpdatePending, useSession } from '../../stores/session';
 import { toast } from '../../stores/toasts';
@@ -540,6 +541,8 @@ function ConnectionTab(): ReactNode {
   const [ping, setPing] = useState<{ ms: number | null; error: string | null } | null>(null);
   const [busy, setBusy] = useState(false);
   const [rows, setRows] = useState<CheckRow[] | null>(null);
+  /** «Голос: подключён, RTT 31 мс» — the live connection itself, not only the paths (docs/09 #131). */
+  const [voiceLine, setVoiceLine] = useState<{ text: string; ok: boolean } | null>(null);
 
   // Round trip of the lightest authenticated API call (/healthz is not proxied publicly).
   const measure = useCallback(async (): Promise<void> => {
@@ -556,6 +559,7 @@ function ConnectionTab(): ReactNode {
   const check = async (): Promise<void> => {
     setBusy(true);
     setRows([]);
+    setVoiceLine(voiceProbeLine(voice.linkProbe()));
     await measure();
     const { url, token, iceServers } = voice.linkInfo();
     try {
@@ -605,6 +609,7 @@ function ConnectionTab(): ReactNode {
                   ? (path ?? t('conn.ok'))
                   : t('conn.connecting')
                 : t('conn.notInVoice')}
+          {inVoice && (phase === 'connecting' || phase === 'reconnecting') ? <VoicePhaseAge /> : null}
           {link.attempts > 0 && phase !== 'connected' ? <span className="tabular-nums text-muted"> · {t('conn.voiceAttempts', { n: link.attempts })}</span> : null}
         </span>
       </Row>
@@ -627,6 +632,11 @@ function ConnectionTab(): ReactNode {
       </Row>
       {rows ? (
         <div data-testid="conn-check">
+          {voiceLine ? (
+            <Row label={t('conn.row.voice')}>
+              <span className={cx('shrink-0 text-body', voiceLine.ok ? 'text-ok' : 'text-warn')}>{voiceLine.text}</span>
+            </Row>
+          ) : null}
           {CHECK_IDS.map((id) => (
             <CheckResultRow key={id} id={id} row={rows.find((r) => r.id === id)} />
           ))}
@@ -634,6 +644,13 @@ function ConnectionTab(): ReactNode {
       ) : null}
     </Card>
   );
+}
+
+/** « · 45 с» after «Подключение…» / «Переподключение…»: its own 1 s clock, mounted only then (docs/14). */
+function VoicePhaseAge(): ReactNode {
+  useNow(1000);
+  const ms = voice.linkProbe().stuckMs;
+  return ms === null ? null : <span className="tabular-nums text-muted"> · {t('conn.voiceFor', { s: Math.round(ms / 1000) })}</span>;
 }
 
 const CHECK_LABEL: Record<CheckId, 'conn.row.api' | 'conn.row.rtcHttps' | 'conn.row.rtcWss' | 'conn.row.turnUdp' | 'conn.row.turnTls'> = {

@@ -158,6 +158,39 @@ test('lightbox', async ({ open, win, mock }) => {
   await closeAtIconCentre(win, box, box.getByRole('button', { name: 'Закрыть', exact: true }));
 });
 
+// docs/09 #132: a click on the image closes the lightbox like the backdrop; a drag does not.
+test('lightbox image click', async ({ open, win, mock }) => {
+  await open();
+  await general(win);
+  mock.injectMessage({ roomId: IDS.rooms.general, authorId: IDS.users.vera, content: '', attachments: [IDS.files.portrait] });
+  const thumb = win.getByRole('button', { name: 'Открыть изображение «IMG_2041.png»' });
+  await expect.poll(() => thumb.locator('img').evaluate((i: HTMLImageElement) => i.complete && i.naturalWidth > 0)).toBe(true);
+  const box = win.getByTestId('lightbox');
+  const frame = box.getByTestId('lightbox-frame');
+
+  // Press on the image, move 40 px, release (over the image and then over the backdrop): stays open.
+  await thumb.click();
+  await expect(frame).toBeVisible();
+  const r = await frame.boundingBox();
+  if (!r) throw new Error('no lightbox frame');
+  const cx = r.x + r.width / 2;
+  const cy = r.y + r.height / 2;
+  await win.mouse.move(cx, cy);
+  await win.mouse.down();
+  await win.mouse.move(cx + 40, cy, { steps: 5 });
+  await win.mouse.up();
+  await expect(box).toBeVisible();
+  await win.mouse.move(cx, cy);
+  await win.mouse.down();
+  await win.mouse.move(r.x + r.width + 12, cy, { steps: 5 });
+  await win.mouse.up();
+  await expect(box).toBeVisible();
+
+  // A plain click on the image closes it.
+  await frame.click();
+  await expect(box).toHaveCount(0);
+});
+
 test('new direct message', async ({ open, win }) => {
   await open({ ui: { activeWorkspaceId: '@me' } });
   await expect(win.getByTestId('dm-list').getByRole('button').first()).toBeVisible();

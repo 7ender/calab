@@ -111,6 +111,30 @@ export function candidateType(c: { type?: string | null; candidate?: string } | 
   return / typ (\w+)/.exec(c.candidate ?? '')?.[1] ?? null;
 }
 
+/** The live voice connection (services/voice linkProbe), for the «Голос» line of the check (docs/09 #131). */
+export interface VoiceProbe {
+  phase: 'idle' | 'connecting' | 'connected' | 'reconnecting' | 'blocked';
+  stuckMs: number | null;
+  rttMs: number | null;
+}
+
+/** «подключён, RTT 31 мс» / «зависло на подключении 45 с»; null when not in voice. */
+export function voiceProbeLine(p: VoiceProbe): { text: string; ok: boolean } | null {
+  const s = Math.round((p.stuckMs ?? 0) / 1000);
+  switch (p.phase) {
+    case 'idle':
+      return null;
+    case 'connected':
+      return { text: p.rttMs ? t('conn.voiceOk', { ms: Math.round(p.rttMs) }) : t('conn.voiceOkNoRtt'), ok: true };
+    case 'connecting':
+      return { text: t('conn.voiceStuck', { s }), ok: false };
+    case 'reconnecting':
+      return { text: t('conn.voiceReconnecting', { s }), ok: false };
+    case 'blocked':
+      return { text: t('conn.voiceBlocked'), ok: false };
+  }
+}
+
 // ------------------------------------------------------------------ probes (browser)
 
 export interface CheckInput {

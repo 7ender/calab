@@ -65,3 +65,11 @@ export function stepImage(index: number, delta: -1 | 1, count: number): number |
   const next = index + delta;
   return next >= 0 && next < count ? next : null;
 }
+
+/** Movement (CSS px) under which a press on the image still counts as a click, not a drag. */
+export const TAP_SLOP = 6;
+
+/** A press released within TAP_SLOP of where it started: a click on the image (closes the viewer). */
+export function isTap(down: { x: number; y: number }, up: { x: number; y: number }, slop = TAP_SLOP): boolean {
+  return Math.hypot(up.x - down.x, up.y - down.y) <= slop;
+}
