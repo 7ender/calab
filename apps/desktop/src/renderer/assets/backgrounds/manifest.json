@@ -1,0 +1,90 @@
+[
+  {
+    "id": "bg-01",
+    "file": "bg-01.webp",
+    "thumb": "bg-01.thumb.webp",
+    "name": {
+      "ru": "Рассвет",
+      "en": "Dawn",
+      "es": "Amanecer",
+      "zh-CN": "黎明"
+    }
+  },
+  {
+    "id": "bg-02",
+    "file": "bg-02.webp",
+    "thumb": "bg-02.thumb.webp",
+    "name": {
+      "ru": "Океан",
+      "en": "Ocean",
+      "es": "Océano",
+      "zh-CN": "海洋"
+    }
+  },
+  {
+    "id": "bg-03",
+    "file": "bg-03.webp",
+    "thumb": "bg-03.thumb.webp",
+    "name": {
+      "ru": "Графит",
+      "en": "Graphite",
+      "es": "Grafito",
+      "zh-CN": "石墨"
+    }
+  },
+  {
+    "id": "bg-04",
+    "file": "bg-04.webp",
+    "thumb": "bg-04.thumb.webp",
+    "name": {
+      "ru": "Лес",
+      "en": "Forest",
+      "es": "Bosque",
+      "zh-CN": "森林"
+    }
+  },
+  {
+    "id": "bg-05",
+    "file": "bg-05.webp",
+    "thumb": "bg-05.thumb.webp",
+    "name": {
+      "ru": "Гостиная",
+      "en": "Living room",
+      "es": "Sala de estar",
+      "zh-CN": "客厅"
+    }
+  },
+  {
+    "id": "bg-06",
+    "file": "bg-06.webp",
+    "thumb": "bg-06.thumb.webp",
+    "name": {
+      "ru": "Кабинет",
+      "en": "Study",
+      "es": "Despacho",
+      "zh-CN": "书房"
+    }
+  },
+  {
+    "id": "bg-07",
+    "file": "bg-07.webp",
+    "thumb": "bg-07.thumb.webp",
+    "name": {
+      "ru": "Закат",
+      "en": "Sunset",
+      "es": "Atardecer",
+      "zh-CN": "日落"
+    }
+  },
+  {
+    "id": "bg-08",
+    "file": "bg-08.webp",
+    "thumb": "bg-08.thumb.webp",
+    "name": {
+      "ru": "Туман",
+      "en": "Mist",
+      "es": "Niebla",
+      "zh-CN": "薄雾"
+    }
+  }
+]

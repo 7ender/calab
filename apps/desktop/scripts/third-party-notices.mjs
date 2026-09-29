@@ -82,6 +82,28 @@ libuiohook (LGPL-3.0) собран в нативный модуль uiohook-napi
 (patches/uiohook-napi@1.5.5.patch) доступны, что позволяет пересборку и перелинковку
 (LGPL §4). libuiohook source: https://github.com/kwhat/libuiohook`,
 };
+// Packages without a licence file of their own: the text from our copy (checked by hand).
+// fileURLToPath, not URL.pathname: on Windows the pathname is /D:/… and path.join makes D:\\D:\\…
+const here = dirname(fileURLToPath(import.meta.url));
+const MEDIAPIPE_LICENSE = join(here, '..', 'resources', 'mediapipe', 'LICENSE');
+const LICENSE_TEXT = { '@mediapipe/tasks-vision': MEDIAPIPE_LICENSE };
+for (const p of pkgs.values()) {
+  if (!p.texts.length && LICENSE_TEXT[p.name]) p.texts.push(readFileSync(LICENSE_TEXT[p.name], 'utf8').trim());
+}
+
+// Non-npm components shipped with every build (desktop and web): the camera background model
+// (ADR-0035, resources/mediapipe/SOURCE.txt).
+const MODEL_SOURCE = join(here, '..', 'resources', 'mediapipe', 'SOURCE.txt');
+if (existsSync(MODEL_SOURCE)) {
+  pkgs.set('mediapipe-selfie-segmenter-landscape', {
+    name: 'MediaPipe Selfie Segmenter (landscape) model',
+    version: 'float16',
+    license: 'Apache-2.0',
+    url: 'https://ai.google.dev/edge/mediapipe/solutions/vision/image_segmenter',
+    texts: [readFileSync(MODEL_SOURCE, 'utf8').trim(), readFileSync(MEDIAPIPE_LICENSE, 'utf8').trim()],
+  });
+}
+
 for (const p of pkgs.values()) {
   const extra = EMBEDDED[p.name];
   if (extra) {
@@ -117,8 +139,6 @@ for (const p of sorted) {
 }
 // Full texts required by the LGPL (it incorporates the GPL) for the embedded libuiohook.
 if (sorted.some((p) => EMBEDDED[p.name])) {
-  // fileURLToPath, not URL.pathname: on Windows the pathname is /D:/… and path.join makes D:\\D:\\…
-  const here = dirname(fileURLToPath(import.meta.url));
   for (const f of ['lgpl-3.0.txt', 'gpl-3.0.txt']) {
     text += `\n${bar}\n${f === 'lgpl-3.0.txt' ? 'GNU Lesser General Public License v3.0' : 'GNU General Public License v3.0 (incorporated by the LGPL)'}\n${bar}\n\n`;
     text += readFileSync(join(here, '..', 'build', 'licenses', f), 'utf8');
