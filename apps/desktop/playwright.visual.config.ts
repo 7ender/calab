@@ -59,6 +59,8 @@ export default defineConfig<VisualOptions>({
     { name: 'birthday-congratulate', testMatch: /birthday-congratulate\.spec\.ts/, use: { theme: 'dark', size: { width: 1440, height: 800 } } },
     // The emoji picker's list scrolls in the composer and inside a modal sheet (docs/09 #118): behaviour only.
     { name: 'emoji-scroll', testMatch: /emoji-scroll\.spec\.ts/, use: { theme: 'dark', size: { width: 960, height: 600 } } },
+    // After a restart for an update: back into the stored room (docs/09 #126): behaviour only.
+    { name: 'resume-voice', testMatch: /resume-voice\.spec\.ts/ },
     // Deafen holds for late voices (docs/09 #70): behaviour only, web build + dev LiveKit.
     { name: 'deafen', testMatch: /deafen\.spec\.ts/ },
     // Focus walk and the web client's own screens (they start their own mock / app). Locally only

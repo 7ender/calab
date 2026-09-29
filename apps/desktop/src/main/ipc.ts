@@ -37,6 +37,7 @@ import { setMenuState } from './appMenu';
 import { parseMenuState } from '../shared/menu';
 import { checkForUpdates, downloadUpdate, installUpdate, setUpdateInCall, updateSettingsChanged, updatesNudge, updateStatus } from './updater';
 import { reloadIfServerChanged } from './csp';
+import { setResumeSeat, takeResumeVoice } from './resumeVoice';
 import { isOwnPage, isShown } from './windows';
 
 const VISUAL_TEST = process.env['CALABA_VISUAL_TEST'] === '1';
@@ -197,6 +198,8 @@ export function registerIpc(): void {
   handle(IPC.appInstallUpdate, (_e, afterCall) => installUpdate(afterCall === true));
   handle(IPC.appDownloadUpdate, () => downloadUpdate());
   handle(IPC.appNetworkOnline, () => updatesNudge('online'));
+  handle(IPC.appResumeVoice, (_e, a) => setResumeSeat(a));
+  handle(IPC.appTakeResumeVoice, () => takeResumeVoice());
   handle(IPC.appLog, (_e, a) => {
     const r = obj(a);
     const msg = str(r['message'], 8192, true);

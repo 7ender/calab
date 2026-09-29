@@ -489,6 +489,10 @@ export function createWebPlatform(): Platform {
       updateStatus: () => Promise.resolve({ state: 'disabled' }),
       installUpdate: () => Promise.resolve(false),
       downloadUpdate: () => Promise.resolve(false),
+      // No restart for an update on the web (docs/09 #126 is desktop only).
+      onPrepareRestart: noop,
+      setResumeVoice: () => Promise.resolve(),
+      takeResumeVoice: () => Promise.resolve(null),
       networkOnline: () => undefined,
       log: (level, message) => {
         (level === 'error' ? console.error : level === 'warn' ? console.warn : console.info)(message);

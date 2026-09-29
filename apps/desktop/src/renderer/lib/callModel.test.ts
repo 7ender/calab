@@ -89,6 +89,13 @@ describe('reduceCall: READY.call (reconnect)', () => {
     expect(run(IDLE, { kind: 'ready', call: call(CallState.ACTIVE) })).toEqual(IDLE);
   });
 
+  it('resume after a restart for an update: an ACTIVE call is taken again here, an ended one is not (docs/09 #126)', () => {
+    const idle = run(IDLE, { kind: 'ready', call: incoming(CallState.ACTIVE) });
+    expect(run(idle, { kind: 'resume', call: incoming(CallState.ACTIVE) })).toMatchObject({ phase: 'active', own: 'c1' });
+    expect(run(IDLE, { kind: 'resume', call: call(CallState.ENDED) })).toEqual(IDLE);
+    expect(run(IDLE, { kind: 'resume', call: call(CallState.ACTIVE, { callerId: 'x', calleeId: 'y' }) })).toEqual(IDLE);
+  });
+
   it('no call in READY: whatever was shown is over', () => {
     const ringing = run(IDLE, { kind: 'ring', call: incoming(CallState.RINGING) });
     expect(run(ringing, { kind: 'ready', call: null })).toEqual(IDLE);

@@ -26,6 +26,11 @@ export const ruCall = {
   'call.leaveRoomTitle': 'Выйти из комнаты и позвонить?',
   'call.leaveRoomText': 'Вы в голосовой комнате {room}. Звонок начнётся после выхода из неё.',
   'call.notifyIncoming': 'Входящий звонок от {name}',
+  // back in the room / call after a restart for an update (docs/09 #126)
+  'call.resumeRoom': 'Вы снова в {room}',
+  'call.resumeCall': 'Вы снова в звонке с {name}',
+  'call.resumeOtherDevice': 'Вы уже в голосе на другом устройстве',
+  'call.resumeUnavailable': 'Не удалось вернуться в комнату: она недоступна',
   // the DM call log (SystemMessage.call), one line like Telegram
   'call.log.outgoing': 'Исходящий звонок',
   'call.log.incoming': 'Входящий звонок',

@@ -35,6 +35,15 @@ export const IPC = {
   appDownloadUpdate: 'app:download-update',
   /** main → renderer */
   appUpdateStatus: 'app:update-status',
+  /**
+   * main → renderer: the app restarts for an update now — answer with appResumeVoice (the voice
+   * seat to take again after the relaunch, or null; docs/09 #126, main/resumeVoice.ts).
+   */
+  appPrepareRestart: 'app:prepare-restart',
+  /** renderer → main: the answer to appPrepareRestart (ResumeVoiceSeat | null). */
+  appResumeVoice: 'app:resume-voice',
+  /** The seat left by the restart for an update (ResumeVoice | null), once per app run. */
+  appTakeResumeVoice: 'app:take-resume-voice',
   /** renderer → main: the `online` event (main has none) — a throttled update check. */
   appNetworkOnline: 'app:network-online',
   appLog: 'app:log',
