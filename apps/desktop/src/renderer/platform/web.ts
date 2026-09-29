@@ -403,7 +403,7 @@ const settings = (): AppSettings => ({ serverUrl: location.origin, updateUrl: ''
  * bar keeps the path while the link card is shown (docs/09 #53, services/linkLanding.ts).
  */
 function takeDeepLink(): Promise<string | null> {
-  const m = /^\/(join|r|dm|e)\/([A-Za-z0-9_-]{4,64})\/?$/.exec(location.pathname);
+  const m = /^\/(join|r|dm|e|b|t)\/([A-Za-z0-9_-]{4,64})\/?$/.exec(location.pathname);
   if (!m?.[1] || !m[2]) return Promise.resolve(null);
   return Promise.resolve(`${location.origin}/${m[1]}/${m[2]}`);
 }

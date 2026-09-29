@@ -28,6 +28,7 @@ import { startRecordingSync } from './recording';
 import { installMenu } from './menu';
 import { reconnectGateway, resetGatewaySubscriptions, startGateway, stopGateway, wakeGateway } from './gateway';
 import { handleDeepLink, takePendingInvite } from './links';
+import { resetBoards } from './boards';
 import { showLinkLanding } from './linkLanding';
 import { takeEventPage } from './eventPage';
 import { watchSyncedPrefs } from './profile';
@@ -205,6 +206,7 @@ async function endSession(reason: LogoutReason): Promise<void> {
   useBots.getState().reset();
   useCalendar.getState().reset();
   useUi.getState().closeCalendar();
+  resetBoards();
   resetChatCaches();
   resetDmCaches();
   resetTimeZoneSync();

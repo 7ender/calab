@@ -112,7 +112,28 @@ export function parseEventLink(input: string): string | null {
   return m?.[1]?.toLowerCase() ?? null;
 }
 
+/**
+ * Board and task links (ADR-0042 §5): `https://<server>/b/<board id>`, `/t/<KEY-N>` and the
+ * `calab://` forms.
+ */
+export function parseBoardLink(input: string): { kind: 'board' | 'task'; id: string } | null {
+  const s = input.trim();
+  const ID = '([0-9a-fA-F-]{36})';
+  const KEY = '([A-Za-z][A-Za-z0-9]{1,5}-[0-9]{1,7})';
+  const b = new RegExp(`^${SCHEME}://b/${ID}/?$`).exec(s) ?? new RegExp(`^https?://[^/\\s]+/b/${ID}/?(?:[?#].*)?$`).exec(s);
+  if (b?.[1]) return { kind: 'board', id: b[1].toLowerCase() };
+  const k = new RegExp(`^${SCHEME}://t/${KEY}/?$`).exec(s) ?? new RegExp(`^https?://[^/\\s]+/t/${KEY}/?(?:[?#].*)?$`).exec(s);
+  if (k?.[1]) return { kind: 'task', id: k[1].toUpperCase() };
+  return null;
+}
+
 export function handleDeepLink(url: string): void {
+  const board = parseBoardLink(url);
+  if (board) {
+    // Loaded lazily, like the calendar: links.ts stays free of the API / platform graph.
+    void import('./boards').then((m) => m.openBoardLink(board.kind, board.id)).catch(() => undefined);
+    return;
+  }
   const ev = parseEventLink(url);
   if (ev) {
     // Loaded lazily, like the DM check: links.ts stays free of the API / platform graph.

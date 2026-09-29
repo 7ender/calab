@@ -57,6 +57,10 @@ export interface PickerPanelProps<T extends PickerItem> {
   autoFocus?: boolean;
   inputRef?: RefObject<HTMLInputElement | null>;
   testId?: string;
+  /** Every keystroke of the field (a host adds items from it, e.g. «Создать лейбл «…»»). */
+  onInput?: (text: string) => void;
+  /** 1–9 with an empty field pick the n-th item (board status / priority menus, as in Linear). */
+  digits?: boolean;
 }
 
 /**
@@ -82,6 +86,8 @@ export function PickerPanel<T extends PickerItem>({
   autoFocus = true,
   inputRef,
   testId,
+  onInput,
+  digits = false,
 }: PickerPanelProps<T>): ReactNode {
   const listId = useId();
   const ownInput = useRef<HTMLInputElement>(null);
@@ -122,6 +128,14 @@ export function PickerPanel<T extends PickerItem>({
   }, [activeRow, virtual]);
 
   const onKey = (e: KeyboardEvent<HTMLInputElement>): void => {
+    if (digits && text === '' && /^Digit[1-9]$|^Numpad[1-9]$/.test(e.code) && !e.metaKey && !e.ctrlKey && !e.altKey) {
+      e.preventDefault();
+      e.stopPropagation();
+      const n = Number(e.code.slice(-1)) - 1;
+      const row = rows.find((r) => r.kind === 'item' && r.nav === n);
+      if (row?.kind === 'item') onSelect(row.item);
+      return;
+    }
     if (NAV_KEYS.has(e.key)) {
       e.preventDefault();
       e.stopPropagation();
@@ -192,7 +206,10 @@ export function PickerPanel<T extends PickerItem>({
           type="search"
           autoFocus={autoFocus && autoFocusAllowed()}
           value={text}
-          onChange={(e) => setText(e.target.value)}
+          onChange={(e) => {
+            setText(e.target.value);
+            onInput?.(e.target.value);
+          }}
           onKeyDown={onKey}
           maxLength={64}
           role="combobox"

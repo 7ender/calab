@@ -13,6 +13,7 @@ import { ruModeration } from './moderation';
 import { ruPicker } from './picker';
 import { ruRoles } from './roles';
 import { ruCalendar } from './calendar';
+import { ruBoards } from './boards';
 import { ruPlan } from './plan';
 import { ruShell } from './shell';
 import { ruVideo } from './video';
@@ -45,6 +46,7 @@ export const ru = {
   ...ruPicker,
   ...ruRoles,
   ...ruCalendar,
+  ...ruBoards,
   // common
   'common.cancel': 'Отмена',
   'common.create': 'Создать',

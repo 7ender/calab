@@ -88,6 +88,9 @@ import { RoomRecBadge } from '../voice/Recording';
 import { useRecordings } from '../../stores/recordings';
 import { startRecording, stopRecording } from '../../services/recording';
 import { CalendarButton, MiniCalendar } from '../calendar/MiniCalendar';
+import { BoardsButton } from '../boards/BoardsButton';
+import { BoardsList } from '../boards/BoardsList';
+import { useBoardsUi } from '../../stores/boardsUi';
 import { RoomEventBadge } from '../calendar/RoomEvent';
 import { DRAG_ROOM, dropRoomAt, hoverRoomAt } from '../calendar/dragState';
 
@@ -145,6 +148,8 @@ export function Sidebar({ workspaceId }: { workspaceId: string }): ReactNode {
   // The mini calendar under the header (ADR-0038 §7); guests see no calendar.
   const miniCal = useUi((s) => s.miniCal);
   const guest = useWorkspaces((s) => s.byId[workspaceId]?.role === WorkspaceRole.GUEST);
+  // Boards mode (ADR-0042 §5): the column lists the boards instead of the rooms.
+  const boards = useBoardsUi((s) => s.active) && !guest;
   // Workspace invites (rows' «Пригласить»): MANAGE_WORKSPACE, a custom role's included.
   const admin = mayManageWorkspace(myRoles);
   const manageRooms = mayArrangeRooms(myRoles);
@@ -164,7 +169,9 @@ export function Sidebar({ workspaceId }: { workspaceId: string }): ReactNode {
   return (
     <aside className="mat-sidebar island-fade flex w-[var(--sidebar-width)] shrink-0 flex-col" aria-label={t('room.list')}>
       <WorkspaceHeader workspaceId={workspaceId} onCreateCategory={() => setCatDialog(true)} />
-      {miniCal && !guest ? <MiniCalendar workspaceId={workspaceId} /> : null}
+      {miniCal && !guest && !boards ? <MiniCalendar workspaceId={workspaceId} /> : null}
+      {boards ? <BoardsList workspaceId={workspaceId} /> : null}
+      {boards ? null : (
       <SidebarDnd workspaceId={workspaceId} listRef={listRef}>
         <SidebarMenu workspaceId={workspaceId} onCreateCategory={() => setCatDialog(true)}>
           {/* The bottom island (AppShell) floats over the column's foot: the list ends above it. */}
@@ -226,6 +233,7 @@ export function Sidebar({ workspaceId }: { workspaceId: string }): ReactNode {
           </div>
         </SidebarMenu>
       </SidebarDnd>
+      )}
       {catDialog ? <CategoryDialog workspaceId={workspaceId} onClose={() => setCatDialog(false)} /> : null}
     </aside>
   );
@@ -368,6 +376,7 @@ function WorkspaceHeader({ workspaceId, onCreateCategory }: { workspaceId: strin
         </Dropdown.Portal>
       </Dropdown.Root>
       <CalendarButton workspaceId={workspaceId} />
+      <BoardsButton workspaceId={workspaceId} />
       {manageRooms ? <CreateMenu workspaceId={workspaceId} onCreateCategory={onCreateCategory} /> : null}
       {admin ? (
         <Tip label={t('shell.invite')}>

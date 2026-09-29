@@ -6262,7 +6262,7 @@ class MockImpl {
       sendMsg(c.res, 200, TaskResponseSchema, taskRes(b().setRelation(c.params[0] ?? '', me, r.relatedId, r.kind, true).task.id, me, true));
     });
     this.boardRoute('DELETE', '/api/tasks/:id/relations', (c, me) => {
-      const kind = Number(q(c, 'kind')) as TaskRelationKind;
+      const kind: TaskRelationKind = Number(q(c, 'kind'));
       sendMsg(c.res, 200, TaskResponseSchema, taskRes(b().setRelation(c.params[0] ?? '', me, q(c, 'related_id'), kind, false).task.id, me, true));
     });
     this.boardRoute('PUT', '/api/tasks/:id/subscription', (c, me) => {

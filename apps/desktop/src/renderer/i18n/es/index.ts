@@ -14,6 +14,7 @@ import { esModeration } from './moderation';
 import { esPicker } from './picker';
 import { esRoles } from './roles';
 import { esCalendar } from './calendar';
+import { esBoards } from './boards';
 import { esPlan } from './plan';
 import { esShell } from './shell';
 import { esVideo } from './video';
@@ -46,6 +47,7 @@ export const es: Dict = {
   ...esPicker,
   ...esRoles,
   ...esCalendar,
+  ...esBoards,
   'voice.pendingMember': 'Conectando…',
   // common
   'common.cancel': 'Cancelar',

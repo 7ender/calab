@@ -411,7 +411,9 @@ export function Composer({
       ? t('dm.placeholder', { name: roomLabel(room) })
       : room.type === RoomType.NOTES
         ? t('notes.placeholder', { name: room.name })
-        : t('chat.placeholderIn', { room: roomLabel(room) });
+        : room.type === RoomType.TASK
+          ? t('boards.commentPlaceholder')
+          : t('chat.placeholderIn', { room: roomLabel(room) });
   const bar = editMsg ? (
     <ContextBar
       icon={<Pencil className="size-4" aria-hidden />}

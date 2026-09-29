@@ -114,6 +114,8 @@ export interface TaskRec {
 }
 
 const DAY = 86_400_000;
+/** Length in characters (code points), as the server counts. */
+const chars = (v: string): number => Array.from(v).length;
 const utcKey = (ms: number): string => new Date(ms).toISOString().slice(0, 10);
 const dayMs = (key: string): number => Date.parse(`${key}T00:00:00Z`);
 
@@ -191,8 +193,9 @@ export function matchCondition(rec: TaskRec, c: TaskCondition, ctx: { me: string
     case TaskField.SUBSCRIBER:
       return set([...rec.subscribers].filter(([, muted]) => !muted).map(([u]) => u));
     case TaskField.PRIORITY: {
-      if (c.op === TaskOp.GT) return t.priority > c.number;
-      if (c.op === TaskOp.LT) return t.priority < c.number;
+      const level: number = t.priority;
+      if (c.op === TaskOp.GT) return level > c.number;
+      if (c.op === TaskOp.LT) return level < c.number;
       const want = vals.map((v) => PRIORITY_TOKEN[v] ?? v);
       const have = String(t.priority);
       if (c.op === TaskOp.IS_NOT || c.op === TaskOp.NONE_OF) return !want.includes(have);
@@ -512,7 +515,7 @@ export class BoardsMock {
     if (!m) throw notFound('workspace not found');
     if (!this.mayManageWorkspace(wsId, userId)) throw forbidden('MANAGE_WORKSPACE required');
     const name = req.name.trim();
-    if (!name || [...name].length > 60) throw invalid('name', 'name must be 1..60 characters');
+    if (!name || chars(name) > 60) throw invalid('name', 'name must be 1..60 characters');
     const live = [...this.boards.values()].filter((r) => r.board.workspaceId === wsId);
     if (live.filter((r) => !r.board.archivedAt).length >= 50) throw conflict('too many boards', '', 'BOARD_LIMIT');
     const taken = new Set(live.map((r) => r.board.key));
@@ -563,7 +566,7 @@ export class BoardsMock {
     const seen = this.seers(rec);
     if (req.name !== undefined) {
       const n = req.name.trim();
-      if (!n || [...n].length > 60) throw invalid('name', 'name must be 1..60 characters');
+      if (!n || chars(n) > 60) throw invalid('name', 'name must be 1..60 characters');
       b.name = n;
     }
     if (req.key !== undefined && req.key !== b.key) {
@@ -641,7 +644,7 @@ export class BoardsMock {
 
   // ---------------------------------------------------------------- statuses / labels / milestones
 
-  private reorder<T extends { id: string; position: number }>(list: T[], id: string, index: number): void {
+  private reorder(list: Array<{ id: string; position: number }>, id: string, index: number): void {
     const sorted = [...list].sort((a, b) => a.position - b.position);
     const item = sorted.find((x) => x.id === id);
     if (!item) return;
@@ -656,7 +659,7 @@ export class BoardsMock {
     this.need(rec, userId, MANAGE_BOARD);
     const b = rec.board;
     const name = req.name.trim();
-    if (!name || [...name].length > 32) throw invalid('name', 'name must be 1..32 characters');
+    if (!name || chars(name) > 32) throw invalid('name', 'name must be 1..32 characters');
     if (b.statuses.length >= 20) throw conflict('at most 20 statuses', '', 'STATUS_LIMIT');
     const s = create(BoardStatusSchema, { id: this.id('status'), name, type: req.type || BoardStatusType.UNSTARTED, color: req.color, position: b.statuses.length });
     b.statuses.push(s);
@@ -673,7 +676,7 @@ export class BoardsMock {
     if (!s) throw notFound('status not found');
     if (req.name !== undefined) {
       const n = req.name.trim();
-      if (!n || [...n].length > 32) throw invalid('name', 'name must be 1..32 characters');
+      if (!n || chars(n) > 32) throw invalid('name', 'name must be 1..32 characters');
       s.name = n;
     }
     if (req.type !== undefined) s.type = req.type;
@@ -709,7 +712,7 @@ export class BoardsMock {
     // CREATE_TASKS may create a label on the fly (the picker's «Создать лейбл»).
     this.need(rec, userId, CREATE_TASKS | MANAGE_BOARD);
     const name = req.name.trim();
-    if (!name || [...name].length > 32) throw invalid('name', 'name must be 1..32 characters');
+    if (!name || chars(name) > 32) throw invalid('name', 'name must be 1..32 characters');
     if (rec.board.labels.length >= 50) throw conflict('at most 50 labels');
     if (rec.board.labels.some((l) => l.name.toLowerCase() === name.toLowerCase())) throw conflict('label exists', 'name');
     const l = create(BoardLabelSchema, { id: this.id('label'), name, color: req.color, position: rec.board.labels.length });
@@ -749,7 +752,7 @@ export class BoardsMock {
     const rec = this.boardFor(id, userId);
     this.need(rec, userId, MANAGE_BOARD);
     const name = req.name.trim();
-    if (!name || [...name].length > 60) throw invalid('name', 'name must be 1..60 characters');
+    if (!name || chars(name) > 60) throw invalid('name', 'name must be 1..60 characters');
     const ms = create(BoardMilestoneSchema, { id: this.id('milestone'), name, dueOn: req.dueOn, position: rec.board.milestones.length });
     rec.board.milestones.push(ms);
     if (req.position !== undefined) this.reorder(rec.board.milestones, ms.id, req.position);
@@ -789,7 +792,7 @@ export class BoardsMock {
     const rec = this.boardFor(id, userId);
     if (req.shared) this.need(rec, userId, MANAGE_BOARD);
     const name = req.name.trim();
-    if (!name || [...name].length > 40) throw invalid('name', 'name must be 1..40 characters');
+    if (!name || chars(name) > 40) throw invalid('name', 'name must be 1..40 characters');
     const mine = rec.personal.get(userId) ?? [];
     if (rec.board.views.length + mine.length >= 30) throw conflict('at most 30 views');
     const v = create(BoardViewSchema, {
@@ -877,7 +880,7 @@ export class BoardsMock {
       if (seen.has(a.userId)) throw invalid('assignees', 'duplicate assignee');
       seen.add(a.userId);
       if (!this.perms(rec.board, a.userId)) throw invalid('assignees', 'the assignee cannot see the board');
-      if ([...a.note].length > 120) throw invalid('assignees', 'note ≤ 120 characters');
+      if (chars(a.note) > 120) throw invalid('assignees', 'note ≤ 120 characters');
     }
   }
 
@@ -902,7 +905,7 @@ export class BoardsMock {
     const rec = this.boardFor(boardId, userId);
     this.need(rec, userId, CREATE_TASKS);
     const title = req.title.trim();
-    if (!title || [...title].length > 200) throw invalid('title', 'title must be 1..200 characters');
+    if (!title || chars(title) > 200) throw invalid('title', 'title must be 1..200 characters');
     if ([...this.tasks.values()].filter((t) => t.task.boardId === boardId && !t.task.archivedAt).length >= 5000) throw conflict('too many tasks', '', 'BOARD_TASK_LIMIT');
     const status = req.statusId ? rec.board.statuses.find((s) => s.id === req.statusId) : rec.board.statuses.find((s) => s.isDefault);
     if (!status) throw invalid('status_id', 'unknown status');
@@ -987,7 +990,7 @@ export class BoardsMock {
     const parent = t.task.parentId ? this.tasks.get(t.task.parentId) : undefined;
     const room = this.host.state.rooms.get(t.task.roomId);
     const out = this.taskOut(t, userId, true);
-    out.attachments = (t.task.attachments ?? []).map((f) => f);
+    out.attachments = [...t.task.attachments];
     return {
       task: out,
       subtasks: subtasks.map((x) => this.taskOut(x, userId, false)),
@@ -1037,7 +1040,7 @@ export class BoardsMock {
     if (req.boardId !== undefined && req.boardId !== task.boardId) return this.moveToBoard(t, b, userId, req.boardId);
     if (req.title !== undefined) {
       const title = req.title.trim();
-      if (!title || [...title].length > 200) throw invalid('title', 'title must be 1..200 characters');
+      if (!title || chars(title) > 200) throw invalid('title', 'title must be 1..200 characters');
       log.push(['title', { title: task.title }, { title }]);
       task.title = title;
     }

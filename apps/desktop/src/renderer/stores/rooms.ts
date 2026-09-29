@@ -320,7 +320,7 @@ const cmpKey = (a: readonly number[], b: readonly number[]): number => {
 
 export function roomsOfWorkspace(byId: Record<string, Room>, wsId: string): Room[] {
   return Object.values(byId)
-    .filter((r) => r.workspaceId === wsId)
+    .filter((r) => r.workspaceId === wsId && r.type !== RoomType.TASK)
     .sort((a, b) => a.position - b.position || a.name.localeCompare(b.name));
 }
 
@@ -359,3 +359,6 @@ export function badgeCount(s: Pick<RoomsState, 'byId' | 'mentions'>): number {
 }
 
 export const isVoice = (r: Room | undefined): boolean => r?.type === RoomType.VOICE;
+
+/** A task's hidden comment room (ADR-0042): never in room lists, switchers or the rail's counts. */
+export const isTaskRoom = (r: Pick<Room, 'type'> | undefined): boolean => r?.type === RoomType.TASK;

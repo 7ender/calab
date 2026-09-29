@@ -35,6 +35,7 @@ import { SettingsFooter } from './SettingsFooter';
 import { EchoCard } from './EchoCard';
 import { CommitInput } from './CommitInput';
 import { MicMeter } from './MicMeter';
+import { BoardHotkeysList } from '../boards/HotkeysSheet';
 import { PttBinder } from './PttBinder';
 import { PttReleaseDelay, PttReleaseLink } from './PttReleaseDelay';
 import { AboutUpdateRow } from './AboutUpdateRow';
@@ -477,6 +478,12 @@ function HotkeysTab(): ReactNode {
             </Row>
           ),
         )}
+      </Card>
+      {/* Task boards (ADR-0042 «Хоткеи»): the registry, read-only («Клавиши»). */}
+      <Card title={t('boards.hotkeysCard')} footer={t('boards.hotkeysFooter')}>
+        <div className="px-3 py-2">
+          <BoardHotkeysList columns={1} />
+        </div>
       </Card>
     </>
   );

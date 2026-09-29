@@ -1,7 +1,7 @@
 import { create, fromBinary, toBinary } from '@bufbuild/protobuf';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import WebSocket from 'ws';
-import { GatewayFrameSchema, GatewayOpcode, type DispatchEvent, type Ready } from '@calaba/protocol';
+import { GatewayFrameSchema, GatewayOpcode, RoomType, type DispatchEvent, type Ready } from '@calaba/protocol';
 import { IDS, startMockServer, type MockServer } from './mock-server';
 
 // Task boards in the mock (ADR-0042): pnpm -F @calaba/desktop exec vitest run --config e2e-support/vitest.config.ts
@@ -86,7 +86,7 @@ describe('boards mock (ADR-0042)', () => {
     expect((snap?.boards[0]?.permissions ?? 0n) & bit(20)).toBe(bit(20));
     expect(snap?.unreadTaskIds).toHaveLength(1);
     // Task rooms never appear among the rooms.
-    expect(snap?.rooms.every((r) => r.type !== 5)).toBe(true);
+    expect(snap?.rooms.every((r) => r.type !== RoomType.TASK)).toBe(true);
     anna.close();
     const boris = await gateway(await login('boris@calaba.test'));
     const bs = boris.ready.workspaces.find((w) => w.workspace?.id === IDS.workspaces.main);

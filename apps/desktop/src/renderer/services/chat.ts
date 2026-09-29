@@ -13,6 +13,7 @@ import { reportPlanError } from './plan';
 import { log } from '../lib/log';
 import { useMessages, type ChatMessage, type PendingUpload } from '../stores/messages';
 import { idAfter, useRooms } from '../stores/rooms';
+import { useBoards } from '../stores/boards';
 import { myUserId } from '../stores/session';
 import { toast } from '../stores/toasts';
 import { sendTyping } from './gateway';
@@ -269,6 +270,14 @@ function newNonce(): string {
   return crypto.randomUUID();
 }
 
+/** Where an attachment of this room goes: a task comment → its board (ADR-0042), else uploadPath. */
+function attachmentPath(workspaceId: string, roomId: string): string {
+  const b = useBoards.getState();
+  const taskId = b.roomTask[roomId];
+  const boardId = taskId ? b.tasks[taskId]?.boardId : undefined;
+  return boardId ? `/api/boards/${boardId}/files` : uploadPath(workspaceId, roomId);
+}
+
 /**
  * Optimistic send: shows the message immediately (pending), uploads files
  * with progress, then POSTs with a `nonce` — retries are idempotent on the
@@ -307,7 +316,7 @@ export async function sendMessage(
     const metas: FileMeta[] = [];
     const handles: UploadHandle[] = [];
     for (const [i, f] of files.entries()) {
-      const path = uploadPath(workspaceId, roomId) + (f.voice ? voiceQuery(f.voice) : '');
+      const path = attachmentPath(workspaceId, roomId) + (f.voice ? voiceQuery(f.voice) : '');
       // HEIC (iPhone photos) → JPEG `.jpg` that every client shows (docs/02 «Изображения»).
       const out = f.voice ? { blob: f.file, name: f.name } : await attachmentFile(f.file, f.name);
       if (out.blob !== f.file) {

@@ -347,7 +347,7 @@ function targetKey(o: Pick<OverrideDraft, 'targetType' | 'targetId'>): string {
  * filled — deny red 18 % + red glyph, inherit neutral raised, allow green 18 % + green glyph;
  * unselected segments show the glyph only.
  */
-function TriToggle({ value, onChange, label }: { value: Tri; onChange: (v: Tri) => void; label: string }): ReactNode {
+export function TriToggle({ value, onChange, label }: { value: Tri; onChange: (v: Tri) => void; label: string }): ReactNode {
   const SEL: Record<Tri, string> = {
     deny: 'bg-[color-mix(in_srgb,var(--color-danger)_18%,transparent)] text-danger-text',
     inherit: 'bg-[var(--color-segment-on)] text-fg shadow-[var(--shadow-segment)]',
