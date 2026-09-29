@@ -1,0 +1,82 @@
+{
+  "sounds": [
+    {
+      "id": "air_horn",
+      "file": "air_horn.ogg",
+      "emoji": "📯",
+      "name": {
+        "ru": "Клаксон",
+        "en": "Air horn",
+        "es": "Bocina",
+        "zh-CN": "气笛"
+      },
+      "durationMs": 2899,
+      "source": "owner-provided (2026-09-29)"
+    },
+    {
+      "id": "ba_dum_tss",
+      "file": "ba_dum_tss.ogg",
+      "emoji": "🥁",
+      "name": {
+        "ru": "Ба-дум-тсс",
+        "en": "Ba dum tss",
+        "es": "Ba dum tss",
+        "zh-CN": "咚哒嚓"
+      },
+      "durationMs": 2821,
+      "source": "owner-provided (2026-09-29)"
+    },
+    {
+      "id": "cricket",
+      "file": "cricket.ogg",
+      "emoji": "🦗",
+      "name": {
+        "ru": "Сверчок",
+        "en": "Cricket",
+        "es": "Grillo",
+        "zh-CN": "蟋蟀"
+      },
+      "durationMs": 2899,
+      "source": "owner-provided (2026-09-29)"
+    },
+    {
+      "id": "golf_clap",
+      "file": "golf_clap.ogg",
+      "emoji": "👏",
+      "name": {
+        "ru": "Аплодисменты",
+        "en": "Golf clap",
+        "es": "Aplausos",
+        "zh-CN": "鼓掌"
+      },
+      "durationMs": 2899,
+      "source": "owner-provided (2026-09-29)"
+    },
+    {
+      "id": "quack",
+      "file": "quack.ogg",
+      "emoji": "🦆",
+      "name": {
+        "ru": "Кряк",
+        "en": "Quack",
+        "es": "Cuac",
+        "zh-CN": "嘎嘎"
+      },
+      "durationMs": 1097,
+      "source": "owner-provided (2026-09-29)"
+    },
+    {
+      "id": "sad_horn",
+      "file": "sad_horn.ogg",
+      "emoji": "📉",
+      "name": {
+        "ru": "Грустная труба",
+        "en": "Sad horn",
+        "es": "Trompeta triste",
+        "zh-CN": "悲伤号角"
+      },
+      "durationMs": 2821,
+      "source": "owner-provided (2026-09-29)"
+    }
+  ]
+}
