@@ -385,6 +385,8 @@ export interface MockState {
   roomInvites: Map<string, RoomInvite>;
   /** DM rooms (type DM, no workspace): roomId → the two participants (ADR-0020). */
   dmMembers: Map<string, [string, string]>;
+  /** Notes shelves (ADR-0039): room id → owner and emoji (name and position live on the room). */
+  shelves: Map<string, { ownerId: string; emoji: string }>;
   /** userId → roomId → own DM state (docs/09 #51): archived since (ms, 0 = no), cleared up to a message id. */
   dmState: Map<string, Map<string, { archivedAt: number; clearedBefore: string }>>;
   /** userId → roomId → stored notification settings (READY notification_settings; absent = default). */
@@ -707,6 +709,7 @@ export function buildState(scenario: Scenario): MockState {
     members: [],
     rooms: new Map(),
     dmMembers: new Map(),
+    shelves: new Map(),
     dmState: new Map(),
     messages: new Map(),
     readStates: new Map(),
