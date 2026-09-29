@@ -18,6 +18,7 @@ export const enStickers = {
   'stk.guest': 'Guests can’t send stickers',
   'stk.noneHere': 'Your workspaces’ packs aren’t available in this chat',
   'stk.sticker': 'Sticker {emoji}',
+  'stk.suggest': 'Stickers {emoji}',
   'stk.unavailable': 'Sticker unavailable',
   'stk.packGone': 'This pack was deleted',
   'stk.count': { one: '{n} sticker', other: '{n} stickers' },

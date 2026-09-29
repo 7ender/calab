@@ -449,6 +449,12 @@ export interface MockServer {
    * delivering webhook, «Деплой» with a failing one) → WORKSPACE_MEMBER_ADD + BOT_CREATE.
    */
   seedBots(): void;
+  /**
+   * docs/08 «Композер — подсказка стикеров»: a pack «Смех» of «Команда Calab» with three 😂
+   * stickers (the last animated), installed by Анна after «Calab». Call before the client loads
+   * its packs (the first emoji typed or the picker opened).
+   */
+  seedLaughStickers(): void;
   /** docs/09 #87: a picture avatar for a (seeded) bot, as «Загрузить аватар» in «Боты» sets it. */
   setBotAvatar(botUserId: string, colors: { bg: [number, number, number]; fg: [number, number, number] }): void;
   /** Full files (not thumbnails) wait until releaseFiles() or reset(): a slow download (the lightbox's loading state). */
@@ -503,6 +509,7 @@ export async function startMockServer(opts: MockServerOptions = {}): Promise<Moc
     setBirthdayHidden: (u, hidden) => impl.setBirthdayHidden(u, hidden),
     setClock: (ms) => impl.setClock(ms),
     seedBots: () => impl.seedBots(),
+    seedLaughStickers: () => impl.seedLaughStickers(),
     setBotAvatar: (id, colors) => impl.setBotAvatar(id, colors),
     holdFiles: () => impl.holdFiles(),
     releaseFiles: () => impl.releaseFiles(),
@@ -1550,6 +1557,19 @@ class MockImpl {
     };
     s.bots.set(a.id, b);
     return b;
+  }
+
+  seedLaughStickers(): void {
+    const s = this.state;
+    const packId = nextId(s, 'stickerPack');
+    const at = tick(s);
+    const files = [IDS.files.stickerSun, IDS.files.stickerGem, IDS.files.stickerOrbit];
+    const stickers = files.map((fileId, i) =>
+      create(StickerSchema, { id: nextId(s, 'sticker'), packId, emoji: '😂', url: `/api/files/${fileId}`, width: 160, height: 160, animated: i === 2, size: s.files.get(fileId)?.bytes.length ?? 0 }),
+    );
+    const pack = create(StickerPackSchema, { id: packId, workspaceId: IDS.workspaces.main, name: 'Смех', shortName: 'laughs', stickers, createdBy: IDS.users.anna, createdAt: at, updatedAt: at });
+    s.stickerPacks.set(packId, pack);
+    s.userStickerPacks.set(IDS.users.anna, [...(s.userStickerPacks.get(IDS.users.anna) ?? []), packId]);
   }
 
   seedBots(): void {

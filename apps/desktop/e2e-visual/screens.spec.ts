@@ -114,6 +114,7 @@ const KEY = new Set([
   'workspace-suspended',
   'chat-sticker',
   'sticker-picker',
+  'chat-sticker-suggest',
   'settings-stickers',
   'settings-stickers-upload',
   'settings-stickers-emoji',
@@ -2863,6 +2864,34 @@ test('sticker-picker', async ({ open, win, mock, shot }) => {
   await grid.getByRole('button', { name: 'Стикер 💎' }).click();
   await expect(panel).toHaveCount(0);
   await expect(win.getByTestId('sticker-message')).toHaveCount(1);
+});
+
+// Stickers by emoji above the field (docs/08 «Композер — подсказка стикеров», like Telegram): 😂
+// typed → the three 😂 of «Смех» in 64 px tiles; → highlights the first, Enter sends it and
+// clears the field; typing more text or Esc hides the strip.
+test('chat-sticker-suggest', async ({ open, win, mock, shot }) => {
+  await open(); // resets the mock: the pack is seeded after it, before the client loads its packs
+  await win.emulateMedia({ reducedMotion: 'reduce' });
+  mock.seedLaughStickers();
+  await mainWindow(win, mock);
+  const field = win.getByRole('textbox', { name: /^Сообщение в/ });
+  await field.fill('😂');
+  const strip = win.getByTestId('sticker-suggest');
+  await expect(strip.locator('[data-sticker-suggest]')).toHaveCount(3);
+  await field.press('ArrowRight');
+  await expect(strip.getByRole('option', { selected: true })).toHaveCount(1);
+  await stillStickers(win, 1);
+  await checkpoint(shot, 'chat-sticker-suggest');
+  await field.press('Escape');
+  await expect(strip).toHaveCount(0);
+  await field.fill('😂 ок');
+  await expect(strip).toHaveCount(0);
+  await field.fill('😂');
+  await field.press('ArrowRight');
+  await field.press('Enter');
+  await expect(win.getByTestId('sticker-message')).toHaveCount(1);
+  await expect(field).toHaveValue('');
+  await expect(strip).toHaveCount(0);
 });
 
 // Workspace settings → «Стикеры» → the pack «Calab»: name, the drop zone, the stickers with their
