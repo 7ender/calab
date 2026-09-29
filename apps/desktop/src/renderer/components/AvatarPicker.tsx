@@ -1,15 +1,17 @@
 import { Upload } from 'lucide-react';
 import { useCallback, useRef, useState, type ReactNode } from 'react';
 import { t } from '../i18n';
+import { IMAGE_ACCEPT, avatarFile } from '../lib/image';
 import { toast } from '../stores/toasts';
 import { Button } from './ui';
 
 /*
  * The avatar picker of the own profile, shared with bots (docs/09 #87): a hidden image input,
- * «Загрузить аватар» and «Убрать». The server validates the image (422 otherwise).
+ * «Загрузить аватар» and «Убрать». The picked picture is never uploaded as it is: lib/image
+ * decodes it (HEIC too) and makes the 512×512 WebP (JPEG fallback) the server takes (≤ 512 KB).
  */
 
-/** A hidden `<input type=file accept=image/*>`: render `input`, call `open()` to pick. */
+/** A hidden `<input type=file accept=image/*,.heic>`: render `input`, call `open()` to pick. */
 export function useImagePicker(onPick: (file: File) => void): { open: () => void; input: ReactNode } {
   const ref = useRef<HTMLInputElement>(null);
   const open = useCallback(() => ref.current?.click(), []);
@@ -17,7 +19,7 @@ export function useImagePicker(onPick: (file: File) => void): { open: () => void
     <input
       ref={ref}
       type="file"
-      accept="image/*"
+      accept={IMAGE_ACCEPT}
       hidden
       onChange={(e) => {
         const f = e.target.files?.[0];
@@ -48,7 +50,8 @@ export function AvatarButtons({
   const [busy, setBusy] = useState(false);
   const picker = useImagePicker((f) => {
     setBusy(true);
-    onUpload(f)
+    avatarFile(f)
+      .then(onUpload)
       .catch((e: unknown) => toast.fail(e, t('err.ctx.upload')))
       .finally(() => setBusy(false));
   });

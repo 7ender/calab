@@ -7,6 +7,7 @@ import { errorText } from '../lib/api/errors';
 import { api, uploadFile, uploadPath, type UploadHandle } from '../lib/api/endpoints';
 import { sendSticker } from './stickers';
 import { voiceQuery, type VoiceMeta } from '../lib/voiceNote';
+import { attachmentFile } from '../lib/image';
 import { canToggleReaction } from '../features/chat/reactionLimit';
 import { reportPlanError } from './plan';
 import { log } from '../lib/log';
@@ -307,7 +308,17 @@ export async function sendMessage(
     const handles: UploadHandle[] = [];
     for (const [i, f] of files.entries()) {
       const path = uploadPath(workspaceId, roomId) + (f.voice ? voiceQuery(f.voice) : '');
-      const h = uploadFile(path, f.file, f.name, (p) => {
+      // HEIC (iPhone photos) → JPEG `.jpg` that every client shows (docs/02 «Изображения»).
+      const out = f.voice ? { blob: f.file, name: f.name } : await attachmentFile(f.file, f.name);
+      if (out.blob !== f.file) {
+        const cur = useMessages.getState().rooms[roomId]?.items.find((c) => c.key === key);
+        if (cur?.uploads) {
+          useMessages.getState().patchPending(roomId, key, {
+            uploads: cur.uploads.map((u, j) => (j === i ? { ...u, name: out.name, size: out.blob.size } : u)),
+          });
+        }
+      }
+      const h = uploadFile(path, out.blob, out.name, (p) => {
         const cur = useMessages.getState().rooms[roomId]?.items.find((c) => c.key === key);
         if (!cur?.uploads) return;
         useMessages.getState().patchPending(roomId, key, {

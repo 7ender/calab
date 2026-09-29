@@ -658,6 +658,20 @@ export async function uploadAvatar(file: Blob, name: string): Promise<void> {
   await postAvatar('/api/me/avatar', file, name);
 }
 
+/**
+ * HEIC → JPEG on the server (POST /api/files/convert?to=jpeg, docs/02 «Изображения»): the
+ * last rung of the decode ladder (lib/image/decode). null when the server cannot convert it
+ * (501 no ffmpeg, 415 not HEIF, 422 undecodable); other failures (network, 413, 429) throw.
+ */
+export async function convertImage(file: Blob, name: string): Promise<Blob | null> {
+  const form = new FormData();
+  form.append('file', file, name);
+  const res = await platform.apiFetch('/api/files/convert?to=jpeg', { method: 'POST', body: form });
+  if (res.status === 501 || res.status === 415 || res.status === 422) return null;
+  if (!res.ok) throw await toApiError(res);
+  return res.blob();
+}
+
 /** URL usable in <img src>: main attaches the bearer token. */
 /** API paths of file bytes; render them through <MediaImg> / useMediaUrl (auth differs per platform). */
 export const filePath = (fileId: string): string => `/api/files/${fileId}`;

@@ -74,6 +74,8 @@ export const IPC = {
   // ---- files ----
   filesDownload: 'files:download',
   filesProgress: 'files:progress',
+  /** A picture Chromium cannot decode (HEIC) → JPEG by the OS (main/imageDecode.ts); null = cannot. */
+  filesDecodeImage: 'files:decode-image',
 
   // ---- media ----
   captureListSources: 'capture:list-sources',
