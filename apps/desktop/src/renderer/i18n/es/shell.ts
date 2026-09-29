@@ -215,6 +215,7 @@ export const esShell: DictShape<typeof enShell> = {
   'mediaErr.voice.lost': 'No se pudo volver a unir a la sala de voz',
   'mediaErr.voice.desync': 'Se perdió la conexión de voz',
   'mediaErr.voice.kicked': 'Un moderador te desconectó de la sala de voz',
+  'mediaErr.voice.otherDevice': 'Te has conectado desde otro dispositivo',
   'mediaErr.voice.duplicate': 'Te uniste a la voz desde este dispositivo en otra ventana',
   'mediaErr.voice.closed': 'La sala de voz se cerró',
   'mediaErr.voice.moved': 'Te movieron a «{room}»',

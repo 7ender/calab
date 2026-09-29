@@ -77,6 +77,7 @@ PRESENCE_UPDATE               { user_id, status, last_seen, on_call } — on_cal
 VOICE_STATE_UPDATE            { workspace_id, user_id, room_id|null, muted, deafened, streaming, joined_at, server_muted, camera }
 VOICE_STREAM_START / STOP     { room_id, user_id, track_sid, preset }   -- для PiP-плитки
 VOICE_CAMERA_STOP             { room_id, user_id, track_sid, reason: LIMIT_REACHED | MODERATOR | ROOM_POLICY }   -- камеру остановил сервер
+VOICE_DISCONNECTED            { workspace_id, room_id, session_id, reason: OTHER_DEVICE } — только своим устройствам: устройство session_id выведено из голоса, т. к. пользователь вошёл с другого («Несколько устройств»)
 READ_STATE_UPDATE
 READ_RECEIPT                  { room_id, last_read_message_id } — докуда прочитали другие (docs/09 #92): в DM — собеседник, в комнате — самый дальний маркер остальных людей (кто — не раскрывается)
 ROOM_NOTIFICATION_UPDATE      { settings: { room_id, level, muted_until } } — только своим устройствам
@@ -128,8 +129,12 @@ Payload'ы — protobuf-сообщения в `proto/calaba/v1/gateway.proto`; G
 Пользователь может быть одновременно залогинен на нескольких устройствах (каждое — своя `sessions`-запись и свой gateway-сокет).
 
 **Voice:**
-- LiveKit participant identity = `<user_id>:<session_id>`. Один пользователь может быть в комнате с двух устройств одновременно — LiveKit их не выкидывает друг другом.
-- `voice_states` в Redis хранятся по сессии; наружу `VOICE_STATE_UPDATE` отдаётся **агрегированно по пользователю**: пользователь «в комнате», если в ней хотя бы одна его сессия; `muted`/`deafened`/`streaming` — от сессии в этой комнате (если их несколько — `streaming` = любая стримит, `muted` = все замьючены).
+- LiveKit participant identity = `<user_id>:<session_id>`.
+- **В голосе — одно устройство** (владелец, 29.09; вход, чат и presence остаются многоустройственными). `POST /api/rooms/{id}/join` с устройства B (комната любого пространства или звонок один на один) под пользовательской блокировкой `voice:ulock:<user_id>` записывает B (pending) и выводит из голоса все прочие устройства пользователя (активные сессии из `sessions` → `voice:sess:*`): каждому — `VOICE_DISCONNECTED{workspace_id, room_id, session_id, reason: OTHER_DEVICE}` в канал пользователя (действует только устройство с этим `session_id`), затем `RemoveParticipant`, снятие voice state и `VOICE_STATE_UPDATE`. Устройство помечается `voice:superseded:<session_id>` = `<scope>/<room>` (15 мин, снимается его собственным `/join`): его поздний `participant_joined` и reconcile в этой комнате отклоняются (удаляется из LiveKit), так что старый токен не возвращает его. Та же сессия (повторный `/join`, реконнект, перемещение модератором по ADR-0019) никого не выводит. Два устройства, входящие одновременно, упорядочены блокировкой — выигрывает последнее.
+  - Клиент A по `VOICE_DISCONNECTED`: выходит из голоса без попытки переподключения (цикл rejoin останавливается), островок — в idle, тост «Вы подключились с другого устройства». `PARTICIPANT_REMOVED` от LiveKit ждёт это событие 500 мс, прежде чем считать отключение модераторским.
+  - Звонок один на один: вывод устройства из сессии звонка **не завершает звонок** — A не шлёт hangup, а «отпускает» звонок, как принятый на другом устройстве. Если B вошёл в сам звонок, звонок продолжается с B; если B ушёл в комнату пространства, пользователь покинул сессию звонка — сервер завершает звонок по правилу «потерян 30 с» (ADR-0034).
+  - Если `/join` B не дошёл до LiveKit (сеть, отказ), A остаётся вне голоса — принято: пользователь сам зашёл с B.
+- `voice_states` в Redis хранятся по сессии; наружу `VOICE_STATE_UPDATE` отдаётся **агрегированно по пользователю**: пользователь в комнате своего последнего вошедшего устройства; `muted`/`deafened`/`streaming` — от сессии в этой комнате (кратковременно, пока A выводится, их может быть две: `streaming` = любая стримит, `muted` = все замьючены).
 
 **Presence:**
 - Redis-хэш `presence:<user_id>`: поле на каждую gateway-сессию (`<session_id>` → `status`) со своим TTL (HEXPIRE) = 2 × `heartbeat_interval`, продлевается каждым heartbeat; `presence:seen:<user_id>` — `last_seen`. Сессия умерла без закрытия → её поле истекает; sweeper (раз в 15 с, один инстанс) публикует OFFLINE, когда у пользователя не осталось живых сессий.

@@ -14,6 +14,8 @@
 //	voice:workspaces             set   workspaces with any voice state (for reconcile)
 //	voice:started:<room_id>      string unix ms when the current call began (first connected device; pending ones do not count)
 //	voice:smuted:<workspace_id>  set   user ids server-muted by a moderator (kept until unmuted, across rejoins)
+//	voice:superseded:<session_id> string "<workspace_id>/<room_id>" the device was taken out of for another device of the user (TTL 15 min; cleared by its own /join)
+//	voice:ulock:<user_id>        string per-user lock of a /join (one device in voice at a time)
 //
 // A DM call (ADR-0034) is a voice session of a DM room, which has no workspace: its voice
 // scope is the DM room itself — the DM room id stands in for <workspace_id> in every key
@@ -304,7 +306,18 @@ var unlockScript = rueidis.NewLuaScript(`if redis.call('GET', KEYS[1]) == ARGV[1
 // WithLock runs fn holding the workspace's voice lock: all read-modify-write of voice
 // state (and checks that must be atomic with it, like user_limit) happen under it.
 func (s Store) WithLock(ctx context.Context, wid uuid.UUID, fn func() error) error {
-	key, token := redisx.Key("voice:lock:"+wid.String()), uuid.NewString()
+	return s.withKeyLock(ctx, redisx.Key("voice:lock:"+wid.String()), fn)
+}
+
+// WithUserLock runs fn holding the user's /join lock (one device in voice at a time, docs/05
+// "Несколько устройств"): two devices joining at once are ordered, the later one takes out
+// the earlier. Lock order: the user lock before any workspace lock.
+func (s Store) WithUserLock(ctx context.Context, uid uuid.UUID, fn func() error) error {
+	return s.withKeyLock(ctx, redisx.Key("voice:ulock:"+uid.String()), fn)
+}
+
+func (s Store) withKeyLock(ctx context.Context, key string, fn func() error) error {
+	token := uuid.NewString()
 	deadline := time.Now().Add(3 * time.Second)
 	for {
 		err := s.C.Do(ctx, s.C.B().Set().Key(key).Value(token).Nx().Px(5*time.Second).Build()).Error()
@@ -487,6 +500,67 @@ func (s Store) Location(ctx context.Context, sessionID uuid.UUID) (wid, rid uuid
 	wid, err1 := uuid.Parse(w)
 	rid, err2 := uuid.Parse(r)
 	return wid, rid, err1 == nil && err2 == nil, nil
+}
+
+// Locations returns where each of the device sessions is in voice; sessions not in voice
+// are absent. One round trip (MGET).
+func (s Store) Locations(ctx context.Context, sessionIDs []uuid.UUID) (map[uuid.UUID][2]uuid.UUID, error) {
+	out := map[uuid.UUID][2]uuid.UUID{}
+	if len(sessionIDs) == 0 {
+		return out, nil
+	}
+	keys := make([]string, len(sessionIDs))
+	for i, sid := range sessionIDs {
+		keys[i] = sessKey(sid)
+	}
+	vals, err := s.C.Do(ctx, s.C.B().Mget().Key(keys...).Build()).ToArray()
+	if err != nil {
+		return nil, err
+	}
+	for i, v := range vals {
+		str, err := v.ToString()
+		if err != nil {
+			continue // nil: not in voice
+		}
+		w, r, _ := strings.Cut(str, "/")
+		wid, err1 := uuid.Parse(w)
+		rid, err2 := uuid.Parse(r)
+		if err1 == nil && err2 == nil {
+			out[sessionIDs[i]] = [2]uuid.UUID{wid, rid}
+		}
+	}
+	return out, nil
+}
+
+func supersededKey(sid uuid.UUID) string { return redisx.Key("voice:superseded:" + sid.String()) }
+
+// supersededTTL outlives a join token (10 min): a device taken out cannot come back with the
+// token it had.
+const supersededTTL = 15 * time.Minute
+
+// Supersede marks a device session as taken out of room rid of scope wid because the user
+// joined voice from another device: its LiveKit connection there is refused from now on
+// (participant_joined, reconcile) until the device itself joins again (ClearSuperseded).
+func (s Store) Supersede(ctx context.Context, sid, wid, rid uuid.UUID) error {
+	return s.C.Do(ctx, s.C.B().Set().Key(supersededKey(sid)).Value(wid.String()+"/"+rid.String()).Ex(supersededTTL).Build()).Error()
+}
+
+// ClearSuperseded drops the mark of Supersede: the device joined voice again itself.
+func (s Store) ClearSuperseded(ctx context.Context, sid uuid.UUID) error {
+	return s.C.Do(ctx, s.C.B().Del().Key(supersededKey(sid)).Build()).Error()
+}
+
+// Superseded reports whether the device session was taken out of room rid of scope wid for
+// another device of the user (Supersede).
+func (s Store) Superseded(ctx context.Context, sid, wid, rid uuid.UUID) (bool, error) {
+	v, err := s.C.Do(ctx, s.C.B().Get().Key(supersededKey(sid)).Build()).ToString()
+	if rueidis.IsRedisNil(err) {
+		return false, nil
+	}
+	if err != nil {
+		return false, err
+	}
+	return v == wid.String()+"/"+rid.String(), nil
 }
 
 // Streams returns active streams in a room keyed by track sid.

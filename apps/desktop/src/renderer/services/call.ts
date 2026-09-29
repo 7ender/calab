@@ -25,7 +25,8 @@ import { voice } from './voice';
  * stores/call.ts; this service feeds it — REST answers, CALL_RING / CALL_STATE, READY.call — and
  * runs what a phase change means: the DM's voice session (voice.join with `call: true`), the
  * ringing, the «Входящий звонок» notification, the caller's toasts. Leaving the call's voice
- * session (the panel's hang-up, another room, a failed connect) hangs the call up.
+ * session (the panel's hang-up, another room, a failed connect) hangs the call up — unless the
+ * server took this device out for another device of the user (the call goes on there).
  */
 
 type Action = 'accept' | 'decline' | 'cancel' | 'hangup';
@@ -203,7 +204,11 @@ function watchVoice(): void {
     const c = useCall.getState();
     if (c.phase !== 'active' || !c.call) return;
     const dm = c.call.dmRoomId;
-    if (p.roomId === dm && s.roomId !== dm) void hangup();
+    if (p.roomId !== dm || s.roomId === dm) return;
+    // Taken out because the user joined voice on another device (VOICE_DISCONNECTED): the call
+    // is not over — this device only lets go of it, like a call answered elsewhere.
+    if (voice.takenOverRoom === dm) applyCallEvent({ kind: 'failed', callId: c.call.id });
+    else void hangup();
   });
 }
 

@@ -1,4 +1,4 @@
-import { AUDIO_PUBLISH_DEFAULTS, SCREEN_SHARE_PRESETS, type ConcreteScreenSharePreset, type ScreenShareContentHint, type VoiceMoved } from '@calaba/protocol';
+import { AUDIO_PUBLISH_DEFAULTS, SCREEN_SHARE_PRESETS, type ConcreteScreenSharePreset, type ScreenShareContentHint, type VoiceDisconnected, type VoiceMoved, VoiceDisconnectReason } from '@calaba/protocol';
 import {
   ConnectionState,
   DisconnectReason,
@@ -98,6 +98,12 @@ const SEAT_BUSY_POLLS = 40;
 const SEAT_RECONNECT_GRACE_MS = 5000;
 /** A VOICE_STATE_UPDATE that does not show me where I am: checked after this (a move settles). */
 const SEAT_SELF_GRACE_MS = 3000;
+/**
+ * LiveKit removed me (PARTICIPANT_REMOVED): the server's VOICE_DISCONNECTED, sent before the
+ * removal, may still be on its way — it is waited for this long before the removal is taken for
+ * a moderator's (docs/05 «Несколько устройств»).
+ */
+const REMOVED_GRACE_MS = 500;
 
 /** LiveKit identity is `<user_id>:<session_id>` (rtc.proto). */
 export const userIdOf = (identity: string): string => identity.split(':')[0] ?? identity;
@@ -339,6 +345,7 @@ class VoiceEngine {
     this.rejoinGen++;
     this.rejoinRoomId = null;
     this.failedSeat = null;
+    this.takenOverRoom = null;
     setLink({ attempts: 0, lastError: null, blockedHost: null });
     // Optimistic join (docs/05): I am in the room's list from the click on, also while the old
     // call is still being torn down; connect() takes over with phase 'connecting'.
@@ -789,6 +796,7 @@ class VoiceEngine {
 
   /** User intent: leave voice (also stops a pending rejoin). */
   async leave(sound = true): Promise<void> {
+    this.clearRemoved();
     this.rejoinGen++;
     // A stopped rejoin loop only clears this when it is still the current one: a user intent
     // must forget it at once, or a later VOICE_MOVED would pull the user back into voice.
@@ -958,8 +966,21 @@ class VoiceEngine {
         if (this.room !== room) return;
         log.info('voice disconnected, reason', reason ?? 'none');
         if (reason === DisconnectReason.PARTICIPANT_REMOVED) {
+          // A moderator, or the user joined voice on another device: then VOICE_DISCONNECTED
+          // (sent before the removal) decides the toast and keeps a call going — wait for it.
           const ws = useVoice.getState().workspaceId;
-          toast.info(ws && useWorkspaces.getState().byId[ws]?.ws.suspension ? t('suspended.kicked') : t('mediaErr.voice.kicked'));
+          const text = ws && useWorkspaces.getState().byId[ws]?.ws.suspension ? t('suspended.kicked') : t('mediaErr.voice.kicked');
+          this.clearRemoved();
+          this.removed = {
+            roomId: this.roomId,
+            timer: window.setTimeout(() => {
+              this.removed = null;
+              if (this.room !== room) return; // a newer join / leave took over meanwhile
+              toast.info(text);
+              void this.leave();
+            }, REMOVED_GRACE_MS),
+          };
+          return;
         }
         else if (reason === DisconnectReason.DUPLICATE_IDENTITY) toast.info(t('mediaErr.voice.duplicate'));
         else if (reason === DisconnectReason.ROOM_DELETED || reason === DisconnectReason.ROOM_CLOSED) toast.info(t('mediaErr.voice.closed'));
@@ -1841,6 +1862,42 @@ class VoiceEngine {
   }
 
   // ------------------------------------------------------------ mute / deafen
+
+  /**
+   * The room this device was taken out of for another device of the user (VOICE_DISCONNECTED),
+   * until the next join: services/call.ts lets go of a call there without hanging it up.
+   */
+  takenOverRoom: string | null = null;
+
+  /** LiveKit removed this device; the moderator toast and leave wait REMOVED_GRACE_MS. */
+  private removed: { roomId: string | null; timer: number } | null = null;
+
+  private clearRemoved(): void {
+    if (this.removed) window.clearTimeout(this.removed.timer);
+    this.removed = null;
+  }
+
+  /**
+   * Gateway VOICE_DISCONNECTED (docs/05 «Несколько устройств»): the server took this device out
+   * of voice — the user joined from another device. Out of voice at once, without a reconnect
+   * attempt (a rejoin would take the other device out in turn), the island back to idle, a toast
+   * says why. Other devices of the user ignore it (session_id). Returns true when acted upon.
+   */
+  onServerDisconnect(ev: Pick<VoiceDisconnected, 'roomId' | 'sessionId' | 'reason'>): boolean {
+    const mySession = useSession.getState().sessionId;
+    if (!mySession || ev.sessionId !== mySession) return false;
+    const v = useVoice.getState();
+    const removedHere = this.removed !== null && this.removed.roomId === ev.roomId;
+    // Connected, connecting, reconnecting (the rejoin loop) or just removed by LiveKit there.
+    const here = removedHere || this.roomId === ev.roomId || v.roomId === ev.roomId || v.joining?.roomId === ev.roomId || this.rejoinRoomId === ev.roomId;
+    if (!here) return false; // already elsewhere by my own newer intent
+    this.clearRemoved();
+    log.info('voice: taken out by the server, the user joined from another device');
+    this.takenOverRoom = ev.roomId;
+    if (ev.reason === VoiceDisconnectReason.OTHER_DEVICE) toast.info(t('mediaErr.voice.otherDevice'));
+    void this.leave();
+    return true;
+  }
 
   /**
    * Gateway VOICE_MOVED for this user (ADR-0019). With a token (open-source LiveKit, app-level

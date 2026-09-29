@@ -258,6 +258,11 @@ func (s *Service) Reconcile(ctx context.Context) error {
 					continue
 				}
 				if !hasState(states, sid, ref.rid) {
+					if s.superseded(ctx, wid, ref.rid, sid) {
+						// Taken out for another device of the user (devices.go): not back in.
+						s.removeIdentities(ctx, voice.RoomName(wid, ref.rid), []string{p.Identity})
+						continue
+					}
 					muted := micMuted(&p)
 					rid := ref.rid
 					fresh := start.Add(-joinGrace).UnixMilli()

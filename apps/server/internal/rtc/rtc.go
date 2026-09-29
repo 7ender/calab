@@ -66,6 +66,8 @@ type Service struct {
 	// Calls gates the voice session of a DM (one-to-one calls, ADR-0034, dm.go); nil = no
 	// calls: a DM cannot be joined.
 	Calls CallGate
+	// sessionsOf lists a user's device sessions (tests; nil = the sessions table, devices.go).
+	sessionsOf func(ctx context.Context, uid uuid.UUID) ([]uuid.UUID, error)
 }
 
 // SetSFUMove overrides the detected move mode — tests, or ops after a LiveKit upgrade that
@@ -183,7 +185,7 @@ func (s *Service) displayName(ctx context.Context, wsID, userID uuid.UUID) strin
 // connects; participant_joined clears pending, a device that does not connect within
 // connectConfirm is removed again. The user_limit check (pending devices count) and the
 // write happen under the workspace voice lock. A repeated /join of a device already recorded
-// in the room changes nothing.
+// in the room changes nothing. The user's other devices leave voice (joinExclusive, devices.go).
 func (s *Service) join(w http.ResponseWriter, r *http.Request) error {
 	roomID, err := httpx.PathUUID(r, "id", "room")
 	if err != nil {
@@ -229,8 +231,14 @@ func (s *Service) join(w http.ResponseWriter, r *http.Request) error {
 	if err != nil {
 		return err
 	}
-	pending, joinedAt, err := s.recordPending(r.Context(), room, id.UserID, id.SessionID, adm)
-	if err != nil {
+	var (
+		pending  bool
+		joinedAt int64
+	)
+	if err := s.joinExclusive(r.Context(), id.UserID, id.SessionID, func() (err error) {
+		pending, joinedAt, err = s.recordPending(r.Context(), room, id.UserID, id.SessionID, adm)
+		return err
+	}); err != nil {
 		return err
 	}
 	if pending {

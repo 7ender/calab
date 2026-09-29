@@ -12,6 +12,7 @@ import {
   RoomRecordingState,
   RoomType,
   ScreenSharePreset,
+  VoiceDisconnectReason,
   VoiceStreamStopReason,
   type DispatchEvent,
   type GatewayFrame,
@@ -410,6 +411,36 @@ describe('optimistic voice join (docs/05)', () => {
     await pendingSeen;
     await gw.next(stateOf(false)); // «participant_joined»
     expect((await join()).pending ?? false).toBe(false);
+    gw.ws.close(1000);
+    server.reset('data');
+  });
+});
+
+describe('one device in voice (docs/05 «Несколько устройств»)', () => {
+  it('a /join from a second session sends VOICE_DISCONNECTED{OTHER_DEVICE} for the first one', async () => {
+    // Anna has a desktop and a web session in the fixtures.
+    const loginAs = async (web: boolean): Promise<{ accessToken: string; sessionId: string }> => {
+      const res = await fetch(`${server.url}/api/auth/login`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', ...(web ? { 'X-Client': 'web' } : {}) },
+        body: JSON.stringify({ email: 'anna@calaba.test', password: 'password123', deviceName: 'vitest' }),
+      });
+      return ((await res.json()) as { tokens: { accessToken: string; sessionId: string } }).tokens;
+    };
+    const a = await loginAs(false);
+    const b = await loginAs(true);
+    expect(b.sessionId).not.toBe(a.sessionId);
+    const gw = await openGateway();
+    await gw.next((f) => f.op === GatewayOpcode.HELLO);
+    gw.send({ op: GatewayOpcode.IDENTIFY, payload: { case: 'identify', value: { token: a.accessToken } } });
+    await gw.next((f) => dispatchOf(f)?.event.case === 'ready');
+    const join = (room: string, token: string): Promise<Response> => fetch(`${server.url}/api/rooms/${room}/join`, { method: 'POST', headers: { Authorization: `Bearer ${token}` } });
+    expect((await join(IDS.rooms.call, a.accessToken)).status).toBe(200);
+    expect((await join(IDS.rooms.meeting, b.accessToken)).status).toBe(200);
+    const ev = dispatchOf(await gw.next((f) => dispatchOf(f)?.event.case === 'voiceDisconnected'))?.event;
+    if (ev?.case !== 'voiceDisconnected') throw new Error('expected VOICE_DISCONNECTED');
+    expect(ev.value).toMatchObject({ workspaceId: IDS.workspaces.main, roomId: IDS.rooms.call, sessionId: a.sessionId, reason: VoiceDisconnectReason.OTHER_DEVICE });
+    expect(server.state.voiceStates.get(IDS.users.anna)?.roomId).toBe(IDS.rooms.meeting);
     gw.ws.close(1000);
     server.reset('data');
   });
