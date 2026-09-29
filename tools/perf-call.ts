@@ -36,6 +36,10 @@
  * is the same on every run; `screen` shares the whole main display as it is. A viewer watches the
  * top layer (`--viewer` is implied). Needs Screen Recording for the terminal that runs it (TCC
  * attributes a child Electron to it). Capture / encoder rates are printed before and after the run.
+ * Knobs: `--no-viewer` (encoder paused by dynacast), `--hide` (app window hidden), `--fps N`
+ * (frame rate lowered after publishing), `--overlay` (annotation overlay open), `--content-size WxH`,
+ * `--window-name <regex>` (share another window). It opens a visible window: not on a machine
+ * someone is using (docs/14 «Стрим экрана: захват»).
  *
  * `--recording`: «Созвон» is being recorded (ROOM_RECORDING, Борис 12:34 ago) — the REC dot on the
  * card, the «Запись» pill in the island (docs/09 #64). A bench also samples WindowServer: the
@@ -464,9 +468,6 @@ async function main(): Promise<void> {
       }
     }
     if (BENCH === 'F') {
-      page.on('console', (m) => {
-        if (/h264|stream|capture/i.test(m.text())) process.stdout.write(`console: ${m.text().slice(0, 300)}\n`);
-      });
       // The content: a Chromium window of its own (not the app's processes), then my stream of it.
       if (SOURCE === 'window' && !WINDOW_NAME) content = await openContent(CONTENT === 'moving');
       await page.getByRole('button', { name: 'Показать экран' }).first().click();
@@ -654,20 +655,6 @@ async function main(): Promise<void> {
           ),
         );
         process.stdout.write(`track: ${JSON.stringify(tracks)}\n`);
-        if (process.env['DBG_ALIGN']) {
-          const r = await page.evaluate(async () => {
-            const t = ((window as unknown as { __pcs: RTCPeerConnection[] }).__pcs ?? []).flatMap((pc) => pc.getSenders().map((x) => x.track)).find((x) => x?.kind === 'video');
-            if (!t) return 'no track';
-            const s = t.getSettings();
-            try {
-              await t.applyConstraints({ width: { exact: 1638 }, height: { exact: 1068 }, resizeMode: 'crop-and-scale', frameRate: { ideal: 15, max: 15 } } as MediaTrackConstraints);
-              return `ok ${JSON.stringify(s)} -> ${JSON.stringify(t.getSettings())} caps ${JSON.stringify(t.getCapabilities())}`;
-            } catch (e) {
-              return `err ${String((e as Error).name)} ${String((e as { constraint?: string }).constraint)} ${String(e)} caps ${JSON.stringify(t.getCapabilities())} constraints ${JSON.stringify(t.getConstraints())}`;
-            }
-          });
-          process.stdout.write(`align: ${r}\n`);
-        }
       }
       await page.waitForTimeout(5000);
       const b = await enc();
