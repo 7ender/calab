@@ -22,17 +22,27 @@ board_labels      id, board_id, name (1..32), color, position                   
 board_milestones  id, board_id, name (1..60), due_on (date), position             (ромбы на таймлайне, ≤ 50)
 tasks             id, board_id, number (UNIQUE (board_id, number); ключ = board.key || '-' || number),
                   title (1..200), description (markdown-lite ≤ 20000), status_id, priority (0 none|1 low|2 medium|
-                  3 high|4 urgent), assignee_id?, created_by, estimate? (1..21), start_on? (date), due_on? (date),
+                  3 high|4 urgent), created_by, estimate? (1..21), start_on? (date), due_on? (date),
                   parent_id? (подзадача, один уровень), milestone_id?, position (double, дробный порядок внутри
                   статуса), room_id → rooms (type='task', workspace_id, создаётся вместе с задачей),
-                  created_at, updated_at, completed_at?, archived_at?
+                  created_at, updated_at, started_at? (первый переход в статус типа started), completed_at?,
+                  completed_by?, archived_at?
+task_assignees    task_id, user_id, is_lead bool (ровно один ответственный, если исполнители есть), note (≤ 120,
+                  «за что отвечает»), assigned_by, assigned_at                     PK (task_id, user_id), ≤ 10
+board_views       id, board_id, name (1..40), kind ('kanban'|'list'|'timeline'), filter jsonb (TaskFilter), group_by,
+                  sort, shared bool, created_by, position, created_at              (сохранённые виды, ≤ 30 на доску)
 task_labels       task_id, label_id                                              PK
 task_relations    task_id, related_id, kind ('blocks'|'relates'|'duplicates'), created_by     -- blocks хранится
                   один раз: task blocks related; UNIQUE (task_id, related_id, kind)
 task_attachments  task_id, file_id (UNIQUE), position                              (≤ 20; в описании)
 -- комментарии = сообщения скрытой комнаты задачи (см. ниже): tasks.room_id → rooms(type='task')
-task_activity     id, task_id, actor_id, kind ('created'|'status'|'assignee'|'priority'|'labels'|'dates'|'estimate'|
-                  'parent'|'milestone'|'relation'|'title'|'archived'|'restored'), before jsonb, after jsonb, created_at
+task_activity     id, task_id, board_id, actor_id (пользователь или бот), kind ('created'|'status'|'assignees'|
+                  'priority'|'labels'|'dates'|'estimate'|'parent'|'milestone'|'relation'|'title'|'description'|
+                  'archived'|'restored'|'moved_board'), before jsonb, after jsonb, created_at
+                  -- журнал «кто, что, куда и когда» — источник будущей аналитики (владелец): пишется на каждое
+                  -- изменение, никогда не редактируется и не чистится (только вместе с доской при purge);
+                  -- индексы (board_id, created_at), (actor_id, created_at); время в статусах и cycle time
+                  -- считаются из него; экспорт `GET /boards/{id}/activity?since&until&actor&kind&format=csv`
 task_subscribers  task_id, user_id, muted bool                                   PK  -- автор, исполнитель,
                   комментаторы и упомянутые подписываются автоматически; «Отписаться» = muted
 ```
@@ -68,9 +78,10 @@ override `MANAGE_BOARD` на свою доску. UI доступа — как �
   `GET/PATCH/DELETE /boards/{id}` (DELETE = архив; `?purge=1` — окончательно, `MANAGE_BOARD`), `PUT
   /boards/{id}/position`, `GET/PUT /boards/{id}/permissions` (как у комнат), статусы/лейблы/вехи:
   `POST/PATCH/DELETE /boards/{id}/{statuses|labels|milestones}[/{sid}]` (удаление статуса требует `move_to`).
-- Задачи: `GET /boards/{id}/tasks?status&assignee&label&priority&q&archived&updated_after&cursor` (≤ 500 за
+- Задачи: `GET /boards/{id}/tasks?filter=<TaskFilter json>&archived&updated_after&cursor` (≤ 500 за
   страницу; клиент грузит доску целиком постранично, кроме архива), `POST /boards/{id}/tasks` (title,
-  description, status_id?, priority, assignee_id, label_ids, start_on, due_on, estimate, parent_id,
+  description, status_id?, priority, `assignees[] {user_id, is_lead, note}`, label_ids, start_on, due_on,
+  estimate, parent_id,
   milestone_id, `after_task_id?` для позиции, `from_message_id?` — «Создать задачу из сообщения»: описание
   получает цитату и ссылку на сообщение), `GET /tasks/{id}` (полная: лейблы, подзадачи, связи, вложения,
   подписка), `GET /t/{KEY-N}` → redirect/lookup по ключу, `PATCH /tasks/{id}` (любое поле; `status_id` +
@@ -81,7 +92,25 @@ override `MANAGE_BOARD` на свою доску. UI доступа — как �
   стикеры, файлы, поиск; лента задачи = `GET /tasks/{id}/activity?before&limit` — `TaskActivityItem { oneof:
   Message | TaskActivity }` одной лентой по времени; упоминания `@<user_id>` как в сообщениях → уведомление и
   подписка на задачу.
-- Мои задачи: `GET /me/tasks?workspace_id&scope=assigned|created|subscribed&open=1`.
+- Мои задачи: `GET /me/tasks?workspace_id&scope=assigned|lead|created|subscribed&open=1` (`assigned` — где я
+  среди исполнителей, `lead` — где я ответственный).
+- Исполнители: `PUT /tasks/{id}/assignees [{user_id, is_lead, note}]` (полный список; ровно один `is_lead`,
+  если список непуст) — всё пишется в `task_activity` с актором.
+- **Универсальный фильтр** (владелец: «фильтры разные обязательно нужны, можно как-то универсально»; скрин
+  «Add Filter» Linear): одно определение полей и операций на сервере и клиенте — `TaskFilter { repeated
+  TaskCondition conditions; bool any /* OR вместо AND */ }`, `TaskCondition { TaskField field; TaskOp op;
+  repeated string values; Timestamp from; Timestamp to; int32 number }`. Поля v1: `STATUS`, `STATUS_TYPE`,
+  `ASSIGNEE` (любой исполнитель), `LEAD`, `CREATOR`, `PRIORITY`, `ESTIMATE`, `LABEL`, `MILESTONE`, `PARENT`
+  (есть/нет/конкретный), `RELATION` (блокирует / заблокирована / есть связи), `SUBSCRIBER`, `CREATED_AT`,
+  `UPDATED_AT`, `START_ON`, `DUE_ON` (в т. ч. «просрочено», «без срока», «на этой неделе»), `HAS_ATTACHMENTS`,
+  `HAS_COMMENTS`, `TEXT` (заголовок/описание/ключ), `ARCHIVED`. Операции: `IS`, `IS_NOT`, `ANY_OF`, `NONE_OF`,
+  `EMPTY`, `NOT_EMPTY`, `BEFORE`, `AFTER`, `BETWEEN`, `GT`, `LT`, `CONTAINS`. Один и тот же объект — в `GET
+  …/tasks`, в сохранённых видах, в «Моих задачах», у ботов (SDK `tasks.search(filter)`), в экспорте CSV и в ⌘K;
+  сервер транслирует его в SQL одной функцией с юнит-тестами на каждое поле/операцию; клиент строит UI по
+  реестру полей (иконка, тип значений, доступные операции), так что новое поле — одна строка в реестре и в
+  транслятора.
+- Сохранённые виды: `GET/POST/PATCH/DELETE /boards/{id}/views` (`shared` — видят все, кто видит доску; личные —
+  только автор; `MANAGE_BOARD` правит общие), «Вид по умолчанию» доски.
 - Поиск: `q` — `tsvector` по `title`+`description` (+ trigram по ключу); в ⌘K — по всем видимым доскам.
 - **Боты — как пользователи** (владелец: «боты должны получать права на доски как юзеры: читать список
   досок, задачи, искать, записывать, менять»): бот — участник пространства с ролями, `computePermissions`
@@ -94,11 +123,11 @@ override `MANAGE_BOARD` на свою доску. UI доступа — как �
 ### 4. События gateway (`docs/05`; канал `board:<id>`, доставка тем, кто видит доску — как у комнат)
 `BOARD_CREATE = 75`, `BOARD_UPDATE = 76` (в т. ч. статусы/лейблы/вехи/архив/доступ → клиент перечитывает
 права), `BOARD_DELETE = 77`, `TASK_CREATE = 78`, `TASK_UPDATE = 79` (полная задача без ленты; `position`
-включён), `TASK_DELETE = 80` (архив/purge), `TASK_ACTIVITY = 81` (одна запись). Комментарии идут обычными
+включён, `assignees[]` с заметками), `TASK_DELETE = 80` (архив/purge), `TASK_ACTIVITY = 81` (одна запись). Комментарии идут обычными
 `MESSAGE_CREATE/UPDATE/DELETE`, реакции — `REACTION_*` по комнате задачи (подписка на `room:<task.room_id>` у
 тех, кто видит доску; клиент подписан на комнаты открытых задач и на непрочитанность «моих» задач). READY: `WorkspaceSnapshot.boards[]` (id, name, key, emoji,
 is_private, position, `permissions` для смотрящего, счётчик открытых «моих»). Уведомления (модель
-`notifications`, `proto/testdata/notifications.json`): назначили на меня, упомянули в задаче/комментарии,
+`notifications`, `proto/testdata/notifications.json`): назначили на меня (или сделали ответственным), упомянули в задаче/комментарии,
 комментарий в задаче, на которую я подписан, изменение статуса моей задачи → пункт «Задачи» в
 настройках уведомлений (`all|mentions|none`, по умолчанию `all`), системное уведомление и бейдж на
 иконке досок в шапке (число непрочитанных по задачам, как `mention_count`).
@@ -109,8 +138,11 @@ is_private, position, `permissions` для смотрящего, счётчик 
   для `MANAGE_WORKSPACE`, перетаскивание порядка, ⋯ → настройки/доступ/архив), центр → выбранная доска;
   повторный клик или Esc — обратно к комнатам (состояние доски и фильтров сохраняется). Панель участников
   справа скрыта; вместо неё — **панель задачи** при открытой задаче.
-- **Шапка доски**: название, переключатель вида `Канбан | Список | Таймлайн` (segmented), фильтры
-  (исполнитель, лейбл, приоритет, статус, «мои», текст), группировка (для списка: статус/исполнитель/
+- **Шапка доски**: название, переключатель вида `Канбан | Список | Таймлайн` (segmented), **фильтры** —
+  кнопка «Фильтр» (`F`) открывает список полей как в Linear (поиск по полям → значения с чекбоксами);
+  применённые условия — чипы `Поле · операция · значения` (клик по операции меняет её, ×), переключатель
+  «все условия / любое», «Сохранить как вид», «Сбросить»; быстрые чипы «Мои», «Просрочено», «Без исполнителя»;
+  список сохранённых видов (общие и мои) в шапке слева от фильтра; группировка (для списка: статус/исполнитель/
   приоритет/лейбл/веха), «Показывать завершённые», «+ Задача» (`C`), ⋯ (настройки доски, архив, экспорт CSV).
   Фильтры и вид — на пользователя и доску (`localStorage`), в URL-состоянии.
 - **Колонки и лейблы настраиваются на месте** (владелец: «настраивать статусы, колонки для каждого борда
@@ -122,7 +154,12 @@ is_private, position, `permissions` для смотрящего, счётчик 
   (Todo / В работе / Готово), «Разработка» (Backlog / Todo / В работе / Ревью / Готово / Отменено), «Пустая».
 - **Канбан**: колонки = статусы (цвет и иконка типа, счётчик, «+» внизу, скрыть колонку → «Скрытые» справа как в
   Linear), карточка: ключ, иконка статуса, заголовок (2 строки), чипы лейблов, приоритет, срок (красный, если
-  просрочен), аватар исполнителя, счётчик подзадач/комментариев. **D&D**: карточку между колонками и внутри
+  просрочен), аватары исполнителей стопкой (ответственный первым, с точкой; тултип «Имя — за что отвечает»),
+  счётчик подзадач/комментариев. **Каждый элемент карточки кликабелен** (владелец, скрин Linear «Assign
+  to…»: «элементы разные кликабельные, ОЧЕНЬ удобный UX»): клик по иконке статуса → меню статусов с
+  цифрами-хоткеями, по приоритету → меню приоритетов, по аватару → «Назначить…» с поиском, счётчиками и
+  «Пригласить и назначить», по лейблу → пикер лейблов, по сроку → календарик, по ключу → копировать ссылку;
+  меню открываются на месте, без открытия задачи, и закрываются `Esc`. **D&D**: карточку между колонками и внутри
   (дробная `position`; оптимистично, откат при ошибке), участника из ⌘K/списка на карточку — назначить,
   лейбл на карточку; клавиши: `C` — новая, `E` — правка, `S` — статус, `A` — исполнитель, `P` — приоритет,
   `L` — лейбл, `D` — срок, `Delete` — архив, `⌘↩` — сохранить, `↑↓` — по карточкам. Контекстное меню
@@ -139,8 +176,10 @@ is_private, position, `permissions` для смотрящего, счётчик 
 - **Панель задачи** (справа, ширина как панель участников × 2, `⌘\` разворачивает на весь центр): заголовок
   (inline), ключ + «Копировать ссылку», описание (markdown-lite, тот же редактор, что в чате, с вложениями и
   превью), подзадачи (список с чекбоксами + «Добавить»), связи («Блокирует / Заблокирована / Связана» +
-  пикер задач), справа свойства: статус, приоритет, исполнитель, лейблы, даты (начало/срок), оценка, веха,
-  родитель; **лента активности**: комментарии и изменения одной лентой (как в Linear), комментарии — тот же
+  пикер задач), справа свойства: статус, приоритет, **исполнители** (владелец: «на задачу можно назначить
+  несколько людей и комменты, кто за что отвечает») — список с аватаром, переключателем «Ответственный»
+  (ровно один) и полем заметки «за что отвечает» (inline, ≤ 120), «+ Добавить» с пикером участников (и ботов),
+  перетаскивание участника из ⌘K/списка добавляет; лейблы, даты (начало/срок), оценка, веха, родитель; **лента активности**: комментарии и изменения одной лентой (как в Linear), комментарии — тот же
   `ChatPane`/композер, что в чате (вложения, реакции, стикеры, голосовые, ответы, правка, `@`-упоминания,
   `⌘↩`); «Подписаться/Отписаться»; ⋯ → архив, дублировать, переместить
   на другую доску (`MANAGE_BOARD` на обеих).
@@ -165,13 +204,24 @@ is_private, position, `permissions` для смотрящего, счётчик 
 (`plans.Limits.max_boards`; лендинг и docs/16 — строка «Доски задач»).
 
 ## Последствия
-- Миграция 00046 (таблицы §1, индексы: `tasks(board_id, status_id, position)`, `tasks(assignee_id)`
-  WHERE archived_at IS NULL, `task_comments(task_id, created_at)`, `tasks` tsvector GIN), `boards.proto`,
+- Миграция 00046 (таблицы §1, индексы: `tasks(board_id, status_id, position)`, `task_assignees(user_id)`, `task_comments(task_id, created_at)`, `tasks` tsvector GIN), `boards.proto`,
   биты в `permissions.proto` (+ Go `perm`, TS `computePermissions`, тест-векторы), `gateway.proto` 75–81,
   `WorkspaceSnapshot.boards`, `notifications` — тип «Задачи», сервер `internal/boards` (+ метёлка
   автоархива, поиск, unfurl своих ссылок, «задача из сообщения»), клиент `features/boards/*`, docs/04, 05,
   08 «Доски», 16, 19, 20 (тест-матрица), TESTING.md «Доски задач» K.1–K.20, docs/09 #136, лендинг.
 - Второе (security) ревью: биты прав, override досок, видимость задач в поиске/уведомлениях/unfurl/ботах,
   `from_message_id` (видит ли автор сообщение), вложения (квота, доступ к файлам по правам доски).
-- Не в v1: циклы/спринты, несколько досок у задачи, кастомные поля, автоматизации, импорт из Linear/Jira,
+- **Хоткеи** (владелец: «hotkeys важная тема»; как в Linear): единый реестр `features/boards/hotkeys.ts` с
+  экраном «Настройки → Клавиши» (список, конфликты); в режиме досок: `C` новая задача, `F` фильтр, `V`
+  переключить вид, `1/2/3` канбан/список/таймлайн, `↑↓←→` по карточкам и колонкам, `Enter`/`Space` открыть,
+  `Esc` закрыть панель/меню, `S` статус, `A` исполнитель, `P` приоритет, `L` лейбл, `D` срок, `E` оценка, `M`
+  веха, `X` выделить (мультивыбор), `⇧↑/↓` расширить выделение, `⌘⇧,`/`⌘⇧.` перенести карточку влево/вправо
+  по статусам, `⌘⇧↑/↓` вверх/вниз, `⌘C`/`⌘⇧C` копировать ключ/ссылку, `⌘\` развернуть панель, `⌘K`
+  команды с поиском задач, `?` подсказка клавиш; в меню статусов/приоритетов — цифры как в Linear. Все
+  меню и пикеры навигируются клавиатурой (поиск по вводу, `Enter` выбирает, `Tab` — следующее свойство).
+- **Аналитика — позже, данные копим сейчас** (владелец: «кто что куда передвинул хранить, кто ответственный,
+  чтобы трекать, какие задачи кто выполняет — потом аналитика будет нужна»): `task_activity` полный и
+  неизменяемый, `started_at/completed_at/completed_by`, исполнители с ответственным; первый экран аналитики
+  (по людям: сделано/в работе/просрочено, время в статусах; по доске: throughput) — отдельная задача после v1.
+- Не в v1: аналитика (экран), циклы/спринты, несколько досок у задачи, кастомные поля, автоматизации, импорт из Linear/Jira,
   шаблоны задач, повторяющиеся задачи, email-уведомления.
