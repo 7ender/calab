@@ -63,6 +63,13 @@ export default defineConfig<VisualOptions>({
     { name: 'resume-voice', testMatch: /resume-voice\.spec\.ts/ },
     // Deafen holds for late voices (docs/09 #70): behaviour only, web build + dev LiveKit.
     { name: 'deafen', testMatch: /deafen\.spec\.ts/ },
+    // Calendar (ADR-0038, docs/20 (c)): create, drag, RSVP, reminders, zones, deep link — behaviour
+    // only, the web build in Chromium in the Moscow zone.
+    {
+      name: 'calendar',
+      testMatch: /calendar-[a-z-]+\.spec\.ts/,
+      use: { browserName: 'chromium', timezoneId: 'Europe/Moscow', colorScheme: 'dark', viewport: { width: 1280, height: 800 } },
+    },
     // Focus walk and the web client's own screens (they start their own mock / app). Locally only
     // web.spec.ts, where everything but the dark-960 join card is skipped (see above).
     { name: 'misc', testMatch: ALL_CONFIGS ? /(focus|web)\.spec\.ts/ : /web\.spec\.ts/ },
