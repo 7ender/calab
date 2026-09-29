@@ -19,7 +19,8 @@
  *   npx tsx tools/perf-call.ts --seconds 0 --no-emulate --no-stats --recording --bench C --bench-seconds 90 --name rec-after
  *
  * `--calendar`: the day view (ADR-0038) open during the call (members column beside it); run ≥ 70 s so
- * the «now» line's minute tick falls inside the window.
+ * the «now» line's minute tick falls inside the window. `--findtime`: «Подобрать время» (ADR-0041)
+ * with Борис and Вера instead — BusyColumn / FreeOverlay must stay out of the voice / presence commits.
  *
  * `--dm-call`: a one-to-one call instead (ADR-0034): Борис calls, I accept in his DM (open, with the
  * «Звонок · 00:42» header timer and the island); the same live events, typing and the voice state
@@ -91,7 +92,9 @@ const POPOVER = argv.includes('--popover');
 const RECORDING = argv.includes('--recording');
 const DM_CALL = argv.includes('--dm-call');
 /** `--calendar`: in the call, the day view (ADR-0038) is open instead of «общий» — its «now» line ticks once a minute. */
-const CALENDAR = argv.includes('--calendar');
+/** `--findtime`: «Подобрать время» (ADR-0041) open instead, with Борис and Вера: the busy columns must not re-render on voice / presence. */
+const FINDTIME = argv.includes('--findtime');
+const CALENDAR = argv.includes('--calendar') || FINDTIME;
 /** `--viewer` (K): a second participant watches my camera at full size, so the encoder runs (dynacast). */
 const VIEWER = argv.includes('--viewer') || BENCH === 'F';
 /** F: what the stream shows — a still code page or one scrolling 30×/s. */
@@ -456,7 +459,8 @@ async function main(): Promise<void> {
     }
     if (CALENDAR) {
       // Today's meetings (one past, one ahead, one overlapping it) and the day view with the members column.
-      const now = Date.now();
+      // Meetings of today even late in the evening (the last one ends by 23:00).
+      const now = Math.min(Date.now(), new Date().setHours(21, 0, 0, 0));
       const W = IDS.workspaces.main;
       mock.addEvent({ workspaceId: W, title: 'Стендап', startMs: now - 90 * 60_000, endMs: now - 60 * 60_000, attendees: [{ userId: IDS.users.boris }] });
       mock.addEvent({ workspaceId: W, title: 'Планёрка', startMs: now + 30 * 60_000, endMs: now + 90 * 60_000, roomId: IDS.rooms.meeting, attendees: [{ userId: IDS.users.boris }, { userId: IDS.users.vera }] });
@@ -467,6 +471,16 @@ async function main(): Promise<void> {
       await page.locator(`[data-cal-day="${day}"]`).click();
       await page.getByTestId('now-line').waitFor({ timeout: 15_000 });
       await page.getByTestId('event-block').filter({ hasText: 'Ревью' }).waitFor({ timeout: 15_000 });
+      if (FINDTIME) {
+        await page.getByTestId('day-find').click();
+        await page.getByTestId('find-people-add').click();
+        const picker = page.getByTestId('find-people-picker');
+        await picker.getByRole('option', { name: /Борис/ }).click();
+        await picker.getByRole('option', { name: /Вера/ }).click();
+        await page.keyboard.press('Escape');
+        await page.getByTestId('busy-column').nth(2).waitFor({ timeout: 15_000 });
+        await page.getByTestId('find-slot').first().waitFor({ timeout: 15_000 });
+      }
     }
     await page.getByRole('button', { name: /^Качество связи/ }).first().waitFor({ timeout: 15_000 });
     const membersOpen = await page.getByRole('complementary').filter({ hasText: /В сети|Участники/ }).count();
