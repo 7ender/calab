@@ -88,6 +88,7 @@ export function MemberPicker({
   width?: number;
   align?: 'start' | 'center' | 'end';
   side?: 'top' | 'bottom' | 'left' | 'right';
+  restoreFocus?: 'always' | 'keyboard';
 }): ReactNode {
   return (
     <PickerPopover<PeoplePickItem> {...rest} renderItem={(item, active) => <PeoplePickRow item={item} active={active} />}>

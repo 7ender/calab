@@ -513,7 +513,7 @@ function AvailabilityGrid({ ctl, onPick, highlight }: { ctl: FindCtl; onPick: (s
           <ColumnHead key={u} workspaceId={workspaceId} userId={u} day={day} color={personColor(i)} />
         ))}
       </div>
-      <div ref={scroller} tabIndex={0} role="region" aria-label={t('fb.gridLabel')} className="relative min-h-0 flex-1 overflow-y-auto overflow-x-hidden outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-accent">
+      <div ref={scroller} tabIndex={0} role="region" aria-label={t('fb.gridLabel')} className="relative min-h-0 flex-1 overflow-y-auto overflow-x-hidden outline-offset-[-2px]">
         <div className="relative flex" style={{ height: 24 * HOUR_PX + 16 }}>
           <HourScale />
           <div className="relative mr-2 mt-2 flex flex-1" style={{ height: 24 * HOUR_PX }}>
@@ -685,7 +685,7 @@ const FreeOverlay = memo(function FreeOverlay({ ctl, onPick, highlight }: { ctl:
             const start = Math.ceil(w.start / (15 * MIN)) * 15 * MIN;
             onPick({ start, end: start + durationMin * MIN });
           }}
-          className="pointer-events-auto absolute inset-x-0.5 cursor-copy rounded-[6px] border border-[color-mix(in_srgb,var(--color-green)_45%,transparent)] bg-[color-mix(in_srgb,var(--color-green)_12%,transparent)] outline-none hover:bg-[color-mix(in_srgb,var(--color-green)_20%,transparent)] focus-visible:ring-2 focus-visible:ring-accent"
+          className="pointer-events-auto absolute inset-x-0.5 cursor-copy rounded-[6px] border border-[color-mix(in_srgb,var(--color-green)_45%,transparent)] bg-[color-mix(in_srgb,var(--color-green)_12%,transparent)] outline-offset-[-2px] hover:bg-[color-mix(in_srgb,var(--color-green)_20%,transparent)]"
           style={{ top: y(w.start), height: Math.max(4, y(w.end) - y(w.start)) }}
         />
       ))}

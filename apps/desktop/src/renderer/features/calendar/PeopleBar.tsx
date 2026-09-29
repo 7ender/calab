@@ -73,12 +73,13 @@ export function PeopleBar({
       }}
       data-testid={testId}
     >
-      <ul aria-label={t('fb.people')} className={cx('flex min-w-0 items-center gap-2', wrap ? 'flex-wrap' : 'scrollbar-none overflow-x-auto')}>
+      {/* The row may scroll sideways: 4 px of room inside it keep a keyboard focus ring whole. */}
+      <ul aria-label={t('fb.people')} className={cx('-m-1 flex min-w-0 items-center gap-2 p-1', wrap ? 'flex-wrap' : 'scrollbar-none overflow-x-auto')}>
         {people.map((id, i) => (
           <PersonChip key={id} workspaceId={workspaceId} userId={id} color={personColor(i)} onRemove={onRemove} />
         ))}
         <li className="shrink-0">
-          <MemberPicker open={picking} onOpenChange={setPicking} groups={groups} onSelect={(it) => it.kind === 'member' && add(it.userId)} placeholder={t('picker.searchPeople')} label={t('fb.addPeople')} testId={`${testId}-picker`}>
+          <MemberPicker open={picking} onOpenChange={setPicking} restoreFocus="keyboard" groups={groups} onSelect={(it) => it.kind === 'member' && add(it.userId)} placeholder={t('picker.searchPeople')} label={t('fb.addPeople')} testId={`${testId}-picker`}>
             {/* A ghost chip: the same 28 px pill as the people, dashed. */}
             <button
               type="button"

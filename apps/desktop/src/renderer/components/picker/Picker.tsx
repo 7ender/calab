@@ -252,8 +252,15 @@ export function PickerPopover<T extends PickerItem>({
   width = 320,
   align = 'start',
   side = 'bottom',
+  restoreFocus = 'always',
   ...panel
 }: PickerPanelProps<T> & {
+  /**
+   * `keyboard`: the trigger gets the focus back only when Esc closed the picker — after a click
+   * outside it stays where the click put it (a programmatic focus after typing in the search would
+   * show the trigger's keyboard ring).
+   */
+  restoreFocus?: 'always' | 'keyboard';
   /** The trigger (Radix `asChild`). */
   children: ReactNode;
   open: boolean;
@@ -263,6 +270,7 @@ export function PickerPopover<T extends PickerItem>({
   side?: 'top' | 'bottom' | 'left' | 'right';
 }): ReactNode {
   const input = useRef<HTMLInputElement>(null);
+  const byKey = useRef(false);
   return (
     <Popover.Root open={open} onOpenChange={onOpenChange} modal={false}>
       <Popover.Trigger asChild>{children}</Popover.Trigger>
@@ -274,8 +282,15 @@ export function PickerPopover<T extends PickerItem>({
           collisionPadding={8}
           aria-label={panel.label}
           onOpenAutoFocus={(e) => {
+            byKey.current = false;
             e.preventDefault();
             if (autoFocusAllowed()) input.current?.focus();
+          }}
+          onEscapeKeyDown={() => {
+            byKey.current = true;
+          }}
+          onCloseAutoFocus={(e) => {
+            if (restoreFocus === 'keyboard' && !byKey.current) e.preventDefault();
           }}
           className="mat-popover anim-in z-[var(--z-modal-popover)] flex flex-col rounded-[var(--radius-card)] p-1.5"
           // Never past the window edge: the list gives up rows when there is less room (960×600).
