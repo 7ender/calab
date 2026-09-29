@@ -30,6 +30,10 @@ message RoomInvite {
   // after it ends.
   google.protobuf.Timestamp not_before = 15;
   string event_id = 16;
+  // Guest admission (ADR-0040): unset = as the room (Room.guest_approval); true = guests
+  // arriving by this link wait for a decision; false = they come in at once. Meeting guest
+  // links are made unset.
+  optional bool require_approval = 17;
 }
 
 // POST /api/rooms/{id}/invites (MANAGE_ROOM). Unset fields take the defaults:
@@ -42,9 +46,22 @@ message CreateRoomInviteRequest {
   optional bool allow_messages = 5;
   optional bool allow_files = 6;
   optional bool allow_stream = 7;
+  optional bool require_approval = 8; // unset = as the room (ADR-0040)
 }
 
 message CreateRoomInviteResponse {
+  RoomInvite invite = 1;
+}
+
+// PATCH /api/rooms/{id}/invites/{invite_id} (MANAGE_ROOM): the link's approval setting
+// (ADR-0040). inherit_approval true resets it to the room's (require_approval must then be
+// unset); otherwise require_approval, when set, overrides the room for this link.
+message UpdateRoomInviteRequest {
+  optional bool require_approval = 1;
+  bool inherit_approval = 2;
+}
+
+message UpdateRoomInviteResponse {
   RoomInvite invite = 1;
 }
 
@@ -64,6 +81,9 @@ message GetRoomInviteResponse {
   // Set = the link works only from then (a meeting's guest link): join → 409
   // INVITE_NOT_YET_VALID before it.
   google.protobuf.Timestamp not_before = 7;
+  // Guests arriving by this link wait for the organizer's approval (ADR-0040): the link's
+  // require_approval, else the room's guest_approval. Members of the workspace never wait.
+  bool requires_approval = 8;
 }
 
 // POST /api/room-invites/{code}/join. With an access token: joins as the current user.
@@ -79,4 +99,61 @@ message JoinRoomInviteResponse {
   string workspace_id = 2;
   AuthTokens tokens = 3; // only when a guest account was created
   Me me = 4;             // only when a guest account was created
+  // Set = the caller waits for approval (ADR-0040, status PENDING): the room is not theirs
+  // until ROOM_ADMISSION_DECIDED (ADMITTED) arrives on their user channel.
+  RoomAdmission admission = 5;
+}
+
+// Guest admission, the «waiting room» of room links (ADR-0040).
+enum RoomAdmissionStatus {
+  ROOM_ADMISSION_STATUS_UNSPECIFIED = 0;
+  ROOM_ADMISSION_STATUS_PENDING = 1;
+  ROOM_ADMISSION_STATUS_ADMITTED = 2;
+  ROOM_ADMISSION_STATUS_DECLINED = 3;
+  // Events only: the guest withdrew the knock (DELETE /api/rooms/{id}/admissions/me).
+  ROOM_ADMISSION_STATUS_CANCELLED = 4;
+}
+
+// A guest's knock on a room. Deciders (MANAGE_ROOM in the room, or the author of the link
+// the guest came by) see pending ones in GET /api/rooms/{id}/admissions, in
+// WorkspaceSnapshot.admissions and in ROOM_ADMISSION_REQUEST; the guest sees their own in
+// Ready.pending_admissions, JoinRoomInviteResponse.admission and ROOM_ADMISSION_DECIDED.
+message RoomAdmission {
+  string room_id = 1;
+  string workspace_id = 2;
+  // The knocking user (to deciders; to the guest themselves only user.id is set).
+  User user = 3;
+  string invite_id = 4;         // the link used; empty if it is gone
+  string invite_created_by = 5; // its author, who may decide too; empty for the guest
+  RoomAdmissionStatus status = 6;
+  google.protobuf.Timestamp requested_at = 7;
+  string decided_by = 8;        // empty = nobody (no answer, cancelled) or not decided
+  google.protobuf.Timestamp decided_at = 9;
+  // DECLINED because nobody answered within 30 minutes: the guest may knock again at once.
+  // After a decline by a person a new knock is refused for 10 minutes (429, reason
+  // ADMISSION_DECLINED).
+  bool no_answer = 10;
+  // Filled for the guest (the waiting screen): the room and workspace names.
+  string room_name = 11;
+  string workspace_name = 12;
+}
+
+// GET /api/rooms/{id}/admissions: pending knocks, oldest first. MANAGE_ROOM sees all of the
+// room; the author of a link without MANAGE_ROOM sees those who came by their links.
+message ListRoomAdmissionsResponse {
+  repeated RoomAdmission admissions = 1;
+}
+
+// POST /api/rooms/{id}/admissions/{user_id} (a decider; not bots). status ADMITTED or
+// DECLINED. On admission display_name (1..40, guest accounts only) renames the guest and
+// badge_id ("" = none; from the workspace library) sets their badge. 409 CONFLICT when the
+// knock is no longer pending.
+message DecideRoomAdmissionRequest {
+  RoomAdmissionStatus status = 1;
+  optional string display_name = 2;
+  optional string badge_id = 3;
+}
+
+message DecideRoomAdmissionResponse {
+  RoomAdmission admission = 1;
 }

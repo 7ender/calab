@@ -265,6 +265,17 @@ type Room struct {
 	DmKey            *string
 	AllowRecording   bool
 	Restricted       bool
+	GuestApproval    bool
+}
+
+type RoomAdmission struct {
+	RoomID      uuid.UUID
+	UserID      uuid.UUID
+	InviteID    *uuid.UUID
+	Status      string
+	RequestedAt time.Time
+	DecidedBy   *uuid.UUID
+	DecidedAt   *time.Time
 }
 
 type RoomCategory struct {
@@ -276,19 +287,20 @@ type RoomCategory struct {
 }
 
 type RoomInvite struct {
-	ID          uuid.UUID
-	RoomID      uuid.UUID
-	Code        string
-	CreatedBy   uuid.UUID
-	ExpiresAt   *time.Time
-	MaxUses     int32
-	Uses        int32
-	AllowGuests bool
-	AllowBits   int64
-	RevokedAt   *time.Time
-	CreatedAt   time.Time
-	NotBefore   *time.Time
-	EventID     *uuid.UUID
+	ID              uuid.UUID
+	RoomID          uuid.UUID
+	Code            string
+	CreatedBy       uuid.UUID
+	ExpiresAt       *time.Time
+	MaxUses         int32
+	Uses            int32
+	AllowGuests     bool
+	AllowBits       int64
+	RevokedAt       *time.Time
+	CreatedAt       time.Time
+	NotBefore       *time.Time
+	EventID         *uuid.UUID
+	RequireApproval *bool
 }
 
 type RoomNotificationSetting struct {

@@ -46,8 +46,14 @@ ON CONFLICT (room_id, target_type, target_id) DO UPDATE
 RETURNING *;
 
 -- name: CreateRoomInvite :one
-INSERT INTO room_invites (room_id, code, created_by, expires_at, max_uses, allow_guests, allow_bits)
-VALUES ($1, $2, $3, $4, $5, $6, $7)
+INSERT INTO room_invites (room_id, code, created_by, expires_at, max_uses, allow_guests, allow_bits, require_approval)
+VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+RETURNING *;
+
+-- name: SetRoomInviteApproval :one
+-- require_approval NULL = as the room (ADR-0040).
+UPDATE room_invites SET require_approval = sqlc.narg('require_approval')
+WHERE id = sqlc.arg('id') AND room_id = sqlc.arg('room_id') AND revoked_at IS NULL
 RETURNING *;
 
 -- name: ListRoomInvites :many

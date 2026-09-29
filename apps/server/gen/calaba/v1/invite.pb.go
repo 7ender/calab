@@ -22,6 +22,63 @@ const (
 	_ = protoimpl.EnforceVersion(protoimpl.MaxVersion - 20)
 )
 
+// Guest admission, the «waiting room» of room links (ADR-0040).
+type RoomAdmissionStatus int32
+
+const (
+	RoomAdmissionStatus_ROOM_ADMISSION_STATUS_UNSPECIFIED RoomAdmissionStatus = 0
+	RoomAdmissionStatus_ROOM_ADMISSION_STATUS_PENDING     RoomAdmissionStatus = 1
+	RoomAdmissionStatus_ROOM_ADMISSION_STATUS_ADMITTED    RoomAdmissionStatus = 2
+	RoomAdmissionStatus_ROOM_ADMISSION_STATUS_DECLINED    RoomAdmissionStatus = 3
+	// Events only: the guest withdrew the knock (DELETE /api/rooms/{id}/admissions/me).
+	RoomAdmissionStatus_ROOM_ADMISSION_STATUS_CANCELLED RoomAdmissionStatus = 4
+)
+
+// Enum value maps for RoomAdmissionStatus.
+var (
+	RoomAdmissionStatus_name = map[int32]string{
+		0: "ROOM_ADMISSION_STATUS_UNSPECIFIED",
+		1: "ROOM_ADMISSION_STATUS_PENDING",
+		2: "ROOM_ADMISSION_STATUS_ADMITTED",
+		3: "ROOM_ADMISSION_STATUS_DECLINED",
+		4: "ROOM_ADMISSION_STATUS_CANCELLED",
+	}
+	RoomAdmissionStatus_value = map[string]int32{
+		"ROOM_ADMISSION_STATUS_UNSPECIFIED": 0,
+		"ROOM_ADMISSION_STATUS_PENDING":     1,
+		"ROOM_ADMISSION_STATUS_ADMITTED":    2,
+		"ROOM_ADMISSION_STATUS_DECLINED":    3,
+		"ROOM_ADMISSION_STATUS_CANCELLED":   4,
+	}
+)
+
+func (x RoomAdmissionStatus) Enum() *RoomAdmissionStatus {
+	p := new(RoomAdmissionStatus)
+	*p = x
+	return p
+}
+
+func (x RoomAdmissionStatus) String() string {
+	return protoimpl.X.EnumStringOf(x.Descriptor(), protoreflect.EnumNumber(x))
+}
+
+func (RoomAdmissionStatus) Descriptor() protoreflect.EnumDescriptor {
+	return file_calaba_v1_invite_proto_enumTypes[0].Descriptor()
+}
+
+func (RoomAdmissionStatus) Type() protoreflect.EnumType {
+	return &file_calaba_v1_invite_proto_enumTypes[0]
+}
+
+func (x RoomAdmissionStatus) Number() protoreflect.EnumNumber {
+	return protoreflect.EnumNumber(x)
+}
+
+// Deprecated: Use RoomAdmissionStatus.Descriptor instead.
+func (RoomAdmissionStatus) EnumDescriptor() ([]byte, []int) {
+	return file_calaba_v1_invite_proto_rawDescGZIP(), []int{0}
+}
+
 // Room link (ADR-0016): https://<domain>/r/<code>, calaba://r/<code>. A capability for one
 // room: registered users join the workspace as `guest` (if not members) with access to this
 // room; without an account (allow_guests) a guest account is created from a nickname.
@@ -45,10 +102,14 @@ type RoomInvite struct {
 	// Meeting guest links (ADR-0038 «Дополнение»): made by the server for one external attendee
 	// of event_id, single-use, valid from not_before (15 minutes before the meeting) until 1 h
 	// after it ends.
-	NotBefore     *timestamppb.Timestamp `protobuf:"bytes,15,opt,name=not_before,json=notBefore,proto3" json:"not_before,omitempty"`
-	EventId       string                 `protobuf:"bytes,16,opt,name=event_id,json=eventId,proto3" json:"event_id,omitempty"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
+	NotBefore *timestamppb.Timestamp `protobuf:"bytes,15,opt,name=not_before,json=notBefore,proto3" json:"not_before,omitempty"`
+	EventId   string                 `protobuf:"bytes,16,opt,name=event_id,json=eventId,proto3" json:"event_id,omitempty"`
+	// Guest admission (ADR-0040): unset = as the room (Room.guest_approval); true = guests
+	// arriving by this link wait for a decision; false = they come in at once. Meeting guest
+	// links are made unset.
+	RequireApproval *bool `protobuf:"varint,17,opt,name=require_approval,json=requireApproval,proto3,oneof" json:"require_approval,omitempty"`
+	unknownFields   protoimpl.UnknownFields
+	sizeCache       protoimpl.SizeCache
 }
 
 func (x *RoomInvite) Reset() {
@@ -193,6 +254,13 @@ func (x *RoomInvite) GetEventId() string {
 	return ""
 }
 
+func (x *RoomInvite) GetRequireApproval() bool {
+	if x != nil && x.RequireApproval != nil {
+		return *x.RequireApproval
+	}
+	return false
+}
+
 // POST /api/rooms/{id}/invites (MANAGE_ROOM). Unset fields take the defaults:
 // 7 days, unlimited uses, allow_guests true, speak true, messages true, files false, stream false.
 type CreateRoomInviteRequest struct {
@@ -204,6 +272,7 @@ type CreateRoomInviteRequest struct {
 	AllowMessages    *bool                  `protobuf:"varint,5,opt,name=allow_messages,json=allowMessages,proto3,oneof" json:"allow_messages,omitempty"`
 	AllowFiles       *bool                  `protobuf:"varint,6,opt,name=allow_files,json=allowFiles,proto3,oneof" json:"allow_files,omitempty"`
 	AllowStream      *bool                  `protobuf:"varint,7,opt,name=allow_stream,json=allowStream,proto3,oneof" json:"allow_stream,omitempty"`
+	RequireApproval  *bool                  `protobuf:"varint,8,opt,name=require_approval,json=requireApproval,proto3,oneof" json:"require_approval,omitempty"` // unset = as the room (ADR-0040)
 	unknownFields    protoimpl.UnknownFields
 	sizeCache        protoimpl.SizeCache
 }
@@ -287,6 +356,13 @@ func (x *CreateRoomInviteRequest) GetAllowStream() bool {
 	return false
 }
 
+func (x *CreateRoomInviteRequest) GetRequireApproval() bool {
+	if x != nil && x.RequireApproval != nil {
+		return *x.RequireApproval
+	}
+	return false
+}
+
 type CreateRoomInviteResponse struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	Invite        *RoomInvite            `protobuf:"bytes,1,opt,name=invite,proto3" json:"invite,omitempty"`
@@ -331,6 +407,105 @@ func (x *CreateRoomInviteResponse) GetInvite() *RoomInvite {
 	return nil
 }
 
+// PATCH /api/rooms/{id}/invites/{invite_id} (MANAGE_ROOM): the link's approval setting
+// (ADR-0040). inherit_approval true resets it to the room's (require_approval must then be
+// unset); otherwise require_approval, when set, overrides the room for this link.
+type UpdateRoomInviteRequest struct {
+	state           protoimpl.MessageState `protogen:"open.v1"`
+	RequireApproval *bool                  `protobuf:"varint,1,opt,name=require_approval,json=requireApproval,proto3,oneof" json:"require_approval,omitempty"`
+	InheritApproval bool                   `protobuf:"varint,2,opt,name=inherit_approval,json=inheritApproval,proto3" json:"inherit_approval,omitempty"`
+	unknownFields   protoimpl.UnknownFields
+	sizeCache       protoimpl.SizeCache
+}
+
+func (x *UpdateRoomInviteRequest) Reset() {
+	*x = UpdateRoomInviteRequest{}
+	mi := &file_calaba_v1_invite_proto_msgTypes[3]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *UpdateRoomInviteRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*UpdateRoomInviteRequest) ProtoMessage() {}
+
+func (x *UpdateRoomInviteRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_calaba_v1_invite_proto_msgTypes[3]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use UpdateRoomInviteRequest.ProtoReflect.Descriptor instead.
+func (*UpdateRoomInviteRequest) Descriptor() ([]byte, []int) {
+	return file_calaba_v1_invite_proto_rawDescGZIP(), []int{3}
+}
+
+func (x *UpdateRoomInviteRequest) GetRequireApproval() bool {
+	if x != nil && x.RequireApproval != nil {
+		return *x.RequireApproval
+	}
+	return false
+}
+
+func (x *UpdateRoomInviteRequest) GetInheritApproval() bool {
+	if x != nil {
+		return x.InheritApproval
+	}
+	return false
+}
+
+type UpdateRoomInviteResponse struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Invite        *RoomInvite            `protobuf:"bytes,1,opt,name=invite,proto3" json:"invite,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *UpdateRoomInviteResponse) Reset() {
+	*x = UpdateRoomInviteResponse{}
+	mi := &file_calaba_v1_invite_proto_msgTypes[4]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *UpdateRoomInviteResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*UpdateRoomInviteResponse) ProtoMessage() {}
+
+func (x *UpdateRoomInviteResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_calaba_v1_invite_proto_msgTypes[4]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use UpdateRoomInviteResponse.ProtoReflect.Descriptor instead.
+func (*UpdateRoomInviteResponse) Descriptor() ([]byte, []int) {
+	return file_calaba_v1_invite_proto_rawDescGZIP(), []int{4}
+}
+
+func (x *UpdateRoomInviteResponse) GetInvite() *RoomInvite {
+	if x != nil {
+		return x.Invite
+	}
+	return nil
+}
+
 // GET /api/rooms/{id}/invites (MANAGE_ROOM): active links.
 type ListRoomInvitesResponse struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
@@ -341,7 +516,7 @@ type ListRoomInvitesResponse struct {
 
 func (x *ListRoomInvitesResponse) Reset() {
 	*x = ListRoomInvitesResponse{}
-	mi := &file_calaba_v1_invite_proto_msgTypes[3]
+	mi := &file_calaba_v1_invite_proto_msgTypes[5]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -353,7 +528,7 @@ func (x *ListRoomInvitesResponse) String() string {
 func (*ListRoomInvitesResponse) ProtoMessage() {}
 
 func (x *ListRoomInvitesResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_calaba_v1_invite_proto_msgTypes[3]
+	mi := &file_calaba_v1_invite_proto_msgTypes[5]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -366,7 +541,7 @@ func (x *ListRoomInvitesResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ListRoomInvitesResponse.ProtoReflect.Descriptor instead.
 func (*ListRoomInvitesResponse) Descriptor() ([]byte, []int) {
-	return file_calaba_v1_invite_proto_rawDescGZIP(), []int{3}
+	return file_calaba_v1_invite_proto_rawDescGZIP(), []int{5}
 }
 
 func (x *ListRoomInvitesResponse) GetInvites() []*RoomInvite {
@@ -387,14 +562,17 @@ type GetRoomInviteResponse struct {
 	ExpiresAt           *timestamppb.Timestamp `protobuf:"bytes,6,opt,name=expires_at,json=expiresAt,proto3" json:"expires_at,omitempty"`
 	// Set = the link works only from then (a meeting's guest link): join → 409
 	// INVITE_NOT_YET_VALID before it.
-	NotBefore     *timestamppb.Timestamp `protobuf:"bytes,7,opt,name=not_before,json=notBefore,proto3" json:"not_before,omitempty"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
+	NotBefore *timestamppb.Timestamp `protobuf:"bytes,7,opt,name=not_before,json=notBefore,proto3" json:"not_before,omitempty"`
+	// Guests arriving by this link wait for the organizer's approval (ADR-0040): the link's
+	// require_approval, else the room's guest_approval. Members of the workspace never wait.
+	RequiresApproval bool `protobuf:"varint,8,opt,name=requires_approval,json=requiresApproval,proto3" json:"requires_approval,omitempty"`
+	unknownFields    protoimpl.UnknownFields
+	sizeCache        protoimpl.SizeCache
 }
 
 func (x *GetRoomInviteResponse) Reset() {
 	*x = GetRoomInviteResponse{}
-	mi := &file_calaba_v1_invite_proto_msgTypes[4]
+	mi := &file_calaba_v1_invite_proto_msgTypes[6]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -406,7 +584,7 @@ func (x *GetRoomInviteResponse) String() string {
 func (*GetRoomInviteResponse) ProtoMessage() {}
 
 func (x *GetRoomInviteResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_calaba_v1_invite_proto_msgTypes[4]
+	mi := &file_calaba_v1_invite_proto_msgTypes[6]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -419,7 +597,7 @@ func (x *GetRoomInviteResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use GetRoomInviteResponse.ProtoReflect.Descriptor instead.
 func (*GetRoomInviteResponse) Descriptor() ([]byte, []int) {
-	return file_calaba_v1_invite_proto_rawDescGZIP(), []int{4}
+	return file_calaba_v1_invite_proto_rawDescGZIP(), []int{6}
 }
 
 func (x *GetRoomInviteResponse) GetRoomName() string {
@@ -471,6 +649,13 @@ func (x *GetRoomInviteResponse) GetNotBefore() *timestamppb.Timestamp {
 	return nil
 }
 
+func (x *GetRoomInviteResponse) GetRequiresApproval() bool {
+	if x != nil {
+		return x.RequiresApproval
+	}
+	return false
+}
+
 // POST /api/room-invites/{code}/join. With an access token: joins as the current user.
 // Without one (allow_guests): creates a guest account named `nickname` and signs it in
 // (web clients with X-Client: web get the refresh token as a cookie, as on login).
@@ -484,7 +669,7 @@ type JoinRoomInviteRequest struct {
 
 func (x *JoinRoomInviteRequest) Reset() {
 	*x = JoinRoomInviteRequest{}
-	mi := &file_calaba_v1_invite_proto_msgTypes[5]
+	mi := &file_calaba_v1_invite_proto_msgTypes[7]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -496,7 +681,7 @@ func (x *JoinRoomInviteRequest) String() string {
 func (*JoinRoomInviteRequest) ProtoMessage() {}
 
 func (x *JoinRoomInviteRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_calaba_v1_invite_proto_msgTypes[5]
+	mi := &file_calaba_v1_invite_proto_msgTypes[7]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -509,7 +694,7 @@ func (x *JoinRoomInviteRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use JoinRoomInviteRequest.ProtoReflect.Descriptor instead.
 func (*JoinRoomInviteRequest) Descriptor() ([]byte, []int) {
-	return file_calaba_v1_invite_proto_rawDescGZIP(), []int{5}
+	return file_calaba_v1_invite_proto_rawDescGZIP(), []int{7}
 }
 
 func (x *JoinRoomInviteRequest) GetNickname() string {
@@ -527,18 +712,21 @@ func (x *JoinRoomInviteRequest) GetDeviceName() string {
 }
 
 type JoinRoomInviteResponse struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	RoomId        string                 `protobuf:"bytes,1,opt,name=room_id,json=roomId,proto3" json:"room_id,omitempty"`
-	WorkspaceId   string                 `protobuf:"bytes,2,opt,name=workspace_id,json=workspaceId,proto3" json:"workspace_id,omitempty"`
-	Tokens        *AuthTokens            `protobuf:"bytes,3,opt,name=tokens,proto3" json:"tokens,omitempty"` // only when a guest account was created
-	Me            *Me                    `protobuf:"bytes,4,opt,name=me,proto3" json:"me,omitempty"`         // only when a guest account was created
+	state       protoimpl.MessageState `protogen:"open.v1"`
+	RoomId      string                 `protobuf:"bytes,1,opt,name=room_id,json=roomId,proto3" json:"room_id,omitempty"`
+	WorkspaceId string                 `protobuf:"bytes,2,opt,name=workspace_id,json=workspaceId,proto3" json:"workspace_id,omitempty"`
+	Tokens      *AuthTokens            `protobuf:"bytes,3,opt,name=tokens,proto3" json:"tokens,omitempty"` // only when a guest account was created
+	Me          *Me                    `protobuf:"bytes,4,opt,name=me,proto3" json:"me,omitempty"`         // only when a guest account was created
+	// Set = the caller waits for approval (ADR-0040, status PENDING): the room is not theirs
+	// until ROOM_ADMISSION_DECIDED (ADMITTED) arrives on their user channel.
+	Admission     *RoomAdmission `protobuf:"bytes,5,opt,name=admission,proto3" json:"admission,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
 
 func (x *JoinRoomInviteResponse) Reset() {
 	*x = JoinRoomInviteResponse{}
-	mi := &file_calaba_v1_invite_proto_msgTypes[6]
+	mi := &file_calaba_v1_invite_proto_msgTypes[8]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -550,7 +738,7 @@ func (x *JoinRoomInviteResponse) String() string {
 func (*JoinRoomInviteResponse) ProtoMessage() {}
 
 func (x *JoinRoomInviteResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_calaba_v1_invite_proto_msgTypes[6]
+	mi := &file_calaba_v1_invite_proto_msgTypes[8]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -563,7 +751,7 @@ func (x *JoinRoomInviteResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use JoinRoomInviteResponse.ProtoReflect.Descriptor instead.
 func (*JoinRoomInviteResponse) Descriptor() ([]byte, []int) {
-	return file_calaba_v1_invite_proto_rawDescGZIP(), []int{6}
+	return file_calaba_v1_invite_proto_rawDescGZIP(), []int{8}
 }
 
 func (x *JoinRoomInviteResponse) GetRoomId() string {
@@ -594,11 +782,313 @@ func (x *JoinRoomInviteResponse) GetMe() *Me {
 	return nil
 }
 
+func (x *JoinRoomInviteResponse) GetAdmission() *RoomAdmission {
+	if x != nil {
+		return x.Admission
+	}
+	return nil
+}
+
+// A guest's knock on a room. Deciders (MANAGE_ROOM in the room, or the author of the link
+// the guest came by) see pending ones in GET /api/rooms/{id}/admissions, in
+// WorkspaceSnapshot.admissions and in ROOM_ADMISSION_REQUEST; the guest sees their own in
+// Ready.pending_admissions, JoinRoomInviteResponse.admission and ROOM_ADMISSION_DECIDED.
+type RoomAdmission struct {
+	state       protoimpl.MessageState `protogen:"open.v1"`
+	RoomId      string                 `protobuf:"bytes,1,opt,name=room_id,json=roomId,proto3" json:"room_id,omitempty"`
+	WorkspaceId string                 `protobuf:"bytes,2,opt,name=workspace_id,json=workspaceId,proto3" json:"workspace_id,omitempty"`
+	// The knocking user (to deciders; to the guest themselves only user.id is set).
+	User            *User                  `protobuf:"bytes,3,opt,name=user,proto3" json:"user,omitempty"`
+	InviteId        string                 `protobuf:"bytes,4,opt,name=invite_id,json=inviteId,proto3" json:"invite_id,omitempty"`                        // the link used; empty if it is gone
+	InviteCreatedBy string                 `protobuf:"bytes,5,opt,name=invite_created_by,json=inviteCreatedBy,proto3" json:"invite_created_by,omitempty"` // its author, who may decide too; empty for the guest
+	Status          RoomAdmissionStatus    `protobuf:"varint,6,opt,name=status,proto3,enum=calaba.v1.RoomAdmissionStatus" json:"status,omitempty"`
+	RequestedAt     *timestamppb.Timestamp `protobuf:"bytes,7,opt,name=requested_at,json=requestedAt,proto3" json:"requested_at,omitempty"`
+	DecidedBy       string                 `protobuf:"bytes,8,opt,name=decided_by,json=decidedBy,proto3" json:"decided_by,omitempty"` // empty = nobody (no answer, cancelled) or not decided
+	DecidedAt       *timestamppb.Timestamp `protobuf:"bytes,9,opt,name=decided_at,json=decidedAt,proto3" json:"decided_at,omitempty"`
+	// DECLINED because nobody answered within 30 minutes: the guest may knock again at once.
+	// After a decline by a person a new knock is refused for 10 minutes (429, reason
+	// ADMISSION_DECLINED).
+	NoAnswer bool `protobuf:"varint,10,opt,name=no_answer,json=noAnswer,proto3" json:"no_answer,omitempty"`
+	// Filled for the guest (the waiting screen): the room and workspace names.
+	RoomName      string `protobuf:"bytes,11,opt,name=room_name,json=roomName,proto3" json:"room_name,omitempty"`
+	WorkspaceName string `protobuf:"bytes,12,opt,name=workspace_name,json=workspaceName,proto3" json:"workspace_name,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *RoomAdmission) Reset() {
+	*x = RoomAdmission{}
+	mi := &file_calaba_v1_invite_proto_msgTypes[9]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *RoomAdmission) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*RoomAdmission) ProtoMessage() {}
+
+func (x *RoomAdmission) ProtoReflect() protoreflect.Message {
+	mi := &file_calaba_v1_invite_proto_msgTypes[9]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use RoomAdmission.ProtoReflect.Descriptor instead.
+func (*RoomAdmission) Descriptor() ([]byte, []int) {
+	return file_calaba_v1_invite_proto_rawDescGZIP(), []int{9}
+}
+
+func (x *RoomAdmission) GetRoomId() string {
+	if x != nil {
+		return x.RoomId
+	}
+	return ""
+}
+
+func (x *RoomAdmission) GetWorkspaceId() string {
+	if x != nil {
+		return x.WorkspaceId
+	}
+	return ""
+}
+
+func (x *RoomAdmission) GetUser() *User {
+	if x != nil {
+		return x.User
+	}
+	return nil
+}
+
+func (x *RoomAdmission) GetInviteId() string {
+	if x != nil {
+		return x.InviteId
+	}
+	return ""
+}
+
+func (x *RoomAdmission) GetInviteCreatedBy() string {
+	if x != nil {
+		return x.InviteCreatedBy
+	}
+	return ""
+}
+
+func (x *RoomAdmission) GetStatus() RoomAdmissionStatus {
+	if x != nil {
+		return x.Status
+	}
+	return RoomAdmissionStatus_ROOM_ADMISSION_STATUS_UNSPECIFIED
+}
+
+func (x *RoomAdmission) GetRequestedAt() *timestamppb.Timestamp {
+	if x != nil {
+		return x.RequestedAt
+	}
+	return nil
+}
+
+func (x *RoomAdmission) GetDecidedBy() string {
+	if x != nil {
+		return x.DecidedBy
+	}
+	return ""
+}
+
+func (x *RoomAdmission) GetDecidedAt() *timestamppb.Timestamp {
+	if x != nil {
+		return x.DecidedAt
+	}
+	return nil
+}
+
+func (x *RoomAdmission) GetNoAnswer() bool {
+	if x != nil {
+		return x.NoAnswer
+	}
+	return false
+}
+
+func (x *RoomAdmission) GetRoomName() string {
+	if x != nil {
+		return x.RoomName
+	}
+	return ""
+}
+
+func (x *RoomAdmission) GetWorkspaceName() string {
+	if x != nil {
+		return x.WorkspaceName
+	}
+	return ""
+}
+
+// GET /api/rooms/{id}/admissions: pending knocks, oldest first. MANAGE_ROOM sees all of the
+// room; the author of a link without MANAGE_ROOM sees those who came by their links.
+type ListRoomAdmissionsResponse struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Admissions    []*RoomAdmission       `protobuf:"bytes,1,rep,name=admissions,proto3" json:"admissions,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *ListRoomAdmissionsResponse) Reset() {
+	*x = ListRoomAdmissionsResponse{}
+	mi := &file_calaba_v1_invite_proto_msgTypes[10]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ListRoomAdmissionsResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ListRoomAdmissionsResponse) ProtoMessage() {}
+
+func (x *ListRoomAdmissionsResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_calaba_v1_invite_proto_msgTypes[10]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ListRoomAdmissionsResponse.ProtoReflect.Descriptor instead.
+func (*ListRoomAdmissionsResponse) Descriptor() ([]byte, []int) {
+	return file_calaba_v1_invite_proto_rawDescGZIP(), []int{10}
+}
+
+func (x *ListRoomAdmissionsResponse) GetAdmissions() []*RoomAdmission {
+	if x != nil {
+		return x.Admissions
+	}
+	return nil
+}
+
+// POST /api/rooms/{id}/admissions/{user_id} (a decider; not bots). status ADMITTED or
+// DECLINED. On admission display_name (1..40, guest accounts only) renames the guest and
+// badge_id ("" = none; from the workspace library) sets their badge. 409 CONFLICT when the
+// knock is no longer pending.
+type DecideRoomAdmissionRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Status        RoomAdmissionStatus    `protobuf:"varint,1,opt,name=status,proto3,enum=calaba.v1.RoomAdmissionStatus" json:"status,omitempty"`
+	DisplayName   *string                `protobuf:"bytes,2,opt,name=display_name,json=displayName,proto3,oneof" json:"display_name,omitempty"`
+	BadgeId       *string                `protobuf:"bytes,3,opt,name=badge_id,json=badgeId,proto3,oneof" json:"badge_id,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *DecideRoomAdmissionRequest) Reset() {
+	*x = DecideRoomAdmissionRequest{}
+	mi := &file_calaba_v1_invite_proto_msgTypes[11]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *DecideRoomAdmissionRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*DecideRoomAdmissionRequest) ProtoMessage() {}
+
+func (x *DecideRoomAdmissionRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_calaba_v1_invite_proto_msgTypes[11]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use DecideRoomAdmissionRequest.ProtoReflect.Descriptor instead.
+func (*DecideRoomAdmissionRequest) Descriptor() ([]byte, []int) {
+	return file_calaba_v1_invite_proto_rawDescGZIP(), []int{11}
+}
+
+func (x *DecideRoomAdmissionRequest) GetStatus() RoomAdmissionStatus {
+	if x != nil {
+		return x.Status
+	}
+	return RoomAdmissionStatus_ROOM_ADMISSION_STATUS_UNSPECIFIED
+}
+
+func (x *DecideRoomAdmissionRequest) GetDisplayName() string {
+	if x != nil && x.DisplayName != nil {
+		return *x.DisplayName
+	}
+	return ""
+}
+
+func (x *DecideRoomAdmissionRequest) GetBadgeId() string {
+	if x != nil && x.BadgeId != nil {
+		return *x.BadgeId
+	}
+	return ""
+}
+
+type DecideRoomAdmissionResponse struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Admission     *RoomAdmission         `protobuf:"bytes,1,opt,name=admission,proto3" json:"admission,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *DecideRoomAdmissionResponse) Reset() {
+	*x = DecideRoomAdmissionResponse{}
+	mi := &file_calaba_v1_invite_proto_msgTypes[12]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *DecideRoomAdmissionResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*DecideRoomAdmissionResponse) ProtoMessage() {}
+
+func (x *DecideRoomAdmissionResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_calaba_v1_invite_proto_msgTypes[12]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use DecideRoomAdmissionResponse.ProtoReflect.Descriptor instead.
+func (*DecideRoomAdmissionResponse) Descriptor() ([]byte, []int) {
+	return file_calaba_v1_invite_proto_rawDescGZIP(), []int{12}
+}
+
+func (x *DecideRoomAdmissionResponse) GetAdmission() *RoomAdmission {
+	if x != nil {
+		return x.Admission
+	}
+	return nil
+}
+
 var File_calaba_v1_invite_proto protoreflect.FileDescriptor
 
 const file_calaba_v1_invite_proto_rawDesc = "" +
 	"\n" +
-	"\x16calaba/v1/invite.proto\x12\tcalaba.v1\x1a\x1fgoogle/protobuf/timestamp.proto\x1a\x14calaba/v1/auth.proto\x1a\x14calaba/v1/room.proto\x1a\x14calaba/v1/user.proto\"\xb5\x04\n" +
+	"\x16calaba/v1/invite.proto\x12\tcalaba.v1\x1a\x1fgoogle/protobuf/timestamp.proto\x1a\x14calaba/v1/auth.proto\x1a\x14calaba/v1/room.proto\x1a\x14calaba/v1/user.proto\"\xfa\x04\n" +
 	"\n" +
 	"RoomInvite\x12\x0e\n" +
 	"\x02id\x18\x01 \x01(\tR\x02id\x12\x17\n" +
@@ -623,7 +1113,9 @@ const file_calaba_v1_invite_proto_rawDesc = "" +
 	"created_at\x18\x0e \x01(\v2\x1a.google.protobuf.TimestampR\tcreatedAt\x129\n" +
 	"\n" +
 	"not_before\x18\x0f \x01(\v2\x1a.google.protobuf.TimestampR\tnotBefore\x12\x19\n" +
-	"\bevent_id\x18\x10 \x01(\tR\aeventId\"\x9b\x03\n" +
+	"\bevent_id\x18\x10 \x01(\tR\aeventId\x12.\n" +
+	"\x10require_approval\x18\x11 \x01(\bH\x00R\x0frequireApproval\x88\x01\x01B\x13\n" +
+	"\x11_require_approval\"\xe0\x03\n" +
 	"\x17CreateRoomInviteRequest\x121\n" +
 	"\x12expires_in_seconds\x18\x01 \x01(\rH\x00R\x10expiresInSeconds\x88\x01\x01\x12\x19\n" +
 	"\bmax_uses\x18\x02 \x01(\rR\amaxUses\x12&\n" +
@@ -633,17 +1125,25 @@ const file_calaba_v1_invite_proto_rawDesc = "" +
 	"\x0eallow_messages\x18\x05 \x01(\bH\x03R\rallowMessages\x88\x01\x01\x12$\n" +
 	"\vallow_files\x18\x06 \x01(\bH\x04R\n" +
 	"allowFiles\x88\x01\x01\x12&\n" +
-	"\fallow_stream\x18\a \x01(\bH\x05R\vallowStream\x88\x01\x01B\x15\n" +
+	"\fallow_stream\x18\a \x01(\bH\x05R\vallowStream\x88\x01\x01\x12.\n" +
+	"\x10require_approval\x18\b \x01(\bH\x06R\x0frequireApproval\x88\x01\x01B\x15\n" +
 	"\x13_expires_in_secondsB\x0f\n" +
 	"\r_allow_guestsB\x0e\n" +
 	"\f_allow_speakB\x11\n" +
 	"\x0f_allow_messagesB\x0e\n" +
 	"\f_allow_filesB\x0f\n" +
-	"\r_allow_stream\"I\n" +
+	"\r_allow_streamB\x13\n" +
+	"\x11_require_approval\"I\n" +
 	"\x18CreateRoomInviteResponse\x12-\n" +
+	"\x06invite\x18\x01 \x01(\v2\x15.calaba.v1.RoomInviteR\x06invite\"\x89\x01\n" +
+	"\x17UpdateRoomInviteRequest\x12.\n" +
+	"\x10require_approval\x18\x01 \x01(\bH\x00R\x0frequireApproval\x88\x01\x01\x12)\n" +
+	"\x10inherit_approval\x18\x02 \x01(\bR\x0finheritApprovalB\x13\n" +
+	"\x11_require_approval\"I\n" +
+	"\x18UpdateRoomInviteResponse\x12-\n" +
 	"\x06invite\x18\x01 \x01(\v2\x15.calaba.v1.RoomInviteR\x06invite\"J\n" +
 	"\x17ListRoomInvitesResponse\x12/\n" +
-	"\ainvites\x18\x01 \x03(\v2\x15.calaba.v1.RoomInviteR\ainvites\"\xdb\x02\n" +
+	"\ainvites\x18\x01 \x03(\v2\x15.calaba.v1.RoomInviteR\ainvites\"\x88\x03\n" +
 	"\x15GetRoomInviteResponse\x12\x1b\n" +
 	"\troom_name\x18\x01 \x01(\tR\broomName\x120\n" +
 	"\troom_type\x18\x02 \x01(\x0e2\x13.calaba.v1.RoomTypeR\broomType\x12%\n" +
@@ -653,16 +1153,52 @@ const file_calaba_v1_invite_proto_rawDesc = "" +
 	"\n" +
 	"expires_at\x18\x06 \x01(\v2\x1a.google.protobuf.TimestampR\texpiresAt\x129\n" +
 	"\n" +
-	"not_before\x18\a \x01(\v2\x1a.google.protobuf.TimestampR\tnotBefore\"T\n" +
+	"not_before\x18\a \x01(\v2\x1a.google.protobuf.TimestampR\tnotBefore\x12+\n" +
+	"\x11requires_approval\x18\b \x01(\bR\x10requiresApproval\"T\n" +
 	"\x15JoinRoomInviteRequest\x12\x1a\n" +
 	"\bnickname\x18\x01 \x01(\tR\bnickname\x12\x1f\n" +
 	"\vdevice_name\x18\x02 \x01(\tR\n" +
-	"deviceName\"\xa2\x01\n" +
+	"deviceName\"\xda\x01\n" +
 	"\x16JoinRoomInviteResponse\x12\x17\n" +
 	"\aroom_id\x18\x01 \x01(\tR\x06roomId\x12!\n" +
 	"\fworkspace_id\x18\x02 \x01(\tR\vworkspaceId\x12-\n" +
 	"\x06tokens\x18\x03 \x01(\v2\x15.calaba.v1.AuthTokensR\x06tokens\x12\x1d\n" +
-	"\x02me\x18\x04 \x01(\v2\r.calaba.v1.MeR\x02meB\x99\x01\n" +
+	"\x02me\x18\x04 \x01(\v2\r.calaba.v1.MeR\x02me\x126\n" +
+	"\tadmission\x18\x05 \x01(\v2\x18.calaba.v1.RoomAdmissionR\tadmission\"\xeb\x03\n" +
+	"\rRoomAdmission\x12\x17\n" +
+	"\aroom_id\x18\x01 \x01(\tR\x06roomId\x12!\n" +
+	"\fworkspace_id\x18\x02 \x01(\tR\vworkspaceId\x12#\n" +
+	"\x04user\x18\x03 \x01(\v2\x0f.calaba.v1.UserR\x04user\x12\x1b\n" +
+	"\tinvite_id\x18\x04 \x01(\tR\binviteId\x12*\n" +
+	"\x11invite_created_by\x18\x05 \x01(\tR\x0finviteCreatedBy\x126\n" +
+	"\x06status\x18\x06 \x01(\x0e2\x1e.calaba.v1.RoomAdmissionStatusR\x06status\x12=\n" +
+	"\frequested_at\x18\a \x01(\v2\x1a.google.protobuf.TimestampR\vrequestedAt\x12\x1d\n" +
+	"\n" +
+	"decided_by\x18\b \x01(\tR\tdecidedBy\x129\n" +
+	"\n" +
+	"decided_at\x18\t \x01(\v2\x1a.google.protobuf.TimestampR\tdecidedAt\x12\x1b\n" +
+	"\tno_answer\x18\n" +
+	" \x01(\bR\bnoAnswer\x12\x1b\n" +
+	"\troom_name\x18\v \x01(\tR\broomName\x12%\n" +
+	"\x0eworkspace_name\x18\f \x01(\tR\rworkspaceName\"V\n" +
+	"\x1aListRoomAdmissionsResponse\x128\n" +
+	"\n" +
+	"admissions\x18\x01 \x03(\v2\x18.calaba.v1.RoomAdmissionR\n" +
+	"admissions\"\xba\x01\n" +
+	"\x1aDecideRoomAdmissionRequest\x126\n" +
+	"\x06status\x18\x01 \x01(\x0e2\x1e.calaba.v1.RoomAdmissionStatusR\x06status\x12&\n" +
+	"\fdisplay_name\x18\x02 \x01(\tH\x00R\vdisplayName\x88\x01\x01\x12\x1e\n" +
+	"\bbadge_id\x18\x03 \x01(\tH\x01R\abadgeId\x88\x01\x01B\x0f\n" +
+	"\r_display_nameB\v\n" +
+	"\t_badge_id\"U\n" +
+	"\x1bDecideRoomAdmissionResponse\x126\n" +
+	"\tadmission\x18\x01 \x01(\v2\x18.calaba.v1.RoomAdmissionR\tadmission*\xcc\x01\n" +
+	"\x13RoomAdmissionStatus\x12%\n" +
+	"!ROOM_ADMISSION_STATUS_UNSPECIFIED\x10\x00\x12!\n" +
+	"\x1dROOM_ADMISSION_STATUS_PENDING\x10\x01\x12\"\n" +
+	"\x1eROOM_ADMISSION_STATUS_ADMITTED\x10\x02\x12\"\n" +
+	"\x1eROOM_ADMISSION_STATUS_DECLINED\x10\x03\x12#\n" +
+	"\x1fROOM_ADMISSION_STATUS_CANCELLED\x10\x04B\x99\x01\n" +
 	"\rcom.calaba.v1B\vInviteProtoP\x01Z6github.com/calaba/calaba/server/gen/calaba/v1;calabav1\xa2\x02\x03CXX\xaa\x02\tCalaba.V1\xca\x02\tCalaba\\V1\xe2\x02\x15Calaba\\V1\\GPBMetadata\xea\x02\n" +
 	"Calaba::V1b\x06proto3"
 
@@ -678,36 +1214,54 @@ func file_calaba_v1_invite_proto_rawDescGZIP() []byte {
 	return file_calaba_v1_invite_proto_rawDescData
 }
 
-var file_calaba_v1_invite_proto_msgTypes = make([]protoimpl.MessageInfo, 7)
+var file_calaba_v1_invite_proto_enumTypes = make([]protoimpl.EnumInfo, 1)
+var file_calaba_v1_invite_proto_msgTypes = make([]protoimpl.MessageInfo, 13)
 var file_calaba_v1_invite_proto_goTypes = []any{
-	(*RoomInvite)(nil),               // 0: calaba.v1.RoomInvite
-	(*CreateRoomInviteRequest)(nil),  // 1: calaba.v1.CreateRoomInviteRequest
-	(*CreateRoomInviteResponse)(nil), // 2: calaba.v1.CreateRoomInviteResponse
-	(*ListRoomInvitesResponse)(nil),  // 3: calaba.v1.ListRoomInvitesResponse
-	(*GetRoomInviteResponse)(nil),    // 4: calaba.v1.GetRoomInviteResponse
-	(*JoinRoomInviteRequest)(nil),    // 5: calaba.v1.JoinRoomInviteRequest
-	(*JoinRoomInviteResponse)(nil),   // 6: calaba.v1.JoinRoomInviteResponse
-	(*timestamppb.Timestamp)(nil),    // 7: google.protobuf.Timestamp
-	(RoomType)(0),                    // 8: calaba.v1.RoomType
-	(*AuthTokens)(nil),               // 9: calaba.v1.AuthTokens
-	(*Me)(nil),                       // 10: calaba.v1.Me
+	(RoomAdmissionStatus)(0),            // 0: calaba.v1.RoomAdmissionStatus
+	(*RoomInvite)(nil),                  // 1: calaba.v1.RoomInvite
+	(*CreateRoomInviteRequest)(nil),     // 2: calaba.v1.CreateRoomInviteRequest
+	(*CreateRoomInviteResponse)(nil),    // 3: calaba.v1.CreateRoomInviteResponse
+	(*UpdateRoomInviteRequest)(nil),     // 4: calaba.v1.UpdateRoomInviteRequest
+	(*UpdateRoomInviteResponse)(nil),    // 5: calaba.v1.UpdateRoomInviteResponse
+	(*ListRoomInvitesResponse)(nil),     // 6: calaba.v1.ListRoomInvitesResponse
+	(*GetRoomInviteResponse)(nil),       // 7: calaba.v1.GetRoomInviteResponse
+	(*JoinRoomInviteRequest)(nil),       // 8: calaba.v1.JoinRoomInviteRequest
+	(*JoinRoomInviteResponse)(nil),      // 9: calaba.v1.JoinRoomInviteResponse
+	(*RoomAdmission)(nil),               // 10: calaba.v1.RoomAdmission
+	(*ListRoomAdmissionsResponse)(nil),  // 11: calaba.v1.ListRoomAdmissionsResponse
+	(*DecideRoomAdmissionRequest)(nil),  // 12: calaba.v1.DecideRoomAdmissionRequest
+	(*DecideRoomAdmissionResponse)(nil), // 13: calaba.v1.DecideRoomAdmissionResponse
+	(*timestamppb.Timestamp)(nil),       // 14: google.protobuf.Timestamp
+	(RoomType)(0),                       // 15: calaba.v1.RoomType
+	(*AuthTokens)(nil),                  // 16: calaba.v1.AuthTokens
+	(*Me)(nil),                          // 17: calaba.v1.Me
+	(*User)(nil),                        // 18: calaba.v1.User
 }
 var file_calaba_v1_invite_proto_depIdxs = []int32{
-	7,  // 0: calaba.v1.RoomInvite.expires_at:type_name -> google.protobuf.Timestamp
-	7,  // 1: calaba.v1.RoomInvite.created_at:type_name -> google.protobuf.Timestamp
-	7,  // 2: calaba.v1.RoomInvite.not_before:type_name -> google.protobuf.Timestamp
-	0,  // 3: calaba.v1.CreateRoomInviteResponse.invite:type_name -> calaba.v1.RoomInvite
-	0,  // 4: calaba.v1.ListRoomInvitesResponse.invites:type_name -> calaba.v1.RoomInvite
-	8,  // 5: calaba.v1.GetRoomInviteResponse.room_type:type_name -> calaba.v1.RoomType
-	7,  // 6: calaba.v1.GetRoomInviteResponse.expires_at:type_name -> google.protobuf.Timestamp
-	7,  // 7: calaba.v1.GetRoomInviteResponse.not_before:type_name -> google.protobuf.Timestamp
-	9,  // 8: calaba.v1.JoinRoomInviteResponse.tokens:type_name -> calaba.v1.AuthTokens
-	10, // 9: calaba.v1.JoinRoomInviteResponse.me:type_name -> calaba.v1.Me
-	10, // [10:10] is the sub-list for method output_type
-	10, // [10:10] is the sub-list for method input_type
-	10, // [10:10] is the sub-list for extension type_name
-	10, // [10:10] is the sub-list for extension extendee
-	0,  // [0:10] is the sub-list for field type_name
+	14, // 0: calaba.v1.RoomInvite.expires_at:type_name -> google.protobuf.Timestamp
+	14, // 1: calaba.v1.RoomInvite.created_at:type_name -> google.protobuf.Timestamp
+	14, // 2: calaba.v1.RoomInvite.not_before:type_name -> google.protobuf.Timestamp
+	1,  // 3: calaba.v1.CreateRoomInviteResponse.invite:type_name -> calaba.v1.RoomInvite
+	1,  // 4: calaba.v1.UpdateRoomInviteResponse.invite:type_name -> calaba.v1.RoomInvite
+	1,  // 5: calaba.v1.ListRoomInvitesResponse.invites:type_name -> calaba.v1.RoomInvite
+	15, // 6: calaba.v1.GetRoomInviteResponse.room_type:type_name -> calaba.v1.RoomType
+	14, // 7: calaba.v1.GetRoomInviteResponse.expires_at:type_name -> google.protobuf.Timestamp
+	14, // 8: calaba.v1.GetRoomInviteResponse.not_before:type_name -> google.protobuf.Timestamp
+	16, // 9: calaba.v1.JoinRoomInviteResponse.tokens:type_name -> calaba.v1.AuthTokens
+	17, // 10: calaba.v1.JoinRoomInviteResponse.me:type_name -> calaba.v1.Me
+	10, // 11: calaba.v1.JoinRoomInviteResponse.admission:type_name -> calaba.v1.RoomAdmission
+	18, // 12: calaba.v1.RoomAdmission.user:type_name -> calaba.v1.User
+	0,  // 13: calaba.v1.RoomAdmission.status:type_name -> calaba.v1.RoomAdmissionStatus
+	14, // 14: calaba.v1.RoomAdmission.requested_at:type_name -> google.protobuf.Timestamp
+	14, // 15: calaba.v1.RoomAdmission.decided_at:type_name -> google.protobuf.Timestamp
+	10, // 16: calaba.v1.ListRoomAdmissionsResponse.admissions:type_name -> calaba.v1.RoomAdmission
+	0,  // 17: calaba.v1.DecideRoomAdmissionRequest.status:type_name -> calaba.v1.RoomAdmissionStatus
+	10, // 18: calaba.v1.DecideRoomAdmissionResponse.admission:type_name -> calaba.v1.RoomAdmission
+	19, // [19:19] is the sub-list for method output_type
+	19, // [19:19] is the sub-list for method input_type
+	19, // [19:19] is the sub-list for extension type_name
+	19, // [19:19] is the sub-list for extension extendee
+	0,  // [0:19] is the sub-list for field type_name
 }
 
 func init() { file_calaba_v1_invite_proto_init() }
@@ -718,19 +1272,23 @@ func file_calaba_v1_invite_proto_init() {
 	file_calaba_v1_auth_proto_init()
 	file_calaba_v1_room_proto_init()
 	file_calaba_v1_user_proto_init()
+	file_calaba_v1_invite_proto_msgTypes[0].OneofWrappers = []any{}
 	file_calaba_v1_invite_proto_msgTypes[1].OneofWrappers = []any{}
+	file_calaba_v1_invite_proto_msgTypes[3].OneofWrappers = []any{}
+	file_calaba_v1_invite_proto_msgTypes[11].OneofWrappers = []any{}
 	type x struct{}
 	out := protoimpl.TypeBuilder{
 		File: protoimpl.DescBuilder{
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_calaba_v1_invite_proto_rawDesc), len(file_calaba_v1_invite_proto_rawDesc)),
-			NumEnums:      0,
-			NumMessages:   7,
+			NumEnums:      1,
+			NumMessages:   13,
 			NumExtensions: 0,
 			NumServices:   0,
 		},
 		GoTypes:           file_calaba_v1_invite_proto_goTypes,
 		DependencyIndexes: file_calaba_v1_invite_proto_depIdxs,
+		EnumInfos:         file_calaba_v1_invite_proto_enumTypes,
 		MessageInfos:      file_calaba_v1_invite_proto_msgTypes,
 	}.Build()
 	File_calaba_v1_invite_proto = out.File
