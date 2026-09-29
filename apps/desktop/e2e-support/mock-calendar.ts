@@ -4,7 +4,8 @@
  * attendees. The routes and gateway fan-out live in mock-server.ts (`calendarRoutes`).
  *
  * Simplifications against the server: repeats are expanded in UTC (fixtures use UTC meetings),
- * no mail is sent, guest links are not made (`guestLinks` stays false).
+ * no mail is sent, guest links are made only on request (`eventGuestLink`; `guestLinks` stays
+ * false).
  */
 import { clone, create } from '@bufbuild/protobuf';
 import { timestampFromMs, timestampMs } from '@bufbuild/protobuf/wkt';
@@ -24,6 +25,8 @@ export interface CalEventRec {
   exceptions: Set<number>;
   /** Recording of an occurrence: start (ms) → recording id. */
   recordings: Map<number, string>;
+  /** Guest links of external attendees made by `eventGuestLink`: email → room invite id. */
+  guestLinks?: Map<string, string>;
 }
 
 export interface Occurrence {
@@ -131,18 +134,42 @@ export function eventOut(rec: CalEventRec, occ: Occurrence | null, view: EmailVi
 }
 
 /**
+ * The event as a guest of the workspace (ADR-0016) sees the meeting active in a room it can view
+ * (ADR-0038 «Диплинки для приглашённых»): no attendees (counts only), no recording, no rights.
+ */
+export function eventForGuest(ev: CalendarEvent): CalendarEvent {
+  const out = clone(CalendarEventSchema, ev);
+  out.attendees = [];
+  out.recordingId = '';
+  out.myStatus = AttendeeStatus.UNSPECIFIED;
+  out.canEdit = false;
+  out.guestLinks = false;
+  return out;
+}
+
+/**
  * The mock's answer link token of an external attendee: `mock.<eventId>.<base64url(email)>.<status>`
- * (the server signs it; the mock only needs to round-trip it for the web page).
+ * (the server signs it; the mock only needs to round-trip it for the web page). Status
+ * UNSPECIFIED is the view token of the mail's meeting link (/e/<id>?t=…): it opens the page but
+ * cannot answer.
  */
 export function rsvpToken(eventId: string, email: string, status: AttendeeStatus): string {
   return `mock.${eventId}.${Buffer.from(email).toString('base64url')}.${String(status)}`;
 }
 
-export function parseRsvpToken(tok: string): { eventId: string; email: string; status: AttendeeStatus } | null {
+/** The view token of an external attendee (the meeting link of its mail: /e/<id>?t=…). */
+export function viewToken(eventId: string, email: string): string {
+  return rsvpToken(eventId, email, AttendeeStatus.UNSPECIFIED);
+}
+
+/** Statuses a token may carry: UNSPECIFIED = view, else the answer. */
+const TOKEN_STATUSES: readonly AttendeeStatus[] = [AttendeeStatus.UNSPECIFIED, AttendeeStatus.ACCEPTED, AttendeeStatus.DECLINED, AttendeeStatus.MAYBE];
+
+export function parseRsvpToken(tok: string): { eventId: string; email: string; status: AttendeeStatus; view: boolean } | null {
   const [pre, eventId, email, status] = tok.split('.');
-  const st = Number(status);
-  if (pre !== 'mock' || !eventId || !email || ![AttendeeStatus.ACCEPTED, AttendeeStatus.DECLINED, AttendeeStatus.MAYBE].includes(st)) return null;
-  return { eventId, email: Buffer.from(email, 'base64url').toString(), status: st };
+  const st: AttendeeStatus | undefined = TOKEN_STATUSES.find((x) => String(x) === status);
+  if (pre !== 'mock' || !eventId || !email || st === undefined) return null;
+  return { eventId, email: Buffer.from(email, 'base64url').toString(), status: st, view: st === AttendeeStatus.UNSPECIFIED };
 }
 
 /** Allowed reminder minutes (ADR-0038 §1). */
