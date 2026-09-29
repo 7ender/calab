@@ -6,7 +6,7 @@ import { FREE_PLAN_LIMITS, defaultSettings, ts } from '../e2e-support/fixtures';
 import { CODE_FIXTURE, IDS, MOCK_GPTUNNEL_CODE, MOCK_GPTUNNEL_WEB, PASSWORD, RECORDING_FIXTURE, slowWebpAnimation, type MockServer } from '../e2e-support/mock-server';
 import { encodePng } from '../e2e-support/png';
 import { expect, test } from './app';
-import { NOW, checkpoint, login, settle } from './harness';
+import { checkpoint, login, settle } from './harness';
 import { startPublisher } from './publisher';
 
 /**

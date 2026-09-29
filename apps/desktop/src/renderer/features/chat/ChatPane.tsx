@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState, type DragEvent, type ReactNode } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { cx } from '../../components/ui';
 import { t } from '../../i18n';
 import { can, roomPerms } from '../../lib/permissions';
@@ -20,6 +20,7 @@ import { isDm } from '../../stores/dms';
 import { PinnedBar, SearchPanel } from './RoomPanels';
 import { MiniPlayer } from './MediaPlayer';
 import { roomLabel } from './roomLabel';
+import { useFileDrop } from './useFileDrop';
 
 export function ChatPane({ workspaceId, roomId }: { workspaceId: string; roomId: string }): ReactNode {
   const room = useRooms((s) => s.byId[roomId]);
@@ -35,7 +36,6 @@ export function ChatPane({ workspaceId, roomId }: { workspaceId: string; roomId:
   const inThisVoice = useVoice((s) => s.roomId === roomId);
   const searchOpen = useChatView((s) => s.searchRoom === roomId);
   const [files, setFiles] = useState<OutgoingFile[]>([]);
-  const [dragging, setDragging] = useState(false);
   // "New messages" marker: the read position at the moment the room was opened.
   const [newMarker] = useState(() => useRooms.getState().readState[roomId] ?? '');
   // PiP keeps clear of the composer: expose its height as --composer-height (docs/08, Layout).
@@ -80,14 +80,9 @@ export function ChatPane({ workspaceId, roomId }: { workspaceId: string; roomId:
     },
     [canAttach],
   );
+  const [dragging, dropHandlers] = useFileDrop(canAttach, addFiles);
 
   if (!room) return <div className="mat-content flex-1" />;
-
-  const onDrop = (e: DragEvent): void => {
-    e.preventDefault();
-    setDragging(false);
-    addFiles(Array.from(e.dataTransfer.files));
-  };
 
   return (
     <section
@@ -96,16 +91,7 @@ export function ChatPane({ workspaceId, roomId }: { workspaceId: string; roomId:
       data-toast-anchor
       className="mat-content relative flex min-w-0 flex-1 flex-col"
       aria-label={isDm(room) ? roomLabel(room) : room.name}
-      onDragOver={(e) => {
-        if (canAttach && e.dataTransfer.types.includes('Files')) {
-          e.preventDefault();
-          setDragging(true);
-        }
-      }}
-      onDragLeave={(e) => {
-        if (e.currentTarget === e.target) setDragging(false);
-      }}
-      onDrop={onDrop}
+      {...dropHandlers}
     >
       {isDm(room) ? (
         <DmHeader room={room} />

@@ -12,7 +12,7 @@ export const SUGGEST_MAX = 24;
 
 const PICTO = /\p{Extended_Pictographic}|\p{Regional_Indicator}|\u20E3/u;
 /** VS15/VS16 and the Fitzpatrick skin tones do not change which sticker an emoji means. */
-const NOISE = /[\uFE0E\uFE0F\u{1F3FB}-\u{1F3FF}]/gu;
+const NOISE = /\uFE0E|\uFE0F|[\u{1F3FB}-\u{1F3FF}]/gu;
 
 let segmenter: Intl.Segmenter | null | undefined;
 function graphemes(s: string): string[] {
