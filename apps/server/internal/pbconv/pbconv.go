@@ -124,6 +124,8 @@ func roomTypeFromDB(s string) v1.RoomType {
 		return v1.RoomType_ROOM_TYPE_VOICE
 	case "dm":
 		return v1.RoomType_ROOM_TYPE_DM
+	case "notes":
+		return v1.RoomType_ROOM_TYPE_NOTES
 	}
 	return v1.RoomType_ROOM_TYPE_TEXT
 }
@@ -522,13 +524,19 @@ func Room(r sqlc.Room, defaults *v1.RoomMediaSettings, overrides []sqlc.RoomPerm
 		UserLimit:           uint32(max(r.UserLimit, 0)),
 		VoiceStatus:         deref(r.VoiceStatus),
 		AllowRecording:      r.AllowRecording,
+		GuestApproval:       r.GuestApproval,
 	}
 }
 
 // DMRoom is the wire form of a direct message room (ADR-0020): no workspace, name, topic,
-// media or overrides — clients title it with the peer.
+// media or overrides — clients title it with the peer. A notes shelf (ADR-0039) carries its
+// name and position.
 func DMRoom(r sqlc.Room) *v1.Room {
-	return &v1.Room{Id: r.ID.String(), Type: v1.RoomType_ROOM_TYPE_DM, CreatedAt: ts(r.CreatedAt)}
+	out := &v1.Room{Id: r.ID.String(), Type: roomTypeFromDB(r.Type), CreatedAt: ts(r.CreatedAt)}
+	if r.Type == "notes" {
+		out.Name, out.Position = r.Name, r.Position
+	}
+	return out
 }
 
 // Category converts a room category row.

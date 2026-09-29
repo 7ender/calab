@@ -119,7 +119,7 @@ func (q *Queries) ClaimEventRoomSignal(ctx context.Context, arg ClaimEventRoomSi
 const createEventRoomInvite = `-- name: CreateEventRoomInvite :one
 INSERT INTO room_invites (room_id, code, created_by, expires_at, max_uses, allow_guests, allow_bits, not_before, event_id)
 VALUES ($1, $2, $3, $4, 1, true, $5, $6, $7)
-RETURNING id, room_id, code, created_by, expires_at, max_uses, uses, allow_guests, allow_bits, revoked_at, created_at, not_before, event_id
+RETURNING id, room_id, code, created_by, expires_at, max_uses, uses, allow_guests, allow_bits, revoked_at, created_at, not_before, event_id, require_approval
 `
 
 type CreateEventRoomInviteParams struct {
@@ -157,6 +157,7 @@ func (q *Queries) CreateEventRoomInvite(ctx context.Context, arg CreateEventRoom
 		&i.CreatedAt,
 		&i.NotBefore,
 		&i.EventID,
+		&i.RequireApproval,
 	)
 	return i, err
 }
@@ -258,7 +259,7 @@ func (q *Queries) GetEventForUpdate(ctx context.Context, id uuid.UUID) (Event, e
 }
 
 const getRoomInvite = `-- name: GetRoomInvite :one
-SELECT id, room_id, code, created_by, expires_at, max_uses, uses, allow_guests, allow_bits, revoked_at, created_at, not_before, event_id FROM room_invites WHERE id = $1
+SELECT id, room_id, code, created_by, expires_at, max_uses, uses, allow_guests, allow_bits, revoked_at, created_at, not_before, event_id, require_approval FROM room_invites WHERE id = $1
 `
 
 func (q *Queries) GetRoomInvite(ctx context.Context, id uuid.UUID) (RoomInvite, error) {
@@ -278,6 +279,7 @@ func (q *Queries) GetRoomInvite(ctx context.Context, id uuid.UUID) (RoomInvite, 
 		&i.CreatedAt,
 		&i.NotBefore,
 		&i.EventID,
+		&i.RequireApproval,
 	)
 	return i, err
 }
@@ -968,7 +970,7 @@ func (q *Queries) SetExternalAttendeeStatus(ctx context.Context, arg SetExternal
 
 const setUserEventReminders = `-- name: SetUserEventReminders :one
 UPDATE users SET event_reminders = $2, event_reminders_dnd = $3 WHERE id = $1
-RETURNING id, email, password_hash, display_name, avatar_file_id, status_text, settings, created_at, disabled_at, status_emoji, status_expires_at, is_guest, guest_expires_at, timezone, email_verified_at, pending_email, locale, presence_status, presence_until, is_bot, birthday_day, birthday_month, birthday_year, birthday_hidden, event_reminders, event_reminders_dnd
+RETURNING id, email, password_hash, display_name, avatar_file_id, status_text, settings, created_at, disabled_at, status_emoji, status_expires_at, is_guest, guest_expires_at, timezone, email_verified_at, pending_email, locale, presence_status, presence_until, is_bot, birthday_day, birthday_month, birthday_year, birthday_hidden, event_reminders, event_reminders_dnd, storage_quota_bytes
 `
 
 type SetUserEventRemindersParams struct {
@@ -1007,6 +1009,7 @@ func (q *Queries) SetUserEventReminders(ctx context.Context, arg SetUserEventRem
 		&i.BirthdayHidden,
 		&i.EventReminders,
 		&i.EventRemindersDnd,
+		&i.StorageQuotaBytes,
 	)
 	return i, err
 }

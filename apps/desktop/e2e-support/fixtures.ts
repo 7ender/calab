@@ -71,6 +71,7 @@ import {
   type Workspace,
 } from '@calaba/protocol';
 import { buildMarketingState } from './fixtures-marketing';
+import type { AdmissionRec } from './mock-admissions';
 import { avatarPicture, cardPicture, encodePng } from './png';
 
 /**
@@ -383,8 +384,12 @@ export interface MockState {
   invites: Map<string, Invite>;
   /** Room links (ADR-0016), by id. */
   roomInvites: Map<string, RoomInvite>;
+  /** Waiting guest knocks (ADR-0040), by admissionKey(roomId, userId). */
+  admissions: Map<string, AdmissionRec>;
   /** DM rooms (type DM, no workspace): roomId → the two participants (ADR-0020). */
   dmMembers: Map<string, [string, string]>;
+  /** Notes shelves (ADR-0039): room id → owner and emoji (name and position live on the room). */
+  shelves: Map<string, { ownerId: string; emoji: string }>;
   /** userId → roomId → own DM state (docs/09 #51): archived since (ms, 0 = no), cleared up to a message id. */
   dmState: Map<string, Map<string, { archivedAt: number; clearedBefore: string }>>;
   /** userId → roomId → stored notification settings (READY notification_settings; absent = default). */
@@ -707,6 +712,7 @@ export function buildState(scenario: Scenario): MockState {
     members: [],
     rooms: new Map(),
     dmMembers: new Map(),
+    shelves: new Map(),
     dmState: new Map(),
     messages: new Map(),
     readStates: new Map(),
@@ -717,6 +723,7 @@ export function buildState(scenario: Scenario): MockState {
     presences: new Map(),
     invites: new Map(),
     roomInvites: new Map(),
+    admissions: new Map(),
     reactions: new Map(),
     files: new Map(),
     sessions: new Map(),

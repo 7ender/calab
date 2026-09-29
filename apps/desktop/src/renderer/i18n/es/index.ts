@@ -2,6 +2,7 @@ import type { Dict } from '../types';
 import { esApp } from './app';
 import { esChat } from './chat';
 import { esDm } from './dm';
+import { esNotes } from './notes';
 import { esCall } from './call';
 import { esEcho } from './echo';
 import { esMedia } from './media';
@@ -19,6 +20,7 @@ import { esVideo } from './video';
 import { esStickers } from './stickers';
 import { esSounds } from './sounds';
 import { esBots } from './bots';
+import { esGuests } from './guests';
 
 /** Spanish UI strings (ADR-0022): same keys and placeholders as `ru`/`en`; glossary docs/i18n-glossary.md. */
 export const es: Dict = {
@@ -30,7 +32,9 @@ export const es: Dict = {
   ...esStickers,
   ...esSounds,
   ...esBots,
+  ...esGuests,
   ...esDm,
+  ...esNotes,
   ...esCall,
   ...esEcho,
   ...esMedia,

@@ -2,6 +2,7 @@ import type { Dict } from '../types';
 import { enApp } from './app';
 import { enChat } from './chat';
 import { enDm } from './dm';
+import { enNotes } from './notes';
 import { enCall } from './call';
 import { enEcho } from './echo';
 import { enMedia } from './media';
@@ -19,6 +20,7 @@ import { enVideo } from './video';
 import { enStickers } from './stickers';
 import { enSounds } from './sounds';
 import { enBots } from './bots';
+import { enGuests } from './guests';
 
 /** English UI strings (ADR-0022): same keys and placeholders as `ru`; glossary docs/i18n-glossary.md. */
 export const en: Dict = {
@@ -30,7 +32,9 @@ export const en: Dict = {
   ...enStickers,
   ...enSounds,
   ...enBots,
+  ...enGuests,
   ...enDm,
+  ...enNotes,
   ...enCall,
   ...enEcho,
   ...enMedia,

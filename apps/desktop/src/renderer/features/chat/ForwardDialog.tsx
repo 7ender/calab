@@ -1,5 +1,5 @@
 import { WorkspaceRole, type User } from '@calaba/protocol';
-import { Check, Hash, Lock, Volume2, X } from 'lucide-react';
+import { Check, Hash, Lock, NotebookText, Volume2, X } from 'lucide-react';
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { PickerPanel } from '../../components/picker/Picker';
 import { Button, CLOSE_HIT, Modal, cx } from '../../components/ui';
@@ -16,7 +16,8 @@ import { rolesOf, useWorkspaces } from '../../stores/workspaces';
 import { MemberPickRow } from '../people/MemberPicker';
 import { userItems } from '../people/memberPickItems';
 import { roomLabel } from './roomLabel';
-import { MAX_FORWARD_TARGETS, forwardGroups, isSelected, roomItems, targetKey, toggleTarget, type ForwardItem, type RoomPickItem } from './forwardModel';
+import { MAX_FORWARD_TARGETS, forwardGroups, isSelected, roomItems, shelfItems, targetKey, toggleTarget, type ForwardItem, type RoomPickItem } from './forwardModel';
+import { sortedShelves, useNotes } from '../../stores/notes';
 
 /** The most senior role the user has in any workspace we share (the row's role mark). */
 function sharedRole(userId: string): WorkspaceRole | undefined {
@@ -82,7 +83,10 @@ export function ForwardDialog({ roomId, messageId, onClose }: { roomId: string; 
   }, [srcWs, order, byId, workspaces, myId]);
 
   const people = useMemo(() => (noDms ? [] : userItems((found?.users ?? []).filter((u) => u.id !== myId), sharedRole)), [found, noDms, myId]);
-  const groups = useMemo(() => forwardGroups(people, roomGroups, q ?? '', t('chat.fwd.people')), [people, roomGroups, q]);
+  // «Заметки» first (ADR-0039): my shelves, the source shelf left out.
+  const shelves = useNotes((s) => s.byRoom);
+  const notes = useMemo(() => ({ label: t('chat.fwd.notes'), items: noDms ? [] : shelfItems(sortedShelves(shelves), roomId) }), [shelves, roomId, noDms]);
+  const groups = useMemo(() => forwardGroups(people, roomGroups, q ?? '', t('chat.fwd.people'), notes), [people, roomGroups, q, notes]);
   const loading = !noDms && (found === null || found.q !== q);
   const onQuery = useCallback((next: string) => setQ(next), []);
 
@@ -174,11 +178,11 @@ export function ForwardDialog({ roomId, messageId, onClose }: { roomId: string; 
 }
 
 function RoomRow({ item, active, trailing }: { item: RoomPickItem; active: boolean; trailing: ReactNode }): ReactNode {
-  const Icon = item.voice ? Volume2 : Hash;
+  const Icon = item.notes ? NotebookText : item.voice ? Volume2 : Hash;
   return (
     <>
-      <span className={cx('grid size-6 shrink-0 place-items-center', active ? '' : 'text-muted')} aria-hidden>
-        <Icon className="size-4" />
+      <span className={cx('grid size-6 shrink-0 place-items-center leading-none', active ? '' : 'text-muted')} aria-hidden>
+        {item.emoji ? <span className="text-[16px]">{item.emoji}</span> : <Icon className="size-4" />}
       </span>
       <span className="min-w-0 flex-1 truncate font-medium" title={item.name}>
         {item.name}

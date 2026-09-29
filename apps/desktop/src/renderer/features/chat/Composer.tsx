@@ -12,7 +12,7 @@ import { systemPreview } from '../../lib/recording';
 import { autoFocusAllowed, useMobile } from '../../lib/mobile';
 import { MAX_ATTACHMENTS, MAX_CONTENT, editMessage, loadPresent, notifyTyping, sendMessage, type OutgoingFile } from '../../services/chat';
 import { useMessages } from '../../stores/messages';
-import { useSession } from '../../stores/session';
+import { myUserId, useSession } from '../../stores/session';
 import { useUi } from '../../stores/ui';
 import { useDms } from '../../stores/dms';
 import { sendSticker } from '../../services/stickers';
@@ -249,7 +249,8 @@ export function Composer({
   const voice = useVoiceRecorder({ onSend: sendVoice });
 
   // Stickers (ADR-0030): a message of their own, like a voice message; not while editing.
-  const dmPeer = useDms((s) => (room.type === RoomType.DM ? (s.byRoom[room.id]?.peerId ?? '') : ''));
+  // A notes shelf (ADR-0039): the packs of my workspaces, as in a DM with myself.
+  const dmPeer = useDms((s) => (room.type === RoomType.DM ? (s.byRoom[room.id]?.peerId ?? '') : room.type === RoomType.NOTES ? myUserId() : ''));
   const stickerPlace = useMemo<StickerPlace | null>(() => (workspaceId ? { workspaceId } : dmPeer ? { dmPeerId: dmPeer } : null), [workspaceId, dmPeer]);
   const stickers =
     stickerPlace && canSend && !suspended && !editMsg
@@ -405,7 +406,12 @@ export function Composer({
   const hasContent = !!text.trim() || (!editMsg && files.length > 0);
   // The mic replaces «send» while there is nothing to send (Telegram); it stays during a recording.
   const showMic = voice.active || (!hasContent && !editMsg && canAttach && voiceSupported());
-  const placeholder = room.type === RoomType.DM ? t('dm.placeholder', { name: roomLabel(room) }) : t('chat.placeholderIn', { room: roomLabel(room) });
+  const placeholder =
+    room.type === RoomType.DM
+      ? t('dm.placeholder', { name: roomLabel(room) })
+      : room.type === RoomType.NOTES
+        ? t('notes.placeholder', { name: room.name })
+        : t('chat.placeholderIn', { room: roomLabel(room) });
   const bar = editMsg ? (
     <ContextBar
       icon={<Pencil className="size-4" aria-hidden />}

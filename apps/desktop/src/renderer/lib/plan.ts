@@ -172,6 +172,10 @@ export function planErrorNotice(err: unknown, plan: Plan): PlanNotice | null {
           : 'stk.planStickers';
     return { text: t(key, { n }), contact: true };
   }
+  // A notes shelf over the uploader's personal quota (ADR-0039 §5): nothing to buy, no «Связаться».
+  if (e.code === 'ERROR_CODE_FILE_QUOTA_EXCEEDED' && x.reason === 'PERSONAL_QUOTA' && x.used !== undefined && x.limit !== undefined) {
+    return { text: t('notes.quotaFull', { used: fmt.size(x.used), limit: fmt.size(x.limit) }), contact: false };
+  }
   if (e.code === 'ERROR_CODE_FILE_QUOTA_EXCEEDED') {
     const text =
       x.used !== undefined && x.limit !== undefined ? t('plan.toast.quota', { used: fmt.size(x.used), limit: fmt.size(x.limit) }) : t('plan.toast.quotaAny');

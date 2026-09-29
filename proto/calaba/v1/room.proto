@@ -9,6 +9,7 @@ enum RoomType {
   ROOM_TYPE_VOICE = 1; // voice room with its own text chat
   ROOM_TYPE_TEXT = 2;
   ROOM_TYPE_DM = 3;    // direct message (ADR-0020): no workspace, two participants
+  ROOM_TYPE_NOTES = 4; // notes shelf (ADR-0039): no workspace, only its owner
 }
 
 enum PermissionTargetType {
@@ -71,6 +72,9 @@ message Room {
   // admins see the room only through an allow VIEW_ROOM override (by role or personally),
   // the workspace owner always does. Changed with PATCH /api/rooms/{id} restricted.
   bool restricted = 19;
+  // Guests arriving by a link of the room wait for a decision (ADR-0040); a link may
+  // override it (RoomInvite.require_approval). Changed with PATCH /api/rooms/{id}.
+  bool guest_approval = 20;
 }
 
 // Per-user notification level of a room or a workspace (docs/05 «Уведомления»). UNSPECIFIED
@@ -223,6 +227,7 @@ message UpdateRoomRequest {
   // Private rooms only (ADR-0029). Only the workspace owner (Workspace.owner_id) may change
   // it: anyone else gets 403 FORBIDDEN with reason OWNER_ONLY.
   optional bool restricted = 8;
+  optional bool guest_approval = 9; // ADR-0040
 }
 
 // PATCH /api/rooms/{id}/voice-status (voice rooms): CONNECT and being in the call now, or

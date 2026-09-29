@@ -2,6 +2,7 @@ import type { Dict } from '../types';
 import { zhApp } from './app';
 import { zhChat } from './chat';
 import { zhDm } from './dm';
+import { zhNotes } from './notes';
 import { zhCall } from './call';
 import { zhEcho } from './echo';
 import { zhMedia } from './media';
@@ -19,6 +20,7 @@ import { zhVideo } from './video';
 import { zhStickers } from './stickers';
 import { zhSounds } from './sounds';
 import { zhBots } from './bots';
+import { zhGuests } from './guests';
 
 /** Simplified Chinese UI strings (ADR-0022): same keys and placeholders as `ru`/`en`; glossary docs/i18n-glossary.md. */
 export const zhCN: Dict = {
@@ -30,7 +32,9 @@ export const zhCN: Dict = {
   ...zhStickers,
   ...zhSounds,
   ...zhBots,
+  ...zhGuests,
   ...zhDm,
+  ...zhNotes,
   ...zhCall,
   ...zhEcho,
   ...zhMedia,

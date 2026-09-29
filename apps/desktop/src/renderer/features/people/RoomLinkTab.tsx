@@ -13,6 +13,7 @@ import { useRooms } from '../../stores/rooms';
 import { useSession } from '../../stores/session';
 import { toast } from '../../stores/toasts';
 import { roomLinkError } from './roomLink';
+import { LinkApprovalRow, LinkApprovalSelect, LinkApprovalTag, RoomApprovalCard, linkApprovalInit, type LinkApproval } from '../guests/ApprovalSettings';
 
 const EXPIRY: Array<{ s: number; key: MessageKey }> = [
   { s: 3600, key: 'people.link.hour' },
@@ -72,6 +73,7 @@ export function RoomLinkTab({ roomId }: { roomId: string }): ReactNode {
   const [messages, setMessages] = useState(true);
   const [files, setFiles] = useState(false);
   const [stream, setStream] = useState(false);
+  const [approval, setApproval] = useState<LinkApproval>('inherit');
 
   const create = useMutation({
     mutationFn: () =>
@@ -83,6 +85,7 @@ export function RoomLinkTab({ roomId }: { roomId: string }): ReactNode {
         allowMessages: messages,
         allowFiles: files,
         allowStream: voice && stream,
+        ...linkApprovalInit(approval),
       }),
     onSuccess: (r) => {
       void qc.invalidateQueries({ queryKey: key });
@@ -99,6 +102,7 @@ export function RoomLinkTab({ roomId }: { roomId: string }): ReactNode {
   const invites = q.data?.invites ?? [];
   return (
     <>
+      <RoomApprovalCard roomId={roomId} />
       <Card title={t('people.link.new')} footer={t('people.link.newHint')}>
         <Row label={t('people.link.expiry')}>
           <Select aria-label={t('people.link.expiry')} className="w-60" value={expires} onChange={(e) => setExpires(Number(e.target.value))}>
@@ -121,6 +125,7 @@ export function RoomLinkTab({ roomId }: { roomId: string }): ReactNode {
         <Row label={t('people.link.allowGuests')} hint={t('people.link.allowGuestsHint')}>
           <Toggle label={t('people.link.allowGuests')} checked={guests} onChange={setGuests} />
         </Row>
+        <LinkApprovalRow roomId={roomId} value={approval} onChange={setApproval} />
       </Card>
       <Card title={t('people.link.rights')}>
         {voice ? (
@@ -159,10 +164,14 @@ export function RoomLinkTab({ roomId }: { roomId: string }): ReactNode {
                 <code className="selectable block truncate font-mono text-caption" title={linkOf(i)}>
                   {linkOf(i)}
                 </code>
-                <div className="truncate text-caption text-muted" title={linkSummary(i, voice)}>
-                  {linkSummary(i, voice)}
+                <div className="flex min-w-0 items-center gap-1.5">
+                  <span className="truncate text-caption text-muted" title={linkSummary(i, voice)}>
+                    {linkSummary(i, voice)}
+                  </span>
+                  <LinkApprovalTag roomId={roomId} invite={i} />
                 </div>
               </div>
+              <LinkApprovalSelect roomId={roomId} invite={i} />
               <IconButton label={t('people.link.copyAria', { code: i.code })} onClick={() => void copy(i)}>
                 <Copy className="size-4" />
               </IconButton>

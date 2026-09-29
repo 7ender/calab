@@ -66,6 +66,9 @@ workspace_notification_settings user_id, workspace_id, level (all|mentions|none)
 room_categories     id, workspace_id, name, position            (rooms.category_id → ON DELETE SET NULL)
 room_invites        id, room_id, code (unique, 12 символов), created_by, expires_at?, max_uses, uses,
                     allow_guests, allow_bits, revoked_at?       — ссылка на комнату (ADR-0016)
+                    + require_approval? (NULL — как у комнаты; ADR-0040);  rooms += guest_approval (false)
+room_admissions     room_id, user_id, invite_id?, status (pending|admitted|declined), requested_at,
+                    decided_by?, decided_at?                     PK (room_id, user_id) — стук гостя (ADR-0040)
                     rooms += user_limit (0..99);  workspaces += allow_self_nickname (true)
                     users += is_guest, guest_expires_at?;  users.email nullable (только у гостей)
 message_reactions   message_id, emoji, user_id, created_at      PK (message_id, emoji, user_id)
@@ -143,6 +146,13 @@ voice_states        (не в Postgres — в Redis, источник LiveKit web
 - Запросы по комнатам пространства фильтруют по `workspace_id` и DM не видят (списки, overrides, категории, позиции, поиск по пространству, `/api/me/mentions`). Голос в DM — только звонок один на один (ADR-0034, «Звонки» ниже); остальные голосовые маршруты считают комнату без пространства несуществующей.
 - Файлы DM — пользовательские (`workspace_id IS NULL`, ключ `users/<user_id>/<file_id>`), грузятся через `POST /api/dms/{id}/files`, в квоту пространства не входят (действуют общий потолок `STORAGE_MAX_TOTAL_BYTES` и лимит 1 GiB неприкреплённых на пользователя). Публичны только аватары; остальные пользовательские файлы после прикрепления читаются по праву на комнату сообщения, т.е. только участниками DM.
 - Прямые упоминания и `@everyone` в DM не сохраняются: каждое сообщение DM уведомляет получателя как упоминание.
+
+### Заметки — личные полки (ADR-0039)
+
+- Полка — комната без пространства: `type = 'notes'`, `workspace_id IS NULL`, владелец — **единственная строка** в `dm_members` (код DM — доступ, события по `user:<id>`, файлы, закрепы, read-state, поиск, пересылка — работает без веток; `RoomAccess.Notes` отличает полку там, где DM значит «двое»: звонки/голос/стрим/камера → `404`, архив и «Удалить чат» DM полку не видят). Имя 1..40 — `rooms.name`, порядок — `rooms.position`, эмодзи — `rooms.emoji` (`''` = нет; у остальных комнат пусто). CHECK `type IN ('dm','notes')` ⇔ `workspace_id IS NULL`. Миграция 00043.
+- Права — набор DM (`computePermissions({dm})`: VIEW_ROOM, SEND_MESSAGES, ATTACH_FILES; закреп — по типу комнаты); кроме владельца полку не видит никто (`404`). Боты и гостевые аккаунты — `403` на `/api/notes*`, в READY `notes` пусто.
+- Не больше **20 полок** на пользователя (создание под advisory-lock пользователя; 21-я — `409 CONFLICT`, `reason = NOTES_LIMIT`). Удаление — `DELETE rooms` каскадом (сообщения, реакции, закрепы, read-state); вложения становятся сиротами и уходят обычной очисткой, копии, пересланные в другие чаты, остаются.
+- **Личная квота**: `users.storage_quota_bytes` (`NULL` = `DEFAULT_PERSONAL_QUOTA_BYTES`, 1 GiB); меняет суперадмин (`GET|PUT /api/admin/users/{id}/storage-quota`). Считаются пользовательские файлы владельца (не аватар), лежащие в живых сообщениях его полок, и ещё не прикреплённые; проверка — в `POST /api/dms/{id}/files` для полки под lock общего потолка хранилища (`413 FILE_QUOTA_EXCEEDED`, `reason = PERSONAL_QUOTA`, `used/limit`). Пересылка в полку квоту не тратит (те же файлы, ADR-0033); загрузки в DM личной квотой не ограничены.
 
 ### Профиль участника (docs/09 #20)
 
@@ -360,3 +370,4 @@ roomAdmin           = MUTE_MEMBERS (позволяет серверные mute/r
 - Гость без активности 7 дней (`guest_expires_at`, сдвигается при refresh) **анонимизируется**, а не удаляется: членства, overrides, файлы и сессии удаляются, имя → «Гость (удалён)», сообщения остаются. Фоновая чистка — раз в час.
 - Гостевой аккаунт не может: создавать и находить workspace, входить в открытые workspace, менять статус и аватар (только имя и настройки). Роль `guest` не видит комнат без override, поэтому не создаёт ссылок и не видит чужих комнат.
 - `POST …/members/{userId}/promote` (MANAGE_WORKSPACE): `guest` → `member`. Аккаунт гостя после этого не чистится.
+- **Подтверждение входа (ADR-0040).** `rooms.guest_approval` (настройки комнаты, `MANAGE_ROOM`) и `room_invites.require_approval` (`NULL` — как у комнаты; гостевые ссылки встреч — `NULL`). Если подтверждение нужно, (b)/(c) дают членство `guest` **без** override и строку `room_admissions` `pending` (использование ссылки тратится; при отклонении / «нет ответа» / отмене — возвращается). Участник пространства (не гость) не ждёт никогда. Решают `MANAGE_ROOM` в комнате и автор ссылки (не гость): `admitted` → override с битами ссылки (ссылки нет — биты ссылки по умолчанию), строка удаляется, опционально имя гостевого аккаунта (1..40) и бейдж из библиотеки; `declined` → строка живёт 10 мин (новый стук — `429 ADMISSION_DECLINED`), членство гостя снимается, если у него нет других комнат и стуков. Метёлка раз в 30 с: `pending` старше 30 мин → `declined` без `decided_by` («Никто не ответил», стучать снова можно сразу), `declined` старше 10 мин удаляются. На комнату ≤ 50 ожидающих (`429 ADMISSION_QUEUE_FULL`).

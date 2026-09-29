@@ -18,6 +18,8 @@ import { resyncLoadedRooms, resyncPins } from './chat';
 import { queryClient } from '../lib/queryClient';
 import { bansKey } from '../lib/moderation';
 import { applyDm, applyDmState, refreshDmPreview, refreshDms } from './dms';
+import { applyShelf, applyShelves, dropShelf } from './notes';
+import { useNotes } from '../stores/notes';
 import { loadMentions } from './mentions';
 import { mentionsMe, onIncomingMessage } from './notify';
 import { applyUserSettings } from './profile';
@@ -45,6 +47,7 @@ import {
   onRoomEventActive,
   onRoomEventEnded,
 } from './calendar';
+import { applyReadyAdmissions, onAdmissionEvent } from '../features/guests/services/admissions';
 
 /** «печатает» lives 5 s after the last TYPING_START: senders repeat it every 3 s while typing (services/chat.ts), so a stuck indicator (a lost stop, a closed tab) fades fast (docs/09 #64). */
 export const TYPING_MS = 5000;
@@ -99,6 +102,8 @@ export function applyDispatch(ev: DispatchEvent): void {
       // DMs (ADR-0020): rooms without a workspace; their read states are in read_states below.
       for (const dm of r.dms) applyDm(dm, false);
       useDms.getState().setAll(r.dms);
+      // Notes shelves (ADR-0039): rooms without a workspace, opened in «Личные».
+      applyShelves(r.notes);
       // Unread / mention counters come with the read states (server-counted, so missed
       // messages and mentions are included — review M12/N7); the client keeps them from here.
       for (const rs of r.readStates) {
@@ -126,6 +131,8 @@ export function applyDispatch(ev: DispatchEvent): void {
       ensureActiveWorkspace();
       // Calendar (ADR-0038): rooms' active meetings, listed months again, today's count, a pending /e/<id>.
       onCalendarReady(r.workspaces);
+      // Guest admission (ADR-0040): knocks I decide, my own waiting screen.
+      applyReadyAdmissions(r);
       dropStaleWorkspaceBackground();
       openAdminRoute(r.me?.isSuperadmin === true);
       // After a reconnect the server's record of this device and LiveKit may disagree (docs/09 #71).
@@ -157,6 +164,13 @@ export function applyDispatch(ev: DispatchEvent): void {
     }
     case 'dmCreate':
       if (e.value.dm) applyDm(e.value.dm, true);
+      return;
+    case 'notesCreate':
+    case 'notesUpdate':
+      if (e.value.shelf) applyShelf(e.value.shelf);
+      return;
+    case 'notesDelete':
+      dropShelf(e.value.roomId);
       return;
     case 'dmStateUpdate':
       applyDmState(e.value.roomId, e.value.archivedAt ? timestampMs(e.value.archivedAt) : 0, e.value.clearedBeforeMessageId);
@@ -271,6 +285,7 @@ export function applyDispatch(ev: DispatchEvent): void {
       if (e.value.message) {
         useMessages.getState().upsert(e.value.message);
         useDms.getState().onChanged(e.value.message.roomId, e.value.message.id, e.value.message);
+        useNotes.getState().onChanged(e.value.message.roomId, e.value.message.id, e.value.message);
         onMessageEdited(e.value.message, e.value.workspaceId);
       }
       return;
@@ -284,7 +299,8 @@ export function applyDispatch(ev: DispatchEvent): void {
       useMessages.getState().remove(roomId, messageId);
       useInbox.getState().remove(messageId);
       useDms.getState().onChanged(roomId, messageId, null);
-      if (useDms.getState().byRoom[roomId] && useDms.getState().preview[roomId] === undefined) void refreshDmPreview(roomId);
+      useNotes.getState().onChanged(roomId, messageId, null);
+      if ((useDms.getState().byRoom[roomId] || useNotes.getState().byRoom[roomId]) && previewUnknown(roomId)) void refreshDmPreview(roomId);
       return;
     }
     case 'messageReactionAdd':
@@ -401,6 +417,10 @@ export function applyDispatch(ev: DispatchEvent): void {
     case 'roomEventEnded':
       onRoomEventEnded(e.value);
       return;
+    case 'roomAdmissionRequest':
+    case 'roomAdmissionDecided':
+      onAdmissionEvent(e);
+      return;
     case 'userUpdate':
       // Another member's public profile (name, avatar, time zone, birthday — docs/09 #76).
       if (e.value.user && e.value.user.id !== myUserId()) {
@@ -449,6 +469,7 @@ function onMessage(m: Message, workspaceId: string): void {
   // A message of a DM we have not heard of (its DM_CREATE got lost): fetch the list.
   if (!workspaceId && !useRooms.getState().byId[m.roomId]) void refreshDms();
   useDms.getState().onMessage(m);
+  useNotes.getState().onMessage(m);
   if (!firstSeen(m.id)) return; // duplicate: no second badge / sound / notification
   const rooms = useRooms.getState();
   rooms.setLastMessage(m.roomId, m.id);
@@ -457,6 +478,11 @@ function onMessage(m: Message, workspaceId: string): void {
     return;
   }
   onIncomingMessage(m, workspaceId, activeRoomId() === m.roomId && document.hasFocus());
+}
+
+/** A DM's or a shelf's list preview was deleted and is not known yet. */
+function previewUnknown(roomId: string): boolean {
+  return useDms.getState().byRoom[roomId] ? useDms.getState().preview[roomId] === undefined : useNotes.getState().preview[roomId] === undefined;
 }
 
 /** An edit can add or remove a mention of me: keep the inbox in step (badges stay as they are). */

@@ -9,6 +9,9 @@ import { AppShell } from '../features/shell/AppShell';
 import { Dialogs } from '../features/shell/Dialogs';
 import { CallLayer } from '../features/call/CallLayer';
 import { Toasts } from '../features/shell/Toasts';
+import { KnockToasts } from '../features/guests/KnockToast';
+import { WaitingScreen } from '../features/guests/WaitingScreen';
+import { useWaiting } from '../features/guests/stores/admissions';
 import { useLocale, type Locale } from '../i18n';
 import { useTimeFormat } from '../lib/format';
 import { usePrefs } from '../stores/prefs';
@@ -73,6 +76,8 @@ export function App(): ReactNode {
   const tooMany = useSession((s) => s.tooManySessions);
   const landing = useLinkLanding((s) => s.link);
   const eventPage = useEventPage((s) => s.page);
+  // A guest's knock on a room (ADR-0040): the waiting screen in place of the app.
+  const waiting = useWaiting();
   let screen: ReactNode;
   if (status === 'booting')
     screen = (
@@ -87,6 +92,7 @@ export function App(): ReactNode {
   else if (status === 'anon') screen = <AuthScreen />;
   else if (status === 'offline') screen = <OfflineScreen />;
   else if (tooMany) screen = <TooManySessions />;
+  else if (waiting) screen = <WaitingScreen />;
   else screen = <AppShell />;
   return (
     <QueryClientProvider client={queryClient}>
@@ -95,6 +101,7 @@ export function App(): ReactNode {
         {status === 'authed' ? <Dialogs /> : null}
         {/* One-to-one calls (ADR-0034): «Вызов…» / «Входящий звонок» over everything. */}
         {status === 'authed' ? <CallLayer /> : null}
+        {status === 'authed' ? <KnockToasts /> : null}
         <Toasts />
       </TooltipP.Provider>
     </QueryClientProvider>

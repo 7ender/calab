@@ -35,6 +35,7 @@ export function EmojiPicker({
   hint,
   inModal = false,
   side,
+  defaultOpen = false,
 }: {
   onPick: (emoji: string) => void;
   label: string;
@@ -56,8 +57,10 @@ export function EmojiPicker({
   inModal?: boolean;
   /** Overrides the default side (e.g. a sticker's emoji chip in a modal opens the picker above it). */
   side?: 'top' | 'bottom';
+  /** Opens on mount (a notes shelf's «Сменить эмодзи», ADR-0039). */
+  defaultOpen?: boolean;
 }): ReactNode {
-  const [open, setOpen] = useState(false);
+  const [open, setOpen] = useState(defaultOpen);
   const change = (v: boolean): void => {
     setOpen(v);
     onOpenChange?.(v);

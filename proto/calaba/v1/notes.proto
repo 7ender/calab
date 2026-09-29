@@ -1,0 +1,55 @@
+syntax = "proto3";
+package calaba.v1;
+
+import "calaba/v1/gateway.proto";
+
+// Notes shelves (ADR-0039, docs/05 «Заметки»): personal rooms of one user, like Saved Messages.
+// Messages, reactions, pins, read state and search of a shelf use the room endpoints
+// (/api/rooms/{id}/…, /api/messages/{id}/…), forwarding works both ways (ADR-0033);
+// attachments are uploaded with POST /api/dms/{id}/files and count against the personal quota.
+// Bots and guest accounts: 403 on /api/notes*. Another user's shelf: 404.
+
+// GET /api/notes — the caller's shelves by position (at most 20) and their personal quota.
+message ListNotesResponse {
+  repeated NotesShelf shelves = 1;
+  UserStorageQuota storage = 2;
+}
+
+// POST /api/notes — a new shelf, last in the list: 201; the owner's devices get NOTES_CREATE.
+// name: 1..40 characters after trimming; emoji: empty or one emoji (as a reaction). The 21st shelf:
+// 409 CONFLICT, reason "NOTES_LIMIT", used / limit.
+message CreateNotesRequest {
+  string name = 1;
+  string emoji = 2;
+}
+
+message CreateNotesResponse {
+  NotesShelf shelf = 1;
+}
+
+// PATCH /api/notes/{id} — rename, change the emoji ("" removes it) or move (position: the new
+// index 0..n-1 in the list; the others shift). NOTES_UPDATE for every shelf that moved.
+message UpdateNotesRequest {
+  optional string name = 1;
+  optional string emoji = 2;
+  optional uint32 position = 3;
+}
+
+message UpdateNotesResponse {
+  NotesShelf shelf = 1;
+}
+
+// The personal file quota (ADR-0039 §5): bytes of the user's uploads kept in shelves (or not
+// attached yet) and the effective quota (users.storage_quota_bytes, else the server default).
+message UserStorageQuota {
+  uint64 quota_bytes = 1;
+  uint64 used_bytes = 2;
+  bool is_default = 3; // no own quota: the server default applies
+}
+
+// PUT /api/admin/users/{id}/storage-quota (superadmins only; others 404) — set the user's
+// personal quota; quota_bytes unset = back to the server default. Answer: the quota and usage.
+// GET /api/admin/users/{id}/storage-quota answers the same without a change.
+message SetUserStorageQuotaRequest {
+  optional uint64 quota_bytes = 1;
+}

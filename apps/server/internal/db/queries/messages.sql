@@ -217,7 +217,7 @@ SELECT sqlc.arg('to_id')::uuid, file_id, position, true FROM message_attachments
 WHERE message_id = sqlc.arg('from_id')::uuid;
 
 -- name: ForwardSources :many
--- Rooms of original messages for Message.forward.room_id: a DM's is not disclosed.
-SELECT m.id, (CASE WHEN r.type = 'dm' THEN NULL ELSE m.room_id END)::uuid AS room_id
+-- Rooms of original messages for Message.forward.room_id: a DM's or a notes shelf's is not disclosed.
+SELECT m.id, (CASE WHEN r.workspace_id IS NULL THEN NULL ELSE m.room_id END)::uuid AS room_id
 FROM messages m JOIN rooms r ON r.id = m.room_id
 WHERE m.id = ANY(sqlc.arg('ids')::uuid[]);

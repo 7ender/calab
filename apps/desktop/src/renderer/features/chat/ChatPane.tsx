@@ -17,6 +17,8 @@ import { Composer, toOutgoing } from './Composer';
 import { MessageList } from './MessageList';
 import { DmHeader, RoomHeader } from './RoomHeader';
 import { isDm } from '../../stores/dms';
+import { isNotes } from '../../stores/notes';
+import { NotesHeader } from '../notes/NotesHeader';
 import { PinnedBar, SearchPanel } from './RoomPanels';
 import { MiniPlayer } from './MediaPlayer';
 import { roomLabel } from './roomLabel';
@@ -93,7 +95,9 @@ export function ChatPane({ workspaceId, roomId }: { workspaceId: string; roomId:
       aria-label={isDm(room) ? roomLabel(room) : room.name}
       {...dropHandlers}
     >
-      {isDm(room) ? (
+      {isNotes(room) ? (
+        <NotesHeader room={room} />
+      ) : isDm(room) ? (
         <DmHeader room={room} />
       ) : (
         <RoomHeader workspaceId={workspaceId} room={room} perms={perms} membersOpen={membersOpen} toggleMembers={toggleMembers} />

@@ -213,6 +213,21 @@ test('m-join', async ({ page }) => {
   await checkpoint(page, 'm-join');
 });
 
+// Guest admission (ADR-0040): a room with approval — the guest's waiting screen on the phone.
+test('m-guest-waiting', async ({ page }) => {
+  mock.setGuestApproval(IDS.rooms.call, true);
+  await open(page, '/r/call-guest-link');
+  await page.getByTestId('link-landing').getByRole('button', { name: 'Продолжить в браузере' }).tap();
+  await expect(page.getByTestId('approval-note')).toContainText('Комната требует подтверждения организатора');
+  await page.getByLabel('Ваше имя').fill('Гость Ромашка');
+  await page.getByRole('button', { name: 'Войти как гость' }).tap();
+  const waiting = page.getByTestId('guest-waiting');
+  await expect(waiting.getByText('Ожидаем подтверждения организатора…')).toBeVisible();
+  await expect(waiting.getByRole('button', { name: 'Отменить' })).toBeVisible();
+  await insets(page);
+  await checkpoint(page, 'm-guest-waiting');
+});
+
 // ---------------------------------------------------------------- onboarding
 
 test('m-onboarding', async ({ page }) => {
@@ -593,6 +608,21 @@ test('m-dm-list', async ({ page }) => {
   await expect(list.getByRole('button')).toHaveCount(2);
   await expect(nav.getByTestId('dm-archive').getByRole('button', { name: 'Архив — 1' })).toHaveAttribute('aria-expanded', 'false');
   await checkpoint(page, 'm-dm-list');
+});
+
+// «Заметки» (ADR-0039): the same section above the DMs in the drawer.
+test('m-notes', async ({ page }) => {
+  const ideas = mock.addShelf(IDS.users.anna, 'Идеи', '💡');
+  mock.addShelf(IDS.users.anna, 'Черновики', '');
+  mock.injectMessage({ roomId: ideas, authorId: IDS.users.anna, content: 'Тёмная тема для лендинга' });
+  await signedIn(page);
+  await page.getByRole('button', { name: 'Комнаты и пространства' }).first().tap();
+  const nav = page.getByTestId('mobile-nav');
+  await nav.getByTestId('rail-home').getByRole('button').tap();
+  const shelves = nav.getByTestId('notes-shelf');
+  await expect(shelves).toHaveCount(2);
+  await expect(shelves.first()).toContainText('Тёмная тема для лендинга');
+  await checkpoint(page, 'm-notes');
 });
 
 /**

@@ -66,7 +66,7 @@ function clear(reason: LogoutReason | null): void {
 async function readError(res: Response): Promise<ApiErrorJson> {
   try {
     const b = (await res.json()) as Partial<ApiErrorJson>;
-    return { code: b.code ?? 'ERROR_CODE_UNSPECIFIED', message: b.message ?? res.statusText, ...(b.field ? { field: b.field } : {}), status: res.status };
+    return { code: b.code ?? 'ERROR_CODE_UNSPECIFIED', message: b.message ?? res.statusText, ...(b.field ? { field: b.field } : {}), ...(typeof b.reason === 'string' && b.reason ? { reason: b.reason } : {}), status: res.status };
   } catch {
     return { code: 'ERROR_CODE_UNSPECIFIED', message: res.statusText || `HTTP ${res.status}`, status: res.status };
   }
@@ -165,7 +165,7 @@ async function guestJoin(code: string, nickname: string): Promise<IpcResult<Gues
   try {
     const res = await postAuth(`/api/room-invites/${encodeURIComponent(code)}/join`, { nickname, deviceName: deviceName() });
     if (!res.ok) return { ok: false, error: await readError(res) };
-    const data = (await res.json()) as { roomId: string; workspaceId: string; tokens?: TokensJson; me?: unknown };
+    const data = (await res.json()) as { roomId: string; workspaceId: string; tokens?: TokensJson; me?: unknown; admission?: unknown };
     if (!data.tokens) return { ok: false, error: { code: 'ERROR_CODE_INTERNAL', message: 'no guest session in the response', status: res.status } };
     applyTokens(data.tokens);
     return {
@@ -174,6 +174,7 @@ async function guestJoin(code: string, nickname: string): Promise<IpcResult<Gues
         session: { serverUrl: location.origin, sessionId: data.tokens.sessionId, me: data.me },
         roomId: data.roomId,
         workspaceId: data.workspaceId,
+        ...(data.admission ? { admission: data.admission } : {}),
       },
     };
   } catch (e) {

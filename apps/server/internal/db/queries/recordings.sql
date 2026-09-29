@@ -227,8 +227,8 @@ WHERE forwarded_from = $1 AND kind = 'system' AND deleted_at IS NULL
 RETURNING *;
 
 -- name: RoomAudience :one
--- Who gets a room's events outside a request: its workspace, or a DM's two participants.
-SELECT r.workspace_id, (r.type = 'dm')::boolean AS dm,
+-- Who gets a room's events outside a request: its workspace, or a DM's (a shelf's) members.
+SELECT r.workspace_id, (r.workspace_id IS NULL)::boolean AS dm,
     array(SELECT d.user_id FROM dm_members d WHERE d.room_id = r.id ORDER BY d.user_id)::uuid[] AS dm_members
 FROM rooms r WHERE r.id = $1;
 
