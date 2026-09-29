@@ -168,6 +168,11 @@ var botRoutes = map[string]botAccess{
 	"POST /api/rooms/{id}/invites":              botDeny,
 	"GET /api/rooms/{id}/invites":               botDeny,
 	"DELETE /api/rooms/{id}/invites/{inviteId}": botDeny,
+	"PATCH /api/rooms/{id}/invites/{inviteId}":  botDeny,
+	// Guest admission (ADR-0040): bots may read the waiting list, not decide.
+	"GET /api/rooms/{id}/admissions":           botAllow,
+	"POST /api/rooms/{id}/admissions/{userId}": botDeny,
+	"DELETE /api/rooms/{id}/admissions/me":     botDeny,
 	// superadmin, link previews, meeting recording
 	"GET /api/admin/workspaces":                         botDeny,
 	"GET /api/admin/workspaces/{id}":                    botDeny,

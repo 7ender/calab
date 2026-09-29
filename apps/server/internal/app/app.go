@@ -101,6 +101,7 @@ func (a *App) Run(ctx context.Context) {
 	go a.Files.RunCleanup(ctx, time.Hour)
 	go a.Files.RunStorageMetrics(ctx, time.Minute)
 	go a.Guests.RunCleanup(ctx, time.Hour)
+	go a.Guests.RunAdmissions(ctx, guests.AdmissionSweep)
 	go a.Plans.Run(ctx)
 	if a.RTC != nil {
 		go a.RTC.RunReconcile(ctx, 30*time.Second)

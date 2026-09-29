@@ -64,7 +64,11 @@ func NewService(d *db.DB, a *auth.Service, ev events.Publisher, store blob.Store
 func (s *Service) Routes(mux httpx.Router, wrap func(http.Handler) http.Handler) {
 	mux.Handle("POST /api/rooms/{id}/invites", wrap(httpx.HandlerFunc(s.create)))
 	mux.Handle("GET /api/rooms/{id}/invites", wrap(httpx.HandlerFunc(s.list)))
+	mux.Handle("PATCH /api/rooms/{id}/invites/{inviteId}", wrap(httpx.HandlerFunc(s.update)))
 	mux.Handle("DELETE /api/rooms/{id}/invites/{inviteId}", wrap(httpx.HandlerFunc(s.revoke)))
+	mux.Handle("GET /api/rooms/{id}/admissions", wrap(httpx.HandlerFunc(s.listAdmissions)))
+	mux.Handle("POST /api/rooms/{id}/admissions/{userId}", wrap(httpx.HandlerFunc(s.decide)))
+	mux.Handle("DELETE /api/rooms/{id}/admissions/me", wrap(httpx.HandlerFunc(s.cancelAdmission)))
 	mux.Handle("GET /api/room-invites/{code}", httpx.HandlerFunc(s.preview))
 	mux.Handle("POST /api/room-invites/{code}/join", httpx.HandlerFunc(s.join))
 }
@@ -107,6 +111,7 @@ func toProto(i sqlc.RoomInvite, wsID uuid.UUID) *v1.RoomInvite {
 		CreatedBy: i.CreatedBy.String(), MaxUses: uint32(max(i.MaxUses, 0)), Uses: uint32(max(i.Uses, 0)),
 		AllowGuests: i.AllowGuests, AllowSpeak: b.Has(perm.Speak), AllowMessages: b.Has(perm.SendMessages),
 		AllowFiles: b.Has(perm.AttachFiles), AllowStream: b.Has(perm.Stream), CreatedAt: timestamppb.New(i.CreatedAt),
+		RequireApproval: i.RequireApproval,
 	}
 	if i.ExpiresAt != nil {
 		out.ExpiresAt = timestamppb.New(*i.ExpiresAt)
@@ -184,6 +189,7 @@ func (s *Service) create(w http.ResponseWriter, r *http.Request) error {
 		inv, err := s.db.Q.CreateRoomInvite(r.Context(), sqlc.CreateRoomInviteParams{
 			RoomID: roomID, Code: code, CreatedBy: uid, ExpiresAt: expires,
 			MaxUses: int32(req.GetMaxUses()), AllowGuests: orDefault(req.AllowGuests, true), AllowBits: int64(bits), //nolint:gosec // bounded
+			RequireApproval: req.RequireApproval,
 		})
 		if db.UniqueViolation(err) != "" {
 			continue
@@ -211,6 +217,37 @@ func (s *Service) list(w http.ResponseWriter, r *http.Request) error {
 		out.Invites[i] = toProto(inv, acc.WorkspaceID)
 	}
 	httpx.Write(w, http.StatusOK, out)
+	return nil
+}
+
+// update: PATCH /api/rooms/{id}/invites/{inviteId} — the link's approval setting (ADR-0040).
+func (s *Service) update(w http.ResponseWriter, r *http.Request) error {
+	roomID, acc, err := manage(r)
+	if err != nil {
+		return err
+	}
+	invID, err := httpx.PathUUID(r, "inviteId", "invite")
+	if err != nil {
+		return err
+	}
+	var req v1.UpdateRoomInviteRequest
+	if err := httpx.Decode(w, r, &req); err != nil {
+		return err
+	}
+	if req.GetInheritApproval() && req.RequireApproval != nil {
+		return httpx.Validation("requireApproval", "requireApproval and inheritApproval exclude each other")
+	}
+	if !req.GetInheritApproval() && req.RequireApproval == nil {
+		return httpx.Validation("requireApproval", "nothing to change")
+	}
+	inv, err := s.db.Q.SetRoomInviteApproval(r.Context(), sqlc.SetRoomInviteApprovalParams{ID: invID, RoomID: roomID, RequireApproval: req.RequireApproval})
+	if db.IsNotFound(err) {
+		return httpx.NotFound("invite")
+	}
+	if err != nil {
+		return err
+	}
+	httpx.Write(w, http.StatusOK, &v1.UpdateRoomInviteResponse{Invite: toProto(inv, acc.WorkspaceID)})
 	return nil
 }
 
@@ -250,7 +287,8 @@ func (s *Service) preview(w http.ResponseWriter, r *http.Request) error {
 	}
 	out := &v1.GetRoomInviteResponse{
 		RoomName: row.Room.Name, WorkspaceName: row.Workspace.Name, AllowGuests: row.RoomInvite.AllowGuests,
-		RoomType: v1.RoomType_ROOM_TYPE_TEXT,
+		RoomType:         v1.RoomType_ROOM_TYPE_TEXT,
+		RequiresApproval: RequiresApproval(row.Room.GuestApproval, row.RoomInvite.RequireApproval),
 	}
 	if row.Room.Type == "voice" {
 		out.RoomType = v1.RoomType_ROOM_TYPE_VOICE
@@ -268,69 +306,99 @@ func (s *Service) preview(w http.ResponseWriter, r *http.Request) error {
 	return nil
 }
 
+// granted is what a join changed: the membership made (nil if the user already was a member),
+// whether access or a knock changed at all, and the knock when the link requires approval.
+type granted struct {
+	added   *sqlc.WorkspaceMember
+	changed bool
+	knock   *sqlc.RoomAdmission
+	fresh   bool // the knock is new (deciders are told)
+}
+
 // grant gives userID access to the room inside q: membership as `guest` if needed and a
-// user override with the link's bits. It consumes one use of the link only when access
-// actually changes. Returns the new membership (nil if the user already was a member).
-func grant(ctx context.Context, q *sqlc.Queries, row sqlc.GetRoomInviteByCodeRow, userID uuid.UUID) (*sqlc.WorkspaceMember, bool, error) {
+// user override with the link's bits — or, when the link requires approval (ADR-0040) and the
+// user is not a member (a guest at most), the membership without the override and a pending
+// knock. It consumes one use of the link only when access or the knock actually changes.
+func (s *Service) grant(ctx context.Context, q *sqlc.Queries, row sqlc.GetRoomInviteByCodeRow, userID uuid.UUID) (granted, error) {
 	wsID, roomID := row.Workspace.ID, row.Room.ID
 	member, err := q.GetMember(ctx, sqlc.GetMemberParams{WorkspaceID: wsID, UserID: userID})
 	isMember := err == nil
 	if err != nil && !db.IsNotFound(err) {
-		return nil, false, err
+		return granted{}, err
 	}
 	// A suspended workspace takes nobody in; banned users stay out (item 32).
 	if err := moderation.CheckSuspended(ctx, q, wsID); err != nil {
-		return nil, false, err
+		return granted{}, err
 	}
 	if !isMember {
 		if err := moderation.CheckBan(ctx, q, wsID, userID, nil); err != nil {
-			return nil, false, err
+			return granted{}, err
 		}
 	}
 	if isMember {
 		acc, err := perm.NewResolver(q).Room(ctx, roomID, userID)
 		if err != nil && !errors.Is(err, perm.ErrNoRoom) {
-			return nil, false, err
+			return granted{}, err
 		}
 		if acc.Bits.Has(perm.ViewRoom) {
-			return nil, false, nil // (a) already has access: nothing to change, no use consumed
+			return granted{}, nil // (a) already has access: nothing to change, no use consumed
 		}
+	}
+	// Members of the workspace never wait (not in v1: ADR-0040); guests (b)/(c) do.
+	wait := RequiresApproval(row.Room.GuestApproval, row.RoomInvite.RequireApproval) &&
+		(!isMember || member.Role == string(perm.RoleGuest))
+	var g granted
+	if wait {
+		adm, fresh, err := s.knock(ctx, q, row, userID)
+		if err != nil {
+			return granted{}, err
+		}
+		if !fresh {
+			return granted{knock: &adm}, nil // already waiting: no use consumed
+		}
+		g.knock, g.fresh = &adm, true
 	}
 	if _, err := q.ConsumeRoomInvite(ctx, row.RoomInvite.ID); err != nil {
 		if db.IsNotFound(err) {
-			return nil, false, auth.ErrInviteInvalid()
+			return granted{}, auth.ErrInviteInvalid()
 		}
-		return nil, false, err
+		return granted{}, err
 	}
-	var added *sqlc.WorkspaceMember
+	g.changed = true
 	if !isMember { // (b)/(c): join as guest — the role sees no room without an override
 		m, err := q.AddMember(ctx, sqlc.AddMemberParams{WorkspaceID: wsID, UserID: userID, Role: string(perm.RoleGuest)})
 		if err != nil {
-			return nil, false, err
+			return granted{}, err
 		}
-		added, member = &m, m
+		g.added = &m
 	}
-	_ = member
+	if wait {
+		return g, nil
+	}
 	if _, err := q.UpsertUserOverride(ctx, sqlc.UpsertUserOverrideParams{RoomID: roomID, UserID: userID.String(), Allow: row.RoomInvite.AllowBits}); err != nil {
-		return nil, false, err
+		return granted{}, err
 	}
-	return added, true, nil
+	return g, nil
 }
 
-// announce publishes the membership and the room's new overrides after a join.
-func (s *Service) announce(ctx context.Context, row sqlc.GetRoomInviteByCodeRow, added *sqlc.WorkspaceMember) {
-	ovs, err := s.db.Q.ListRoomOverrides(ctx, row.Room.ID)
-	if err == nil {
-		pbs := make([]*v1.RoomPermissionOverride, len(ovs))
-		for i, o := range ovs {
-			pbs[i] = pbconv.Override(o)
-		}
-		s.events.Workspace(ctx, row.Workspace.ID, &v1.DispatchEvent{Event: &v1.DispatchEvent_RoomPermissionsUpdate{
-			RoomPermissionsUpdate: &v1.RoomPermissionsUpdate{WorkspaceId: row.Workspace.ID.String(), RoomId: row.Room.ID.String(), Permissions: pbs},
-		}})
+// announce publishes the membership and the room's new overrides after a join — or, for a
+// knock, the membership and ROOM_ADMISSION_REQUEST to the deciders.
+func (s *Service) announce(ctx context.Context, row sqlc.GetRoomInviteByCodeRow, g granted) {
+	if g.knock == nil {
+		s.publishOverrides(ctx, row.Workspace.ID, row.Room.ID)
 	}
-	if added != nil {
-		workspaces.AnnounceJoin(ctx, s.db.Q, s.Plans, s.events, row.Workspace, *added)
+	if g.added != nil {
+		workspaces.AnnounceJoin(ctx, s.db.Q, s.Plans, s.events, row.Workspace, *g.added)
+	}
+	if g.knock != nil && g.fresh {
+		s.announceKnock(ctx, row, *g.knock)
+	}
+}
+
+// respond fills the join response with the knock, if any (the guest's view).
+func respond(resp *v1.JoinRoomInviteResponse, row sqlc.GetRoomInviteByCodeRow, g granted) {
+	if g.knock != nil {
+		resp.Admission = guestView(*g.knock, row.Workspace.ID, row.Room.Name, row.Workspace.Name)
 	}
 }
 
@@ -359,19 +427,19 @@ func (s *Service) join(w http.ResponseWriter, r *http.Request) error {
 		if err != nil {
 			return err
 		}
-		var added *sqlc.WorkspaceMember
-		changed := false
+		var g granted
 		err = s.db.Tx(r.Context(), func(q *sqlc.Queries) error {
 			var err error
-			added, changed, err = grant(r.Context(), q, row, id.UserID)
+			g, err = s.grant(r.Context(), q, row, id.UserID)
 			return err
 		})
 		if err != nil {
 			return err
 		}
-		if changed {
-			s.announce(r.Context(), row, added)
+		if g.changed {
+			s.announce(r.Context(), row, g)
 		}
+		respond(resp, row, g)
 		httpx.Write(w, http.StatusOK, resp)
 		return nil
 	}
@@ -393,7 +461,7 @@ func (s *Service) join(w http.ResponseWriter, r *http.Request) error {
 	var (
 		user   sqlc.User
 		tokens *v1.AuthTokens
-		added  *sqlc.WorkspaceMember
+		g      granted
 	)
 	err = s.db.Tx(r.Context(), func(q *sqlc.Queries) error {
 		var err error
@@ -402,13 +470,14 @@ func (s *Service) join(w http.ResponseWriter, r *http.Request) error {
 		if err != nil {
 			return err
 		}
-		added, _, err = grant(r.Context(), q, row, user.ID)
+		g, err = s.grant(r.Context(), q, row, user.ID)
 		return err
 	})
 	if err != nil {
 		return err
 	}
-	s.announce(r.Context(), row, added)
+	s.announce(r.Context(), row, g)
+	respond(resp, row, g)
 	resp.Tokens, resp.Me = tokens, pbconv.Me(user)
 	if auth.IsWeb(r) {
 		auth.SetRefreshCookie(w, tokens)

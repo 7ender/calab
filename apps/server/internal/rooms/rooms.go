@@ -500,6 +500,7 @@ func (h *Handlers) update(w http.ResponseWriter, r *http.Request) error {
 		}
 		p.Restricted = req.Restricted
 	}
+	p.GuestApproval = req.GuestApproval // ADR-0040: MANAGE_ROOM, like the room's links
 	if req.CategoryId != nil {
 		p.SetCategory = true
 		if p.CategoryID, err = parseCategory(r.Context(), h.db.Q, acc.WorkspaceID, req.GetCategoryId()); err != nil {
