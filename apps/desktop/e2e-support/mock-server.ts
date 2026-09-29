@@ -26,6 +26,42 @@ import {
 } from '@bufbuild/protobuf';
 import { timestampFromMs, timestampMs, type Timestamp } from '@bufbuild/protobuf/wkt';
 import {
+  BoardPermissionsResponseSchema,
+  BoardResponseSchema,
+  BoardViewResponseSchema,
+  CreateBoardLabelRequestSchema,
+  CreateBoardMilestoneRequestSchema,
+  CreateBoardRequestSchema,
+  CreateBoardStatusRequestSchema,
+  CreateBoardViewRequestSchema,
+  CreateTaskRequestSchema,
+  ListBoardViewsResponseSchema,
+  ListBoardsResponseSchema,
+  ListTasksResponseSchema,
+  MyTasksResponseSchema,
+  SearchTasksResponseSchema,
+  SetAssigneesRequestSchema,
+  SetBoardPermissionsRequestSchema,
+  SetBoardPositionRequestSchema,
+  SetTaskRelationRequestSchema,
+  SetTaskSubscriptionRequestSchema,
+  TaskActivityPageSchema,
+  TaskFilterSchema,
+  TaskResponseSchema,
+  TaskSchema,
+  UpdateBoardLabelRequestSchema,
+  UpdateBoardMilestoneRequestSchema,
+  UpdateBoardRequestSchema,
+  UpdateBoardStatusRequestSchema,
+  UpdateBoardViewRequestSchema,
+  UpdateTaskRequestSchema,
+  type Task,
+  type TaskActivity,
+  type TaskFilter,
+  type TaskRelationKind,
+} from '@calaba/protocol';
+import { BoardError, BoardsMock, MANAGE_BOARD } from './mock-boards';
+import {
   AdminGetWorkspaceResponseSchema,
   CallActionResponseSchema,
   CallOutcome,
@@ -342,6 +378,7 @@ import {
   defaultSettings,
   effectiveMedia,
   fileMeta,
+  mockId,
   nextId,
   sha256,
   tick,
@@ -610,6 +647,10 @@ export interface MockServer {
    * Returns the absolute /r/<code> URL; GET /api/event-rsvp then carries it as guest_url.
    */
   eventGuestLink(eventId: string, email: string): string;
+  /** Task boards (ADR-0042, mock-boards.ts): the live domain (tasks, boards, activity). */
+  readonly boards: BoardsMock;
+  /** A task change by another user (e.g. a rename during a call): TASK_UPDATE to the board's viewers. */
+  updateTaskAs(actorId: string, taskId: string, patch: { title?: string; statusId?: string }): Task;
 }
 
 export async function startMockServer(opts: MockServerOptions = {}): Promise<MockServer> {
@@ -665,6 +706,10 @@ export async function startMockServer(opts: MockServerOptions = {}): Promise<Moc
     decideAdmission: (roomId, userId, status, by) => impl.decideAdmission(roomId, userId, status, by),
     eventViewToken: (id, email) => viewToken(id, email),
     eventGuestLink: (id, email) => impl.eventGuestLink(id, email),
+    get boards() {
+      return impl.boards;
+    },
+    updateTaskAs: (actor, taskId, patch) => impl.updateTaskAs(actor, taskId, patch),
   };
 }
 
@@ -964,9 +1009,12 @@ class MockImpl {
   private callSeq = 0;
   /** Meetings (ADR-0038) by id; cancelled ones stay (cancelled_at). */
   private readonly calEvents = new Map<string, CalEventRec>();
+  /** Task boards (ADR-0042); rebuilt with the state. */
+  boards: BoardsMock;
 
   constructor(opts: MockServerOptions) {
     this.state = buildState(opts.scenario ?? 'data');
+    this.boards = this.newBoards();
     this.lk = {
       url: opts.livekitUrl ?? 'ws://127.0.0.1:7880',
       key: opts.livekitKey ?? 'devkey',
@@ -978,6 +1026,8 @@ class MockImpl {
     this.registerCallRoutes();
     this.calendarRoutes();
     this.admissionRoutes();
+    this.boardRoutes();
+    this.seedBoards();
     this.http.on('upgrade', (req, socket, head) => {
       const path = new URL(req.url ?? '/', 'http://mock').pathname;
       if (path !== '/gateway' || Date.now() < this.gatewayDownUntil) {
@@ -1019,6 +1069,8 @@ class MockImpl {
     this.timers.clear();
     this.releaseFiles();
     this.state = buildState(scenario);
+    this.boards = this.newBoards();
+    this.seedBoards();
     this.voiceSessions.clear();
     this.calls.clear();
     this.userCall.clear();
@@ -1075,6 +1127,8 @@ class MockImpl {
     if (room.type === RoomType.DM) {
       return computePermissions({ role: WorkspaceRole.UNSPECIFIED, dm: { participant: this.dmPeer(room.id, userId) !== null } });
     }
+    // A task's comment room (ADR-0042): rights from the task's board.
+    if (room.type === RoomType.TASK) return this.boards.roomPerms(room.id, userId) ?? 0n;
     // A notes shelf (ADR-0039): the DM set for its owner only.
     if (room.type === RoomType.NOTES) {
       return computePermissions({ role: WorkspaceRole.UNSPECIFIED, dm: { participant: this.state.shelves.get(room.id)?.ownerId === userId } });
@@ -1293,7 +1347,7 @@ class MockImpl {
 
   /** Runs `fn`; then ROOM_CREATE / ROOM_DELETE to each member whose room visibility changed (docs/05). */
   private withVisibility(wsId: string, fn: () => void): void {
-    const rooms = [...this.state.rooms.values()].filter((r) => r.workspaceId === wsId);
+    const rooms = [...this.state.rooms.values()].filter((r) => r.workspaceId === wsId && r.type !== RoomType.TASK);
     const before = new Map(this.membersOf(wsId).map((m) => [m.userId, new Set(rooms.filter((r) => this.canView(r, m.userId)).map((r) => r.id))]));
     fn();
     for (const m of this.membersOf(wsId)) {
@@ -1369,9 +1423,10 @@ class MockImpl {
     const ws = this.state.workspaces.get(wsId);
     const m = this.member(wsId, userId);
     const rooms = [...this.state.rooms.values()]
-      .filter((r) => r.workspaceId === wsId && this.canView(r, userId))
+      .filter((r) => r.workspaceId === wsId && r.type !== RoomType.TASK && this.canView(r, userId))
       .sort((a, b) => a.position - b.position || a.id.localeCompare(b.id));
     const members = this.membersOf(wsId);
+    const boards = m && m.role !== WorkspaceRole.GUEST ? this.boards.snapshot(wsId, userId) : { boards: [], unreadTaskIds: [] };
     return create(WorkspaceSnapshotSchema, {
       ...(ws ? { workspace: ws } : {}),
       role: m?.role ?? WorkspaceRole.UNSPECIFIED,
@@ -1392,6 +1447,8 @@ class MockImpl {
       backgrounds: this.backgroundsOf(wsId),
       sounds: this.soundsOf(wsId),
       activeEvents: m ? this.activeEvents(wsId, userId) : [],
+      boards: boards.boards,
+      unreadTaskIds: boards.unreadTaskIds,
     });
   }
 
@@ -1422,7 +1479,7 @@ class MockImpl {
           pendingAdmissions: this.ownAdmissions(u.user.id),
           // Every visible room (server contract): never read → empty marker.
           readStates: [...this.state.rooms.values()]
-            .filter((r) => (wsIds.includes(r.workspaceId) || r.type === RoomType.DM || r.type === RoomType.NOTES) && this.canView(r, u.user.id))
+            .filter((r) => r.type !== RoomType.TASK && (wsIds.includes(r.workspaceId) || r.type === RoomType.DM || r.type === RoomType.NOTES) && this.canView(r, u.user.id))
             .map((r): [string, string] => [r.id, reads.get(r.id) ?? ''])
             .sort(([a], [b]) => a.localeCompare(b))
             .map(([roomId, lastReadMessageId]) => create(ReadStateSchema, { roomId, lastReadMessageId, ...this.readCounts(roomId, u.user.id, lastReadMessageId) })),
@@ -1437,7 +1494,7 @@ class MockImpl {
             .sort((a, b) => a.workspaceId.localeCompare(b.workspaceId)),
           // Read receipts of workspace rooms (docs/09 #92); DMs carry theirs in dms[].
           peerReads: [...this.state.rooms.values()]
-            .filter((r) => r.type !== RoomType.DM && wsIds.includes(r.workspaceId) && this.canView(r, u.user.id))
+            .filter((r) => r.type !== RoomType.DM && r.type !== RoomType.TASK && wsIds.includes(r.workspaceId) && this.canView(r, u.user.id))
             .map((r) => ({ roomId: r.id, lastReadMessageId: this.peerRead(r.id, u.user.id) }))
             .filter((pr) => pr.lastReadMessageId !== '')
             .sort((a, b) => a.roomId.localeCompare(b.roomId)),
@@ -2270,6 +2327,7 @@ class MockImpl {
     const peer = room.type === RoomType.DM ? this.dmPeer(room.id, authorId) : null;
     if (peer && this.dmStateOf(peer, room.id).archivedAt) this.setDmState(peer, room.id, { archived: false });
     this.toWorkspace(room.workspaceId, { event: { case: 'messageCreate', value: { workspaceId: room.workspaceId, message: msg } } }, room.id);
+    if (room.type === RoomType.TASK) this.boards.onComment(room.id, authorId, msg, parseMentions(content).users);
     return msg;
   }
 
@@ -3778,6 +3836,7 @@ class MockImpl {
         { event: { case: 'messageDelete', value: { workspaceId: room.workspaceId, roomId: room.id, messageId: msg.id } } },
         room.id,
       );
+      if (room.type === RoomType.TASK) this.boards.onCommentDeleted(room.id);
       noContent(c.res);
     });
 
@@ -6038,6 +6097,241 @@ class MockImpl {
       else if (v && occ && room && this.canView(room, userId)) out.push(eventOut(rec, occ, v.view, userId, v.canEdit));
     }
     return out;
+  }
+
+  // ------------------------------------------------ task boards (ADR-0042, mock-boards.ts)
+
+  /** A board route: BoardError → the HTTP error the server would send. */
+  private boardRoute(method: string, pattern: string, h: (c: Ctx, me: string) => void | Promise<void>): void {
+    this.route(method, pattern, async (c) => {
+      const me = this.uid(c);
+      try {
+        await h(c, me);
+      } catch (e) {
+        if (e instanceof BoardError) throw new HttpError(e.status, e.code, e.message, e.field, e.reason ? { reason: e.reason } : {});
+        throw e;
+      }
+    });
+  }
+
+  private boardRoutes(): void {
+    const b = (): BoardsMock => this.boards;
+    const q = (c: Ctx, k: string): string => c.url.searchParams.get(k) ?? '';
+    const taskRes = (id: string, me: string, full = false): MessageInitShape<typeof TaskResponseSchema> => {
+      if (!full) {
+        const t = b().tasks.get(id);
+        return t ? { task: b().taskOut(t, me, true) } : {};
+      }
+      const g = b().getTask(id, me);
+      return { task: g.task, subtasks: g.subtasks, related: g.related, ...(g.parent ? { parent: g.parent } : {}), ...(g.room ? { room: this.roomOut(g.room) } : {}), board: g.board };
+    };
+    const filterOf = (c: Ctx): TaskFilter | undefined => {
+      const raw = q(c, 'filter');
+      if (!raw) return undefined;
+      try {
+        return fromJson(TaskFilterSchema, JSON.parse(raw) as JsonValue, JSON_READ);
+      } catch {
+        throw invalid('filter', 'malformed filter');
+      }
+    };
+
+    this.boardRoute('GET', '/api/workspaces/:id/boards', (c, me) => {
+      sendMsg(c.res, 200, ListBoardsResponseSchema, { boards: b().listBoards(c.params[0] ?? '', me, q(c, 'archived') === '1') });
+    });
+    this.boardRoute('POST', '/api/workspaces/:id/boards', (c, me) => {
+      const r = parseBody(c, CreateBoardRequestSchema);
+      const rec = b().createBoard(c.params[0] ?? '', me, r);
+      sendMsg(c.res, 201, BoardResponseSchema, { board: b().boardOut(rec, me, { personal: true }) });
+    });
+    this.boardRoute('GET', '/api/boards/:id', (c, me) => sendMsg(c.res, 200, BoardResponseSchema, { board: b().getBoard(c.params[0] ?? '', me) }));
+    this.boardRoute('PATCH', '/api/boards/:id', (c, me) => {
+      const r = parseBody(c, UpdateBoardRequestSchema);
+      sendMsg(c.res, 200, BoardResponseSchema, { board: b().updateBoard(c.params[0] ?? '', me, r) });
+    });
+    this.boardRoute('DELETE', '/api/boards/:id', (c, me) => {
+      b().removeBoard(c.params[0] ?? '', me, q(c, 'purge') === '1');
+      noContent(c.res);
+    });
+    this.boardRoute('PUT', '/api/boards/:id/position', (c, me) => {
+      const r = parseBody(c, SetBoardPositionRequestSchema);
+      sendMsg(c.res, 200, BoardResponseSchema, { board: b().moveBoard(c.params[0] ?? '', me, r.position) });
+    });
+    this.boardRoute('GET', '/api/boards/:id/permissions', (c, me) => {
+      const board = b().getBoard(c.params[0] ?? '', me);
+      if (!(board.permissions & MANAGE_BOARD)) throw forbidden('MANAGE_BOARD required');
+      sendMsg(c.res, 200, BoardPermissionsResponseSchema, { overrides: board.permissionOverrides, board });
+    });
+    this.boardRoute('PUT', '/api/boards/:id/permissions', (c, me) => {
+      const r = parseBody(c, SetBoardPermissionsRequestSchema);
+      const board = b().setPermissions(c.params[0] ?? '', me, r.overrides);
+      sendMsg(c.res, 200, BoardPermissionsResponseSchema, { overrides: board.permissionOverrides, board });
+    });
+    // statuses / labels / milestones
+    this.boardRoute('POST', '/api/boards/:id/statuses', (c, me) => {
+      const r = parseBody(c, CreateBoardStatusRequestSchema);
+      sendMsg(c.res, 201, BoardResponseSchema, { board: b().createStatus(c.params[0] ?? '', me, r) });
+    });
+    this.boardRoute('PATCH', '/api/boards/:id/statuses/:sid', (c, me) => {
+      const r = parseBody(c, UpdateBoardStatusRequestSchema);
+      sendMsg(c.res, 200, BoardResponseSchema, { board: b().updateStatus(c.params[0] ?? '', me, c.params[1] ?? '', r) });
+    });
+    this.boardRoute('DELETE', '/api/boards/:id/statuses/:sid', (c, me) => {
+      b().deleteStatus(c.params[0] ?? '', me, c.params[1] ?? '', q(c, 'move_to'));
+      noContent(c.res);
+    });
+    this.boardRoute('POST', '/api/boards/:id/labels', (c, me) => {
+      const r = parseBody(c, CreateBoardLabelRequestSchema);
+      sendMsg(c.res, 201, BoardResponseSchema, { board: b().createLabel(c.params[0] ?? '', me, r) });
+    });
+    this.boardRoute('PATCH', '/api/boards/:id/labels/:lid', (c, me) => {
+      const r = parseBody(c, UpdateBoardLabelRequestSchema);
+      sendMsg(c.res, 200, BoardResponseSchema, { board: b().updateLabel(c.params[0] ?? '', me, c.params[1] ?? '', r) });
+    });
+    this.boardRoute('DELETE', '/api/boards/:id/labels/:lid', (c, me) => {
+      b().deleteLabel(c.params[0] ?? '', me, c.params[1] ?? '');
+      noContent(c.res);
+    });
+    this.boardRoute('POST', '/api/boards/:id/milestones', (c, me) => {
+      const r = parseBody(c, CreateBoardMilestoneRequestSchema);
+      sendMsg(c.res, 201, BoardResponseSchema, { board: b().createMilestone(c.params[0] ?? '', me, r) });
+    });
+    this.boardRoute('PATCH', '/api/boards/:id/milestones/:mid', (c, me) => {
+      const r = parseBody(c, UpdateBoardMilestoneRequestSchema);
+      sendMsg(c.res, 200, BoardResponseSchema, { board: b().updateMilestone(c.params[0] ?? '', me, c.params[1] ?? '', r) });
+    });
+    this.boardRoute('DELETE', '/api/boards/:id/milestones/:mid', (c, me) => {
+      b().deleteMilestone(c.params[0] ?? '', me, c.params[1] ?? '');
+      noContent(c.res);
+    });
+    // views
+    this.boardRoute('GET', '/api/boards/:id/views', (c, me) => sendMsg(c.res, 200, ListBoardViewsResponseSchema, { views: b().getBoard(c.params[0] ?? '', me).views }));
+    this.boardRoute('POST', '/api/boards/:id/views', (c, me) => {
+      const r = parseBody(c, CreateBoardViewRequestSchema);
+      sendMsg(c.res, 201, BoardViewResponseSchema, { view: b().createView(c.params[0] ?? '', me, r) });
+    });
+    this.boardRoute('PATCH', '/api/boards/:id/views/:vid', (c, me) => {
+      const r = parseBody(c, UpdateBoardViewRequestSchema);
+      sendMsg(c.res, 200, BoardViewResponseSchema, { view: b().updateView(c.params[0] ?? '', me, c.params[1] ?? '', r) });
+    });
+    this.boardRoute('DELETE', '/api/boards/:id/views/:vid', (c, me) => {
+      b().deleteView(c.params[0] ?? '', me, c.params[1] ?? '');
+      noContent(c.res);
+    });
+    // files of task descriptions and comments (quota of the workspace)
+    this.boardRoute('POST', '/api/boards/:id/files', async (c, me) => {
+      const board = b().getBoard(c.params[0] ?? '', me);
+      const ws = this.state.workspaces.get(board.workspaceId);
+      if (!ws) throw notFound('board not found');
+      const f = await parseMultipartFile(c);
+      if (f.bytes.length > 50 * 1024 * 1024) throw new HttpError(413, ErrorCode.FILE_TOO_LARGE, 'file too large');
+      const id = this.storeFile(ws.id, me, f, parseVoice(c, f));
+      ws.storageUsedBytes += BigInt(f.bytes.length);
+      sendMsg(c.res, 201, UploadFileResponseSchema, { file: this.state.files.get(id)?.meta });
+    });
+    // tasks
+    this.boardRoute('GET', '/api/boards/:id/tasks', (c, me) => {
+      const r = b().listTasks(c.params[0] ?? '', me, {
+        filter: filterOf(c),
+        archived: q(c, 'archived') === '1',
+        cursor: q(c, 'cursor'),
+        limit: Number(q(c, 'limit')) || 500,
+        nowMs: timestampMs(this.callNow()),
+      });
+      sendMsg(c.res, 200, ListTasksResponseSchema, r);
+    });
+    this.boardRoute('POST', '/api/boards/:id/tasks', (c, me) => {
+      const r = parseBody(c, CreateTaskRequestSchema);
+      const t = b().createTask(c.params[0] ?? '', me, r);
+      sendMsg(c.res, 201, TaskResponseSchema, taskRes(t.task.id, me));
+    });
+    this.boardRoute('GET', '/api/tasks/:id', (c, me) => sendMsg(c.res, 200, TaskResponseSchema, taskRes(c.params[0] ?? '', me, true)));
+    this.boardRoute('GET', '/api/t/:key', (c, me) => sendMsg(c.res, 200, TaskResponseSchema, taskRes(b().byKey(c.params[0] ?? '', me), me, true)));
+    this.boardRoute('PATCH', '/api/tasks/:id', (c, me) => {
+      const r = parseBody(c, UpdateTaskRequestSchema);
+      const t = b().updateTask(c.params[0] ?? '', me, r);
+      sendMsg(c.res, 200, TaskResponseSchema, taskRes(t.task.id, me));
+    });
+    this.boardRoute('POST', '/api/tasks/:id/archive', (c, me) => sendMsg(c.res, 200, TaskResponseSchema, taskRes(b().archiveTask(c.params[0] ?? '', me, true).task.id, me)));
+    this.boardRoute('POST', '/api/tasks/:id/restore', (c, me) => sendMsg(c.res, 200, TaskResponseSchema, taskRes(b().archiveTask(c.params[0] ?? '', me, false).task.id, me)));
+    this.boardRoute('PUT', '/api/tasks/:id/assignees', (c, me) => {
+      const r = parseBody(c, SetAssigneesRequestSchema);
+      sendMsg(c.res, 200, TaskResponseSchema, taskRes(b().setAssignees(c.params[0] ?? '', me, r.assignees).task.id, me));
+    });
+    this.boardRoute('PUT', '/api/tasks/:id/relations', (c, me) => {
+      const r = parseBody(c, SetTaskRelationRequestSchema);
+      sendMsg(c.res, 200, TaskResponseSchema, taskRes(b().setRelation(c.params[0] ?? '', me, r.relatedId, r.kind, true).task.id, me, true));
+    });
+    this.boardRoute('DELETE', '/api/tasks/:id/relations', (c, me) => {
+      const kind = Number(q(c, 'kind')) as TaskRelationKind;
+      sendMsg(c.res, 200, TaskResponseSchema, taskRes(b().setRelation(c.params[0] ?? '', me, q(c, 'related_id'), kind, false).task.id, me, true));
+    });
+    this.boardRoute('PUT', '/api/tasks/:id/subscription', (c, me) => {
+      const r = parseBody(c, SetTaskSubscriptionRequestSchema);
+      sendMsg(c.res, 200, TaskResponseSchema, taskRes(b().setSubscription(c.params[0] ?? '', me, r.muted).task.id, me));
+    });
+    this.boardRoute('PUT', '/api/tasks/:id/read', (c, me) => {
+      b().markRead(c.params[0] ?? '', me);
+      noContent(c.res);
+    });
+    this.boardRoute('GET', '/api/tasks/:id/activity', (c, me) => {
+      const r = b().feed(c.params[0] ?? '', me, q(c, 'before'), Number(q(c, 'limit')) || 50);
+      sendMsg(c.res, 200, TaskActivityPageSchema, {
+        items: r.items.map((x) => (x.message ? { item: { case: 'message' as const, value: this.msgOut(x.message, me) } } : { item: { case: 'activity' as const, value: x.activity as TaskActivity } })),
+        hasMore: r.hasMore,
+      });
+    });
+    this.boardRoute('GET', '/api/me/tasks', (c, me) => {
+      sendMsg(c.res, 200, MyTasksResponseSchema, { tasks: b().mine(q(c, 'workspace_id'), me, q(c, 'scope') || 'assigned', q(c, 'open') === '1'), nextCursor: '' });
+    });
+    this.boardRoute('GET', '/api/workspaces/:id/tasks/search', (c, me) => {
+      sendMsg(c.res, 200, SearchTasksResponseSchema, { tasks: b().search(c.params[0] ?? '', me, q(c, 'q'), Number(q(c, 'limit')) || 20) });
+    });
+    // Test control: an update of a task by another user (TASK_UPDATE fan-out as the server would).
+    this.route('POST', '/__mock/task', (c) => {
+      const body = JSON.parse(c.raw.toString('utf8') || '{}') as { taskId?: string; key?: string; actorId?: string; title?: string; statusId?: string };
+      const id = body.taskId ?? this.boards.taskByKey(body.key ?? '')?.task.id ?? '';
+      const task = this.updateTaskAs(body.actorId ?? IDS.users.boris, id, { ...(body.title ? { title: body.title } : {}), ...(body.statusId ? { statusId: body.statusId } : {}) });
+      send(c.res, 200, JSON.stringify(toJson(TaskSchema, task, JSON_WRITE)), 'application/json');
+    });
+  }
+
+  /** A task change by `actorId` (tests: «someone else edits a task»); fans out TASK_UPDATE. */
+  updateTaskAs(actorId: string, taskId: string, patch: { title?: string; statusId?: string }): Task {
+    return this.boards.updateAs(actorId, taskId, patch);
+  }
+
+  /** Scenario `data`: comments on CAL-3 in its task room (Борис, Анна, a reaction). */
+  private seedBoards(): void {
+    if (this.state.scenario !== 'data') return;
+    this.boards.seed();
+    const t3 = this.boards.taskByKey('CAL-3');
+    if (!t3) return;
+    const room = this.state.rooms.get(t3.task.roomId);
+    if (!room) return;
+    const list: Message[] = [];
+    // Own id range: the fixture message counter (runtime messages) is not shifted.
+    const add = (authorId: string, content: string, at: string): Message => {
+      const m = create(MessageSchema, { id: mockId('message', 0xb000 + list.length), roomId: room.id, authorId, content, createdAt: ts(at) });
+      list.push(m);
+      return m;
+    };
+    add(IDS.users.boris, 'Воспроизвёл: Windows 11, колонки Logitech, эхо появляется через ~10 секунд после входа.', '2026-01-14T09:10:00Z');
+    const m2 = add(IDS.users.anna, `@${IDS.users.boris} проверю на Mac со встроенными динамиками сегодня.`, '2026-01-14T09:25:00Z');
+    this.state.messages.set(room.id, list);
+    this.state.reactions.set(m2.id, new Map([['👍', new Set([IDS.users.boris])]]));
+    m2.reactions = [create(ReactionSchema, { emoji: '👍', count: 1, me: false })];
+    t3.task.commentCount = list.length;
+  }
+
+  private newBoards(): BoardsMock {
+    return new BoardsMock({
+      state: this.state,
+      member: (w, u) => this.member(w, u),
+      rolesOf: (m) => this.memberRoles(m),
+      ownerOf: (w) => this.state.workspaces.get(w)?.ownerId ?? '',
+      fanout: (pick) => this.fanout(pick),
+      tick: () => tick(this.state),
+    });
   }
 
   private calendarRoutes(): void {
