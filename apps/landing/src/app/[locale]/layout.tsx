@@ -37,9 +37,9 @@ export async function generateMetadata({ params }: { params: Params }): Promise<
       alternateLocale: LOCALES.filter((l) => l !== locale).map((l) => LOCALE_INFO[l].ogLocale),
       title,
       description,
-      images: [{ url: '/og.png', width: 1200, height: 630, alt: ogAlt }],
+      images: [{ url: `/og/${LOCALE_INFO[locale].lang}.png`, width: 1200, height: 630, alt: ogAlt }],
     },
-    twitter: { card: 'summary_large_image', title, description, images: ['/og.png'] },
+    twitter: { card: 'summary_large_image', title, description, images: [`/og/${LOCALE_INFO[locale].lang}.png`] },
     formatDetection: { telephone: false },
   };
 }

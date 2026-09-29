@@ -9,9 +9,10 @@ export function Header({ t, locale, page = '' }: { t: Dict['header']; locale: Lo
   const home = page === '' ? '' : localePath(locale);
   const nav = [
     { href: `${home}#features`, label: t.nav.features },
-    { href: `${home}#how`, label: t.nav.how },
-    { href: `${home}#download`, label: t.nav.download },
+    { href: `${home}#calendar`, label: t.nav.calendar },
+    { href: `${home}#boards`, label: t.nav.boards },
     { href: `${home}#pricing`, label: t.nav.pricing },
+    { href: `${home}#download`, label: t.nav.download },
     { href: `${home}#faq`, label: t.nav.faq },
     { href: localePath(locale, 'bots/'), label: t.nav.bots, current: page === 'bots/' },
     { href: REPO_URL, label: 'GitHub' },

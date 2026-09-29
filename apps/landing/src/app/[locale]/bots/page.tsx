@@ -27,9 +27,9 @@ export async function generateMetadata({ params }: { params: Params }): Promise<
       locale: LOCALE_INFO[locale].ogLocale,
       title,
       description,
-      images: [{ url: '/og.png', width: 1200, height: 630, alt: getDict(locale).meta.ogAlt }],
+      images: [{ url: `/og/${LOCALE_INFO[locale].lang}.png`, width: 1200, height: 630, alt: getDict(locale).meta.ogAlt }],
     },
-    twitter: { card: 'summary_large_image', title, description, images: ['/og.png'] },
+    twitter: { card: 'summary_large_image', title, description, images: [`/og/${LOCALE_INFO[locale].lang}.png`] },
   };
 }
 
