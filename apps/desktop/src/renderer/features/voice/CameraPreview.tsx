@@ -11,6 +11,7 @@ import { useCameraBg } from '../../stores/cameraBg';
 import { usePrefs } from '../../stores/prefs';
 import { useVoice } from '../../stores/voice';
 import { BackgroundPicker } from './BackgroundPicker';
+import { CameraAppearance } from './CameraAppearance';
 
 /** Video inputs, refreshed on `devicechange` (labels appear once the camera is allowed). */
 export function useCameras(refresh: unknown = null): MediaDeviceInfo[] {
@@ -45,7 +46,6 @@ export function CameraPreview({ onClose }: { onClose: () => void }): ReactNode {
   const cameras = useCameras(track);
   // «Фон» (ADR-0035): shown where the effect can run; the preview gets the choice live.
   const [bgShown] = useState(backgroundAvailable);
-  const background = usePrefs((s) => s.cameraBackground);
 
   // (Re)open the camera for the chosen device; release it when the device changes or on close.
   useEffect(() => {
@@ -81,10 +81,6 @@ export function CameraPreview({ onClose }: { onClose: () => void }): ReactNode {
       track.detach(el);
     };
   }, [track]);
-
-  useEffect(() => {
-    if (track && bgShown) void applyCameraBackground(track, background);
-  }, [track, bgShown, background]);
 
   const confirm = (): void => {
     setPrefs({ cameraChecked: true });
@@ -127,6 +123,7 @@ export function CameraPreview({ onClose }: { onClose: () => void }): ReactNode {
               </span>
             ) : null}
             {track && !error && bgShown ? <BackgroundLoading /> : null}
+            {track && bgShown ? <ApplyEffects track={track} /> : null}
             {error ? (
               <span className="absolute inset-0 grid place-items-center p-4 text-center" role="alert">
                 <span className="flex flex-col items-center gap-2 text-body text-white">
@@ -153,7 +150,13 @@ export function CameraPreview({ onClose }: { onClose: () => void }): ReactNode {
             </Field>
           </div>
         </div>
-        {bgShown ? <BackgroundPicker /> : null}
+        {bgShown ? (
+          // «Внешний вид» under «Фон» (docs/08): in the smallest window the sheet's body scrolls to it.
+          <div className="flex min-w-0 flex-col gap-4">
+            <BackgroundPicker />
+            <CameraAppearance />
+          </div>
+        ) : null}
       </div>
     </Modal>
   );
@@ -168,4 +171,17 @@ function BackgroundLoading(): ReactNode {
       <Loader2 className="size-3.5 animate-spin" aria-hidden /> {t('video.bg.loading')}
     </span>
   );
+}
+
+/**
+ * The preview gets «Фон» and «Внешний вид» live. A leaf subscriber: a slider drag re-renders
+ * nothing of the dialog (CLAUDE.md «Ререндеры»).
+ */
+function ApplyEffects({ track }: { track: LocalVideoTrack }): null {
+  const background = usePrefs((s) => s.cameraBackground);
+  const effects = usePrefs((s) => s.cameraEffects);
+  useEffect(() => {
+    void applyCameraBackground(track, background, effects);
+  }, [track, background, effects]);
+  return null;
 }

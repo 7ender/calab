@@ -13,6 +13,7 @@ import type { EchoMode } from '../lib/media/echo';
 import type { CodecPref } from '../lib/media/codecSelect';
 import type { CameraPreset } from '../lib/plan';
 import { NO_BACKGROUND, type CameraBackground } from '../lib/media/background/logic';
+import { DEFAULT_CAMERA_EFFECTS, type CameraEffects } from '../lib/media/background/effects';
 import type { LocalePref } from '../i18n/types';
 import type { OpenChatSound } from '../lib/chatSound';
 import type { SoundName } from '../lib/sounds';
@@ -40,6 +41,8 @@ export interface Prefs {
   cameraPreset: CameraPreset;
   /** Camera «Фон» (ADR-0035): blur or a picture, for every room and call on this device. */
   cameraBackground: CameraBackground;
+  /** Camera «Внешний вид» (ADR-0035 addendum): touch-up + its strength, low-light lift; independent of the background. */
+  cameraEffects: CameraEffects;
   /** «Экономить трафик»: only the featured / PiP camera is received, at most 360p. */
   saveTraffic: boolean;
   /** userId → «Не показывать видео»: their camera is not subscribed (an avatar tile instead). */
@@ -107,6 +110,7 @@ const DEFAULTS: Prefs = {
   cameraChecked: false,
   cameraPreset: ScreenSharePreset.H720,
   cameraBackground: NO_BACKGROUND,
+  cameraEffects: DEFAULT_CAMERA_EFFECTS,
   saveTraffic: false,
   hiddenVideo: {},
   outputVolume: 1,

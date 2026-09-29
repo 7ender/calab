@@ -51,6 +51,14 @@ export const ruVideo = {
   'video.bg.workspace': 'Фоны пространства',
   'video.bg.builtin': 'Общие',
 
+  // camera appearance effects (ADR-0035 addendum)
+  'video.fx.title': 'Внешний вид',
+  'video.fx.touchUp': 'Улучшить внешность',
+  'video.fx.strength': 'Сила',
+  'video.fx.strengthLabel': 'Сила улучшения внешности',
+  'video.fx.lowLight': 'Низкая освещённость',
+  'video.fx.lowLightHint': 'Осветляет картинку, когда в комнате темно',
+
   // toasts
   'video.limit': 'Достигнут лимит камер',
   'video.forbidden': 'Нет права включать камеру в этой комнате',

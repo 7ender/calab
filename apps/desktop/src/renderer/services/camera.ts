@@ -6,6 +6,7 @@ import { api } from '../lib/api/endpoints';
 import { log } from '../lib/log';
 import { applyCameraQuality, cameraSource, captureCamera, limitCameraForCpu, preparePublish, switchCameraDevice } from '../lib/media/camera';
 import type { CameraBackground } from '../lib/media/background/logic';
+import type { CameraEffects } from '../lib/media/background/effects';
 import { applyCameraBackground } from './cameraBackground';
 import {
   CAMERA_DEFAULT_QUALITY,
@@ -122,7 +123,7 @@ export class CameraController {
       if (stale()) return;
       // The background (ADR-0035): the preview's track has it already (a no-op then); a direct
       // start gets it here, before publishing — frames pass through until the model is loaded.
-      await applyCameraBackground(track, prefs().cameraBackground);
+      await applyCameraBackground(track, prefs().cameraBackground, prefs().cameraEffects);
       if (stale()) return;
       // 2) Reserve a slot + the camera grant (409 = limit reached / cameras off in the room);
       //    the answer is the quality the plan allows — capture and encode no more than that.
@@ -264,16 +265,16 @@ export class CameraController {
       // The restart captures at the full quality again: keep the CPU limit of this session (review L3).
       if (useVoice.getState().cameraCpuLimited) await limitCameraForCpu(track, this.quality);
       // A new capture: the processor follows by itself (restart), the camera's own blur does not.
-      await applyCameraBackground(track, prefs().cameraBackground);
+      await applyCameraBackground(track, prefs().cameraBackground, prefs().cameraEffects);
       this.bump();
     } catch (err) {
       reportMediaError(err, 'camera');
     }
   }
 
-  /** «Фон» changed (picker, island menu): applied to the live camera in place. */
-  async setBackground(bg: CameraBackground): Promise<void> {
-    if (this.track) await applyCameraBackground(this.track, bg);
+  /** «Фон» or «Внешний вид» changed (picker, island menu): applied to the live camera in place. */
+  async setBackground(bg: CameraBackground, fx: CameraEffects): Promise<void> {
+    if (this.track) await applyCameraBackground(this.track, bg, fx);
   }
 
   /** Outbound camera layers from getStats (every 2 s): CPU-bound for 3 samples → 360p capture. */

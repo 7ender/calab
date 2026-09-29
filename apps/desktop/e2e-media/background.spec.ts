@@ -227,3 +227,118 @@ test('background: the processed camera is published and received (none → blur 
     await svc.deleteRoom(room).catch(() => undefined);
   }
 });
+
+type Fx = { touchUp: boolean; touchUpStrength: number; lowLight: boolean };
+type FxStats = { frames: number; rendered: number; segs: number; msPerFrame: number; seconds: number; mean: number; gamma: number };
+type BgFx = Omit<Bg, 'start' | 'stats'> & {
+  start: (kind: string, imageId: string | null, picture: string | null, effects: Fx | null) => Promise<void>;
+  setEffects: (fx: Fx) => void;
+  stats: () => FxStats | null;
+};
+
+/** The worker's next 5 s report (a fresh one, not the last before a change). */
+async function nextStats(p: Page): Promise<FxStats | null> {
+  const get = (): Promise<FxStats | null> => p.evaluate(() => (window as unknown as { __bg: BgFx }).__bg.stats());
+  const first = JSON.stringify(await get());
+  const until = Date.now() + 15_000;
+  while (Date.now() < until) {
+    await p.waitForTimeout(500);
+    const s = await get();
+    if (s && JSON.stringify(s) !== first) return s;
+  }
+  return null;
+}
+
+/**
+ * Appearance effects (ADR-0035 addendum) on the wire, background «Нет»: a synthetic dark room is
+ * published through the processor with no effect (frames pass through), then «Низкая
+ * освещённость» must raise the received picture's mean luminance, and «Улучшить внешность» on top
+ * keeps the frames coming. Chromium's fake camera (a bright frame) with low light on must stay
+ * pass-through: a bright room is never touched.
+ *
+ *   pnpm -F @calaba/desktop e2e:media -g effects
+ */
+test('effects: low light lifts a dark room, touch-up keeps frames flowing, a bright room passes through', async () => {
+  test.setTimeout(150_000);
+  const room = `${PREFIX}fx_${Date.now().toString(36)}`;
+  const svc = new RoomServiceClient(LK_URL.replace(/^ws/, 'http'), LK_KEY, LK_SECRET);
+  await svc.createRoom({ name: room, emptyTimeout: 60 });
+  const off: Fx = { touchUp: false, touchUpStrength: 40, lowLight: false };
+  const browsers: Browser[] = [];
+  try {
+    const pb = await chromium.launch({ args: ARGS });
+    browsers.push(pb);
+    const pub = await pb.newPage();
+    pub.on('console', (m) => {
+      if (m.type() === 'error' || m.type() === 'warning') console.log(`[publisher] ${m.text().slice(0, 300)}`);
+    });
+    await pub.goto(`${origin}bg.html`);
+    await pub.waitForFunction(() => '__bg' in window);
+    await pub.evaluate(([f]) => (window as unknown as { __bg: BgFx }).__bg.start('none', null, 'dark', f), [off] as const);
+    await pub.evaluate(([u, t]) => (window as unknown as { __bg: BgFx }).__bg.publish(u, t), [LK_URL, await token('pub', room, true)] as const);
+
+    const vb = await chromium.launch({ args: ARGS });
+    browsers.push(vb);
+    const view = await vb.newPage();
+    await view.goto(`${origin}bg.html`);
+    await subscribe(view, await token('viewer', room, false));
+    await view.waitForTimeout(3000);
+    const dark = await measure(view);
+
+    await pub.evaluate(([f]) => (window as unknown as { __bg: BgFx }).__bg.setEffects(f), [{ ...off, lowLight: true }] as const);
+    let lifted = await measure(view);
+    const until = Date.now() + 20_000;
+    while (lifted.lum < dark.lum * 1.5 && Date.now() < until) {
+      await view.waitForTimeout(500);
+      lifted = await measure(view);
+    }
+    await save(pub, 'lowlight');
+    const liftStats = await nextStats(pub);
+
+    await pub.evaluate(([f]) => (window as unknown as { __bg: BgFx }).__bg.setEffects(f), [{ ...off, lowLight: true, touchUp: true, touchUpStrength: 100 }] as const);
+    await view.waitForTimeout(3000);
+    const both = await measure(view);
+    await save(pub, 'lowlight-touchup');
+    const bothStats = await nextStats(pub);
+    console.log(`[effects] dark ${JSON.stringify(dark)} lifted ${JSON.stringify(lifted)} both ${JSON.stringify(both)}`);
+    console.log(`[effects] worker lift ${JSON.stringify(liftStats)} both ${JSON.stringify(bothStats)}`);
+    await pub.evaluate(() => (window as unknown as { __bg: BgFx }).__bg.stop());
+
+    expect(dark.width).toBeGreaterThan(0);
+    expect(lifted.lum, 'low light raises the mean luminance of a dark room').toBeGreaterThan(dark.lum * 1.5);
+    expect(liftStats?.gamma ?? 1, 'the curve is on').toBeLessThan(1);
+    expect(both.frames, 'frames keep coming with both effects').toBeGreaterThan(lifted.frames);
+    expect(bothStats?.rendered ?? 0).toBeGreaterThan(0);
+
+    // A bright room (Chromium's fake camera): low light on, nothing rendered, the curve stays 1.
+    const bright = await pb.newPage();
+    await bright.goto(`${origin}bg.html`);
+    await bright.waitForFunction(() => '__bg' in window);
+    await bright.evaluate(([f]) => (window as unknown as { __bg: BgFx }).__bg.start('none', null, null, f), [{ ...off, lowLight: true }] as const);
+    await bright.evaluate(() => (window as unknown as { __bg: BgFx }).__bg.look());
+    const brightStats = await nextStats(bright);
+    console.log(`[effects] bright ${JSON.stringify(brightStats)}`);
+    expect(brightStats?.frames ?? 0).toBeGreaterThan(0);
+    expect(brightStats?.mean ?? 0, 'the fake camera is a bright room').toBeGreaterThanOrEqual(0.25);
+    expect(brightStats?.gamma, 'a bright room is never lifted').toBe(1);
+    expect(brightStats?.rendered, 'and passes through without GL').toBe(0);
+    await bright.evaluate(() => (window as unknown as { __bg: BgFx }).__bg.stop());
+
+    // BG_LOOK_DIR + BG_PICTURE (a person): touch-up off / default / strongest, for eyes.
+    if (LOOK_DIR && PICTURE) {
+      const face = await pb.newPage();
+      await face.goto(`${origin}bg.html`);
+      await face.waitForFunction(() => '__bg' in window);
+      const picture = `data:image/jpeg;base64,${readFileSync(PICTURE).toString('base64')}`;
+      await face.evaluate(([p, f]) => (window as unknown as { __bg: BgFx }).__bg.start('none', null, p, f), [picture, off] as const);
+      for (const [name, s] of [['touchup-off', 0], ['touchup-40', 40], ['touchup-100', 100]] as const) {
+        await face.evaluate(([f]) => (window as unknown as { __bg: BgFx }).__bg.setEffects(f), [{ ...off, touchUp: s > 0, touchUpStrength: s }] as const);
+        await face.waitForTimeout(500);
+        await save(face, name);
+      }
+    }
+  } finally {
+    for (const b of browsers) await b.close();
+    await svc.deleteRoom(room).catch(() => undefined);
+  }
+});
