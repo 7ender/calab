@@ -1,6 +1,6 @@
 # 04 — Модель данных и права
 
-PostgreSQL 18, `pgx` + `sqlc` + `goose` (миграции). Все id — `uuid v7` (сортируемые по времени), генерируются в Postgres встроенной `uuidv7()` (`DEFAULT uuidv7()`), а не в приложении. Все времена — `timestamptz`.
+PostgreSQL 18 или 17, `pgx` + `sqlc` + `goose` (миграции). Все id — `uuid v7` (сортируемые по времени), генерируются в Postgres функцией `uuidv7()` (`DEFAULT uuidv7()`), а не в приложении: в PG 18 она встроенная, на 17 сервер до миграций создаёт совместимую `public.uuidv7()` (ADR-0037). Все времена — `timestamptz`.
 
 ## Сущности
 
@@ -121,7 +121,7 @@ voice_states        (не в Postgres — в Redis, источник LiveKit web
 
 ### Сообщения: порядок и идемпотентность
 
-- `messages.id` генерирует Postgres (`uuidv7()` в PG 18) в момент вставки → порядок id совпадает с порядком коммитов на одном сервере БД; курсорная пагинация и `before=<id>` работают без отдельного `created_at`-индекса. Клиентские часы в id не участвуют.
+- `messages.id` генерирует Postgres (`uuidv7()`: встроенная в PG 18, на 17 — `public.uuidv7()`, ADR-0037) в момент вставки → порядок id совпадает с порядком коммитов на одном сервере БД; курсорная пагинация и `before=<id>` работают без отдельного `created_at`-индекса. Клиентские часы в id не участвуют.
 - `nonce` — клиентский идентификатор optimistic-сообщения. `UNIQUE (author_id, nonce) WHERE nonce IS NOT NULL`: повторный `POST` с тем же `nonce` (ретрай после обрыва) не создаёт дубль, а возвращает уже существующее сообщение (`INSERT … ON CONFLICT DO NOTHING` → `SELECT`), `MESSAGE_CREATE` повторно не рассылается.
 - **Прочтение другими** (docs/09 #92): из `read_states` — в DM маркер собеседника, в комнате самый дальний маркер остальных людей (без ботов); отдельной таблицы нет. `PUT /api/rooms/{id}/read` сдвигает маркер (`AdvanceReadState` сообщает, сдвинулся ли) и шлёт `READ_RECEIPT` (docs/05); комнатный максимум — `TopRoomReads` по `read_states_room_id_idx` (строк не больше, чем участников, читавших комнату), в READY — `ListPeerReads`. Индекс по `last_read_message_id` не добавлен сознательно: он отключил бы HOT-обновления частого upsert маркера.
 - **Пересылка** (ADR-0033): `POST /api/rooms/{id}/messages/{mid}/forward {to_room_id}` — копия от пересылающего с `messages.forwarded_from` (всегда первоисточник), `forward_author_id`, `forward_sent_at` (→ `Message.forward`); вложения — строки `message_attachments.forwarded = true` на те же файлы (без квоты; уникальность файла — только среди непересланных), упоминания не пишутся, копию нельзя править (422 `MESSAGE_NOT_EDITABLE`); права — `VIEW_ROOM` в источнике (и из комнаты «только по списку»), `SEND_MESSAGES` в цели.

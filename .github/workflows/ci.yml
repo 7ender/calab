@@ -105,11 +105,19 @@ jobs:
       - run: go run golang.org/x/vuln/cmd/govulncheck@v1.8.0 ./...
 
   go-integration:
-    name: go integration tests
+    name: ${{ matrix.check }}
     runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:   # PostgreSQL 17 and 18 are supported (ADR-0037); the 18 leg keeps the required check's name
+          - check: go integration tests
+            postgres: postgres:18-alpine@sha256:77f585114c32fbca283dc835b0596f4e52b51b4c6662d7810b2f4084f60a1873
+          - check: go integration tests (PostgreSQL 17)
+            postgres: postgres:17-alpine@sha256:b0f9560a2de083e2cc7382e75f808c7381a32852a7ec49117deedb300e552b24
     services:
       postgres:
-        image: postgres:18-alpine@sha256:77f585114c32fbca283dc835b0596f4e52b51b4c6662d7810b2f4084f60a1873
+        image: ${{ matrix.postgres }}
         env:
           POSTGRES_USER: calaba
           POSTGRES_PASSWORD: calaba

@@ -1698,6 +1698,18 @@ make test-integration TEST_REDIS_URL=redis://localhost:56379/12 TEST_RTC_REDIS_D
 ```
 Занятые номера: main — 15/14; `calab-webcam-server` — 12/11.
 
+## Server: PostgreSQL 17 (ADR-0037)
+
+```sh
+docker run -d --name calab-pg17 -e POSTGRES_USER=calaba -e POSTGRES_PASSWORD=calaba -e POSTGRES_DB=calaba -p 55433:5432 postgres:17-alpine
+cd apps/server
+TEST_DATABASE_URL=postgres://calaba:calaba@localhost:55433/calaba go test -race -tags integration -count=1 -v \
+  -run 'TestUUIDv7Polyfill|TestEnsureUUIDv7' ./internal/db/ 2>&1 | grep -E '^(--- |ok|FAIL)|created public'
+cd ../.. && make test-integration TEST_DATABASE_URL=postgres://calaba:calaba@localhost:55433/calaba   # весь набор на 17
+docker rm -f calab-pg17
+```
+Ожидается: оба `--- PASS`, одна строка `created public.uuidv7() … server_version=17.x`, весь набор `ok`. Те же два теста на dev-Postgres 18 проходят без этой строки (встроенная `uuidv7()`). Проверяется: версия 7 и вариант `10`, рост id внутри сессии (10 000 вызовов, откат транзакции), порядок по времени между сессиями (на 18 — вперемешку со встроенной), ровно одно создание функции при четырёх одновременно стартующих репликах, `users.id` по умолчанию — v7.
+
 ## Server: часовой пояс профиля (`User.timezone`)
 
 ```sh
