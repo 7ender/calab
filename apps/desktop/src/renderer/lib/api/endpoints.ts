@@ -112,6 +112,9 @@ import {
   SetMemberBadgeResponseSchema,
   UpdateStatusRequestSchema,
   UpdateMessageRequestSchema,
+  MessageSchema,
+  CreateMessageInteractionRequestSchema,
+  CreateMessageInteractionResponseSchema,
   UpdateMessageResponseSchema,
   SetEmbedsHiddenRequestSchema,
   ForwardMessageRequestSchema,
@@ -477,6 +480,9 @@ export const api = {
     unblock: (botUserId: string) => callEmpty('DELETE', `/api/me/blocked-bots/${botUserId}`),
   },
   messages: {
+    get: (roomId: string, id: string) => call('GET', `/api/rooms/${roomId}/messages/${id}`, MessageSchema),
+    interact: (id: string, p: MessageInitShape<typeof CreateMessageInteractionRequestSchema>) =>
+      call('POST', `/api/messages/${id}/interactions`, CreateMessageInteractionResponseSchema, body(CreateMessageInteractionRequestSchema, p)),
     list: (roomId: string, p: { before?: string; after?: string; limit?: number }, signal?: AbortSignal) =>
       call('GET', `/api/rooms/${roomId}/messages${qs(p)}`, ListMessagesResponseSchema, undefined, signal),
     create: (roomId: string, init: MessageInitShape<typeof CreateMessageRequestSchema>) =>

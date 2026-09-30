@@ -1,3 +1,4 @@
+import { seedInlineButtons } from '../e2e-support/inline-buttons';
 import { readFileSync } from 'node:fs';
 import { create } from '@bufbuild/protobuf';
 import { PERMISSION_BITS, PermissionTargetType, Plan, RecordingStatus, RoomPermissionOverrideSchema, UserSchema, WorkspaceBanSchema, WorkspacePlanSchema, WorkspaceSuspensionSchema } from '@calaba/protocol';
@@ -49,6 +50,7 @@ const KEY = new Set([
   'onboarding-layout',
   'welcome',
   'main-chat',
+  'chat-inline-buttons',
   'sidebar-drag',
   'chat-hover-actions',
   'chat-hover-actions-bounds',
@@ -3725,4 +3727,16 @@ test('chat-task-card', async ({ open, win, mock, shot }) => {
   await win.locator('[data-virtuoso-scroller]').first().evaluate((el) => el.scrollTo({ top: el.scrollHeight }));
   await settle(win);
   await checkpoint(shot, 'chat-task-card');
+});
+
+
+test('chat-inline-buttons', async ({ open, win, mock, shot }) => {
+  await open();
+  await mainWindow(win, mock);
+  seedInlineButtons(mock);
+  await expect(win.getByTestId('inline-keyboard')).toBeVisible();
+  await settle(win);
+  await win.locator('[data-virtuoso-scroller]').first().evaluate((el) => el.scrollTo({ top: el.scrollHeight }));
+  await settle(win);
+  await checkpoint(shot, 'chat-inline-buttons');
 });

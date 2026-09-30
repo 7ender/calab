@@ -242,13 +242,15 @@ message DispatchEvent {
     TaskUpdate task_update = 79;
     TaskDelete task_delete = 80;
     TaskActivityAppend task_activity = 81;
+    BotCallback bot_callback = 82; // private to the author bot (ADR-0047)
   }
 }
 
 // Body of a bot webhook delivery (ADR-0031), JSON (protojson): POST to the bot's webhook URL
 // with X-Calab-Signature: sha256=<hex HMAC-SHA256(secret, body)> and X-Calab-Delivery: <id>.
 // Delivered events: MESSAGE_CREATE / UPDATE / DELETE and MESSAGE_REACTION_ADD / REMOVE of
-// rooms the bot can view and of its DMs. A delivery may repeat (retries): dedupe by id.
+// rooms the bot can view and of its DMs, plus private BOT_CALLBACK (ADR-0047).
+// A delivery may repeat (retries): dedupe by id.
 message BotWebhookUpdate {
   string id = 1;
   string bot_user_id = 2;

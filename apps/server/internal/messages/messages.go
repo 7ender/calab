@@ -60,6 +60,7 @@ func (h *Handlers) Routes(mux httpx.Router, wrap func(http.Handler) http.Handler
 	mux.Handle("GET /api/rooms/{id}/messages/{messageId}", wrap(httpx.HandlerFunc(h.get)))
 	mux.Handle("POST /api/rooms/{id}/messages", wrap(httpx.HandlerFunc(h.create)))
 	mux.Handle("POST /api/rooms/{id}/messages/{mid}/forward", wrap(httpx.HandlerFunc(h.forward)))
+	mux.Handle("POST /api/messages/{id}/interactions", wrap(httpx.HandlerFunc(h.interact)))
 	mux.Handle("PATCH /api/messages/{id}", wrap(httpx.HandlerFunc(h.update)))
 	mux.Handle("DELETE /api/messages/{id}", wrap(httpx.HandlerFunc(h.delete)))
 	mux.Handle("PUT /api/rooms/{id}/read", wrap(httpx.HandlerFunc(h.read)))
@@ -388,6 +389,16 @@ func (h *Handlers) create(w http.ResponseWriter, r *http.Request) error {
 	if err := httpx.Decode(w, r, &req); err != nil {
 		return err
 	}
+	if req.InlineKeyboard != nil && !auth.MustFromContext(r.Context()).IsBot {
+		return httpx.Forbidden("only bots can attach keyboards")
+	}
+	keyboard, err := encodeKeyboard(req.InlineKeyboard)
+	if err != nil {
+		return err
+	}
+	if req.InlineKeyboard != nil && req.GetStickerId() != "" {
+		return httpx.Validation("inlineKeyboard", "sticker messages cannot have keyboards")
+	}
 	fileIDs, err := parseAttachments(req.GetAttachmentIds())
 	if err != nil {
 		return err
@@ -474,7 +485,7 @@ func (h *Handlers) create(w http.ResponseWriter, r *http.Request) error {
 		}
 		var err error
 		params := sqlc.InsertMessageParams{
-			RoomID: roomID, AuthorID: uid(r), Content: req.GetContent(), ReplyToID: replyTo, Nonce: nonce,
+			RoomID: roomID, AuthorID: uid(r), Content: req.GetContent(), ReplyToID: replyTo, Nonce: nonce, InlineKeyboard: keyboard,
 		}
 		if sticker != nil {
 			params.StickerID = &sticker.Sticker.ID
@@ -586,6 +597,21 @@ func (h *Handlers) update(w http.ResponseWriter, r *http.Request) error {
 	if err := httpx.Decode(w, r, &req); err != nil {
 		return err
 	}
+	if req.InlineKeyboard != nil && !auth.MustFromContext(r.Context()).IsBot {
+		return httpx.Forbidden("only bots can attach keyboards")
+	}
+	keyboard, err := encodeKeyboard(req.InlineKeyboard)
+	if err != nil {
+		return err
+	}
+	// The additive flag preserves the legacy content field and PATCH {} semantics.
+	if req.GetPreserveContent() && (req.InlineKeyboard == nil || req.GetContent() != "") {
+		return httpx.Validation("preserveContent", "requires a keyboard and no replacement text")
+	}
+	content := &req.Content
+	if req.GetPreserveContent() {
+		content = nil
+	}
 	// Length first (the DB CHECK would otherwise surface as a 500); "empty only with
 	// attachments" needs the attachment count and is checked in the transaction.
 	if utf8.RuneCountInString(req.GetContent()) > MaxContent {
@@ -593,7 +619,7 @@ func (h *Handlers) update(w http.ResponseWriter, r *http.Request) error {
 	}
 	var out []*v1.Message
 	err = h.db.Tx(r.Context(), func(q *sqlc.Queries) error {
-		upd, err := q.UpdateMessageContent(r.Context(), sqlc.UpdateMessageContentParams{ID: m.ID, Content: req.GetContent()})
+		upd, err := q.UpdateMessageContent(r.Context(), sqlc.UpdateMessageContentParams{ID: m.ID, Content: content, SetKeyboard: req.InlineKeyboard != nil, InlineKeyboard: keyboard})
 		if db.IsNotFound(err) {
 			return httpx.NotFound("message")
 		}
@@ -606,7 +632,7 @@ func (h *Handlers) update(w http.ResponseWriter, r *http.Request) error {
 		if err := saveMentions(r.Context(), q, upd, acc, true); err != nil {
 			return err
 		}
-		return ValidateContent(req.GetContent(), len(out[0].GetAttachments())) // rolls back if empty
+		return ValidateContent(upd.Content, len(out[0].GetAttachments())) // rolls back if empty
 	})
 	if err != nil {
 		return err

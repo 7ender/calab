@@ -123,6 +123,7 @@ var botRoutes = map[string]botAccess{
 	"GET /api/rooms/{id}/messages/{messageId}":    botAllow,
 	"POST /api/rooms/{id}/messages":               botAllow,
 	"POST /api/rooms/{id}/messages/{mid}/forward": botAllow, // ADR-0033
+	"POST /api/messages/{id}/interactions":        botDeny,  // human intent only
 	"PATCH /api/messages/{id}":                    botAllow,
 	"DELETE /api/messages/{id}":                   botAllow,
 	"PUT /api/rooms/{id}/read":                    botAllow,

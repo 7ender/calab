@@ -79,6 +79,7 @@ export default defineConfig<VisualOptions>({
       testMatch: /boards-[a-z-]+\.spec\.ts/,
       use: { browserName: 'chromium', timezoneId: 'Europe/Moscow', colorScheme: 'dark', viewport: { width: 1280, height: 800 } },
     },
+    { name: 'inline-buttons', testMatch: /inline-buttons\.spec\.ts/, use: { browserName: 'chromium', viewport: { width: 960, height: 600 } } },
     // A room switch never hangs in «Подключение…» (docs/09 #131): behaviour only, web build + dev LiveKit.
     { name: 'voice-switch', testMatch: /voice-switch\.spec\.ts/ },
     // Focus walk and the web client's own screens (they start their own mock / app). Locally only

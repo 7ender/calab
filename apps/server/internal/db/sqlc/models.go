@@ -299,24 +299,26 @@ type MemberRole struct {
 }
 
 type Message struct {
-	ID              uuid.UUID
-	RoomID          uuid.UUID
-	AuthorID        uuid.UUID
-	Content         string
-	ReplyToID       *uuid.UUID
-	Nonce           *string
-	CreatedAt       time.Time
-	EditedAt        *time.Time
-	DeletedAt       *time.Time
-	PinnedAt        *time.Time
-	PinnedBy        *uuid.UUID
-	EmbedsHidden    bool
-	Kind            string
-	Payload         []byte
-	StickerID       *uuid.UUID
-	ForwardedFrom   *uuid.UUID
-	ForwardAuthorID *uuid.UUID
-	ForwardSentAt   *time.Time
+	ID               uuid.UUID
+	RoomID           uuid.UUID
+	AuthorID         uuid.UUID
+	Content          string
+	ReplyToID        *uuid.UUID
+	Nonce            *string
+	CreatedAt        time.Time
+	EditedAt         *time.Time
+	DeletedAt        *time.Time
+	PinnedAt         *time.Time
+	PinnedBy         *uuid.UUID
+	EmbedsHidden     bool
+	Kind             string
+	Payload          []byte
+	StickerID        *uuid.UUID
+	ForwardedFrom    *uuid.UUID
+	ForwardAuthorID  *uuid.UUID
+	ForwardSentAt    *time.Time
+	InlineKeyboard   []byte
+	KeyboardRevision int64
 }
 
 type MessageAttachment struct {
@@ -329,6 +331,16 @@ type MessageAttachment struct {
 type MessageEveryoneMention struct {
 	MessageID uuid.UUID
 	RoomID    uuid.UUID
+}
+
+type MessageInteraction struct {
+	ID               uuid.UUID
+	MessageID        uuid.UUID
+	UserID           uuid.UUID
+	Nonce            string
+	ButtonID         string
+	KeyboardRevision int64
+	CreatedAt        time.Time
 }
 
 type MessageMention struct {
