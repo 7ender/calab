@@ -64,6 +64,7 @@ describe('role editor groups (ADR-0048 «Контракт для клиента�
       'calendar',
       'boards',
       'recordings',
+      'telephony',
       'integrations',
       'journals',
     ]);
