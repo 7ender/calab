@@ -52,6 +52,10 @@
  * `--window-name <regex>` (share another window). It opens a visible window: not on a machine
  * someone is using (docs/14 «Стрим экрана: захват»).
  *
+ * `--musician` (C): «Режим музыканта» on (ADR-0052): the mic without AEC / NS / AGC, open (no VAD
+ * gate), Opus 128 kbps without DTX; the scenario name gets `-musician` and the mic's outgoing
+ * kbps / fmtp are printed before and after the run (docs/14 «Режим музыканта»).
+ *
  * `--recording`: «Созвон» is being recorded (ROOM_RECORDING, Борис 12:34 ago) — the REC dot on the
  * card, the «Запись» pill in the island (docs/09 #64). A bench also samples WindowServer: the
  * compositor redraws blurred surfaces under an animated layer there, not in the app.
@@ -94,6 +98,8 @@ const SPEAKER = argv.includes('--speaker');
 const POPOVER = argv.includes('--popover');
 const RECORDING = argv.includes('--recording');
 const DM_CALL = argv.includes('--dm-call');
+/** `--musician` (C): musician mode on (ADR-0052). */
+const MUSICIAN = argv.includes('--musician');
 /** `--calendar`: in the call, the day view (ADR-0038) is open instead of «общий» — its «now» line ticks once a minute. */
 /** `--findtime`: «Подобрать время» (ADR-0041) open instead, with Борис and Вера: the busy columns must not re-render on voice / presence. */
 const FINDTIME = argv.includes('--findtime');
@@ -410,7 +416,7 @@ async function main(): Promise<void> {
       const l = await launch(mock.url, userData, wav);
       const p = l.page;
       // F: the stream preset and content hint the picker starts with.
-      const stream = BENCH === 'F' ? { streamPreset: PRESET === 'eco' ? 1 : PRESET === '720' ? 2 : 3, contentHint: HINT } : {};
+      const stream = { ...(BENCH === 'F' ? { streamPreset: PRESET === 'eco' ? 1 : PRESET === '720' ? 2 : 3, contentHint: HINT } : {}), ...(MUSICIAN ? { musicianMode: true } : {}) };
       await p.evaluate(({ stats, stream }) => localStorage.setItem('calaba-prefs', JSON.stringify({ state: { theme: 'dark', onboarded: true, locale: 'ru', devStats: stats, ...stream }, version: 1 })), { stats: STATS, stream });
       await p.reload();
       await p.getByLabel('Email').fill('owner@calaba.test');
@@ -430,8 +436,8 @@ async function main(): Promise<void> {
       await cdp.send('Page.addScriptToEvaluateOnNewDocument', { source: `var __name = (f) => f; (${INIT.toString()})()` });
       await page.reload();
     }
-    // K / F: keep the peer connections reachable, to report what the encoder really does.
-    if (BENCH === 'K' || BENCH === 'F') {
+    // K / F / C: keep the peer connections reachable, to report what the encoder / the mic really does.
+    if (BENCH === 'K' || BENCH === 'F' || BENCH === 'C') {
       await cdp.send('Page.enable');
       await cdp.send('Page.addScriptToEvaluateOnNewDocument', {
         source: `(() => { const P = window.RTCPeerConnection; window.__pcs = []; window.RTCPeerConnection = function (...a) { const pc = new P(...a); window.__pcs.push(pc); return pc; }; window.RTCPeerConnection.prototype = P.prototype; })()`,
@@ -718,17 +724,41 @@ async function main(): Promise<void> {
       const b = await enc();
       process.stdout.write(`encoder: ${JSON.stringify(Object.fromEntries(Object.entries(b).map(([k, v]) => [k, { ...v, fps: round((v.frames - (a[k]?.frames ?? 0)) / 5), kbps: round((((v.bytes ?? 0) - (a[k]?.bytes ?? 0)) * 8) / 5000), pps: round(((v.pkts ?? 0) - (a[k]?.pkts ?? 0)) / 5) }])))}\n`);
     };
+    // The mic on the wire (musician mode vs voice): outgoing kbps over 5 s and the negotiated fmtp.
+    const mic = async (): Promise<void> => {
+      const read = async (): Promise<{ bytes: number; fmtp: string; enabled: boolean | null }> =>
+        page.evaluate(async () => {
+          const o = { bytes: 0, fmtp: '', enabled: null as boolean | null };
+          for (const pc of (window as unknown as { __pcs: RTCPeerConnection[] }).__pcs ?? []) {
+            for (const s of pc.getSenders()) if (s.track?.kind === 'audio') o.enabled = s.track.enabled;
+            const st = await pc.getStats();
+            st.forEach((r: Record<string, unknown>) => {
+              if (r['type'] !== 'outbound-rtp' || r['kind'] !== 'audio') return;
+              o.bytes += Number(r['bytesSent'] ?? 0) + Number(r['headerBytesSent'] ?? 0);
+              const c = typeof r['codecId'] === 'string' ? (st.get(r['codecId']) as Record<string, unknown> | undefined) : undefined;
+              o.fmtp = String(c?.['sdpFmtpLine'] ?? o.fmtp);
+            });
+          }
+          return o;
+        });
+      const a = await read();
+      await page.waitForTimeout(5000);
+      const b = await read();
+      process.stdout.write(`mic: ${JSON.stringify({ kbps: round(((b.bytes - a.bytes) * 8) / 5000), fmtp: b.fmtp, enabled: b.enabled })}\n`);
+    };
+    if (BENCH === 'C') await mic();
     // K: what the encoder does (dynacast pauses every layer while nobody watches) before and after.
     if (BENCH === 'K' || BENCH === 'F') await encoder();
     if (BENCH) {
       const bundle = resolve(ROOT, 'node_modules/electron/dist/Electron.app');
       const outDir = opt('bench-out', join(tmpdir(), 'calaba-energy'));
-      const scenario = (BENCH === 'F' ? `F-stream-${PRESET}p-${SOURCE}-${CONTENT}-${HINT}` : BENCH === 'K' ? `K-camera-720p15-bg-${BG}${FX ? `-fx-${FX}` : ''}` : BENCH === 'E' ? 'E-watch-video' : RECORDING ? 'C-voice-quiet-rec' : 'C-voice-quiet') + (POPOVER ? '-popover' : '');
+      const scenario = (BENCH === 'F' ? `F-stream-${PRESET}p-${SOURCE}-${CONTENT}-${HINT}` : BENCH === 'K' ? `K-camera-720p15-bg-${BG}${FX ? `-fx-${FX}` : ''}` : BENCH === 'E' ? 'E-watch-video' : RECORDING ? 'C-voice-quiet-rec' : 'C-voice-quiet') + (POPOVER ? '-popover' : '') + (MUSICIAN ? '-musician' : '');
       const r = spawnSync('python3', [join(ROOT, 'tools/energy-bench.py'), bundle, `calab-${NAME}`, scenario, '--seconds', String(BENCH_SECONDS), '--out', outDir, '--with', 'WindowServer', ...(BENCH === 'F' ? ['--with', 'replayd'] : [])], {
         stdio: 'inherit',
       });
       if (r.status !== 0) process.exitCode = 1;
       if (BENCH === 'K' || BENCH === 'F') await encoder();
+      if (BENCH === 'C') await mic();
     }
   } finally {
     for (const t of timers) clearInterval(t);
