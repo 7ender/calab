@@ -235,8 +235,9 @@ export const PutSipSettingsResponseSchema: GenMessage<PutSipSettingsResponse> = 
  * else 429 SIP_RATE_LIMITED) → 200 TestSipResponse. LiveKit has no registration / OPTIONS
  * probe, so the server calls the workspace's own caller_id for at most 5 s from a service
  * LiveKit room (a real, billable call; it appears in the journal with an empty room_id) and
- * hangs up. ok = the provider took the call: answered, or refused with busy / unavailable /
- * no answer / declined — i.e. authentication and routing work. Failure (ok = false) is also
+ * hangs up. ok = the provider took the call: answered, or refused with a SIP answer that proves
+ * authentication and routing work (408, 480, 486, 487, 600, 603, 607, 608). No answer at all
+ * within ~25 s (an unreachable host, a wrong transport) is ok = false. Failure is also
  * stored as SipSettings.last_error; success clears it. 409 SIP_DISABLED when telephony is off.
  * The request may take up to ~25 s.
  *

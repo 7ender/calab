@@ -26,6 +26,18 @@ before="$(cat "$cfg" 2>/dev/null | sha256sum)"
 envsubst '${DOMAIN} ${LIVEKIT_API_KEY}' < livekit/livekit.yaml.tpl > "$cfg"
 after="$(sha256sum < "$cfg")"
 
+# Telephony (ADR-0046): the sip service runs only with SIP_ENABLED=1. Its config carries the
+# Valkey password, so it is rendered into the environment (SIP_CONFIG_BODY), not into a file.
+if [[ "${SIP_ENABLED:-0}" == "1" ]]; then
+  : "${REDIS_PASSWORD:?REDIS_PASSWORD is not set in .env}"
+  SIP_CONFIG_BODY="$(envsubst '${REDIS_PASSWORD}' < livekit/sip.yaml.tpl)"
+  export SIP_CONFIG_BODY
+  export COMPOSE_PROFILES="${COMPOSE_PROFILES:+${COMPOSE_PROFILES},}sip"
+elif [[ -n "$(docker compose --profile sip ps -q sip 2>/dev/null)" ]]; then
+  echo "SIP_ENABLED is off -> removing the sip service"
+  docker compose --profile sip rm -sf sip
+fi
+
 docker compose up -d --build --remove-orphans "$@"
 
 # The config is a bind mount: compose doesn't notice content changes, so restart

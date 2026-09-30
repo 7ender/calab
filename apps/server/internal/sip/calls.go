@@ -432,7 +432,7 @@ func (s *Service) test(w http.ResponseWriter, r *http.Request) error {
 		case code > 0:
 			out.Message = fmt.Sprintf("%d %s", code, text)
 		case errors.Is(err, context.DeadlineExceeded):
-			out.Ok, out.Message = true, "no answer"
+			out.Message = "no answer from the provider: check the host, port and transport" // an unreachable host looks like this
 		default:
 			var e *rtc.Error
 			if errors.As(err, &e) && e.Msg != "" {
