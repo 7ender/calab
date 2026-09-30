@@ -2,6 +2,7 @@ import { join } from 'node:path';
 import { app, BrowserWindow, powerMonitor, session } from 'electron';
 import { IPC, type PowerEvent } from '../shared/ipc';
 import { handleApiScheme, registerApiScheme } from './apiProtocol';
+import { apiTransportWake } from './apiTransport';
 import { forceQuit, handleMainWindowClose, installLifecycle } from './appLifecycle';
 import { installDisplayMediaHandler, MAC_SYSTEM_AUDIO_FEATURES, macSystemAudioEnabled } from './capture';
 import { echoFeatures } from './echoFeatures';
@@ -134,7 +135,11 @@ void app.whenReady().then(() => {
   const initialLink = findDeepLink(process.argv);
   if (initialLink) handleDeepLink(initialLink);
 
-  powerMonitor.on('resume', () => forwardPower('resume'));
+  // After sleep / unlock the pooled API connections are suspect (docs/09 #146): fresh ones.
+  powerMonitor.on('resume', () => {
+    apiTransportWake('resume');
+    forwardPower('resume');
+  });
   // A PTT key-up lost during sleep / lock (or eaten by secure input) must not leave the mic
   // transmitting after wake (review M6).
   powerMonitor.on('suspend', () => {
@@ -145,7 +150,10 @@ void app.whenReady().then(() => {
     resetPttGate();
     forwardPower('lock-screen');
   });
-  powerMonitor.on('unlock-screen', () => forwardPower('unlock-screen'));
+  powerMonitor.on('unlock-screen', () => {
+    apiTransportWake('unlock-screen');
+    forwardPower('unlock-screen');
+  });
 
   // Dock icon click: bring the hidden window back (or a new one if it is gone).
   app.on('activate', () => {

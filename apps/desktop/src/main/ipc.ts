@@ -20,6 +20,7 @@ import {
 } from '../shared/ipc';
 import { serverUrlProblem } from '../shared/serverUrl';
 import { forceRefresh, getAccessToken, guestJoin, login, logout, register, restore, revoked } from './auth';
+import { apiTransportWake } from './apiTransport';
 import { parseOverlayEvent, parseOverlayTarget } from '../shared/annot';
 import { closeOverlay, closeOverlayWith, openOverlay, refitOverlay, sendOverlay } from './annotOverlay';
 import { armSelection, listSources, requestScreenAccess, screenAccess, systemAudioSupport } from './capture';
@@ -200,7 +201,11 @@ export function registerIpc(): void {
   handle(IPC.appGetUpdateStatus, () => updateStatus());
   handle(IPC.appInstallUpdate, () => installUpdate());
   handle(IPC.appDownloadUpdate, () => downloadUpdate());
-  handle(IPC.appNetworkOnline, () => updatesNudge('online'));
+  handle(IPC.appNetworkOnline, () => {
+    // Network back: connections opened on the old one are suspect (docs/09 #146).
+    apiTransportWake('online');
+    updatesNudge('online');
+  });
   handle(IPC.appResumeVoice, (_e, a) => setResumeSeat(a));
   handle(IPC.appTakeResumeVoice, () => takeResumeVoice());
   handle(IPC.appLog, (_e, a) => {

@@ -1,6 +1,7 @@
-import { net, protocol } from 'electron';
+import { protocol } from 'electron';
 import { readBodyUpTo } from '../shared/bodyBuffer';
 import { API_SCHEME } from '../shared/ipc';
+import { apiSession, resetApiTransport, stall } from './apiTransport';
 import { currentServerUrl, forceRefresh, getAccessToken } from './auth';
 import { log } from './logging';
 
@@ -13,6 +14,18 @@ import { log } from './logging';
  * - <img src> for files/thumbnails needs the bearer header, which an <img>
  *   cannot send; here main attaches it;
  * - tokens stay under main's control (single-flight refresh).
+ *
+ * Every request goes through the dedicated API session (apiTransport.ts), not the default one.
+ *
+ * Streamed response bodies MUST be released by aborting the net.fetch signal, not only by
+ * cancelling the body reader (docs/09 #146, proven on Electron 44 with an HTTP/2 server — the
+ * production Caddy speaks h2): `res.body.getReader().cancel()` does not end the request, the
+ * HTTP/2 stream stays open and the bytes Chromium has buffered for it are never acknowledged.
+ * A handful of such streams (a <video> seeking through a 15 MB file makes one per range request
+ * and drops it) use up the connection's receive window: from then on every response on that
+ * connection gets its headers but no body — every REST call hangs until the app restarts, while
+ * the gateway WebSocket (its own connection) stays alive. Also, the renderer abandoning a
+ * response never aborts `req.signal` here; Electron only calls the body stream's cancel().
  */
 export function registerApiScheme(): void {
   protocol.registerSchemesAsPrivileged([
@@ -79,7 +92,8 @@ async function forward(
     init.body = body;
     init.duplex = 'half'; // streamed request body (uploads)
   }
-  let res = await net.fetch(target, init);
+  const ses = apiSession();
+  let res = await ses.fetch(target, init);
   const idempotent = req.method === 'GET' || req.method === 'HEAD';
   let url = target;
   for (let hop = 0; hop < MAX_REDIRECTS && idempotent && res.status >= 300 && res.status < 400; hop++) {
@@ -90,9 +104,20 @@ async function forward(
     const h = new Headers(headers);
     if (!sameOrigin) h.delete('Authorization');
     url = next.toString();
-    res = await net.fetch(url, { method: req.method, headers: h, redirect: 'manual', signal });
+    await discard(res);
+    res = await ses.fetch(url, { method: req.method, headers: h, redirect: 'manual', signal });
   }
   return res;
+}
+
+/** A response we don't hand over (a redirect hop, a 401 before the replay): read to the end, so
+ * its bytes are consumed and the stream closes (see the header comment). Such bodies are tiny. */
+async function discard(res: Response): Promise<void> {
+  try {
+    await res.arrayBuffer();
+  } catch {
+    // the next request reports any real problem
+  }
 }
 
 /** Connect + response-headers deadline for a request whose body (if any) is small enough to be
@@ -103,7 +128,8 @@ export const HEADERS_TIMEOUT_MS = 20_000;
 
 /** No bytes — request or response, either direction — for this long → abort. Reset on every
  * chunk, so an upload or a large file/image download (served through this same scheme, see the
- * doc comment above) that is still making progress is never cut off by a fixed deadline. */
+ * doc comment above) that is still making progress is never cut off by a fixed deadline. It also
+ * ends a streamed response the renderer stopped reading (a paused / abandoned <video>). */
 export const IDLE_TIMEOUT_MS = 30_000;
 
 /**
@@ -123,17 +149,31 @@ function timeoutError(message: string): DOMException {
   return new DOMException(message, 'TimeoutError');
 }
 
+interface BodyHooks {
+  /** Every chunk (the caller's idle-timeout reset). */
+  onChunk: () => void;
+  /** The consumer cancelled the stream (the renderer dropped the response). */
+  onCancel?: (reason: unknown) => void;
+  /** The stream is over: finished, failed or cancelled. */
+  onEnd?: () => void;
+}
+
 /**
- * Wraps a request or response body stream so main never awaits a chunk forever. `onChunk` fires
- * on every chunk (the caller's idle-timeout reset); if `stop` aborts while a read is outstanding
- * (idle timeout, or the renderer's own cancel via `req.signal` if Electron forwards it onto the
- * Request — see handleApiScheme), the wrapped stream ends in an error instead of silently
- * closing with a truncated body.
+ * Wraps a request or response body stream so main never awaits a chunk forever. If `stop` aborts
+ * while a read is outstanding (idle timeout), the wrapped stream ends in an error instead of
+ * silently closing with a truncated body.
  */
-function watchBody(source: ReadableStream<Uint8Array>, stop: AbortSignal, onChunk: () => void): ReadableStream<Uint8Array> {
+function watchBody(source: ReadableStream<Uint8Array>, stop: AbortSignal, hooks: BodyHooks): ReadableStream<Uint8Array> {
   const reader = source.getReader();
+  let ended = false;
   const onAbort = (): void => {
     void reader.cancel(stop.reason).catch(() => undefined);
+  };
+  const end = (): void => {
+    stop.removeEventListener('abort', onAbort);
+    if (ended) return;
+    ended = true;
+    hooks.onEnd?.();
   };
   stop.addEventListener('abort', onAbort, { once: true });
   return new ReadableStream<Uint8Array>({
@@ -141,22 +181,23 @@ function watchBody(source: ReadableStream<Uint8Array>, stop: AbortSignal, onChun
       try {
         const result = await reader.read();
         if (result.done) {
-          stop.removeEventListener('abort', onAbort);
+          end();
           // A cancel triggered by our own timeout surfaces as a normal EOF from the reader's
           // point of view (per the Streams spec) — treat it as an error, not a truncated success.
           if (stop.aborted) controller.error(stop.reason);
           else controller.close();
           return;
         }
-        onChunk();
+        hooks.onChunk();
         controller.enqueue(result.value);
       } catch (err) {
-        stop.removeEventListener('abort', onAbort);
+        end();
         controller.error(stop.aborted ? stop.reason : err);
       }
     },
     cancel(reason) {
-      stop.removeEventListener('abort', onAbort);
+      end();
+      hooks.onCancel?.(reason);
       return reader.cancel(reason);
     },
   });
@@ -175,6 +216,9 @@ export function handleApiScheme(): void {
 
     const idleController = new AbortController();
     const headersController = new AbortController();
+    // The renderer dropped the (streamed) response: end the upstream request itself, see the
+    // header comment — cancelling the body reader alone leaves the HTTP/2 stream open.
+    const releaseController = new AbortController();
     let idleTimer: ReturnType<typeof setTimeout> | undefined;
     let headersTimer: ReturnType<typeof setTimeout> | undefined;
     const armIdle = (): void => {
@@ -187,13 +231,15 @@ export function handleApiScheme(): void {
     };
     const disarmAll = (): void => {
       clearTimeout(idleTimer);
+      idleTimer = undefined;
       disarmHeaders();
     };
-    // Honours the renderer's own cancellation if Electron forwards the fetch()'s AbortSignal
-    // onto this Request (no extra plumbing needed on the renderer side either way — `req.signal`
-    // is a plain, always-present part of the standard Request object protocol.handle hands us).
+    // `req.signal` is kept for completeness: Electron 44 never aborts it when the renderer
+    // cancels (only the body stream's cancel() is called — handled by releaseController).
     const bodySignal = AbortSignal.any([idleController.signal, req.signal]);
-    const fetchSignal = AbortSignal.any([idleController.signal, headersController.signal, req.signal]);
+    const fetchSignal = AbortSignal.any([idleController.signal, headersController.signal, releaseController.signal, req.signal]);
+    const stallId = stall.started();
+    let streaming = false;
 
     try {
       armIdle();
@@ -202,7 +248,7 @@ export function handleApiScheme(): void {
       // did nothing, so the replay is safe. Big bodies (uploads) stream and are never replayed.
       const read = idempotent
         ? null
-        : await readBodyUpTo(req.body ? watchBody(req.body as ReadableStream<Uint8Array>, bodySignal, armIdle) : null);
+        : await readBodyUpTo(req.body ? watchBody(req.body as ReadableStream<Uint8Array>, bodySignal, { onChunk: armIdle }) : null);
       const streamed = read?.kind === 'stream';
       const body = read ? (read.kind === 'bytes' ? read.bytes : read.stream) : null;
       const replayable = !read || read.kind === 'bytes';
@@ -214,8 +260,12 @@ export function handleApiScheme(): void {
       let res = await forward(req, target, await getAccessToken(), body, fetchSignal);
       if (res.status === 401 && replayable) {
         const t = await forceRefresh();
-        if (t) res = await forward(req, target, t, body, fetchSignal);
+        if (t) {
+          await discard(res);
+          res = await forward(req, target, t, body, fetchSignal);
+        }
       }
+      stall.answered(stallId);
       disarmHeaders();
       armIdle(); // fresh idle window for the response body, whatever was spent on the request
 
@@ -223,22 +273,31 @@ export function handleApiScheme(): void {
       if (res.body) {
         // Buffer small responses (same threshold as request bodies) so a stall while we're still
         // assembling an ordinary JSON reply can still end in a clean 504. Large ones (file /
-        // image / audio previews served through this same scheme) exceed the limit and stream
-        // straight through from here on — only the idle timer can end them, never cut by a fixed
-        // deadline, per docs/12.
-        const watched = watchBody(res.body, bodySignal, armIdle);
+        // image / audio / video previews served through this same scheme) exceed the limit and
+        // stream straight through from here on — never cut by a fixed deadline (docs/12), but the
+        // idle timer stays armed: a stream the renderer stops reading without cancelling it is
+        // aborted after IDLE_TIMEOUT_MS, which releases its HTTP/2 stream (header comment).
+        const watched = watchBody(res.body, bodySignal, {
+          onChunk: armIdle,
+          onCancel: (reason) => releaseController.abort(reason ?? new DOMException('response dropped', 'AbortError')),
+          onEnd: disarmAll,
+        });
         const readRes = await readBodyUpTo(watched);
+        streaming = readRes.kind === 'stream';
         finalRes =
           readRes.kind === 'bytes'
             ? new Response(readRes.bytes, { status: res.status, statusText: res.statusText, headers: res.headers })
             : new Response(readRes.stream, { status: res.status, statusText: res.statusText, headers: res.headers });
       }
-      disarmAll();
+      if (!streaming) disarmAll();
       return withCors(finalRes, origin);
     } catch (err) {
       disarmAll();
       if (err instanceof DOMException && err.name === 'TimeoutError') {
         log.warn(`api request timeout ${req.method} ${url.pathname}`);
+        // Several of these at once = the connection, not the request (apiStall.ts).
+        const reason = stall.timedOut(stallId);
+        if (reason) void resetApiTransport(reason);
         return withCors(Response.json({ code: 'ERROR_CODE_UNAVAILABLE', message: 'request timed out' }, { status: 504 }), origin);
       }
       return withCors(
@@ -248,6 +307,8 @@ export function handleApiScheme(): void {
         ),
         origin,
       );
+    } finally {
+      stall.answered(stallId);
     }
   });
 }
