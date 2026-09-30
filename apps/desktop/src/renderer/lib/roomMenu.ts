@@ -5,8 +5,25 @@
  *
  *   [Открыть чат — phone, voice] · Пригласить в комнату · Запись встречи (voice, not guests)
  *   · Настройки комнаты | Прочитано · Уведомления › | Вверх · Вниз · В категорию ›
+ *
+ * A temporary room (ADR-0044) managed by me (MANAGE_ROOM or its creator) adds
+ *   | Скопировать ссылку · Продлить › · Добавить встречу (no meeting yet) … | Удалить комнату
+ * and has no reorder items (the «Временные» group is sorted by expiry, not dragged).
  */
-export type RoomMenuItem = 'openChat' | 'invite' | 'record' | 'settings' | 'markRead' | 'notify' | 'moveUp' | 'moveDown' | 'toCategory';
+export type RoomMenuItem =
+  | 'openChat'
+  | 'invite'
+  | 'record'
+  | 'settings'
+  | 'markRead'
+  | 'notify'
+  | 'moveUp'
+  | 'moveDown'
+  | 'toCategory'
+  | 'copyLink'
+  | 'extend'
+  | 'addMeeting'
+  | 'deleteRoom';
 /** One group of items; groups are separated by a hairline. */
 export type RoomMenuGroup = RoomMenuItem[];
 
@@ -25,6 +42,10 @@ export interface RoomMenuInput {
   canOrder: boolean;
   /** The workspace has categories («В категорию ›»). */
   hasCategories: boolean;
+  /** A temporary room (ADR-0044); `canManage` then includes its creator. */
+  temp?: boolean;
+  /** The temporary room already has a meeting in the calendar. */
+  hasEvent?: boolean;
 }
 
 export function roomMenuGroups(i: RoomMenuInput): RoomMenuGroup[] {
@@ -36,8 +57,12 @@ export function roomMenuGroups(i: RoomMenuInput): RoomMenuGroup[] {
   // Meeting recording (docs/09 #30): any member but a guest; start, or stop the running one (ADR-0025).
   if (i.voice && !i.guest) head.push('record');
   if (i.canManage) head.push('settings');
-  const groups: RoomMenuGroup[] = [head, ['markRead', 'notify']];
-  if (i.canOrder) groups.push(i.hasCategories ? ['moveUp', 'moveDown', 'toCategory'] : ['moveUp', 'moveDown']);
+  const groups: RoomMenuGroup[] = [head];
+  const temp = !!i.temp && i.canManage;
+  if (temp) groups.push(i.hasEvent || i.guest ? ['copyLink', 'extend'] : ['copyLink', 'extend', 'addMeeting']);
+  groups.push(['markRead', 'notify']);
+  if (i.canOrder && !i.temp) groups.push(i.hasCategories ? ['moveUp', 'moveDown', 'toCategory'] : ['moveUp', 'moveDown']);
+  if (temp) groups.push(['deleteRoom']);
   return groups.filter((g) => g.length > 0);
 }
 

@@ -360,6 +360,7 @@ export const PERM_LABEL: Record<PermissionName, MessageKey> = {
 export const PERM_HINT: Partial<Record<PermissionName, MessageKey>> = {
   INVITE_MEMBERS: 'perm.hint.INVITE_MEMBERS',
   INVITE_GUESTS: 'perm.hint.INVITE_GUESTS',
+  CREATE_TEMP_ROOMS: 'perm.hint.CREATE_TEMP_ROOMS',
 };
 
 function targetKey(o: Pick<OverrideDraft, 'targetType' | 'targetId'>): string {

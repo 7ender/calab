@@ -10,6 +10,7 @@ import { ForwardDialog } from '../chat/ForwardDialog';
 import { InviteToRoomDialog } from '../people/InviteToRoomDialog';
 import { ProfileDialog } from '../people/ProfileDialog';
 import { RoomCreateDialog, RoomSettingsDialog } from '../workspace/RoomDialogs';
+import { TempExtendDialog, TempRoomDialog } from '../workspace/TempRoomDialog';
 import { CreateWorkspaceDialog, JoinWorkspaceDialog } from '../workspace/WorkspaceDialogs';
 import { AdminWindowLazy, AppSettingsWindow, WorkspaceSettingsWindow } from './lazyWindows';
 import { useSession } from '../../stores/session';
@@ -33,6 +34,12 @@ export function Dialogs(): ReactNode {
         break;
       case 'room-create':
         node = <RoomCreateDialog onClose={close} workspaceId={d.workspaceId} voice={d.voice} categoryId={d.categoryId} />;
+        break;
+      case 'temp-room-create':
+        node = <TempRoomDialog onClose={close} workspaceId={d.workspaceId} />;
+        break;
+      case 'temp-room-extend':
+        node = <TempExtendDialog onClose={close} roomId={d.roomId} />;
         break;
       case 'room-settings':
         node = <RoomSettingsDialog onClose={close} roomId={d.roomId} tab={d.tab} />;

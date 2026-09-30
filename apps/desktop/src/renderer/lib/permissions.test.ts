@@ -7,6 +7,8 @@ import {
   cycleTri,
   isAdminRole,
   mayArrangeRooms,
+  mayCreateTempRooms,
+  mayManageRoom,
   mayManageWorkspace,
   mayModerateVoice,
   mayMoveMembersIn,
@@ -235,5 +237,26 @@ describe('permissions matrix: the client gates what the server checks (docs/16)'
     expect(voiceCaps(roomPerms(as(WorkspaceRole.MEMBER), 'u', denied), denied)).toEqual({ canStream: false, canVideo: false });
     expect(voiceCaps(roomPerms(as(WorkspaceRole.ADMIN), 'u', denied), denied)).toEqual({ canStream: true, canVideo: true });
     expect(voiceCaps(0n, undefined)).toEqual({ canStream: false, canVideo: false });
+  });
+});
+
+describe('temporary rooms (ADR-0044)', () => {
+  const temp = (createdBy: string) => create(RoomSchema, { id: 't1', createdBy, expiresAt: { seconds: 2_000_000_000n, nanos: 0 } });
+
+  it('members create them by default; guests never', () => {
+    expect(mayCreateTempRooms(as(WorkspaceRole.MEMBER))).toBe(true);
+    expect(mayCreateTempRooms(as(WorkspaceRole.GUEST))).toBe(false);
+    expect(mayCreateTempRooms(undefined)).toBe(false);
+  });
+
+  it('the creator manages their temporary room; others need MANAGE_ROOM', () => {
+    expect(mayManageRoom(as(WorkspaceRole.MEMBER), 'u1', temp('u1'))).toBe(true);
+    expect(mayManageRoom(as(WorkspaceRole.MEMBER), 'u2', temp('u1'))).toBe(false);
+    expect(mayManageRoom(as(WorkspaceRole.MEMBER, mod), 'u2', temp('u1'))).toBe(true);
+    expect(mayManageRoom(as(WorkspaceRole.GUEST), 'u1', temp('u1'))).toBe(false);
+  });
+
+  it('created_by gives nothing on a permanent room', () => {
+    expect(mayManageRoom(as(WorkspaceRole.MEMBER), 'u1', create(RoomSchema, { id: 'p', createdBy: 'u1' }))).toBe(false);
   });
 });

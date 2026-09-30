@@ -49,6 +49,8 @@ import { canSpeakFrom, isDeviceGone, meterUpdate, micModeFor, pttAllowed, pttCue
 import { RemoteAudioOut } from '../lib/media/remoteAudioOut';
 import { useMessages } from '../stores/messages';
 import { useRooms } from '../stores/rooms';
+import { isTempRoom } from '../lib/tempRooms';
+import { roomClosedToast } from './roomClosed';
 import { prefs, usePrefs, type Prefs } from '../stores/prefs';
 import { useSession } from '../stores/session';
 import { toast, useToasts } from '../stores/toasts';
@@ -1190,7 +1192,11 @@ class VoiceEngine {
           return;
         }
         else if (reason === DisconnectReason.DUPLICATE_IDENTITY) toast.info(t('mediaErr.voice.duplicate'));
-        else if (reason === DisconnectReason.ROOM_DELETED || reason === DisconnectReason.ROOM_CLOSED) toast.info(t('mediaErr.voice.closed'));
+        else if (reason === DisconnectReason.ROOM_DELETED || reason === DisconnectReason.ROOM_CLOSED) {
+          // A temporary room closed (ADR-0044): the same «Комната закрыта» as its ROOM_DELETE, once.
+          if (this.roomId && isTempRoom(useRooms.getState().byId[this.roomId])) roomClosedToast(this.roomId);
+          else toast.info(t('mediaErr.voice.closed'));
+        }
         else if (reason !== DisconnectReason.CLIENT_INITIATED) {
           setLink({ lastError: describeDisconnect(reason === undefined ? undefined : DisconnectReason[reason]) });
           // Network-type loss that LiveKit could not resume itself (sleep, long freeze,

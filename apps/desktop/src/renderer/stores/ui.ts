@@ -13,6 +13,10 @@ export type Dialog =
   /** `roomId`: opened from a room («Пригласить», docs/09 #55) — the invites tab leads with its guest link. */
   | { kind: 'workspace-settings'; workspaceId: string; tab?: string; roomId?: string }
   | { kind: 'room-create'; workspaceId: string; voice: boolean; categoryId?: string }
+  /** «Временная комната» (ADR-0044): name, lifetime, visibility, guests, meeting → the link. */
+  | { kind: 'temp-room-create'; workspaceId: string }
+  /** «Продлить › До даты…» of a temporary room. */
+  | { kind: 'temp-room-extend'; roomId: string }
   | { kind: 'room-settings'; roomId: string; tab?: string }
   | { kind: 'settings'; tab?: string }
   | { kind: 'stream-picker' }

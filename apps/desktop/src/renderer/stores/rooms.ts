@@ -280,9 +280,11 @@ export const byPosition = (a: { position: number; name: string; id: string }, b:
  * flat list, no header), then the categories by position. Inside a group rooms follow
  * `position` only — drag & drop may interleave text and voice rooms (migration 00012 kept the
  * old text-before-voice order). Categories without rooms are hidden unless `keepEmpty`
- * (admins drop and add rooms into them).
+ * (admins drop and add rooms into them). Temporary rooms (ADR-0044) are not here: they form the
+ * virtual «Временные» group under the categories (`tempRoomsOf`), outside the reorder layout.
  */
-export function groupRooms(rooms: Room[], categories: RoomCategory[], keepEmpty = false): RoomGroup[] {
+export function groupRooms(allRooms: Room[], categories: RoomCategory[], keepEmpty = false): RoomGroup[] {
+  const rooms = allRooms.filter((r) => !r.expiresAt);
   const known = new Set(categories.map((c) => c.id));
   const sortRooms = (list: Room[]): Room[] => [...list].sort(byPosition);
   const groups: RoomGroup[] = [];
