@@ -229,7 +229,7 @@ func (h *Handlers) get(w http.ResponseWriter, r *http.Request) error {
 	if err != nil {
 		return err
 	}
-	acc, err := rooms.Access(r, roomID)
+	acc, err := rooms.ReadAccess(r, roomID) // history: archived temporary rooms too (ADR-0044)
 	if err != nil {
 		return err
 	}
@@ -264,7 +264,7 @@ func (h *Handlers) list(w http.ResponseWriter, r *http.Request) error {
 	if err != nil {
 		return err
 	}
-	acc, err := rooms.Access(r, roomID)
+	acc, err := rooms.ReadAccess(r, roomID) // history: archived temporary rooms too (ADR-0044)
 	if err != nil {
 		return err
 	}

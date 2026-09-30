@@ -6,6 +6,8 @@ import type { GenEnum, GenFile, GenMessage } from "@bufbuild/protobuf/codegenv2"
 import { enumDesc, fileDesc, messageDesc } from "@bufbuild/protobuf/codegenv2";
 import type { Timestamp } from "@bufbuild/protobuf/wkt";
 import { file_google_protobuf_timestamp } from "@bufbuild/protobuf/wkt";
+import type { CalendarEvent } from "./event_pb.js";
+import { file_calaba_v1_event } from "./event_pb.js";
 import type { RoomMediaSettings, ScreenSharePreset } from "./media_pb.js";
 import { file_calaba_v1_media } from "./media_pb.js";
 import type { Message } from "@bufbuild/protobuf";
@@ -14,7 +16,7 @@ import type { Message } from "@bufbuild/protobuf";
  * Describes the file calaba/v1/room.proto.
  */
 export const file_calaba_v1_room: GenFile = /*@__PURE__*/
-  fileDesc("ChRjYWxhYmEvdjEvcm9vbS5wcm90bxIJY2FsYWJhLnYxIn4KFlJvb21QZXJtaXNzaW9uT3ZlcnJpZGUSNAoLdGFyZ2V0X3R5cGUYASABKA4yHy5jYWxhYmEudjEuUGVybWlzc2lvblRhcmdldFR5cGUSEQoJdGFyZ2V0X2lkGAIgASgJEg0KBWFsbG93GAMgASgEEgwKBGRlbnkYBCABKAQi9QEKEVJvb21NZWRpYU92ZXJyaWRlEh8KEmF1ZGlvX2JpdHJhdGVfa2JwcxgBIAEoDUgAiAEBEjwKEW1heF9zdHJlYW1fcHJlc2V0GAIgASgOMhwuY2FsYWJhLnYxLlNjcmVlblNoYXJlUHJlc2V0SAGIAQESGAoLbWF4X3N0cmVhbXMYAyABKA1IAogBARIZCgxjYW1lcmFfbGltaXQYBCABKA1IA4gBAUIVChNfYXVkaW9fYml0cmF0ZV9rYnBzQhQKEl9tYXhfc3RyZWFtX3ByZXNldEIOCgxfbWF4X3N0cmVhbXNCDwoNX2NhbWVyYV9saW1pdCLqBAoEUm9vbRIKCgJpZBgBIAEoCRIUCgx3b3Jrc3BhY2VfaWQYAiABKAkSIQoEdHlwZRgDIAEoDjITLmNhbGFiYS52MS5Sb29tVHlwZRIMCgRuYW1lGAQgASgJEg0KBXRvcGljGAUgASgJEhAKCHBvc2l0aW9uGAYgASgFEhIKCmlzX3ByaXZhdGUYByABKAgSKwoFbWVkaWEYCCABKAsyHC5jYWxhYmEudjEuUm9vbU1lZGlhU2V0dGluZ3MSNAoObWVkaWFfb3ZlcnJpZGUYCSABKAsyHC5jYWxhYmEudjEuUm9vbU1lZGlhT3ZlcnJpZGUSPwoUcGVybWlzc2lvbl9vdmVycmlkZXMYCiADKAsyIS5jYWxhYmEudjEuUm9vbVBlcm1pc3Npb25PdmVycmlkZRIuCgpjcmVhdGVkX2F0GAsgASgLMhouZ29vZ2xlLnByb3RvYnVmLlRpbWVzdGFtcBIXCg9sYXN0X21lc3NhZ2VfaWQYDCABKAkSMwoPbGFzdF9tZXNzYWdlX2F0GA0gASgLMhouZ29vZ2xlLnByb3RvYnVmLlRpbWVzdGFtcBITCgtjYXRlZ29yeV9pZBgOIAEoCRI0ChB2b2ljZV9zdGFydGVkX2F0GA8gASgLMhouZ29vZ2xlLnByb3RvYnVmLlRpbWVzdGFtcBISCgp1c2VyX2xpbWl0GBAgASgNEhQKDHZvaWNlX3N0YXR1cxgRIAEoCRIXCg9hbGxvd19yZWNvcmRpbmcYEiABKAgSEgoKcmVzdHJpY3RlZBgTIAEoCBIWCg5ndWVzdF9hcHByb3ZhbBgUIAEoCCKJAQoYUm9vbU5vdGlmaWNhdGlvblNldHRpbmdzEg8KB3Jvb21faWQYASABKAkSKwoFbGV2ZWwYAiABKA4yHC5jYWxhYmEudjEuTm90aWZpY2F0aW9uTGV2ZWwSLwoLbXV0ZWRfdW50aWwYAyABKAsyGi5nb29nbGUucHJvdG9idWYuVGltZXN0YW1wIoUBCiVVcGRhdGVSb29tTm90aWZpY2F0aW9uU2V0dGluZ3NSZXF1ZXN0EisKBWxldmVsGAEgASgOMhwuY2FsYWJhLnYxLk5vdGlmaWNhdGlvbkxldmVsEi8KC211dGVkX3VudGlsGAIgASgLMhouZ29vZ2xlLnByb3RvYnVmLlRpbWVzdGFtcCJfCiZVcGRhdGVSb29tTm90aWZpY2F0aW9uU2V0dGluZ3NSZXNwb25zZRI1CghzZXR0aW5ncxgBIAEoCzIjLmNhbGFiYS52MS5Sb29tTm90aWZpY2F0aW9uU2V0dGluZ3MixQEKHVdvcmtzcGFjZU5vdGlmaWNhdGlvblNldHRpbmdzEhQKDHdvcmtzcGFjZV9pZBgBIAEoCRIrCgVsZXZlbBgCIAEoDjIcLmNhbGFiYS52MS5Ob3RpZmljYXRpb25MZXZlbBIvCgttdXRlZF91bnRpbBgDIAEoCzIaLmdvb2dsZS5wcm90b2J1Zi5UaW1lc3RhbXASMAoKdGFza19sZXZlbBgEIAEoDjIcLmNhbGFiYS52MS5Ob3RpZmljYXRpb25MZXZlbCLQAQoqVXBkYXRlV29ya3NwYWNlTm90aWZpY2F0aW9uU2V0dGluZ3NSZXF1ZXN0EisKBWxldmVsGAEgASgOMhwuY2FsYWJhLnYxLk5vdGlmaWNhdGlvbkxldmVsEi8KC211dGVkX3VudGlsGAIgASgLMhouZ29vZ2xlLnByb3RvYnVmLlRpbWVzdGFtcBI1Cgp0YXNrX2xldmVsGAMgASgOMhwuY2FsYWJhLnYxLk5vdGlmaWNhdGlvbkxldmVsSACIAQFCDQoLX3Rhc2tfbGV2ZWwiaQorVXBkYXRlV29ya3NwYWNlTm90aWZpY2F0aW9uU2V0dGluZ3NSZXNwb25zZRI6CghzZXR0aW5ncxgBIAEoCzIoLmNhbGFiYS52MS5Xb3Jrc3BhY2VOb3RpZmljYXRpb25TZXR0aW5ncyJQCgxSb29tQ2F0ZWdvcnkSCgoCaWQYASABKAkSFAoMd29ya3NwYWNlX2lkGAIgASgJEgwKBG5hbWUYAyABKAkSEAoIcG9zaXRpb24YBCABKAUiSQoVQ3JlYXRlQ2F0ZWdvcnlSZXF1ZXN0EgwKBG5hbWUYASABKAkSFQoIcG9zaXRpb24YAiABKAVIAIgBAUILCglfcG9zaXRpb24iQwoWQ3JlYXRlQ2F0ZWdvcnlSZXNwb25zZRIpCghjYXRlZ29yeRgBIAEoCzIXLmNhbGFiYS52MS5Sb29tQ2F0ZWdvcnkiRQoWTGlzdENhdGVnb3JpZXNSZXNwb25zZRIrCgpjYXRlZ29yaWVzGAEgAygLMhcuY2FsYWJhLnYxLlJvb21DYXRlZ29yeSJXChVVcGRhdGVDYXRlZ29yeVJlcXVlc3QSEQoEbmFtZRgBIAEoCUgAiAEBEhUKCHBvc2l0aW9uGAIgASgFSAGIAQFCBwoFX25hbWVCCwoJX3Bvc2l0aW9uIkMKFlVwZGF0ZUNhdGVnb3J5UmVzcG9uc2USKQoIY2F0ZWdvcnkYASABKAsyFy5jYWxhYmEudjEuUm9vbUNhdGVnb3J5IpkCChNTZXRSb29tT3JkZXJSZXF1ZXN0EjoKBXJvb21zGAEgAygLMisuY2FsYWJhLnYxLlNldFJvb21PcmRlclJlcXVlc3QuUm9vbVBvc2l0aW9uEkMKCmNhdGVnb3JpZXMYAiADKAsyLy5jYWxhYmEudjEuU2V0Um9vbU9yZGVyUmVxdWVzdC5DYXRlZ29yeVBvc2l0aW9uGkYKDFJvb21Qb3NpdGlvbhIPCgdyb29tX2lkGAEgASgJEhAKCHBvc2l0aW9uGAIgASgFEhMKC2NhdGVnb3J5X2lkGAMgASgJGjkKEENhdGVnb3J5UG9zaXRpb24SEwoLY2F0ZWdvcnlfaWQYASABKAkSEAoIcG9zaXRpb24YAiABKAUiYwoUU2V0Um9vbU9yZGVyUmVzcG9uc2USHgoFcm9vbXMYASADKAsyDy5jYWxhYmEudjEuUm9vbRIrCgpjYXRlZ29yaWVzGAIgAygLMhcuY2FsYWJhLnYxLlJvb21DYXRlZ29yeSLqAQoRQ3JlYXRlUm9vbVJlcXVlc3QSIQoEdHlwZRgBIAEoDjITLmNhbGFiYS52MS5Sb29tVHlwZRIMCgRuYW1lGAIgASgJEg0KBXRvcGljGAMgASgJEhIKCmlzX3ByaXZhdGUYBCABKAgSNAoObWVkaWFfb3ZlcnJpZGUYBSABKAsyHC5jYWxhYmEudjEuUm9vbU1lZGlhT3ZlcnJpZGUSFQoIcG9zaXRpb24YBiABKAVIAIgBARITCgtjYXRlZ29yeV9pZBgHIAEoCRISCgp1c2VyX2xpbWl0GAggASgNQgsKCV9wb3NpdGlvbiIzChJDcmVhdGVSb29tUmVzcG9uc2USHQoEcm9vbRgBIAEoCzIPLmNhbGFiYS52MS5Sb29tIjMKEUxpc3RSb29tc1Jlc3BvbnNlEh4KBXJvb21zGAEgAygLMg8uY2FsYWJhLnYxLlJvb20iRQoPR2V0Um9vbVJlc3BvbnNlEh0KBHJvb20YASABKAsyDy5jYWxhYmEudjEuUm9vbRITCgtwZXJtaXNzaW9ucxgCIAEoBCKbAwoRVXBkYXRlUm9vbVJlcXVlc3QSEQoEbmFtZRgBIAEoCUgAiAEBEhIKBXRvcGljGAIgASgJSAGIAQESFQoIcG9zaXRpb24YAyABKAVIAogBARI5Cg5tZWRpYV9vdmVycmlkZRgEIAEoCzIcLmNhbGFiYS52MS5Sb29tTWVkaWFPdmVycmlkZUgDiAEBEhgKC2NhdGVnb3J5X2lkGAUgASgJSASIAQESFwoKdXNlcl9saW1pdBgGIAEoDUgFiAEBEhwKD2FsbG93X3JlY29yZGluZxgHIAEoCEgGiAEBEhcKCnJlc3RyaWN0ZWQYCCABKAhIB4gBARIbCg5ndWVzdF9hcHByb3ZhbBgJIAEoCEgIiAEBQgcKBV9uYW1lQggKBl90b3BpY0ILCglfcG9zaXRpb25CEQoPX21lZGlhX292ZXJyaWRlQg4KDF9jYXRlZ29yeV9pZEINCgtfdXNlcl9saW1pdEISChBfYWxsb3dfcmVjb3JkaW5nQg0KC19yZXN0cmljdGVkQhEKD19ndWVzdF9hcHByb3ZhbCIqChhVcGRhdGVWb2ljZVN0YXR1c1JlcXVlc3QSDgoGc3RhdHVzGAEgASgJIjMKElVwZGF0ZVJvb21SZXNwb25zZRIdCgRyb29tGAEgASgLMg8uY2FsYWJhLnYxLlJvb20iUQoZU2V0Um9vbVBlcm1pc3Npb25zUmVxdWVzdBI0CglvdmVycmlkZXMYASADKAsyIS5jYWxhYmEudjEuUm9vbVBlcm1pc3Npb25PdmVycmlkZSI7ChpTZXRSb29tUGVybWlzc2lvbnNSZXNwb25zZRIdCgRyb29tGAEgASgLMg8uY2FsYWJhLnYxLlJvb20qiQEKCFJvb21UeXBlEhkKFVJPT01fVFlQRV9VTlNQRUNJRklFRBAAEhMKD1JPT01fVFlQRV9WT0lDRRABEhIKDlJPT01fVFlQRV9URVhUEAISEAoMUk9PTV9UWVBFX0RNEAMSEwoPUk9PTV9UWVBFX05PVEVTEAQSEgoOUk9PTV9UWVBFX1RBU0sQBSqAAQoUUGVybWlzc2lvblRhcmdldFR5cGUSJgoiUEVSTUlTU0lPTl9UQVJHRVRfVFlQRV9VTlNQRUNJRklFRBAAEh8KG1BFUk1JU1NJT05fVEFSR0VUX1RZUEVfUk9MRRABEh8KG1BFUk1JU1NJT05fVEFSR0VUX1RZUEVfVVNFUhACKrEBChFOb3RpZmljYXRpb25MZXZlbBIiCh5OT1RJRklDQVRJT05fTEVWRUxfVU5TUEVDSUZJRUQQABIaChZOT1RJRklDQVRJT05fTEVWRUxfQUxMEAESHwobTk9USUZJQ0FUSU9OX0xFVkVMX01FTlRJT05TEAISGwoXTk9USUZJQ0FUSU9OX0xFVkVMX05PTkUQAxIeChpOT1RJRklDQVRJT05fTEVWRUxfSU5IRVJJVBAEQpcBCg1jb20uY2FsYWJhLnYxQglSb29tUHJvdG9QAVo2Z2l0aHViLmNvbS9jYWxhYmEvY2FsYWJhL3NlcnZlci9nZW4vY2FsYWJhL3YxO2NhbGFiYXYxogIDQ1hYqgIJQ2FsYWJhLlYxygIJQ2FsYWJhXFYx4gIVQ2FsYWJhXFYxXEdQQk1ldGFkYXRh6gIKQ2FsYWJhOjpWMWIGcHJvdG8z", [file_google_protobuf_timestamp, file_calaba_v1_media]);
+  fileDesc("ChRjYWxhYmEvdjEvcm9vbS5wcm90bxIJY2FsYWJhLnYxIn4KFlJvb21QZXJtaXNzaW9uT3ZlcnJpZGUSNAoLdGFyZ2V0X3R5cGUYASABKA4yHy5jYWxhYmEudjEuUGVybWlzc2lvblRhcmdldFR5cGUSEQoJdGFyZ2V0X2lkGAIgASgJEg0KBWFsbG93GAMgASgEEgwKBGRlbnkYBCABKAQi9QEKEVJvb21NZWRpYU92ZXJyaWRlEh8KEmF1ZGlvX2JpdHJhdGVfa2JwcxgBIAEoDUgAiAEBEjwKEW1heF9zdHJlYW1fcHJlc2V0GAIgASgOMhwuY2FsYWJhLnYxLlNjcmVlblNoYXJlUHJlc2V0SAGIAQESGAoLbWF4X3N0cmVhbXMYAyABKA1IAogBARIZCgxjYW1lcmFfbGltaXQYBCABKA1IA4gBAUIVChNfYXVkaW9fYml0cmF0ZV9rYnBzQhQKEl9tYXhfc3RyZWFtX3ByZXNldEIOCgxfbWF4X3N0cmVhbXNCDwoNX2NhbWVyYV9saW1pdCL2BQoEUm9vbRIKCgJpZBgBIAEoCRIUCgx3b3Jrc3BhY2VfaWQYAiABKAkSIQoEdHlwZRgDIAEoDjITLmNhbGFiYS52MS5Sb29tVHlwZRIMCgRuYW1lGAQgASgJEg0KBXRvcGljGAUgASgJEhAKCHBvc2l0aW9uGAYgASgFEhIKCmlzX3ByaXZhdGUYByABKAgSKwoFbWVkaWEYCCABKAsyHC5jYWxhYmEudjEuUm9vbU1lZGlhU2V0dGluZ3MSNAoObWVkaWFfb3ZlcnJpZGUYCSABKAsyHC5jYWxhYmEudjEuUm9vbU1lZGlhT3ZlcnJpZGUSPwoUcGVybWlzc2lvbl9vdmVycmlkZXMYCiADKAsyIS5jYWxhYmEudjEuUm9vbVBlcm1pc3Npb25PdmVycmlkZRIuCgpjcmVhdGVkX2F0GAsgASgLMhouZ29vZ2xlLnByb3RvYnVmLlRpbWVzdGFtcBIXCg9sYXN0X21lc3NhZ2VfaWQYDCABKAkSMwoPbGFzdF9tZXNzYWdlX2F0GA0gASgLMhouZ29vZ2xlLnByb3RvYnVmLlRpbWVzdGFtcBITCgtjYXRlZ29yeV9pZBgOIAEoCRI0ChB2b2ljZV9zdGFydGVkX2F0GA8gASgLMhouZ29vZ2xlLnByb3RvYnVmLlRpbWVzdGFtcBISCgp1c2VyX2xpbWl0GBAgASgNEhQKDHZvaWNlX3N0YXR1cxgRIAEoCRIXCg9hbGxvd19yZWNvcmRpbmcYEiABKAgSEgoKcmVzdHJpY3RlZBgTIAEoCBIWCg5ndWVzdF9hcHByb3ZhbBgUIAEoCBIuCgpleHBpcmVzX2F0GBUgASgLMhouZ29vZ2xlLnByb3RvYnVmLlRpbWVzdGFtcBISCgpjcmVhdGVkX2J5GBYgASgJEi8KC2FyY2hpdmVkX2F0GBcgASgLMhouZ29vZ2xlLnByb3RvYnVmLlRpbWVzdGFtcBIVCg1tZXNzYWdlX2NvdW50GBggASgNIokBChhSb29tTm90aWZpY2F0aW9uU2V0dGluZ3MSDwoHcm9vbV9pZBgBIAEoCRIrCgVsZXZlbBgCIAEoDjIcLmNhbGFiYS52MS5Ob3RpZmljYXRpb25MZXZlbBIvCgttdXRlZF91bnRpbBgDIAEoCzIaLmdvb2dsZS5wcm90b2J1Zi5UaW1lc3RhbXAihQEKJVVwZGF0ZVJvb21Ob3RpZmljYXRpb25TZXR0aW5nc1JlcXVlc3QSKwoFbGV2ZWwYASABKA4yHC5jYWxhYmEudjEuTm90aWZpY2F0aW9uTGV2ZWwSLwoLbXV0ZWRfdW50aWwYAiABKAsyGi5nb29nbGUucHJvdG9idWYuVGltZXN0YW1wIl8KJlVwZGF0ZVJvb21Ob3RpZmljYXRpb25TZXR0aW5nc1Jlc3BvbnNlEjUKCHNldHRpbmdzGAEgASgLMiMuY2FsYWJhLnYxLlJvb21Ob3RpZmljYXRpb25TZXR0aW5ncyLFAQodV29ya3NwYWNlTm90aWZpY2F0aW9uU2V0dGluZ3MSFAoMd29ya3NwYWNlX2lkGAEgASgJEisKBWxldmVsGAIgASgOMhwuY2FsYWJhLnYxLk5vdGlmaWNhdGlvbkxldmVsEi8KC211dGVkX3VudGlsGAMgASgLMhouZ29vZ2xlLnByb3RvYnVmLlRpbWVzdGFtcBIwCgp0YXNrX2xldmVsGAQgASgOMhwuY2FsYWJhLnYxLk5vdGlmaWNhdGlvbkxldmVsItABCipVcGRhdGVXb3Jrc3BhY2VOb3RpZmljYXRpb25TZXR0aW5nc1JlcXVlc3QSKwoFbGV2ZWwYASABKA4yHC5jYWxhYmEudjEuTm90aWZpY2F0aW9uTGV2ZWwSLwoLbXV0ZWRfdW50aWwYAiABKAsyGi5nb29nbGUucHJvdG9idWYuVGltZXN0YW1wEjUKCnRhc2tfbGV2ZWwYAyABKA4yHC5jYWxhYmEudjEuTm90aWZpY2F0aW9uTGV2ZWxIAIgBAUINCgtfdGFza19sZXZlbCJpCitVcGRhdGVXb3Jrc3BhY2VOb3RpZmljYXRpb25TZXR0aW5nc1Jlc3BvbnNlEjoKCHNldHRpbmdzGAEgASgLMiguY2FsYWJhLnYxLldvcmtzcGFjZU5vdGlmaWNhdGlvblNldHRpbmdzIlAKDFJvb21DYXRlZ29yeRIKCgJpZBgBIAEoCRIUCgx3b3Jrc3BhY2VfaWQYAiABKAkSDAoEbmFtZRgDIAEoCRIQCghwb3NpdGlvbhgEIAEoBSJJChVDcmVhdGVDYXRlZ29yeVJlcXVlc3QSDAoEbmFtZRgBIAEoCRIVCghwb3NpdGlvbhgCIAEoBUgAiAEBQgsKCV9wb3NpdGlvbiJDChZDcmVhdGVDYXRlZ29yeVJlc3BvbnNlEikKCGNhdGVnb3J5GAEgASgLMhcuY2FsYWJhLnYxLlJvb21DYXRlZ29yeSJFChZMaXN0Q2F0ZWdvcmllc1Jlc3BvbnNlEisKCmNhdGVnb3JpZXMYASADKAsyFy5jYWxhYmEudjEuUm9vbUNhdGVnb3J5IlcKFVVwZGF0ZUNhdGVnb3J5UmVxdWVzdBIRCgRuYW1lGAEgASgJSACIAQESFQoIcG9zaXRpb24YAiABKAVIAYgBAUIHCgVfbmFtZUILCglfcG9zaXRpb24iQwoWVXBkYXRlQ2F0ZWdvcnlSZXNwb25zZRIpCghjYXRlZ29yeRgBIAEoCzIXLmNhbGFiYS52MS5Sb29tQ2F0ZWdvcnkimQIKE1NldFJvb21PcmRlclJlcXVlc3QSOgoFcm9vbXMYASADKAsyKy5jYWxhYmEudjEuU2V0Um9vbU9yZGVyUmVxdWVzdC5Sb29tUG9zaXRpb24SQwoKY2F0ZWdvcmllcxgCIAMoCzIvLmNhbGFiYS52MS5TZXRSb29tT3JkZXJSZXF1ZXN0LkNhdGVnb3J5UG9zaXRpb24aRgoMUm9vbVBvc2l0aW9uEg8KB3Jvb21faWQYASABKAkSEAoIcG9zaXRpb24YAiABKAUSEwoLY2F0ZWdvcnlfaWQYAyABKAkaOQoQQ2F0ZWdvcnlQb3NpdGlvbhITCgtjYXRlZ29yeV9pZBgBIAEoCRIQCghwb3NpdGlvbhgCIAEoBSJjChRTZXRSb29tT3JkZXJSZXNwb25zZRIeCgVyb29tcxgBIAMoCzIPLmNhbGFiYS52MS5Sb29tEisKCmNhdGVnb3JpZXMYAiADKAsyFy5jYWxhYmEudjEuUm9vbUNhdGVnb3J5IuoBChFDcmVhdGVSb29tUmVxdWVzdBIhCgR0eXBlGAEgASgOMhMuY2FsYWJhLnYxLlJvb21UeXBlEgwKBG5hbWUYAiABKAkSDQoFdG9waWMYAyABKAkSEgoKaXNfcHJpdmF0ZRgEIAEoCBI0Cg5tZWRpYV9vdmVycmlkZRgFIAEoCzIcLmNhbGFiYS52MS5Sb29tTWVkaWFPdmVycmlkZRIVCghwb3NpdGlvbhgGIAEoBUgAiAEBEhMKC2NhdGVnb3J5X2lkGAcgASgJEhIKCnVzZXJfbGltaXQYCCABKA1CCwoJX3Bvc2l0aW9uIjMKEkNyZWF0ZVJvb21SZXNwb25zZRIdCgRyb29tGAEgASgLMg8uY2FsYWJhLnYxLlJvb20iMwoRTGlzdFJvb21zUmVzcG9uc2USHgoFcm9vbXMYASADKAsyDy5jYWxhYmEudjEuUm9vbSJFCg9HZXRSb29tUmVzcG9uc2USHQoEcm9vbRgBIAEoCzIPLmNhbGFiYS52MS5Sb29tEhMKC3Blcm1pc3Npb25zGAIgASgEIosEChFVcGRhdGVSb29tUmVxdWVzdBIRCgRuYW1lGAEgASgJSACIAQESEgoFdG9waWMYAiABKAlIAYgBARIVCghwb3NpdGlvbhgDIAEoBUgCiAEBEjkKDm1lZGlhX292ZXJyaWRlGAQgASgLMhwuY2FsYWJhLnYxLlJvb21NZWRpYU92ZXJyaWRlSAOIAQESGAoLY2F0ZWdvcnlfaWQYBSABKAlIBIgBARIXCgp1c2VyX2xpbWl0GAYgASgNSAWIAQESHAoPYWxsb3dfcmVjb3JkaW5nGAcgASgISAaIAQESFwoKcmVzdHJpY3RlZBgIIAEoCEgHiAEBEhsKDmd1ZXN0X2FwcHJvdmFsGAkgASgISAiIAQESLgoKZXhwaXJlc19hdBgKIAEoCzIaLmdvb2dsZS5wcm90b2J1Zi5UaW1lc3RhbXASFgoObWFrZV9wZXJtYW5lbnQYCyABKAgSFwoKaXNfcHJpdmF0ZRgMIAEoCEgJiAEBQgcKBV9uYW1lQggKBl90b3BpY0ILCglfcG9zaXRpb25CEQoPX21lZGlhX292ZXJyaWRlQg4KDF9jYXRlZ29yeV9pZEINCgtfdXNlcl9saW1pdEISChBfYWxsb3dfcmVjb3JkaW5nQg0KC19yZXN0cmljdGVkQhEKD19ndWVzdF9hcHByb3ZhbEINCgtfaXNfcHJpdmF0ZSIqChhVcGRhdGVWb2ljZVN0YXR1c1JlcXVlc3QSDgoGc3RhdHVzGAEgASgJIjMKElVwZGF0ZVJvb21SZXNwb25zZRIdCgRyb29tGAEgASgLMg8uY2FsYWJhLnYxLlJvb20iUQoZU2V0Um9vbVBlcm1pc3Npb25zUmVxdWVzdBI0CglvdmVycmlkZXMYASADKAsyIS5jYWxhYmEudjEuUm9vbVBlcm1pc3Npb25PdmVycmlkZSI7ChpTZXRSb29tUGVybWlzc2lvbnNSZXNwb25zZRIdCgRyb29tGAEgASgLMg8uY2FsYWJhLnYxLlJvb20ikwEKFUNyZWF0ZVRlbXBSb29tUmVxdWVzdBIMCgRuYW1lGAEgASgJEhMKC3R0bF9zZWNvbmRzGAIgASgNEhIKCndpdGhfZXZlbnQYAyABKAgSEwoGZ3Vlc3RzGAQgASgISACIAQESDwoHcHJpdmF0ZRgFIAEoCBISCgptZW1iZXJfaWRzGAYgAygJQgkKB19ndWVzdHMigwEKEFRlbXBSb29tUmVzcG9uc2USHQoEcm9vbRgBIAEoCzIPLmNhbGFiYS52MS5Sb29tEhIKCmludml0ZV91cmwYAiABKAkSEwoLaW52aXRlX2NvZGUYAyABKAkSJwoFZXZlbnQYBCABKAsyGC5jYWxhYmEudjEuQ2FsZW5kYXJFdmVudCqJAQoIUm9vbVR5cGUSGQoVUk9PTV9UWVBFX1VOU1BFQ0lGSUVEEAASEwoPUk9PTV9UWVBFX1ZPSUNFEAESEgoOUk9PTV9UWVBFX1RFWFQQAhIQCgxST09NX1RZUEVfRE0QAxITCg9ST09NX1RZUEVfTk9URVMQBBISCg5ST09NX1RZUEVfVEFTSxAFKoABChRQZXJtaXNzaW9uVGFyZ2V0VHlwZRImCiJQRVJNSVNTSU9OX1RBUkdFVF9UWVBFX1VOU1BFQ0lGSUVEEAASHwobUEVSTUlTU0lPTl9UQVJHRVRfVFlQRV9ST0xFEAESHwobUEVSTUlTU0lPTl9UQVJHRVRfVFlQRV9VU0VSEAIqsQEKEU5vdGlmaWNhdGlvbkxldmVsEiIKHk5PVElGSUNBVElPTl9MRVZFTF9VTlNQRUNJRklFRBAAEhoKFk5PVElGSUNBVElPTl9MRVZFTF9BTEwQARIfChtOT1RJRklDQVRJT05fTEVWRUxfTUVOVElPTlMQAhIbChdOT1RJRklDQVRJT05fTEVWRUxfTk9ORRADEh4KGk5PVElGSUNBVElPTl9MRVZFTF9JTkhFUklUEARClwEKDWNvbS5jYWxhYmEudjFCCVJvb21Qcm90b1ABWjZnaXRodWIuY29tL2NhbGFiYS9jYWxhYmEvc2VydmVyL2dlbi9jYWxhYmEvdjE7Y2FsYWJhdjGiAgNDWFiqAglDYWxhYmEuVjHKAglDYWxhYmFcVjHiAhVDYWxhYmFcVjFcR1BCTWV0YWRhdGHqAgpDYWxhYmE6OlYxYgZwcm90bzM", [file_google_protobuf_timestamp, file_calaba_v1_event, file_calaba_v1_media]);
 
 /**
  * Room-level override (ADR-0008). allow/deny are Permission bit masks.
@@ -228,6 +230,39 @@ export type Room = Message<"calaba.v1.Room"> & {
    * @generated from field: bool guest_approval = 20;
    */
   guestApproval: boolean;
+
+  /**
+   * Temporary rooms (ADR-0044). A room is temporary when expires_at is set (there is no
+   * separate is_temp flag): a VOICE room archived by the server at expires_at (ROOM_DELETE).
+   * Clients list temporary rooms in the virtual group «Временные» sorted by expires_at and
+   * ignore category_id / position for them.
+   *
+   * @generated from field: google.protobuf.Timestamp expires_at = 21;
+   */
+  expiresAt?: Timestamp | undefined;
+
+  /**
+   * Who created the room (empty for older rooms). The creator of a temporary room manages it
+   * like MANAGE_ROOM (rename, extend, links, access, delete) — clients: mayManageRoom(room, me)
+   * = MANAGE_ROOM in the room || (expires_at set && created_by == me && not a guest).
+   *
+   * @generated from field: string created_by = 22;
+   */
+  createdBy: string;
+
+  /**
+   * Set only in the archive listing (GET /api/workspaces/{id}/rooms?archived=1).
+   *
+   * @generated from field: google.protobuf.Timestamp archived_at = 23;
+   */
+  archivedAt?: Timestamp | undefined;
+
+  /**
+   * the archive listing only: live messages of the room
+   *
+   * @generated from field: uint32 message_count = 24;
+   */
+  messageCount: number;
 };
 
 /**
@@ -729,6 +764,12 @@ export const CreateRoomResponseSchema: GenMessage<CreateRoomResponse> = /*@__PUR
 
 /**
  * GET /api/workspaces/{id}/rooms — only rooms where the caller has VIEW_ROOM.
+ * ?archived=1 (ADR-0044): the archive of temporary rooms instead — MANAGE_ROOM at workspace
+ * level (else 403), only rooms where the caller has VIEW_ROOM, newest archived first, with
+ * archived_at, created_by, expires_at and message_count. Their history is read with GET
+ * /api/rooms/{id}/messages (and /messages/{messageId}, /pins; VIEW_ROOM); anything else on an
+ * archived temporary room (writes, reactions, voice, links, settings) answers 410 ROOM_ARCHIVED.
+ * Archived permanent rooms stay hidden (404) as before.
  *
  * @generated from message calaba.v1.ListRoomsResponse
  */
@@ -773,7 +814,8 @@ export const GetRoomResponseSchema: GenMessage<GetRoomResponse> = /*@__PURE__*/
   messageDesc(file_calaba_v1_room, 20);
 
 /**
- * PATCH /api/rooms/{id} (MANAGE_ROOM). Unset fields are left unchanged.
+ * PATCH /api/rooms/{id} (MANAGE_ROOM; on a temporary room also its creator, ADR-0044). Unset
+ * fields are left unchanged.
  * media_override, when present, replaces the whole override (unset inner fields = default).
  *
  * @generated from message calaba.v1.UpdateRoomRequest
@@ -835,6 +877,33 @@ export type UpdateRoomRequest = Message<"calaba.v1.UpdateRoomRequest"> & {
    * @generated from field: optional bool guest_approval = 9;
    */
   guestApproval?: boolean | undefined;
+
+  /**
+   * Temporary rooms only (ADR-0044; 422 on a permanent room). A new end: in the future and at
+   * most 7 days from now (422 otherwise; extend or shorten). The room's links that ended with
+   * the room follow it. MANAGE_ROOM or the creator.
+   *
+   * @generated from field: google.protobuf.Timestamp expires_at = 10;
+   */
+  expiresAt?: Timestamp | undefined;
+
+  /**
+   * Temporary rooms only: true makes the room permanent (expires_at cleared). Needs real
+   * MANAGE_ROOM in the room (the creator's implicit right is not enough: 403).
+   *
+   * @generated from field: bool make_permanent = 11;
+   */
+  makePermanent: boolean;
+
+  /**
+   * Temporary rooms only (ADR-0044, «Доступ»): private = the member role loses VIEW_ROOM (a
+   * deny override, as a private room at creation); public = that deny is removed. Personal
+   * overrides stay. MANAGE_ROOM or the creator. Permanent rooms: 422 (their access dialog
+   * edits the overrides with PUT /api/rooms/{id}/permissions).
+   *
+   * @generated from field: optional bool is_private = 12;
+   */
+  isPrivate?: boolean | undefined;
 };
 
 /**
@@ -884,7 +953,8 @@ export const UpdateRoomResponseSchema: GenMessage<UpdateRoomResponse> = /*@__PUR
   messageDesc(file_calaba_v1_room, 23);
 
 /**
- * PUT /api/rooms/{id}/permissions (MANAGE_ROOM). Replaces all overrides of the room.
+ * PUT /api/rooms/{id}/permissions (MANAGE_ROOM; on a temporary room also its creator, who
+ * may allow only bits they hold there). Replaces all overrides of the room.
  *
  * @generated from message calaba.v1.SetRoomPermissionsRequest
  */
@@ -918,6 +988,111 @@ export type SetRoomPermissionsResponse = Message<"calaba.v1.SetRoomPermissionsRe
  */
 export const SetRoomPermissionsResponseSchema: GenMessage<SetRoomPermissionsResponse> = /*@__PURE__*/
   messageDesc(file_calaba_v1_room, 25);
+
+/**
+ * POST /api/workspaces/{id}/rooms/temp (ADR-0044): a temporary voice room with a ready link.
+ * Needs CREATE_TEMP_ROOMS at workspace level (403 otherwise). One transaction: the room
+ * (after the last room, no category, created_by = caller), for a private room the member
+ * role's VIEW_ROOM deny plus a personal allow for the caller and member_ids, the room link
+ * (expires with the room; approval as the room's guest_approval) and, with with_event, a
+ * calendar meeting. Everyone who sees the room gets ROOM_CREATE (and EVENT_CREATE).
+ * Limits: 20 live temporary rooms per workspace, 5 per creator — 409 TEMP_ROOM_LIMIT with
+ * used / limit, reason "PER_USER" for the creator's cap.
+ *
+ * @generated from message calaba.v1.CreateTempRoomRequest
+ */
+export type CreateTempRoomRequest = Message<"calaba.v1.CreateTempRoomRequest"> & {
+  /**
+   * 1..100 characters
+   *
+   * @generated from field: string name = 1;
+   */
+  name: string;
+
+  /**
+   * 900 (15 min) .. 604800 (7 days); expires_at = now + ttl
+   *
+   * @generated from field: uint32 ttl_seconds = 2;
+   */
+  ttlSeconds: number;
+
+  /**
+   * a meeting from now (rounded up to 5 min) to expires_at, room = this
+   *
+   * @generated from field: bool with_event = 3;
+   */
+  withEvent: boolean;
+
+  /**
+   * The link admits guests (ADR-0016; default true). Needs INVITE_GUESTS at workspace level and
+   * a verified email (403 FORBIDDEN / EMAIL_NOT_VERIFIED). false = a members-only link
+   * (RoomInvite.members_only, ADR-0043): workspace members only.
+   *
+   * @generated from field: optional bool guests = 4;
+   */
+  guests?: boolean | undefined;
+
+  /**
+   * Visible only to the creator, member_ids and whoever joins by the link (workspace
+   * admins see it as any private room). false (default) = every member sees it.
+   *
+   * @generated from field: bool private = 5;
+   */
+  private: boolean;
+
+  /**
+   * Private rooms: up to 50 workspace members (not guests; 422 otherwise) who get access too.
+   *
+   * @generated from field: repeated string member_ids = 6;
+   */
+  memberIds: string[];
+};
+
+/**
+ * Describes the message calaba.v1.CreateTempRoomRequest.
+ * Use `create(CreateTempRoomRequestSchema)` to create a new message.
+ */
+export const CreateTempRoomRequestSchema: GenMessage<CreateTempRoomRequest> = /*@__PURE__*/
+  messageDesc(file_calaba_v1_room, 26);
+
+/**
+ * @generated from message calaba.v1.TempRoomResponse
+ */
+export type TempRoomResponse = Message<"calaba.v1.TempRoomResponse"> & {
+  /**
+   * @generated from field: calaba.v1.Room room = 1;
+   */
+  room?: Room | undefined;
+
+  /**
+   * The room link for sharing: <PUBLIC_APP_URL>/r/<invite_code>. Its bits: VIEW_ROOM,
+   * CONNECT, SPEAK, VIDEO, STREAM, SEND_MESSAGES, ATTACH_FILES — those the creator holds.
+   * A workspace member joining a private room by it gets the same personal allow
+   * (ROOM_PERMISSIONS_UPDATE); the link lists in GET /api/rooms/{id}/invites.
+   *
+   * @generated from field: string invite_url = 2;
+   */
+  inviteUrl: string;
+
+  /**
+   * @generated from field: string invite_code = 3;
+   */
+  inviteCode: string;
+
+  /**
+   * with_event only
+   *
+   * @generated from field: calaba.v1.CalendarEvent event = 4;
+   */
+  event?: CalendarEvent | undefined;
+};
+
+/**
+ * Describes the message calaba.v1.TempRoomResponse.
+ * Use `create(TempRoomResponseSchema)` to create a new message.
+ */
+export const TempRoomResponseSchema: GenMessage<TempRoomResponse> = /*@__PURE__*/
+  messageDesc(file_calaba_v1_room, 27);
 
 /**
  * @generated from enum calaba.v1.RoomType

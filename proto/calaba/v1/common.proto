@@ -69,6 +69,12 @@ enum ErrorCode {
   // 409: POST /api/workspaces/{id}/freebusy/suggest with within_work_hours when the working
   // hours of the people do not intersect in the window (ADR-0041): offer to turn the flag off.
   ERROR_CODE_NO_COMMON_HOURS = 52;
+  // 409: POST /api/workspaces/{id}/rooms/temp over the live temporary rooms cap (ADR-0044):
+  // 20 per workspace, or 5 per creator (reason "PER_USER"); used / limit are set.
+  ERROR_CODE_TEMP_ROOM_LIMIT = 53;
+  // 410: the room is an archived temporary room (ADR-0044): its history is readable (VIEW_ROOM),
+  // writes, reactions, voice, links and settings are not.
+  ERROR_CODE_ROOM_ARCHIVED = 54;
 }
 
 // Error body of every non-2xx REST response.
