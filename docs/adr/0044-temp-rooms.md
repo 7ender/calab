@@ -135,8 +135,9 @@
 - **Права создателя.** Одна проверка `rooms.MayManage(acc, user)` = `MANAGE_ROOM` в комнате **или**
   `acc.Creator(user)` (комната временная, `created_by == user`, пользователь — участник, не гость).
   Ей пользуются все проверки `MANAGE_ROOM` комнаты: `PATCH /api/rooms/{id}` (включая `expires_at`,
-  `is_private`, медиа, `guest_approval`), `PUT …/permissions` (создатель разрешает только биты,
-  которые есть у него самого — правило `validateOverrides`), `DELETE`, статус звонка. Ссылки: создатель
+  `is_private`, медиа, `guest_approval`), `PUT …/permissions` (создатель разрешает, запрещает и снимает запреты только
+  в пределах своих битов — правило `validateOverrides`; гостевой аккаунт личным allow — только с
+  `INVITE_GUESTS`; `guest_approval` — тоже только с `INVITE_GUESTS`), `DELETE`, статус звонка. Ссылки: создатель
   управляет ссылками «только для участников» своей комнаты (как с `INVITE_MEMBERS`); гостевые —
   по-прежнему только с `INVITE_GUESTS`. На постоянной комнате `created_by` (теперь пишется и у обычных
   комнат) прав не даёт; `make_permanent` — только настоящий `MANAGE_ROOM`. Встречи комнаты в календаре

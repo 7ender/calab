@@ -209,6 +209,30 @@ func TestTempRooms(t *testing.T) {
 	on := off | uint64(perm.CreateTempRooms)
 	o.must(200, "PATCH", "/api/workspaces/"+wid+"/roles/"+member.GetId(), &v1.UpdateRoleRequest{Permissions: &on}, &rr)
 
+	// The creator's overrides stay within their own bits: no denies of bits they lack (a
+	// MANAGE_ROOM deny would lock moderators out), no guest let in without INVITE_GUESTS, no
+	// guest approval without it.
+	cr2 := tempRoom(t, carol, wid, &v1.CreateTempRoomRequest{Name: "carol", TtlSeconds: 900, Guests: noGuests()}).GetRoom().GetId()
+	roleOv := func(deny perm.Bits) *v1.RoomPermissionOverride {
+		return &v1.RoomPermissionOverride{TargetType: v1.PermissionTargetType_PERMISSION_TARGET_TYPE_ROLE, TargetId: member.GetId(), Deny: uint64(deny)}
+	}
+	putPerms := func(ovs ...*v1.RoomPermissionOverride) int {
+		return carol.do("PUT", "/api/rooms/"+cr2+"/permissions", &v1.SetRoomPermissionsRequest{Overrides: ovs}, nil)
+	}
+	if st := putPerms(roleOv(perm.ManageRoom)); st != 403 {
+		t.Fatalf("creator denies MANAGE_ROOM: %d", st)
+	}
+	if st := putPerms(roleOv(perm.Stream)); st != 200 {
+		t.Fatalf("creator denies a bit they hold: %d %s", st, carol.lastBody)
+	}
+	guestOv := &v1.RoomPermissionOverride{TargetType: v1.PermissionTargetType_PERMISSION_TARGET_TYPE_USER, TargetId: guest.id, Allow: uint64(perm.ViewRoom)}
+	if st := putPerms(roleOv(perm.Stream), guestOv); st != 403 {
+		t.Fatalf("creator lets a guest in without INVITE_GUESTS: %d", st)
+	}
+	approval := true
+	apiErrOf(t, carol.client, 403, "PATCH", "/api/rooms/"+cr2, &v1.UpdateRoomRequest{GuestApproval: &approval})
+	sqlExec(t, "DELETE FROM rooms WHERE id = $1", cr2)
+
 	// Delete = archive: history readable, writes / voice / links refused, the meeting closed.
 	send(t, carol, rp.GetId(), "первое", "")
 	send(t, guest, rp.GetId(), "второе", "")

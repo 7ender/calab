@@ -523,6 +523,10 @@ func (h *Handlers) update(w http.ResponseWriter, r *http.Request) error {
 		}
 		p.Restricted = req.Restricted
 	}
+	if req.GuestApproval != nil && !acc.Bits.Has(perm.ManageRoom) && !acc.Bits.Has(perm.InviteGuests) {
+		// The creator of a temporary room (ADR-0044) decides how guests enter only with INVITE_GUESTS.
+		return httpx.Forbidden("INVITE_GUESTS required to change guest_approval")
+	}
 	p.GuestApproval = req.GuestApproval // ADR-0040: MANAGE_ROOM, like the room's links
 	tp, err := tempPatch(&req, acc, time.Now())
 	if err != nil {
@@ -662,10 +666,16 @@ func validateOverrides(ctx context.Context, q *sqlc.Queries, wsID uuid.UUID, act
 	// allows they lack, and cannot drop allows (set by an admin) that they lack either.
 	// Re-submitting an existing entry unchanged is always fine.
 	prev := map[string]perm.Bits{}
+	prevDeny := map[string]perm.Bits{}
 	for _, e := range existing {
-		prev[e.TargetType+":"+e.TargetID] = perm.Bits(uint64(e.Allow)) //nolint:gosec // bit mask
+		prev[e.TargetType+":"+e.TargetID] = perm.Bits(uint64(e.Allow))    //nolint:gosec // bit mask
+		prevDeny[e.TargetType+":"+e.TargetID] = perm.Bits(uint64(e.Deny)) //nolint:gosec // bit mask
 	}
 	admin := actor.Bits.Has(perm.Administrator)
+	// Without MANAGE_ROOM the actor is the creator of a temporary room (ADR-0044, MayManage):
+	// their denies are bounded by their own bits too (no MANAGE_ROOM deny locking moderators
+	// out), and a guest account gets in only with INVITE_GUESTS (as through a guest link).
+	creator := !actor.Bits.Has(perm.ManageRoom)
 	// Role targets: a role id of this workspace, or (clients before ADR-0026) the name of a
 	// built-in role, stored as its id.
 	roleRows, err := q.ListWorkspaceRoles(ctx, wsID)
@@ -700,13 +710,18 @@ func validateOverrides(ctx context.Context, q *sqlc.Queries, wsID uuid.UUID, act
 			if err != nil {
 				return nil, httpx.Validation(field+".targetId", "invalid user id")
 			}
-			if _, err := q.GetMember(ctx, sqlc.GetMemberParams{WorkspaceID: wsID, UserID: uid}); err != nil {
+			m, err := q.GetMember(ctx, sqlc.GetMemberParams{WorkspaceID: wsID, UserID: uid})
+			if err != nil {
 				if db.IsNotFound(err) {
 					return nil, httpx.Validation(field+".targetId", "user is not a member of the workspace")
 				}
 				return nil, err
 			}
 			target = uid.String()
+			if creator && !admin && m.Role == string(perm.RoleGuest) && !actor.Bits.Has(perm.InviteGuests) &&
+				perm.Bits(o.GetAllow())&^prev["user:"+target] != 0 {
+				return nil, httpx.Forbidden("INVITE_GUESTS required to let a guest into the room")
+			}
 		}
 		if seen[tt+":"+target] {
 			return nil, httpx.Validation(field, "duplicate target")
@@ -727,7 +742,11 @@ func validateOverrides(ctx context.Context, q *sqlc.Queries, wsID uuid.UUID, act
 			if (old&^allow)&^actor.Bits != 0 {
 				return nil, httpx.Forbidden("cannot remove permissions you do not have")
 			}
+			if creator && (deny^prevDeny[tt+":"+target])&^actor.Bits != 0 {
+				return nil, httpx.Forbidden("cannot deny or lift permissions you do not have")
+			}
 			delete(prev, tt+":"+target)
+			delete(prevDeny, tt+":"+target)
 		}
 		out = append(out, sqlc.InsertRoomOverrideParams{
 			TargetType: tt, TargetID: target,
@@ -735,8 +754,8 @@ func validateOverrides(ctx context.Context, q *sqlc.Queries, wsID uuid.UUID, act
 		})
 	}
 	if !admin {
-		for _, old := range prev { // entries the request drops entirely
-			if old&^actor.Bits != 0 {
+		for k, old := range prev { // entries the request drops entirely
+			if old&^actor.Bits != 0 || (creator && prevDeny[k]&^actor.Bits != 0) {
 				return nil, httpx.Forbidden("cannot remove permissions you do not have")
 			}
 		}
