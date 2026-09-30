@@ -145,7 +145,7 @@ func requireInvite(r *http.Request) (uuid.UUID, perm.Role, error) {
 	if err != nil {
 		return uuid.Nil, "", err
 	}
-	if !bits.Has(perm.InviteMembers) {
+	if !bits.Has(perm.InviteMembers) || role == perm.RoleGuest { // guests never invite (ADR-0043)
 		return uuid.Nil, "", httpx.Forbidden("INVITE_MEMBERS required")
 	}
 	return wsID, role, nil
