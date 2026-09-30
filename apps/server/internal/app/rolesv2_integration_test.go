@@ -184,7 +184,7 @@ func TestRolesV2ClosedBoard(t *testing.T) {
 			want = 200
 		}
 		for _, p := range []string{"/api/boards/" + bid, "/api/tasks/" + task.GetId(), "/api/t/" + task.GetKey(), "/api/boards/" + bid + "/tasks"} {
-			if got := a.do("GET", p); got != want && !(a.name == "guest with override" && got == 403) {
+			if got := a.do("GET", p); got != want && (a.name != "guest with override" || got != 403) {
 				t.Errorf("%s GET %s: %d, want %d", a.name, p, got, want)
 			}
 		}
