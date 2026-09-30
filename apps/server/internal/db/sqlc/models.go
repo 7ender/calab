@@ -721,6 +721,18 @@ type WorkspaceAdminLog struct {
 	CreatedAt   time.Time
 }
 
+type WorkspaceApp struct {
+	ID          uuid.UUID
+	WorkspaceID uuid.UUID
+	Name        string
+	Url         string
+	IconFileID  *uuid.UUID
+	Position    float64
+	CreatedBy   *uuid.UUID
+	CreatedAt   time.Time
+	UpdatedAt   time.Time
+}
+
 type WorkspaceBackground struct {
 	ID          uuid.UUID
 	WorkspaceID uuid.UUID

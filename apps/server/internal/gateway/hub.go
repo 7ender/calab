@@ -527,6 +527,13 @@ func (h *Hub) routeLocked(st *wsState, wid, id uuid.UUID, ev *v1.DispatchEvent) 
 				s.dispatchEnc(id, shared)
 			}
 		}
+	case *v1.DispatchEvent_WorkspaceAppUpsert, *v1.DispatchEvent_WorkspaceAppDelete:
+		// Web apps (ADR-0050): every member except guests and bots.
+		for _, s := range sessions {
+			if !s.bot && st.role(s.user) != perm.RoleGuest {
+				s.dispatchEnc(id, shared)
+			}
+		}
 	case *v1.DispatchEvent_WorkspaceBanAdd, *v1.DispatchEvent_WorkspaceBanRemove:
 		// Bans are shown to those who manage members (item 32; MANAGE_MEMBERS, ADR-0048).
 		for _, s := range sessions {

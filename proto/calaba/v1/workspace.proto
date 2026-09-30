@@ -439,3 +439,66 @@ message UpdateBackgroundRequest {
 message UpdateBackgroundResponse {
   WorkspaceBackground background = 1;
 }
+
+// ---- Web apps of the workspace (ADR-0050): sites pinned to the rail under the workspace icon,
+// opened inside the client. Visible to every member except guests and bots (403 for them);
+// managed with MANAGE_INTEGRATIONS (ADR-0048). The server never fetches the URL. Every change
+// goes to the members that see apps: WORKSPACE_APP_UPSERT / WORKSPACE_APP_DELETE. ----
+
+// A site of the workspace. url: https://, or http:// only to a private host (localhost,
+// 127/8, 10/8, 172.16/12, 192.168/16, *.local, a single label without a dot), at most 2048
+// characters, no user:password@ (proto/testdata/app_urls.json has the vectors).
+message WorkspaceApp {
+  string id = 1;
+  string workspace_id = 2;
+  string name = 3;         // 1..40 characters after trimming
+  string url = 4;
+  string icon_file_id = 5; // an image of the workspace; empty = the first letter of the name
+  string icon_url = 6;     // /api/files/{icon_file_id} (Authorization header required); empty = none
+  double position = 7;     // order in the rail, ascending (fractional)
+  string created_by = 8;   // user id; empty = account deleted
+  google.protobuf.Timestamp created_at = 9;
+  google.protobuf.Timestamp updated_at = 10;
+}
+
+// GET /api/workspaces/{id}/apps → the workspace's apps by position.
+message ListWorkspaceAppsResponse {
+  repeated WorkspaceApp apps = 1;
+}
+
+// POST /api/workspaces/{id}/apps → 201. The app goes last. icon_file_id: an image the caller
+// uploaded to this workspace (POST /api/workspaces/{id}/files), else 422 on iconFileId; empty =
+// none. 422 on url for a URL the rule above refuses. 409 CONFLICT: 20 apps already.
+message CreateWorkspaceAppRequest {
+  string name = 1;
+  string url = 2;
+  string icon_file_id = 3;
+}
+
+message CreateWorkspaceAppResponse {
+  WorkspaceApp app = 1;
+}
+
+// PATCH /api/workspace-apps/{id}. Unset fields are left unchanged; icon_file_id "" clears.
+// DELETE /api/workspace-apps/{id} → 204, then WORKSPACE_APP_DELETE.
+message UpdateWorkspaceAppRequest {
+  optional string name = 1;
+  optional string url = 2;
+  optional string icon_file_id = 3;
+}
+
+message UpdateWorkspaceAppResponse {
+  WorkspaceApp app = 1;
+}
+
+// PUT /api/workspace-apps/{id}/position: move the app between two neighbours of the same
+// workspace (either may be empty: first / last; both empty = last). WORKSPACE_APP_UPSERT for
+// every app whose position changed.
+message SetWorkspaceAppPositionRequest {
+  string after_app_id = 1;
+  string before_app_id = 2;
+}
+
+message SetWorkspaceAppPositionResponse {
+  repeated WorkspaceApp apps = 1; // all apps of the workspace, by position
+}

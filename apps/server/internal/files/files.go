@@ -645,6 +645,7 @@ func (s *Service) UploadAvatar(w http.ResponseWriter, r *http.Request, uid uuid.
 //   - an avatar (user-scoped): any authenticated user;
 //   - a workspace icon, badge picture (docs/09 #82), camera background (ADR-0035) or soundboard
 //     clip (ADR-0036): members of the workspace (guests too);
+//   - a web app icon (ADR-0050): members of the workspace except guests;
 //   - a sticker (ADR-0030): members of its workspace, or VIEW_ROOM in a room where a live
 //     message shows it;
 //   - a file attached to a live message: VIEW_ROOM in that room.
@@ -688,6 +689,18 @@ func (s *Service) CanRead(r *http.Request, f sqlc.File) (bool, error) {
 				return false, nil
 			}
 			return err == nil, err
+		}
+		// A web app icon (ADR-0050): the members who see apps (not guests).
+		appIcon, err := s.db.Q.IsWorkspaceAppIcon(ctx, &f.ID)
+		if err != nil {
+			return false, err
+		}
+		if appIcon {
+			role, err := res.Role(ctx, *f.WorkspaceID, uid)
+			if errors.Is(err, perm.ErrNotMember) {
+				return false, nil
+			}
+			return err == nil && role != perm.RoleGuest, err
 		}
 	}
 	lookup := s.db.Q.FileRooms

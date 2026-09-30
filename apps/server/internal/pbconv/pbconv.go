@@ -380,6 +380,29 @@ func Sound(s sqlc.WorkspaceSound) *v1.Sound {
 		FileId: s.FileID.String(), DurationMs: uint32(max(s.DurationMs, 0)), Position: uint32(max(s.Position, 0))} //nolint:gosec // non-negative
 }
 
+// WorkspaceApp converts a web app row (ADR-0050).
+func WorkspaceApp(a sqlc.WorkspaceApp) *v1.WorkspaceApp {
+	pb := &v1.WorkspaceApp{Id: a.ID.String(), WorkspaceId: a.WorkspaceID.String(), Name: a.Name, Url: a.Url,
+		Position: a.Position, CreatedAt: ts(a.CreatedAt), UpdatedAt: ts(a.UpdatedAt)}
+	if a.IconFileID != nil {
+		pb.IconFileId = a.IconFileID.String()
+		pb.IconUrl = "/api/files/" + pb.IconFileId
+	}
+	if a.CreatedBy != nil {
+		pb.CreatedBy = a.CreatedBy.String()
+	}
+	return pb
+}
+
+// WorkspaceApps converts web app rows.
+func WorkspaceApps(rows []sqlc.WorkspaceApp) []*v1.WorkspaceApp {
+	out := make([]*v1.WorkspaceApp, len(rows))
+	for i, a := range rows {
+		out[i] = WorkspaceApp(a)
+	}
+	return out
+}
+
 // Sounds converts soundboard rows.
 func Sounds(rows []sqlc.WorkspaceSound) []*v1.Sound {
 	out := make([]*v1.Sound, len(rows))
