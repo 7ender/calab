@@ -35,6 +35,7 @@ Preview the export: `npx -y serve apps/landing/out` (or `python3 -m http.server 
 - Screenshots follow the page: `Screen` (`components/ui.tsx`) loads `public/screens/<lang>/<name>` — the app UI *and*
   its team (names, rooms, chat, meetings, board) in that language, dark theme in both page themes. OpenGraph image per
   locale: `public/og/<lang>.png`. The home page carries schema.org `SoftwareApplication` JSON-LD in its language.
+- `public/llms.txt` (summary + links, llmstxt.org format) and `public/llms-full.txt` (full text) are served at the site root as-is; keep their plan table, limits and feature list in sync with `src/i18n/en.ts` and the README, and mark unreleased features as planned.
 
 ## Where it is served
 

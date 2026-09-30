@@ -129,6 +129,7 @@ SDK — [`packages/bot-sdk`](packages/bot-sdk), examples — [`examples/bots`](e
 
 Planned, not available yet:
 
+- **Voice AI assistant** — a voice AI assistant in rooms (in testing).
 - **IVR** — a voice menu and internal extension numbers for phone calls (SIP).
 - **Wiki** — a team knowledge base.
 - **Disk** — shared file storage for the workspace.

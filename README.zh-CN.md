@@ -129,6 +129,7 @@ SDK：[`packages/bot-sdk`](packages/bot-sdk)；示例：[`examples/bots`](exampl
 
 已计划，尚未推出：
 
+- **语音 AI 助手**——房间中的语音 AI 助手（测试中）。
 - **IVR**——电话呼叫（SIP）的语音菜单和内部分机号。
 - **Wiki**——团队知识库。
 - **网盘**——工作区共享文件存储。
