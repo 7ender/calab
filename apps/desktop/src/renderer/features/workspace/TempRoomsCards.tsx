@@ -17,12 +17,12 @@ const { CREATE_TEMP_ROOMS } = PERMISSION_BITS;
 export const tempArchiveKey = (workspaceId: string): readonly unknown[] => ['tempArchive', workspaceId];
 
 /**
- * Workspace settings → «Временные комнаты» (ADR-0044): «могут создавать все участники» — the
+ * Workspace settings → «Общие», temporary rooms (ADR-0044): «могут создавать все участники» — the
  * CREATE_TEMP_ROOMS bit of the built-in Member role (MANAGE_ROLES; other roles in the role
  * editor), and «Архив» — closed temporary rooms (MANAGE_ROOM) with «Открыть историю» (read-only
- * chat, stores/archiveView). Its own section: the two parts need rights the «Общие» tab does not.
+ * chat, stores/archiveView).
  */
-export function TempRoomsTab({ workspaceId, manageRoles, manageRooms }: { workspaceId: string; manageRoles: boolean; manageRooms: boolean }): ReactNode {
+export function TempRoomsCards({ workspaceId, manageRoles, manageRooms }: { workspaceId: string; manageRoles: boolean; manageRooms: boolean }): ReactNode {
   return (
     <>
       {manageRoles ? <AllowCard workspaceId={workspaceId} /> : null}
