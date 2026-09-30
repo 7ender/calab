@@ -5,10 +5,12 @@ import {
   FIRST_CHECK_MS,
   INSTALL_FRESH_MS,
   INSTALL_RECHECK_TIMEOUT_MS,
+  INSTALL_STAGE_TIMEOUT_MS,
   NUDGE_MIN_GAP_MS,
   NUDGE_MS,
   QUIT_FRESH_MS,
   QUIT_RECHECK_TIMEOUT_MS,
+  QUIT_STAGE_TIMEOUT_MS,
   RECHECK_JITTER_MS,
   RECHECK_MS,
   canAutoInstall,
@@ -64,6 +66,9 @@ class FakeUpdater extends EventEmitter implements UpdaterLike {
     this.installs.push([isSilent, isForceRunAfter]);
   }
 }
+
+/** Lets pending promise callbacks run (real timers). */
+const flush = (): Promise<void> => new Promise((r) => setTimeout(r, 0));
 
 function setup(opts: Omit<Partial<UpdateFlowEnv>, 'autoCheck'> & { auto?: boolean; autoCheck?: boolean } = {}) {
   const { auto, autoCheck: autoCheckInit, ...over } = opts;
@@ -159,7 +164,8 @@ describe('update flow', () => {
       t.updater.next = { version: '0.1.1' };
       await t.flow.check();
       expect(t.updater.autoDownload).toBe(true);
-      expect(t.updater.autoInstallOnAppQuit).toBe(true);
+      // macOS: MacUpdater must not stage at download time (the flow stages the newest itself).
+      expect(t.updater.autoInstallOnAppQuit).toBe(env.platform !== 'darwin');
       expect(t.updater.downloads).toBe(1);
       expect(t.flow.status()).toEqual({ state: 'downloading', version: '0.1.1', percent: 0 });
       t.updater.finishDownload('0.1.1');
@@ -168,6 +174,7 @@ describe('update flow', () => {
       expect(t.flow.status()).toEqual({ state: 'downloaded', version: '0.1.1' });
       expect(t.notified).toEqual([]);
       expect(t.flow.install()).toBe(true);
+      await flush();
       expect(t.updater.installs).toEqual([[false, true]]);
     });
   }
@@ -521,21 +528,250 @@ describe('update flow', () => {
         expect(t.updater.autoInstallOnAppQuit).toBe(false);
       });
 
-      it('macOS (Squirrel.Mac installs its staged update itself), nothing downloaded, or «Перезапустить» under way: no wait', async () => {
-        const mac = await stalePending({ platform: 'darwin', signed: true });
-        expect(mac.flow.beforeQuit(false)).toBeNull();
-        expect(mac.updater.checks).toBe(1);
-
+      it('nothing downloaded, or «Перезапустить» under way: no wait', async () => {
         const none = setup();
         await none.flow.check();
         await vi.advanceTimersByTimeAsync(QUIT_FRESH_MS);
         expect(none.flow.beforeQuit(false)).toBeNull();
         expect(none.updater.checks).toBe(1);
+        expect(none.updater.autoInstallOnAppQuit).toBe(false);
 
         const restart = await stalePending();
         restart.updater.checkForUpdates = () => new Promise(() => undefined);
         expect(restart.flow.install()).toBe(true); // waiting for its own re-check
         expect(restart.flow.beforeQuit(false)).toBeNull();
+      });
+    });
+  });
+
+  describe('one update, to the newest (owner, 30.09: several releases a day)', () => {
+    beforeEach(() => {
+      vi.useFakeTimers();
+    });
+    afterEach(() => {
+      vi.useRealTimers();
+    });
+
+    const platforms = [
+      ['windows', { platform: 'win32' }],
+      ['linux AppImage', { platform: 'linux', appImage: true }],
+      ['signed macOS', { platform: 'darwin', signed: true }],
+    ] as const;
+
+    /**
+     * setup() + a fake Squirrel.Mac staging: `staged` records the flow's downloaded version at each
+     * staging (what MacUpdater's proxy serves then); `mode` scripts the outcome.
+     */
+    function newest(opts: Parameters<typeof setup>[0] = {}) {
+      const sq = { staged: [] as string[], mode: 'ok' as 'ok' | 'fail' | 'hang' };
+      const ref: { status?: () => UpdateStatus } = {};
+      const t = setup({
+        ...opts,
+        stage: () => {
+          const s = ref.status?.() ?? { state: 'none' };
+          sq.staged.push(s.state === 'downloaded' ? s.version : `!${s.state}`);
+          if (sq.mode === 'ok') return Promise.resolve();
+          if (sq.mode === 'fail') return Promise.reject(new Error('code signature invalid'));
+          return new Promise<void>(() => undefined);
+        },
+      });
+      ref.status = () => t.flow.status();
+      return { ...t, sq };
+    }
+
+    /** 0.1.1 downloaded; INSTALL_FRESH_MS later a check finds `next` (its download starts). */
+    async function replaced(opts: Parameters<typeof setup>[0], next = '0.1.2') {
+      const t = newest(opts);
+      t.updater.next = { version: '0.1.1' };
+      await t.flow.check();
+      t.updater.finishDownload('0.1.1');
+      await vi.advanceTimersByTimeAsync(INSTALL_FRESH_MS);
+      t.updater.next = { version: next };
+      await t.flow.check();
+      return t;
+    }
+
+    for (const [name, env] of platforms) {
+      const isMac = env.platform === 'darwin';
+
+      it(`${name}: A downloaded, B and C released later → pending C, the bar says C, «Перезапустить» installs C once`, async () => {
+        const t = newest(env);
+        t.updater.next = { version: '0.1.1' };
+        t.flow.start();
+        await vi.advanceTimersByTimeAsync(FIRST_CHECK_MS);
+        t.updater.finishDownload('0.1.1');
+        t.updater.next = { version: '0.1.2' };
+        await vi.advanceTimersByTimeAsync(RECHECK_MS - FIRST_CHECK_MS);
+        expect(t.flow.status()).toEqual({ state: 'downloading', version: '0.1.2', percent: 0 });
+        t.updater.finishDownload('0.1.2');
+        t.updater.next = { version: '0.1.3' };
+        await vi.advanceTimersByTimeAsync(RECHECK_MS);
+        t.updater.finishDownload('0.1.3');
+        expect(t.flow.status()).toEqual({ state: 'downloaded', version: '0.1.3' });
+        expect(t.statuses.flatMap((s) => (s.state === 'downloaded' ? [s.version] : []))).toEqual(['0.1.1', '0.1.2', '0.1.3']);
+        expect(t.updater.downloads).toBe(3);
+        // Nothing staged in Squirrel.Mac at download time.
+        expect(t.updater.autoInstallOnAppQuit).toBe(!isMac);
+        expect(t.sq.staged).toEqual([]);
+        expect(t.flow.install()).toBe(true);
+        await vi.advanceTimersByTimeAsync(0);
+        expect(t.updater.installs).toEqual([[false, true]]);
+        expect(t.sq.staged).toEqual(isMac ? ['0.1.3'] : []);
+        t.flow.stop();
+      });
+
+      it(`${name}: «Перезапустить» while B downloads → waits for B, installs B (never A)`, async () => {
+        const t = await replaced(env);
+        expect(t.flow.status()).toEqual({ state: 'downloading', version: '0.1.2', percent: 0 });
+        expect(t.flow.install()).toBe(true);
+        await vi.advanceTimersByTimeAsync(INSTALL_STAGE_TIMEOUT_MS * 2);
+        expect(t.updater.installs).toEqual([]);
+        expect(t.sq.staged).toEqual([]);
+        t.updater.finishDownload('0.1.2');
+        await vi.advanceTimersByTimeAsync(0);
+        expect(t.updater.installs).toEqual([[false, true]]);
+        expect(t.sq.staged).toEqual(isMac ? ['0.1.2'] : []);
+      });
+
+      it(`${name}: quit while B downloads (A's file is gone) → nothing installed, no wait; the next start fetches B`, async () => {
+        const t = await replaced(env);
+        await vi.advanceTimersByTimeAsync(QUIT_FRESH_MS);
+        const checks = t.updater.checks;
+        expect(t.flow.beforeQuit(false)).toBeNull();
+        expect(t.updater.checks).toBe(checks);
+        expect(t.updater.autoInstallOnAppQuit).toBe(false);
+        expect(t.sq.staged).toEqual([]);
+        expect(t.updater.installs).toEqual([]);
+      });
+
+      it(`${name}: quit with B downloaded after A → installs B`, async () => {
+        const t = await replaced(env);
+        t.updater.finishDownload('0.1.2');
+        await vi.advanceTimersByTimeAsync(QUIT_FRESH_MS);
+        const wait = t.flow.beforeQuit(false);
+        expect(wait).not.toBeNull();
+        await wait;
+        // Windows / AppImage: electron-updater's quit handler installs its newest file (B).
+        expect(t.updater.autoInstallOnAppQuit).toBe(!isMac);
+        // macOS: Squirrel.Mac staged B during the held quit and installs it once the app exits.
+        expect(t.sq.staged).toEqual(isMac ? ['0.1.2'] : []);
+        expect(t.updater.installs).toEqual([]);
+      });
+
+      it(`${name}: a feed error keeps A — «Перезапустить» installs A`, async () => {
+        const t = newest(env);
+        t.updater.next = { version: '0.1.1' };
+        await t.flow.check();
+        t.updater.finishDownload('0.1.1');
+        await vi.advanceTimersByTimeAsync(INSTALL_FRESH_MS);
+        t.updater.next = new Error('ENOTFOUND releases.calab.ru');
+        await t.flow.check();
+        expect(t.flow.status()).toEqual({ state: 'downloaded', version: '0.1.1' });
+        await vi.advanceTimersByTimeAsync(INSTALL_FRESH_MS);
+        expect(t.flow.install()).toBe(true); // its re-check fails too
+        await vi.advanceTimersByTimeAsync(0);
+        expect(t.updater.installs).toEqual([[false, true]]);
+        expect(t.sq.staged).toEqual(isMac ? ['0.1.1'] : []);
+      });
+
+      it(`${name}: B's download fails → nothing pending (A was deleted with it); the next check fetches B`, async () => {
+        const t = await replaced(env);
+        t.updater.emit('error', new Error('ECONNRESET'));
+        expect(t.flow.status().state).toBe('error');
+        expect(t.flow.install()).toBe(false);
+        await t.flow.check();
+        expect(t.flow.status()).toEqual({ state: 'downloading', version: '0.1.2', percent: 0 });
+        t.updater.finishDownload('0.1.2');
+        expect(t.flow.install()).toBe(true);
+        await vi.advanceTimersByTimeAsync(0);
+        expect(t.updater.installs).toEqual([[false, true]]);
+        expect(t.sq.staged).toEqual(isMac ? ['0.1.2'] : []);
+
+        // Quitting right after the failed download installs nothing.
+        const u = await replaced(env);
+        u.updater.emit('error', new Error('ECONNRESET'));
+        expect(u.flow.beforeQuit(false)).toBeNull();
+        expect(u.updater.autoInstallOnAppQuit).toBe(false);
+        expect(u.sq.staged).toEqual([]);
+      });
+    }
+
+    describe('macOS staging (Squirrel.Mac)', () => {
+      const mac = { platform: 'darwin', signed: true } as const;
+
+      /** 0.1.1 downloaded just now (the last check is fresh). */
+      async function macPending() {
+        const t = newest(mac);
+        t.updater.next = { version: '0.1.1' };
+        await t.flow.check();
+        t.updater.finishDownload('0.1.1');
+        return t;
+      }
+
+      it('install-on-quit with a fresh check: stages at once and holds the quit until staged', async () => {
+        const t = await macPending();
+        const wait = t.flow.beforeQuit(false);
+        expect(wait).not.toBeNull();
+        await wait;
+        expect(t.updater.checks).toBe(1);
+        expect(t.sq.staged).toEqual(['0.1.1']);
+        expect(t.flow.beforeQuit(false)).toBeNull(); // the re-issued quit passes
+      });
+
+      it('install-on-quit: a staging that hangs releases the quit after QUIT_STAGE_TIMEOUT_MS', async () => {
+        const t = await macPending();
+        t.sq.mode = 'hang';
+        let done = false;
+        void t.flow.beforeQuit(false)?.then(() => (done = true));
+        await vi.advanceTimersByTimeAsync(QUIT_STAGE_TIMEOUT_MS - 1);
+        expect(done).toBe(false);
+        await vi.advanceTimersByTimeAsync(1);
+        expect(done).toBe(true);
+      });
+
+      it('install-on-quit: a newer version on the feed → nothing staged (one update at the next start)', async () => {
+        const t = await macPending();
+        await vi.advanceTimersByTimeAsync(QUIT_FRESH_MS);
+        t.updater.next = { version: '0.1.2' };
+        await t.flow.beforeQuit(false);
+        expect(t.updater.checks).toBe(2);
+        expect(t.sq.staged).toEqual([]);
+        expect(t.updater.downloads).toBe(1);
+      });
+
+      it('OS shutdown / logout: never waits, nothing staged', async () => {
+        const t = await macPending();
+        expect(t.flow.beforeQuit(true)).toBeNull();
+        expect(t.sq.staged).toEqual([]);
+      });
+
+      it('«Перезапустить»: staging fails → no quit, status error; the next check offers the cached download again', async () => {
+        const t = await macPending();
+        t.sq.mode = 'fail';
+        expect(t.flow.install()).toBe(true);
+        await vi.advanceTimersByTimeAsync(0);
+        expect(t.updater.installs).toEqual([]);
+        expect(t.flow.status()).toEqual({ state: 'error', message: 'update install failed' });
+        // electron-updater finds the file in its cache: 'update-downloaded' without a new transfer.
+        await t.flow.check();
+        t.updater.finishDownload('0.1.1', []);
+        t.sq.mode = 'ok';
+        expect(t.flow.install()).toBe(true);
+        await vi.advanceTimersByTimeAsync(0);
+        expect(t.updater.installs).toEqual([[false, true]]);
+        expect(t.sq.staged).toEqual(['0.1.1', '0.1.1']);
+      });
+
+      it('«Перезапустить»: a staging that hangs gives up after INSTALL_STAGE_TIMEOUT_MS; no checks meanwhile', async () => {
+        const t = await macPending();
+        t.sq.mode = 'hang';
+        expect(t.flow.install()).toBe(true);
+        t.updater.next = { version: '0.1.2' };
+        await t.flow.check(); // a tick while Squirrel reads the file must not replace it
+        expect(t.updater.checks).toBe(1);
+        await vi.advanceTimersByTimeAsync(INSTALL_STAGE_TIMEOUT_MS);
+        expect(t.updater.installs).toEqual([]);
+        expect(t.flow.status().state).toBe('error');
       });
     });
   });
@@ -776,6 +1012,11 @@ describe('update flow', () => {
       t.flow.nudge('unlock');
       await vi.advanceTimersByTimeAsync(NUDGE_MS);
       expect(t.updater.checks).toBe(2);
+      // Window focus 10 min after the last check: a check (several releases a day).
+      await vi.advanceTimersByTimeAsync(NUDGE_MIN_GAP_MS);
+      t.flow.nudge('focus');
+      await vi.advanceTimersByTimeAsync(NUDGE_MS);
+      expect(t.updater.checks).toBe(3);
       t.flow.stop();
     });
 

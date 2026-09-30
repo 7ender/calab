@@ -37,6 +37,14 @@ export function UpdateBar(): ReactNode {
   const inVoice = useVoice((s) => s.roomId !== null);
   /** «Перезапустить» pressed: main may re-check the feed and fetch a newer version first. */
   const [installing, setInstalling] = useState(false);
+  // The install did not happen (macOS: Squirrel could not stage it; a download failed): main
+  // reports 'error' — the button is usable again once an update is ready (adjusted while rendering).
+  const failed = update.state === 'error';
+  const [wasFailed, setWasFailed] = useState(failed);
+  if (failed !== wasFailed) {
+    setWasFailed(failed);
+    if (failed) setInstalling(false);
+  }
   // While installing, a (re)download is shown even in auto mode: the user is waiting for it.
   const model = useMemo(
     () => pendingUpdate({ update, webVersion, appVersion, autoUpdate: autoUpdate && !installing }),

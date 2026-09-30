@@ -5,7 +5,8 @@
 # /Applications — checks its signature and notarization, starts it with a separate profile
 # (CALABA_USER_DATA, so the real profile, settings and session are untouched), waits until
 # electron-updater has found and downloaded the NEW version from the feed, quits the app so
-# Squirrel.Mac installs the update on quit (autoInstallOnAppQuit, src/main/updateFlow.ts), then
+# Squirrel.Mac installs the update on quit (src/main/updateFlow.ts: builds up to 1.5.0 staged it
+# at download time; newer ones stage the newest download while the quit is held, ≤ 20 s), then
 # relaunches it and checks that the bundle and the running app are the NEW version.
 #
 #   apps/desktop/scripts/update-smoke.sh                 # 0.1.0 → 0.1.1 from https://releases.calab.ru/
@@ -137,18 +138,24 @@ else
   fail "download not finished within ${TIMEOUT}s"; info "$(grep -E '\[update\]|Download|error' "$LOG" 2>/dev/null | tail -5 | tr '\n' ' ')"; exit 1
 fi
 
-# 5b. On macOS electron-updater reports «downloaded» BEFORE Squirrel.Mac has fetched the update
-#     from its local proxy (MacUpdater calls nativeUpdater.checkForUpdates() right after): quitting
-#     now could skip the install. Wait for Squirrel's own «update-downloaded» (a debug line; the
-#     electron-log file transport logs from «silly» up).
-if wait_log "nativeUpdater\.update-downloaded" "$TIMEOUT"; then
-  pass "Squirrel.Mac staged $NEW (installs on quit)"
+# 5b. OLD builds up to 1.5.0 had Squirrel.Mac fetch the update from electron-updater's local
+#     proxy right after «downloaded» (autoInstallOnAppQuit): wait for Squirrel's own
+#     «update-downloaded» (a debug line; the electron-log file transport logs from «silly» up)
+#     so the quit does not cut it off. Newer builds stage nothing now — only in the held quit.
+if wait_log "nativeUpdater\.update-downloaded" 15; then
+  pass "Squirrel.Mac staged $NEW at download time (OLD build up to 1.5.0)"
 else
-  fail "Squirrel.Mac did not stage the update within ${TIMEOUT}s"; info "$(grep -E 'nativeUpdater|Squirrel|error' "$LOG" 2>/dev/null | tail -5 | tr '\n' ' ')"; exit 1
+  info "nothing staged at download time — the quit stages it (builds after 1.5.0)"
 fi
 
-# 6. Quit: Squirrel.Mac (ShipIt) replaces the bundle after the app exits.
+# 6. Quit: the app stages the newest download if it has not yet (the quit is held ≤ 20 s), then
+#    Squirrel.Mac (ShipIt) replaces the bundle after the app exits.
 quit_app
+if grep -qE "nativeUpdater\.update-downloaded" "$LOG" 2>/dev/null; then
+  pass "Squirrel.Mac staged $NEW"
+else
+  fail "Squirrel.Mac never staged the update"; info "$(grep -E '\[update\]|nativeUpdater|Squirrel|error' "$LOG" 2>/dev/null | tail -5 | tr '\n' ' ')"
+fi
 installed=""
 for _ in $(seq 1 60); do
   [[ "$(plist_version)" == "$NEW" ]] && { installed=1; break; }
