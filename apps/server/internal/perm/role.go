@@ -38,9 +38,10 @@ func RoleFromProto(r v1.WorkspaceRole) (Role, bool) {
 	return "", false
 }
 
-// RoomOnly are the bits that may appear in room overrides. ADMINISTRATOR, MANAGE_WORKSPACE,
-// MANAGE_NICKNAMES, MANAGE_ROLES and MANAGE_STICKERS are workspace-level and cannot be granted per
-// room; the board bits (BoardOnly, ADR-0042) apply to boards only.
+// RoomOnly are the bits that may appear in room overrides (INVITE_MEMBERS and INVITE_GUESTS
+// included, ADR-0043). ADMINISTRATOR, MANAGE_WORKSPACE, MANAGE_NICKNAMES, MANAGE_ROLES and
+// MANAGE_STICKERS are workspace-level and cannot be granted per room; the board bits
+// (BoardOnly, ADR-0042) apply to boards only.
 const RoomOnly = All &^ (Administrator | ManageWorkspace | ManageNicknames | ManageRoles | ManageStickers | BoardOnly)
 
 // OverrideTarget is one row of room_permissions.

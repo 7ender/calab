@@ -37,6 +37,14 @@ enum Permission {
   PERMISSION_EDIT_TASKS = 524288;
   // 1 << 20: statuses, labels, milestones, settings, access and archive of the board.
   PERMISSION_MANAGE_BOARD = 1048576;
+  // Invitations (ADR-0043). Not implied by MANAGE_WORKSPACE / MANAGE_ROOM (migration 00047
+  // granted them to the roles holding those); settable per room; never for guests.
+  // 1 << 21: workspace invites (links, e-mail, adding an account); in a room: members-only
+  // room links (RoomInvite.members_only) that give workspace members access to that room.
+  PERMISSION_INVITE_MEMBERS = 2097152;
+  // 1 << 22: room links that admit guests (ADR-0016), their approval setting and deciding on
+  // knocking guests (ADR-0040); meeting guest links of an organizer (ADR-0038).
+  PERMISSION_INVITE_GUESTS = 4194304;
 }
 
 // Built-in workspace roles. Since ADR-0026 a member holds several roles (WorkspaceMember.

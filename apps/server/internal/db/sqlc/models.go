@@ -401,6 +401,7 @@ type RoomInvite struct {
 	NotBefore       *time.Time
 	EventID         *uuid.UUID
 	RequireApproval *bool
+	MembersOnly     bool
 }
 
 type RoomNotificationSetting struct {

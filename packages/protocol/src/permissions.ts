@@ -27,6 +27,8 @@ export const PERMISSION_BITS = {
   CREATE_TASKS: BigInt(Permission.CREATE_TASKS),
   EDIT_TASKS: BigInt(Permission.EDIT_TASKS),
   MANAGE_BOARD: BigInt(Permission.MANAGE_BOARD),
+  INVITE_MEMBERS: BigInt(Permission.INVITE_MEMBERS),
+  INVITE_GUESTS: BigInt(Permission.INVITE_GUESTS),
 } as const;
 
 export type PermissionName = keyof typeof PERMISSION_BITS;
@@ -55,8 +57,8 @@ export const BOARD_ONLY_PERMISSIONS: PermissionBits =
   VIEW_BOARD | CREATE_TASKS | PERMISSION_BITS.EDIT_TASKS | PERMISSION_BITS.MANAGE_BOARD;
 
 /**
- * Bits room overrides may touch. ADMINISTRATOR, MANAGE_WORKSPACE, MANAGE_NICKNAMES, MANAGE_ROLES
- * and MANAGE_STICKERS are workspace-level, the board bits apply to boards only: computePermissions
+ * Bits room overrides may touch (INVITE_MEMBERS and INVITE_GUESTS included, ADR-0043).
+ * ADMINISTRATOR, MANAGE_WORKSPACE, MANAGE_NICKNAMES, MANAGE_ROLES and MANAGE_STICKERS are workspace-level, the board bits apply to boards only: computePermissions
  * ignores them in room overrides (Go: perm.RoomOnly).
  */
 export const ROOM_ONLY_PERMISSIONS: PermissionBits =

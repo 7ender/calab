@@ -46,8 +46,8 @@ ON CONFLICT (room_id, target_type, target_id) DO UPDATE
 RETURNING *;
 
 -- name: CreateRoomInvite :one
-INSERT INTO room_invites (room_id, code, created_by, expires_at, max_uses, allow_guests, allow_bits, require_approval)
-VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+INSERT INTO room_invites (room_id, code, created_by, expires_at, max_uses, allow_guests, allow_bits, require_approval, members_only)
+VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
 RETURNING *;
 
 -- name: SetRoomInviteApproval :one
@@ -80,7 +80,10 @@ WHERE id = $1 AND revoked_at IS NULL
 RETURNING *;
 
 -- name: RevokeRoomInvite :execrows
-UPDATE room_invites SET revoked_at = now() WHERE id = $1 AND room_id = $2 AND revoked_at IS NULL;
+-- only_members_only: the caller may revoke members-only links only (INVITE_MEMBERS, ADR-0043).
+UPDATE room_invites SET revoked_at = now()
+WHERE id = $1 AND room_id = $2 AND revoked_at IS NULL
+  AND (NOT sqlc.arg('only_members_only')::bool OR members_only);
 
 -- name: PromoteGuest :one
 UPDATE workspace_members SET role = 'member'
