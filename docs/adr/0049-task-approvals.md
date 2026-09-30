@@ -131,7 +131,8 @@
 **Фильтры** (`TaskField`): `APPROVAL_STATE` — values `"none"|"pending"|"approved"|"rejected"`, ops `IS/ANY_OF/IS_NOT/NONE_OF`;
 `APPROVER_PENDING` — values user ids / `"me"`, ops `IS/ANY_OF/IS_NOT/NONE_OF/EMPTY/NOT_EMPTY`.
 «Ждут моего согласования» = `{field: APPROVER_PENDING, op: IS, values: ["me"]}`. Локальный фильтр клиента (`lib/boards/filter.ts`)
-должен понимать оба поля так же (состояние — из `approvalState`, pending — `approvers.some(a => a.userId === me && a.state === PENDING)`).
+уже понимает оба поля (состояние — из `approvalState`, pending — согласующие с `PENDING`); в `FILTER_FIELDS` они пока
+`hidden` с `kind` `text`/`user` — пикеры и показ в списке полей делает клиентская задача.
 
 **Журнал** (`TaskActivity.kind`): `approvers` — before/after `{user_ids: [], required}`; `approval` — before/after
 `{user_id, state: "pending"|"approved"|"rejected", comment}`; `approvals_reset` — before `{approved, rejected}`;
