@@ -5472,6 +5472,8 @@ class MockImpl {
           host: b.host,
           transport: b.transport || SipTransport.UDP,
           username: b.username,
+          authUsername: b.authUsername,
+          port: b.port || 5060,
           hasPassword: this.state.sipPasswords.has(wsId) || (b.password === undefined && cur.hasPassword),
           callerId: b.callerId ? (normalizeCallee(b.callerId) ?? b.callerId) : '',
           outboundPrefix: b.outboundPrefix,

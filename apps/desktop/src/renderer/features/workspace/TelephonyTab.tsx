@@ -32,13 +32,7 @@ import { formatDuration } from '../shell/voiceFormat';
  * word (30.09); IVR and inbound numbers come later.
  */
 
-/**
- * Account fields the server adds after this client (lead, 30.09): the authentication user when it
- * differs from the login, and the provider port (default 5060). Read and sent by their proto
- * names; until the generated types have them they are simply absent (create() skips unknown keys).
- */
-type SipExtra = { authUsername?: string; port?: number };
-
+/** SipSettings.port when never set (sip.proto: PUT 0 = 5060). */
 export const DEFAULT_SIP_PORT = 5060;
 
 const settingsKey = (workspaceId: string): readonly unknown[] => ['sip', workspaceId];
@@ -143,15 +137,14 @@ interface Draft {
 }
 
 function draftOf(s: SipSettings): Draft {
-  const x = s as SipSettings & SipExtra;
   return {
     enabled: s.enabled,
     provider: s.provider,
     host: s.host,
-    port: x.port ? String(x.port) : '',
+    port: s.port && s.port !== DEFAULT_SIP_PORT ? String(s.port) : '',
     transport: s.transport === SipTransport.UNSPECIFIED ? SipTransport.UDP : s.transport,
     username: s.username,
-    authUsername: x.authUsername ?? '',
+    authUsername: s.authUsername,
     password: '',
     callerId: s.callerId,
     outboundPrefix: s.outboundPrefix,
@@ -159,7 +152,7 @@ function draftOf(s: SipSettings): Draft {
   };
 }
 
-function requestOf(d: Draft): MessageInitShape<typeof PutSipSettingsRequestSchema> & SipExtra {
+function requestOf(d: Draft): MessageInitShape<typeof PutSipSettingsRequestSchema> {
   const port = Number.parseInt(d.port, 10);
   return {
     enabled: d.enabled,
@@ -173,7 +166,8 @@ function requestOf(d: Draft): MessageInitShape<typeof PutSipSettingsRequestSchem
     // Write-only: an empty field keeps the stored password (the field is left out of the PUT).
     ...(d.password ? { password: d.password } : {}),
     authUsername: d.authUsername.trim(),
-    port: Number.isFinite(port) && port > 0 ? port : DEFAULT_SIP_PORT,
+    // Empty = 0 = 5060 (the server's default).
+    port: Number.isFinite(port) && port > 0 ? port : 0,
   };
 }
 
