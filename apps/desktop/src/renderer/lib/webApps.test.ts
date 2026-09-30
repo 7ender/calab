@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { appDropAt, appInitial, coversContent, moveApp, type OverlayNode } from './webApps';
+import { appDropAt, appInitial, coversContent, moveApp, visibleViewRect, type OverlayNode } from './webApps';
 
 describe('appInitial', () => {
   it('takes the first letter or digit', () => {
@@ -53,5 +53,39 @@ describe('coversContent (overlays hide the native view)', () => {
     expect(coversContent(node({ role: 'alertdialog' }))).toBe(true);
     expect(coversContent(node({}, ['[role="dialog"]']))).toBe(true);
     expect(coversContent(node({ id: 'toasts' }))).toBe(false);
+  });
+});
+
+describe('coversContent: the incoming call card hides the native view', () => {
+  it('the call sheet (a Radix dialog portalled to <body>) covers', () => {
+    expect(coversContent(node({ role: 'dialog', 'data-testid': 'call-incoming' }))).toBe(true);
+    expect(coversContent(node({ 'data-radix-portal': '' }, ['[role="dialog"]']))).toBe(true);
+  });
+});
+
+describe('visibleViewRect (toasts, knock cards, the calling strip stay visible)', () => {
+  const view = { x: 72, y: 80, width: 900, height: 600 };
+  it('no overlay, or one outside the view: the whole placeholder', () => {
+    expect(visibleViewRect(view, [])).toEqual(view);
+    expect(visibleViewRect(view, [{ x: 0, y: 700, width: 900, height: 60 }])).toEqual(view);
+    expect(visibleViewRect(view, [{ x: 300, y: 600, width: 480, height: 0 }])).toEqual(view); // an empty toast stack
+  });
+  it('a toast stack at the bottom: the site ends above it', () => {
+    const toast = { x: 282, y: 600, width: 480, height: 64 }; // bottom 664 < 680
+    expect(visibleViewRect(view, [toast])).toEqual({ x: 72, y: 80, width: 900, height: 600 - 80 - 8 });
+  });
+  it('a knock card top right: the side that keeps the most area', () => {
+    const knock = { x: 72 + 900 - 356, y: 90, width: 340, height: 100 };
+    const r = visibleViewRect(view, [knock]);
+    expect(r).toEqual({ x: 72, y: 198, width: 900, height: 482 });
+  });
+  it('the calling strip at the top edge and a toast at the bottom together', () => {
+    const strip = { x: 400, y: 60, width: 240, height: 36 };
+    const toast = { x: 282, y: 620, width: 480, height: 50 };
+    expect(visibleViewRect(view, [strip, toast])).toEqual({ x: 72, y: 104, width: 900, height: 620 - 8 - 104 });
+  });
+  it('too little left: hidden (null)', () => {
+    expect(visibleViewRect(view, [{ x: 0, y: 0, width: 2000, height: 2000 }])).toBeNull();
+    expect(visibleViewRect({ x: 0, y: 0, width: 400, height: 200 }, [{ x: 50, y: 60, width: 300, height: 100 }])).toBeNull();
   });
 });

@@ -26,6 +26,7 @@ export function KnockToasts(): ReactNode {
       aria-label={t('adm.knockRegion')}
       className="pointer-events-none fixed right-4 top-[calc(var(--titlebar-height)+56px)] z-[var(--z-toast)] flex w-[340px] flex-col gap-2 [:root.web_&]:top-[calc(var(--titlebar-height-web)+56px)] mobile:left-4 mobile:right-4 mobile:top-[calc(var(--safe-top)+56px)] mobile:w-auto mobile:[:root.web_&]:top-[calc(var(--safe-top)+56px)]"
       data-testid="knock-toasts"
+      data-app-occluder
     >
       {shown.map((key) => (
         <KnockToast key={key} knockKey={key} />

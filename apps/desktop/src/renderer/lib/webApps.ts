@@ -65,3 +65,50 @@ export function coversContent(el: OverlayNode): boolean {
   if (role === 'dialog' || role === 'alertdialog' || role === 'menu') return true;
   return !!el.querySelector('[role="dialog"],[role="alertdialog"]');
 }
+
+/** A rectangle in CSS px of the window (the view's placeholder, an overlay). */
+export interface ViewRect {
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+}
+
+/** Below this the site is not worth showing: the view is hidden while the overlays last. */
+export const MIN_VIEW_WIDTH = 240;
+export const MIN_VIEW_HEIGHT = 160;
+/** Space kept between an overlay and the site. */
+export const OVERLAY_GAP = 8;
+
+/**
+ * The part of the view's placeholder the native view may take while overlays of our page that
+ * must stay visible are shown (toasts, knock cards, the calling strip — `[data-app-occluder]`):
+ * the native view is drawn above the whole page, so it steps aside instead of hiding them. Each
+ * overlay that intersects the view cuts it from the side that keeps the most area; null = too
+ * little is left, the view is hidden meanwhile. Empty overlays (an empty toast stack) are ignored.
+ */
+export function visibleViewRect(view: ViewRect, overlays: readonly ViewRect[], gap = OVERLAY_GAP): ViewRect | null {
+  let r = { ...view };
+  for (const o of overlays) {
+    if (o.width <= 0 || o.height <= 0) continue;
+    const right = r.x + r.width;
+    const bottom = r.y + r.height;
+    const oRight = o.x + o.width;
+    const oBottom = o.y + o.height;
+    if (o.x >= right || oRight <= r.x || o.y >= bottom || oBottom <= r.y) continue;
+    const cuts: ViewRect[] = [
+      { x: r.x, y: oBottom + gap, width: r.width, height: bottom - (oBottom + gap) }, // below it
+      { x: r.x, y: r.y, width: r.width, height: o.y - gap - r.y }, // above it
+      { x: oRight + gap, y: r.y, width: right - (oRight + gap), height: r.height }, // right of it
+      { x: r.x, y: r.y, width: o.x - gap - r.x, height: r.height }, // left of it
+    ];
+    let best: ViewRect | null = null;
+    for (const c of cuts) {
+      if (c.width <= 0 || c.height <= 0) continue;
+      if (!best || c.width * c.height > best.width * best.height) best = c;
+    }
+    if (!best) return null;
+    r = best;
+  }
+  return r.width >= MIN_VIEW_WIDTH && r.height >= MIN_VIEW_HEIGHT ? r : null;
+}

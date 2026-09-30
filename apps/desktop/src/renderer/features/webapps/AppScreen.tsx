@@ -4,10 +4,13 @@ import { hostOf } from '../../../shared/appUrl';
 import type { WebAppBounds } from '../../../shared/ipc';
 import { Button, IconButton, Spinner } from '../../components/ui';
 import { t } from '../../i18n';
-import { coversContent } from '../../lib/webApps';
+import { coversContent, visibleViewRect } from '../../lib/webApps';
 import { platform } from '../../platform';
 import { openAppInBrowser } from '../../services/webApps';
 import { useWebApps } from '../../stores/webApps';
+import { useToasts } from '../../stores/toasts';
+import { useCall } from '../../stores/call';
+import { useAdmissions } from '../guests/stores/admissions';
 import { AppGlyph } from './AppGlyph';
 
 /**
@@ -131,14 +134,40 @@ function useOverlayOpen(): boolean {
   return open;
 }
 
+/** A hidden view (main: zero bounds take it out of the window, it stays alive). */
+const HIDDEN: WebAppBounds = { x: 0, y: 0, width: 0, height: 0 };
+
+/** Rectangles of the overlays that must stay visible over the site (`[data-app-occluder]`). */
+function occluderRects(): WebAppBounds[] {
+  return Array.from(document.querySelectorAll<HTMLElement>('[data-app-occluder]'), (o) => {
+    const r = o.getBoundingClientRect();
+    return { x: r.left, y: r.top, width: r.width, height: r.height };
+  });
+}
+
+/**
+ * A primitive that changes whenever one of those overlays appears, goes or changes its count:
+ * toasts, guest knock cards (ADR-0040), the collapsed «Вызов…» strip (ADR-0034). The incoming /
+ * outgoing call cards are dialogs and hide the view through useOverlayOpen.
+ */
+function useOccluderKey(): string {
+  const toasts = useToasts((s) => s.items.length);
+  const knocks = useAdmissions((s) => s.toasts.length);
+  const strip = useCall((s) => s.phase === 'outgoing' && s.collapsed);
+  return `${toasts}:${knocks}:${strip ? 1 : 0}`;
+}
+
 /**
  * The placeholder the main-process view (main/webApps.ts) is laid over: its rectangle is sent on
  * open and whenever it changes size (ResizeObserver: window resize, banners, zoom). Leaving the
- * app (rooms, another app) or an overlay hides the view; main keeps it alive (LRU 2).
+ * app (rooms, another app) or an overlay hides the view; main keeps it alive (LRU 2). Toasts,
+ * knock cards and the calling strip are never hidden behind the site: the view steps aside
+ * (visibleViewRect) while they are shown.
  */
 function DesktopView({ appId, url }: { appId: string; url: string }): ReactNode {
   const ref = useRef<HTMLDivElement>(null);
   const covered = useOverlayOpen();
+  const occluders = useOccluderKey();
   const reloadKey = useWebApps((s) => s.reloadKey);
   const firstReload = useRef(reloadKey);
   const failed = useWebApps((s) => s.nav[appId]?.failed ?? '');
@@ -152,14 +181,28 @@ function DesktopView({ appId, url }: { appId: string; url: string }): ReactNode 
       void api.hide();
       return;
     }
-    void api.open(appId, url, rectOf(el));
-    const ro = new ResizeObserver(() => void api.setBounds(rectOf(el)));
-    ro.observe(el);
-    return () => {
-      ro.disconnect();
-      void api.hide();
-    };
+    void api.open(appId, url, visibleViewRect(rectOf(el), occluderRects()) ?? HIDDEN);
+    return () => void api.hide();
   }, [api, appId, url, covered]);
+
+  // Size changes and the overlays that must stay visible (re-measured after they are laid out).
+  useLayoutEffect(() => {
+    const el = ref.current;
+    if (!el || !api || covered) return;
+    let raf = 0;
+    const push = (): void => {
+      cancelAnimationFrame(raf);
+      raf = requestAnimationFrame(() => void api.setBounds(visibleViewRect(rectOf(el), occluderRects()) ?? HIDDEN));
+    };
+    const ro = new ResizeObserver(push);
+    ro.observe(el);
+    for (const o of document.querySelectorAll('[data-app-occluder]')) ro.observe(o);
+    push();
+    return () => {
+      cancelAnimationFrame(raf);
+      ro.disconnect();
+    };
+  }, [api, covered, occluders]);
 
   // «Перезагрузить» from the rail menu (after the open above: IPC keeps the order).
   useEffect(() => {
@@ -169,7 +212,7 @@ function DesktopView({ appId, url }: { appId: string; url: string }): ReactNode 
   }, [api, reloadKey]);
 
   return (
-    <div ref={ref} className="relative min-h-0 flex-1" data-testid="app-view">
+    <div ref={ref} className="relative min-h-0 flex-1" data-testid="app-view" data-toast-anchor>
       {failed || crashed ? (
         <div className="absolute inset-0 grid place-items-center p-6">
           <div className="flex max-w-sm flex-col items-center gap-2 text-center">
@@ -205,6 +248,21 @@ function WebFrame({ appId, url }: { appId: string; url: string }): ReactNode {
   return <FrameBody key={`${url}:${reloadKey}`} appId={appId} url={url} />;
 }
 
+/**
+ * The frame's sandbox. allow-scripts + allow-same-origin is safe only for another origin: a page of
+ * our own origin (an address pointing back at the web client) could lift its own sandbox and reach
+ * the session, so it gets an opaque origin instead.
+ */
+function frameSandbox(url: string): string {
+  let same = true;
+  try {
+    same = new URL(url).origin === window.location.origin;
+  } catch {
+    // an unparsable address: treated as ours (the strictest sandbox)
+  }
+  return `allow-scripts${same ? '' : ' allow-same-origin'} allow-forms allow-popups allow-popups-to-escape-sandbox allow-downloads`;
+}
+
 function FrameBody({ appId, url }: { appId: string; url: string }): ReactNode {
   const name = useWebApps((s) => s.byId[appId]?.name ?? '');
   const [loaded, setLoaded] = useState(false);
@@ -218,7 +276,7 @@ function FrameBody({ appId, url }: { appId: string; url: string }): ReactNode {
       <iframe
         src={url}
         title={name}
-        sandbox="allow-scripts allow-same-origin allow-forms allow-popups allow-popups-to-escape-sandbox allow-downloads"
+        sandbox={frameSandbox(url)}
         referrerPolicy="no-referrer"
         className="absolute inset-0 size-full border-0"
         onLoad={() => setLoaded(true)}

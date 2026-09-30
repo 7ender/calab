@@ -107,6 +107,8 @@ export function Toasts(): ReactNode {
     <section
       ref={stack}
       aria-label={t('toast.region')}
+      // A web app's native view steps aside while the stack shows (features/webapps/AppScreen).
+      data-app-occluder
       // Phones: under the top bar (at the bottom it would cover the composer and the voice strip),
       // and under the drawers and sheets, which the user is working in.
       className="pointer-events-none fixed z-[var(--z-toast)] flex flex-col items-stretch gap-2 mobile:left-4 mobile:right-4 mobile:top-[calc(var(--safe-top)+56px)] mobile:z-[var(--z-popover)]"
