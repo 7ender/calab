@@ -11,6 +11,7 @@ import "calaba/v1/media.proto";
 import "calaba/v1/message.proto";
 import "calaba/v1/permissions.proto";
 import "calaba/v1/recording.proto";
+import "calaba/v1/sip.proto";
 import "calaba/v1/room.proto";
 import "calaba/v1/sound.proto";
 import "calaba/v1/sticker.proto";
@@ -243,6 +244,9 @@ message DispatchEvent {
     TaskDelete task_delete = 80;
     TaskActivityAppend task_activity = 81;
     BotCallback bot_callback = 82; // private to the author bot (ADR-0047)
+    // Telephony (ADR-0046): a phone call of a room was placed or changed status; to everyone
+    // who can view the room.
+    SipCallUpdate sip_call_update = 83;
   }
 }
 
@@ -344,6 +348,9 @@ message WorkspaceSnapshot {
   // Tasks with something unseen for the recipient (Task.unread; ≤ 999): the badge on the
   // boards icon. Changes come as TASK_UPDATE on the user channel.
   repeated string unread_task_ids = 17;
+  // Phone calls (ADR-0046) dialing, ringing or active in the visible rooms. Changes come as
+  // SIP_CALL_UPDATE.
+  repeated SipCall sip_calls = 18;
 }
 
 message Ready {

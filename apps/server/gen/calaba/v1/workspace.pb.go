@@ -145,8 +145,11 @@ type Workspace struct {
 	Plan *WorkspacePlan `protobuf:"bytes,12,opt,name=plan,proto3" json:"plan,omitempty"`
 	// Set while a superadmin has suspended the workspace (read-only: writes get 403
 	// WORKSPACE_SUSPENDED). Unset = active.
-	Suspension    *WorkspaceSuspension `protobuf:"bytes,13,opt,name=suspension,proto3" json:"suspension,omitempty"`
-	TimeFormat    TimeFormat           `protobuf:"varint,14,opt,name=time_format,json=timeFormat,proto3,enum=calaba.v1.TimeFormat" json:"time_format,omitempty"`
+	Suspension *WorkspaceSuspension `protobuf:"bytes,13,opt,name=suspension,proto3" json:"suspension,omitempty"`
+	TimeFormat TimeFormat           `protobuf:"varint,14,opt,name=time_format,json=timeFormat,proto3,enum=calaba.v1.TimeFormat" json:"time_format,omitempty"`
+	// Telephony is on (ADR-0046): SIP settings enabled and accepted by LiveKit. Members with
+	// PLACE_CALLS in a voice room they are in may call phone numbers from it.
+	SipEnabled    bool `protobuf:"varint,15,opt,name=sip_enabled,json=sipEnabled,proto3" json:"sip_enabled,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -277,6 +280,13 @@ func (x *Workspace) GetTimeFormat() TimeFormat {
 		return x.TimeFormat
 	}
 	return TimeFormat_TIME_FORMAT_UNSPECIFIED
+}
+
+func (x *Workspace) GetSipEnabled() bool {
+	if x != nil {
+		return x.SipEnabled
+	}
+	return false
 }
 
 type WorkspaceSuspension struct {
@@ -3206,7 +3216,7 @@ var File_calaba_v1_workspace_proto protoreflect.FileDescriptor
 
 const file_calaba_v1_workspace_proto_rawDesc = "" +
 	"\n" +
-	"\x19calaba/v1/workspace.proto\x12\tcalaba.v1\x1a\x1fgoogle/protobuf/timestamp.proto\x1a\x15calaba/v1/media.proto\x1a\x1bcalaba/v1/permissions.proto\x1a\x14calaba/v1/plan.proto\x1a\x14calaba/v1/user.proto\"\xf4\x04\n" +
+	"\x19calaba/v1/workspace.proto\x12\tcalaba.v1\x1a\x1fgoogle/protobuf/timestamp.proto\x1a\x15calaba/v1/media.proto\x1a\x1bcalaba/v1/permissions.proto\x1a\x14calaba/v1/plan.proto\x1a\x14calaba/v1/user.proto\"\x95\x05\n" +
 	"\tWorkspace\x12\x0e\n" +
 	"\x02id\x18\x01 \x01(\tR\x02id\x12\x12\n" +
 	"\x04slug\x18\x02 \x01(\tR\x04slug\x12\x12\n" +
@@ -3229,7 +3239,9 @@ const file_calaba_v1_workspace_proto_rawDesc = "" +
 	"suspension\x18\r \x01(\v2\x1e.calaba.v1.WorkspaceSuspensionR\n" +
 	"suspension\x126\n" +
 	"\vtime_format\x18\x0e \x01(\x0e2\x15.calaba.v1.TimeFormatR\n" +
-	"timeFormat\"Y\n" +
+	"timeFormat\x12\x1f\n" +
+	"\vsip_enabled\x18\x0f \x01(\bR\n" +
+	"sipEnabled\"Y\n" +
 	"\x13WorkspaceSuspension\x12*\n" +
 	"\x02at\x18\x01 \x01(\v2\x1a.google.protobuf.TimestampR\x02at\x12\x16\n" +
 	"\x06reason\x18\x02 \x01(\tR\x06reason\"\xdc\x01\n" +

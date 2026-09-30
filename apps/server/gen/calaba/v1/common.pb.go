@@ -97,6 +97,19 @@ const (
 	// 410: the room is an archived temporary room (ADR-0044): its history is readable (VIEW_ROOM),
 	// writes, reactions, voice, links and settings are not.
 	ErrorCode_ERROR_CODE_ROOM_ARCHIVED ErrorCode = 54
+	// Telephony (ADR-0046, sip.proto).
+	// 409: telephony is off in the workspace (SIP settings disabled or not saved to LiveKit).
+	ErrorCode_ERROR_CODE_SIP_DISABLED ErrorCode = 55
+	// 409: the room already has a phone call that is dialing, ringing or active (one per room).
+	ErrorCode_ERROR_CODE_SIP_CALL_ACTIVE ErrorCode = 56
+	// 422: the number is outside the workspace's allowed_prefixes (field "number").
+	ErrorCode_ERROR_CODE_SIP_NUMBER_NOT_ALLOWED ErrorCode = 57
+	// 429: the workspace placed 20 calls within the last hour (Retry-After is set); for the
+	// connection test: 5 per hour.
+	ErrorCode_ERROR_CODE_SIP_RATE_LIMITED ErrorCode = 58
+	// 502: LiveKit refused the SIP settings (PUT …/sip); the message is LiveKit's text, also
+	// stored as SipSettings.last_error.
+	ErrorCode_ERROR_CODE_SIP_PROVIDER_ERROR ErrorCode = 59
 )
 
 // Enum value maps for ErrorCode.
@@ -143,49 +156,59 @@ var (
 		52: "ERROR_CODE_NO_COMMON_HOURS",
 		53: "ERROR_CODE_TEMP_ROOM_LIMIT",
 		54: "ERROR_CODE_ROOM_ARCHIVED",
+		55: "ERROR_CODE_SIP_DISABLED",
+		56: "ERROR_CODE_SIP_CALL_ACTIVE",
+		57: "ERROR_CODE_SIP_NUMBER_NOT_ALLOWED",
+		58: "ERROR_CODE_SIP_RATE_LIMITED",
+		59: "ERROR_CODE_SIP_PROVIDER_ERROR",
 	}
 	ErrorCode_value = map[string]int32{
-		"ERROR_CODE_UNSPECIFIED":           0,
-		"ERROR_CODE_INTERNAL":              1,
-		"ERROR_CODE_BAD_REQUEST":           2,
-		"ERROR_CODE_VALIDATION":            3,
-		"ERROR_CODE_UNAUTHENTICATED":       4,
-		"ERROR_CODE_FORBIDDEN":             5,
-		"ERROR_CODE_NOT_FOUND":             6,
-		"ERROR_CODE_CONFLICT":              7,
-		"ERROR_CODE_RATE_LIMITED":          8,
-		"ERROR_CODE_INVALID_CREDENTIALS":   9,
-		"ERROR_CODE_INVALID_REFRESH_TOKEN": 10,
-		"ERROR_CODE_REGISTRATION_CLOSED":   11,
-		"ERROR_CODE_INVITE_INVALID":        12,
-		"ERROR_CODE_FILE_TOO_LARGE":        13,
-		"ERROR_CODE_FILE_QUOTA_EXCEEDED":   14,
-		"ERROR_CODE_PAYLOAD_TOO_LARGE":     15,
-		"ERROR_CODE_UNAVAILABLE":           16,
-		"ERROR_CODE_ROOM_FULL":             17,
-		"ERROR_CODE_WORKSPACE_LIMIT":       18,
-		"ERROR_CODE_STORAGE_FULL":          19,
-		"ERROR_CODE_EMAIL_NOT_VERIFIED":    20,
-		"ERROR_CODE_CODE_INVALID":          21,
-		"ERROR_CODE_CODE_EXPIRED":          22,
-		"ERROR_CODE_NOT_PAIRED":            23,
-		"ERROR_CODE_ALREADY_RECORDING":     24,
-		"ERROR_CODE_RECORDING_LIMIT":       25,
-		"ERROR_CODE_WORKSPACE_SUSPENDED":   26,
-		"ERROR_CODE_BANNED":                27,
-		"ERROR_CODE_INVITE_EMAIL_MISMATCH": 28,
-		"ERROR_CODE_FILE_GONE":             29,
-		"ERROR_CODE_ALREADY_UPLOADED":      30,
-		"ERROR_CODE_BOT_BLOCKED":           40,
-		"ERROR_CODE_BUSY":                  41,
-		"ERROR_CODE_IN_CALL":               42,
-		"ERROR_CODE_CALL_NOT_ACTIVE":       43,
-		"ERROR_CODE_SESSION_REVOKED":       44,
-		"ERROR_CODE_EVENT_OVER":            50,
-		"ERROR_CODE_INVITE_NOT_YET_VALID":  51,
-		"ERROR_CODE_NO_COMMON_HOURS":       52,
-		"ERROR_CODE_TEMP_ROOM_LIMIT":       53,
-		"ERROR_CODE_ROOM_ARCHIVED":         54,
+		"ERROR_CODE_UNSPECIFIED":            0,
+		"ERROR_CODE_INTERNAL":               1,
+		"ERROR_CODE_BAD_REQUEST":            2,
+		"ERROR_CODE_VALIDATION":             3,
+		"ERROR_CODE_UNAUTHENTICATED":        4,
+		"ERROR_CODE_FORBIDDEN":              5,
+		"ERROR_CODE_NOT_FOUND":              6,
+		"ERROR_CODE_CONFLICT":               7,
+		"ERROR_CODE_RATE_LIMITED":           8,
+		"ERROR_CODE_INVALID_CREDENTIALS":    9,
+		"ERROR_CODE_INVALID_REFRESH_TOKEN":  10,
+		"ERROR_CODE_REGISTRATION_CLOSED":    11,
+		"ERROR_CODE_INVITE_INVALID":         12,
+		"ERROR_CODE_FILE_TOO_LARGE":         13,
+		"ERROR_CODE_FILE_QUOTA_EXCEEDED":    14,
+		"ERROR_CODE_PAYLOAD_TOO_LARGE":      15,
+		"ERROR_CODE_UNAVAILABLE":            16,
+		"ERROR_CODE_ROOM_FULL":              17,
+		"ERROR_CODE_WORKSPACE_LIMIT":        18,
+		"ERROR_CODE_STORAGE_FULL":           19,
+		"ERROR_CODE_EMAIL_NOT_VERIFIED":     20,
+		"ERROR_CODE_CODE_INVALID":           21,
+		"ERROR_CODE_CODE_EXPIRED":           22,
+		"ERROR_CODE_NOT_PAIRED":             23,
+		"ERROR_CODE_ALREADY_RECORDING":      24,
+		"ERROR_CODE_RECORDING_LIMIT":        25,
+		"ERROR_CODE_WORKSPACE_SUSPENDED":    26,
+		"ERROR_CODE_BANNED":                 27,
+		"ERROR_CODE_INVITE_EMAIL_MISMATCH":  28,
+		"ERROR_CODE_FILE_GONE":              29,
+		"ERROR_CODE_ALREADY_UPLOADED":       30,
+		"ERROR_CODE_BOT_BLOCKED":            40,
+		"ERROR_CODE_BUSY":                   41,
+		"ERROR_CODE_IN_CALL":                42,
+		"ERROR_CODE_CALL_NOT_ACTIVE":        43,
+		"ERROR_CODE_SESSION_REVOKED":        44,
+		"ERROR_CODE_EVENT_OVER":             50,
+		"ERROR_CODE_INVITE_NOT_YET_VALID":   51,
+		"ERROR_CODE_NO_COMMON_HOURS":        52,
+		"ERROR_CODE_TEMP_ROOM_LIMIT":        53,
+		"ERROR_CODE_ROOM_ARCHIVED":          54,
+		"ERROR_CODE_SIP_DISABLED":           55,
+		"ERROR_CODE_SIP_CALL_ACTIVE":        56,
+		"ERROR_CODE_SIP_NUMBER_NOT_ALLOWED": 57,
+		"ERROR_CODE_SIP_RATE_LIMITED":       58,
+		"ERROR_CODE_SIP_PROVIDER_ERROR":     59,
 	}
 )
 
@@ -595,7 +618,7 @@ const file_calaba_v1_common_proto_rawDesc = "" +
 	"\vattribution\x18\x05 \x01(\tR\vattribution\x12\x10\n" +
 	"\x03url\x18\x06 \x01(\tR\x03url\x12\x18\n" +
 	"\aproduct\x18\a \x01(\tR\aproduct\x12!\n" +
-	"\fplan_contact\x18\b \x01(\tR\vplanContact*\xe3\t\n" +
+	"\fplan_contact\x18\b \x01(\tR\vplanContact*\x8b\v\n" +
 	"\tErrorCode\x12\x1a\n" +
 	"\x16ERROR_CODE_UNSPECIFIED\x10\x00\x12\x17\n" +
 	"\x13ERROR_CODE_INTERNAL\x10\x01\x12\x1a\n" +
@@ -638,7 +661,12 @@ const file_calaba_v1_common_proto_rawDesc = "" +
 	"\x1fERROR_CODE_INVITE_NOT_YET_VALID\x103\x12\x1e\n" +
 	"\x1aERROR_CODE_NO_COMMON_HOURS\x104\x12\x1e\n" +
 	"\x1aERROR_CODE_TEMP_ROOM_LIMIT\x105\x12\x1c\n" +
-	"\x18ERROR_CODE_ROOM_ARCHIVED\x106B\x99\x01\n" +
+	"\x18ERROR_CODE_ROOM_ARCHIVED\x106\x12\x1b\n" +
+	"\x17ERROR_CODE_SIP_DISABLED\x107\x12\x1e\n" +
+	"\x1aERROR_CODE_SIP_CALL_ACTIVE\x108\x12%\n" +
+	"!ERROR_CODE_SIP_NUMBER_NOT_ALLOWED\x109\x12\x1f\n" +
+	"\x1bERROR_CODE_SIP_RATE_LIMITED\x10:\x12!\n" +
+	"\x1dERROR_CODE_SIP_PROVIDER_ERROR\x10;B\x99\x01\n" +
 	"\rcom.calaba.v1B\vCommonProtoP\x01Z6github.com/calaba/calaba/server/gen/calaba/v1;calabav1\xa2\x02\x03CXX\xaa\x02\tCalaba.V1\xca\x02\tCalaba\\V1\xe2\x02\x15Calaba\\V1\\GPBMetadata\xea\x02\n" +
 	"Calaba::V1b\x06proto3"
 

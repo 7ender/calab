@@ -50,6 +50,11 @@ enum Permission {
   // default (migration 00048 added it to existing member roles); never for guests. The
   // workspace switches the feature off by removing it from the member role.
   PERMISSION_CREATE_TEMP_ROOMS = 8388608;
+  // 1 << 24 (ADR-0046): place outbound phone calls (SIP) from a voice room the caller is in
+  // (POST /api/rooms/{id}/calls). Workspace and room level (room overrides grant and take it).
+  // Nobody by default, calls cost money: admins grant it to roles or people. Never for guests
+  // (the server refuses them whatever the bits say; the guest role cannot hold it).
+  PERMISSION_PLACE_CALLS = 16777216;
 }
 
 // Built-in workspace roles. Since ADR-0026 a member holds several roles (WorkspaceMember.

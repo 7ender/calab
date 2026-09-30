@@ -130,7 +130,7 @@ func TestMemberTopAndRoomOnly(t *testing.T) {
 	if (Member{}).Top() != -1 {
 		t.Fatal("no roles: top -1")
 	}
-	if RoomOnly&(ManageRoles|ManageWorkspace|Administrator|ManageNicknames|ManageStickers) != 0 || All != 1<<24-1 || RoomOnly&CreateTempRooms != 0 || GuestMax&CreateTempRooms != 0 || !RoleDefaults[RoleMember].Has(CreateTempRooms) || RoomOnly&BoardOnly != 0 || RoomOnly&(InviteMembers|InviteGuests) != InviteMembers|InviteGuests || GuestMax&(InviteMembers|InviteGuests) != 0 {
+	if RoomOnly&(ManageRoles|ManageWorkspace|Administrator|ManageNicknames|ManageStickers) != 0 || All != 1<<25-1 || RoomOnly&PlaceCalls == 0 || GuestMax&PlaceCalls != 0 || RoleDefaults[RoleMember].Has(PlaceCalls) || RoomOnly&CreateTempRooms != 0 || GuestMax&CreateTempRooms != 0 || !RoleDefaults[RoleMember].Has(CreateTempRooms) || RoomOnly&BoardOnly != 0 || RoomOnly&(InviteMembers|InviteGuests) != InviteMembers|InviteGuests || GuestMax&(InviteMembers|InviteGuests) != 0 {
 		t.Fatal("workspace-level bits must not be settable per room")
 	}
 	if GuestMax&^RoleDefaults[RoleMember] != 0 || RoleDefaults[RoleGuest]&^GuestMax != 0 {
