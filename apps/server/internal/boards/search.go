@@ -42,6 +42,32 @@ func VisibleBoards(ctx context.Context, q *sqlc.Queries, wsID uuid.UUID, m perm.
 	return out, nil
 }
 
+// MemberOpenTasks is the most tasks of a member profile (ADR-0051).
+const MemberOpenTasks = 50
+
+// OpenTasksOf returns the open tasks (status not completed / cancelled, not archived) assigned
+// to user on the boards of wsID that viewer (a member of wsID) sees, most recently updated
+// first, at most MemberOpenTasks: the tasks of a member profile (ADR-0051). Guests see none.
+func OpenTasksOf(ctx context.Context, dbtx sqlc.DBTX, q *sqlc.Queries, wsID uuid.UUID, viewer perm.Member, viewerID, user uuid.UUID) ([]*v1.Task, error) {
+	vis, err := VisibleBoards(ctx, q, wsID, viewer)
+	if err != nil || len(vis) == 0 {
+		return []*v1.Task{}, err
+	}
+	var a Args
+	rows, err := queryTasks(ctx, dbtx, "WHERE t.board_id = ANY("+a.Add(keys(vis))+"::uuid[]) AND t.archived_at IS NULL"+
+		" AND EXISTS (SELECT 1 FROM task_assignees x WHERE x.task_id = t.id AND x.user_id = "+a.Add(user)+")"+
+		" AND t.status_id IN (SELECT st.id FROM board_statuses st WHERE st.type NOT IN ('completed', 'cancelled'))"+
+		" ORDER BY t.updated_at DESC, t.id DESC LIMIT "+strconv.Itoa(MemberOpenTasks), a.Values()...)
+	if err != nil {
+		return nil, err
+	}
+	out, err := tasksProto(ctx, q, rows, viewerID)
+	if out == nil && err == nil {
+		out = []*v1.Task{}
+	}
+	return out, err
+}
+
 func keys(m map[uuid.UUID]perm.Bits) []uuid.UUID {
 	out := make([]uuid.UUID, 0, len(m))
 	for k := range m {

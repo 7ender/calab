@@ -49,7 +49,8 @@ export type CalendarEventAttendee = Message<"calaba.v1.CalendarEventAttendee"> &
 
   /**
    * External attendee's address: in full for the organizer, the attendees and those who may
-   * edit the event; masked ("a***@example.com") for other viewers; empty for bots.
+   * edit the event; masked ("a***@example.com") for other viewers; empty for bots that may
+   * not edit it.
    *
    * @generated from field: string email = 5;
    */
@@ -320,9 +321,10 @@ export const ListCalendarEventsResponseSchema: GenMessage<ListCalendarEventsResp
   messageDesc(file_calaba_v1_event, 4);
 
 /**
- * POST /api/workspaces/{id}/events → 201 CalendarEventResponse. A member, not a guest, not a
- * bot. Attendees: ≤ 100 in total, ≤ 20 external addresses; members of the workspace, not bots
- * or guests; the organizer is always an attendee (accepted) and need not be listed.
+ * POST /api/workspaces/{id}/events → 201 CalendarEventResponse. A member, not a guest.
+ * Attendees: ≤ 100 in total, ≤ 20 external addresses; members of the workspace, not bots
+ * or guests; the organizer is always an attendee (accepted) and need not be listed, except a
+ * bot organizer (ADR-0051), which never attends: mail goes out on its behalf, no guest links.
  *
  * @generated from message calaba.v1.CreateCalendarEventRequest
  */
@@ -827,7 +829,8 @@ export const FreeBusyUserSchema: GenMessage<FreeBusyUser> = /*@__PURE__*/
 /**
  * GET /api/workspaces/{id}/freebusy?users=<id,id,…>&from=<RFC 3339>&to=<RFC 3339> — busy
  * intervals of ≤ 20 members of the workspace (not guests or bots) in a window of ≤ 14 days.
- * Members only: guests and bots → 403; a user who is not a member → 422 (field users).
+ * Members only: guests → 403; a user who is not a member → 422 (field users). Bots
+ * (ADR-0051) get the busy time only: no title or attendees of external events.
  * Meetings of every workspace of the person count (no id outside this one). 60 per minute.
  *
  * @generated from message calaba.v1.FreeBusyResponse

@@ -57,6 +57,13 @@ func linkBits(ctx context.Context, q *sqlc.Queries, b *bundle) (perm.Bits, error
 	if acc.Role == perm.RoleGuest || !acc.Bits.Has(perm.InviteGuests) { // guests never invite
 		return 0, nil
 	}
+	// Room links are made by people only (ADR-0031): a bot's meeting gives outside attendees
+	// its meeting page, no guest link (ADR-0051).
+	if org, err := q.GetUser(ctx, b.ev.OrganizerID); err != nil {
+		return 0, err
+	} else if org.IsBot {
+		return 0, nil
+	}
 	bits := guestBits
 	if !acc.Bits.Has(perm.Administrator) {
 		bits &= acc.Bits

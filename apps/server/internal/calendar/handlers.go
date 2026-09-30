@@ -199,7 +199,7 @@ func (s *Service) create(w http.ResponseWriter, r *http.Request) error {
 	if err != nil {
 		return err
 	}
-	if err := checkAttendees(ctx, s.db.Q, wsID, me, want); err != nil {
+	if err := checkAttendees(ctx, s.db.Q, wsID, me, v.bot, want); err != nil {
 		return err
 	}
 	if hasExternals(want) { // mail to outside addresses needs a confirmed sender (ADR-0023)
@@ -218,8 +218,10 @@ func (s *Service) create(w http.ResponseWriter, r *http.Request) error {
 			return err
 		}
 		now := s.Now()
-		if err := insertAttendee(ctx, q, ev.ID, wantAttendee{user: &me, required: true}, StatusAccepted, &now); err != nil {
-			return err
+		if !v.bot { // a bot organizes but never attends (ADR-0051)
+			if err := insertAttendee(ctx, q, ev.ID, wantAttendee{user: &me, required: true}, StatusAccepted, &now); err != nil {
+				return err
+			}
 		}
 		for _, a := range want {
 			if a.user != nil && *a.user == me {
@@ -264,6 +266,15 @@ func rrulePtr(r Rule) *string {
 		return nil
 	}
 	return &s
+}
+
+// isBot reports whether the user is a bot account (ADR-0051: a bot organizer is no attendee).
+func (s *Service) isBot(ctx context.Context, id uuid.UUID) (bool, error) {
+	u, err := s.db.Q.GetUser(ctx, id)
+	if db.IsNotFound(err) {
+		return false, nil
+	}
+	return u.IsBot, err
 }
 
 // userZone is the user's profile zone, else UTC.
@@ -354,10 +365,14 @@ func (s *Service) update(w http.ResponseWriter, r *http.Request) error {
 			return err
 		}
 		organizer := before.ev.OrganizerID
-		if !hasUser(want, organizer) {
+		var orgBot bool
+		if orgBot, err = s.isBot(ctx, organizer); err != nil {
+			return err
+		}
+		if !hasUser(want, organizer) && !orgBot {
 			want = append([]wantAttendee{{user: &organizer, required: true}}, want...)
 		}
-		if err := checkAttendees(ctx, s.db.Q, before.ev.WorkspaceID, organizer, want); err != nil {
+		if err := checkAttendees(ctx, s.db.Q, before.ev.WorkspaceID, organizer, orgBot, want); err != nil {
 			return err
 		}
 	}

@@ -177,16 +177,17 @@ func normalizeEmail(s string) (string, error) {
 }
 
 // checkAttendees: users must be members of the workspace, not guests or bots; with the
-// organizer the list holds at most MaxAttendees.
-func checkAttendees(ctx context.Context, q *sqlc.Queries, wsID, organizer uuid.UUID, want []wantAttendee) error {
+// organizer the list holds at most MaxAttendees. A bot organizer (ADR-0051) is not an
+// attendee: it may not list itself and takes no place.
+func checkAttendees(ctx context.Context, q *sqlc.Queries, wsID, organizer uuid.UUID, orgBot bool, want []wantAttendee) error {
 	var ids []uuid.UUID
 	for _, a := range want {
-		if a.user != nil && *a.user != organizer {
+		if a.user != nil && (*a.user != organizer || orgBot) {
 			ids = append(ids, *a.user)
 		}
 	}
 	total := len(want)
-	if !hasUser(want, organizer) {
+	if !hasUser(want, organizer) && !orgBot {
 		total++
 	}
 	if total > MaxAttendees {

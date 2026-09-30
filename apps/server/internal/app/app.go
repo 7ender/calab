@@ -294,7 +294,7 @@ func New(d Deps) *App {
 	guard := moderation.Guard(d.DB.Q, func(ctx context.Context) uuid.UUID { return auth.MustFromContext(ctx).UserID })
 	private := func(h http.Handler) http.Handler {
 		g := guard(h)
-		return authSvc.Require(botGate(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		return authSvc.Require(botGate(d.DB.Q, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			g.ServeHTTP(w, r.WithContext(perm.WithResolver(r.Context(), d.DB.Q)))
 		})))
 	}

@@ -359,6 +359,16 @@ func (s *Service) participant(r *http.Request) (sqlc.Room, perm.RoomAccess, erro
 	if !acc.Bits.Has(perm.ViewRoom | perm.Connect) {
 		return sqlc.Room{}, acc, httpx.Forbidden("CONNECT required")
 	}
+	// A bot records without being seen in the call: it needs MANAGE_RECORDINGS too (ADR-0051).
+	if id := auth.MustFromContext(r.Context()); id.IsBot {
+		ws, _, err := perm.FromContext(r.Context()).Workspace(r.Context(), acc.WorkspaceID, id.UserID)
+		if err != nil {
+			return sqlc.Room{}, acc, err
+		}
+		if !ws.Has(perm.ManageRecordings) {
+			return sqlc.Room{}, acc, httpx.Forbidden("MANAGE_RECORDINGS required for bots")
+		}
+	}
 	room, err := s.db.Q.GetRoom(r.Context(), roomID)
 	if db.IsNotFound(err) {
 		return room, acc, httpx.NotFound("room")

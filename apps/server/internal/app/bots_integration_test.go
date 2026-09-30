@@ -77,6 +77,11 @@ func TestBotRouteTable(t *testing.T) {
 			t.Errorf("bot route table lists %q, which is not registered", p)
 		}
 	}
+	for _, p := range app.BotAuditedPatterns() {
+		if app.BotRouteAccess(p) != "allow" {
+			t.Errorf("audited bot route %q is not open to bots", p)
+		}
+	}
 	o := owner(t)
 	ws := createWorkspace(t, o, v1.WorkspaceVisibility_WORKSPACE_VISIBILITY_PRIVATE)
 	b := createBot(t, o, ws.GetId(), "walker")

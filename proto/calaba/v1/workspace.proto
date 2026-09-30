@@ -2,6 +2,7 @@ syntax = "proto3";
 package calaba.v1;
 
 import "google/protobuf/timestamp.proto";
+import "calaba/v1/boards.proto";
 import "calaba/v1/media.proto";
 import "calaba/v1/permissions.proto";
 import "calaba/v1/plan.proto";
@@ -179,6 +180,16 @@ message ListInvitesResponse {
 // GET /api/workspaces/{id}/members
 message ListMembersResponse {
   repeated WorkspaceMember members = 1;
+}
+
+// GET /api/workspaces/{id}/members/{user_id} (ADR-0051): one member's profile, for people and
+// bots alike. user_id may be "@me". Guests see only the members visible to them (ADR-0016);
+// others get 404. A birthday hidden by its owner is not sent (as in ListMembersResponse).
+message GetMemberResponse {
+  WorkspaceMember member = 1;
+  // Open tasks assigned to the member (status not completed / cancelled, not archived) on the
+  // boards the caller sees, most recently updated first, at most 50. Empty for guests.
+  repeated Task open_tasks = 2;
 }
 
 // PATCH /api/workspaces/{id}/members/{user_id}.
@@ -397,7 +408,8 @@ message UpdateBadgeResponse {
 }
 
 // PUT /api/workspaces/{id}/members/{user_id}/badge: badge_id of this workspace, "" clears.
-// 403 for a bot or a member at or above the caller's highest role. → WORKSPACE_MEMBER_UPDATE.
+// 403 for a bot target or a member at or above the caller's highest role (MANAGE_NICKNAMES;
+// bots with it may set badges, ADR-0051). → WORKSPACE_MEMBER_UPDATE.
 message SetMemberBadgeRequest {
   string badge_id = 1;
 }

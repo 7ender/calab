@@ -12,7 +12,6 @@ import (
 	"google.golang.org/protobuf/types/known/timestamppb"
 
 	v1 "github.com/calaba/calaba/server/gen/calaba/v1"
-	"github.com/calaba/calaba/server/internal/auth"
 	"github.com/calaba/calaba/server/internal/db/sqlc"
 	"github.com/calaba/calaba/server/internal/httpx"
 	"github.com/calaba/calaba/server/internal/perm"
@@ -49,11 +48,9 @@ type busyPerson struct {
 var errNoCommonHours = &httpx.Error{Status: http.StatusConflict, Code: v1.ErrorCode_ERROR_CODE_NO_COMMON_HOURS,
 	Message: "the working hours of these people do not intersect in this window; try without «within working hours»"}
 
-// busyViewer resolves the caller: a member, not a guest (403) and not a bot (403).
+// busyViewer resolves the caller: a member, not a guest (403). Bots ask too (ADR-0051) but
+// get the busy time only, without what external calendars share (collectBusy details).
 func busyViewer(r *http.Request, wsID uuid.UUID, q *sqlc.Queries) (*viewer, error) {
-	if auth.MustFromContext(r.Context()).IsBot {
-		return nil, auth.ErrBotNotAllowed
-	}
 	return requestViewer(r, wsID, q)
 }
 
@@ -295,7 +292,7 @@ func (s *Service) freeBusy(w http.ResponseWriter, r *http.Request) error {
 	if err != nil {
 		return err
 	}
-	if err := s.collectBusy(ctx, v, wsID, people, from, to, true); err != nil {
+	if err := s.collectBusy(ctx, v, wsID, people, from, to, !v.bot); err != nil {
 		return err
 	}
 	out := &v1.FreeBusyResponse{Users: make([]*v1.FreeBusyUser, 0, len(people))}

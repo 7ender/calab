@@ -246,7 +246,8 @@ type CalendarEventAttendee struct {
 	Status      AttendeeStatus         `protobuf:"varint,3,opt,name=status,proto3,enum=calaba.v1.AttendeeStatus" json:"status,omitempty"`
 	RespondedAt *timestamppb.Timestamp `protobuf:"bytes,4,opt,name=responded_at,json=respondedAt,proto3" json:"responded_at,omitempty"` // unset while PENDING
 	// External attendee's address: in full for the organizer, the attendees and those who may
-	// edit the event; masked ("a***@example.com") for other viewers; empty for bots.
+	// edit the event; masked ("a***@example.com") for other viewers; empty for bots that may
+	// not edit it.
 	Email         string `protobuf:"bytes,5,opt,name=email,proto3" json:"email,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
@@ -742,9 +743,10 @@ func (x *ListCalendarEventsResponse) GetEvents() []*CalendarEvent {
 	return nil
 }
 
-// POST /api/workspaces/{id}/events → 201 CalendarEventResponse. A member, not a guest, not a
-// bot. Attendees: ≤ 100 in total, ≤ 20 external addresses; members of the workspace, not bots
-// or guests; the organizer is always an attendee (accepted) and need not be listed.
+// POST /api/workspaces/{id}/events → 201 CalendarEventResponse. A member, not a guest.
+// Attendees: ≤ 100 in total, ≤ 20 external addresses; members of the workspace, not bots
+// or guests; the organizer is always an attendee (accepted) and need not be listed, except a
+// bot organizer (ADR-0051), which never attends: mail goes out on its behalf, no guest links.
 type CreateCalendarEventRequest struct {
 	state         protoimpl.MessageState        `protogen:"open.v1"`
 	RoomId        string                        `protobuf:"bytes,1,opt,name=room_id,json=roomId,proto3" json:"room_id,omitempty"` // a voice room of the workspace the caller can see; empty = none
@@ -1613,7 +1615,8 @@ func (x *FreeBusyUser) GetBusy() []*BusyInterval {
 
 // GET /api/workspaces/{id}/freebusy?users=<id,id,…>&from=<RFC 3339>&to=<RFC 3339> — busy
 // intervals of ≤ 20 members of the workspace (not guests or bots) in a window of ≤ 14 days.
-// Members only: guests and bots → 403; a user who is not a member → 422 (field users).
+// Members only: guests → 403; a user who is not a member → 422 (field users). Bots
+// (ADR-0051) get the busy time only: no title or attendees of external events.
 // Meetings of every workspace of the person count (no id outside this one). 60 per minute.
 type FreeBusyResponse struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
