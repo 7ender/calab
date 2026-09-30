@@ -34,6 +34,8 @@ import { useBoardsUi } from '../../stores/boardsUi';
 import { EventPanel } from '../calendar/EventCard';
 import { BottomIsland } from './BottomIsland';
 import { Sidebar } from './Sidebar';
+import { ArchivedChat } from '../chat/ArchivedChat';
+import { useArchiveView } from '../../stores/archiveView';
 import { TitleBar } from './TitleBar';
 import { WorkspaceRail } from './WorkspaceRail';
 
@@ -63,6 +65,8 @@ export function AppShell(): ReactNode {
   // Boards mode (ADR-0042 §5): the column lists boards, the centre shows one; guests have none.
   const guestWs = useWorkspaces((s) => (wsId ? s.byId[wsId]?.role === WorkspaceRole.GUEST : false));
   const boards = useBoardsUi((s) => s.active) && !home && !!wsId && !guestWs;
+  // «Открыть историю» of an archived temporary room (ADR-0044) in place of the room.
+  const archived = useArchiveView((s) => (s.room && s.room.workspaceId === wsId ? s.room : null));
 
   // Short reconnects (a server deploy re-IDENTIFYs in 1–5 s) don't flash the banner; it goes
   // away the moment READY/RESUMED arrives (lib/gateway/banner.ts).
@@ -108,6 +112,8 @@ export function AppShell(): ReactNode {
             ) : (
               <DayView workspaceId={ws} />
             )
+          ) : archived ? (
+            <ArchivedChat key={archived.id} workspaceId={ws} room={archived} />
           ) : roomId ? (
             <ChatPane key={roomId} workspaceId={ws} roomId={roomId} />
           ) : (
@@ -173,6 +179,8 @@ export function AppShell(): ReactNode {
                     <MembersPanel workspaceId={wsId} />
                   ) : null}
                 </>
+              ) : archived ? (
+                <ArchivedChat key={archived.id} workspaceId={wsId} room={archived} />
               ) : (
                 <>
                   {roomId ? <ChatPane key={roomId} workspaceId={wsId} roomId={roomId} /> : <NoRoom workspaceId={wsId} />}

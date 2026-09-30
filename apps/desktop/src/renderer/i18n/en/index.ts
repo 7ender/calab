@@ -22,6 +22,7 @@ import { enStickers } from './stickers';
 import { enSounds } from './sounds';
 import { enBots } from './bots';
 import { enGuests } from './guests';
+import { enTemp } from './temp';
 
 /** English UI strings (ADR-0022): same keys and placeholders as `ru`; glossary docs/i18n-glossary.md. */
 export const en: Dict = {
@@ -34,6 +35,7 @@ export const en: Dict = {
   ...enSounds,
   ...enBots,
   ...enGuests,
+  ...enTemp,
   ...enDm,
   ...enNotes,
   ...enCall,
@@ -279,6 +281,7 @@ export const en: Dict = {
   'perm.CREATE_TEMP_ROOMS': 'Create temporary rooms',
   'perm.hint.INVITE_MEMBERS': 'Invite links and e-mail invitations to the workspace; in a room, a link for workspace members only.',
   'perm.hint.INVITE_GUESTS': 'Guest links of rooms and deciding which waiting guests to let in.',
+  'perm.hint.CREATE_TEMP_ROOMS': 'Rooms for an hour or a few days with a guest link; they close by themselves, the history stays in the archive.',
   'perm.ADMINISTRATOR': 'Administrator',
   'perm.allow': 'allowed',
   'perm.deny': 'denied',

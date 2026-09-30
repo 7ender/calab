@@ -46,6 +46,8 @@ import {
   MessageCircle,
   Video,
   Volume2,
+  Link2,
+  Timer,
 } from 'lucide-react';
 import { Fragment, createContext, memo, useCallback, useContext, useEffect, useMemo, useRef, useState, type DragEvent as ReactDragEvent, type MouseEvent as ReactMouseEvent, type ReactNode, type RefObject } from 'react';
 import { createPortal } from 'react-dom';
@@ -55,7 +57,10 @@ import { confirmAction } from '../../components/Confirm';
 import { Badge, Button, Empty, Field, Input, Modal, Tip, cx } from '../../components/ui';
 import { plural, t, useLocale } from '../../i18n';
 import { api } from '../../lib/api/endpoints';
-import { can, mayArrangeRooms, mayInviteMembers, mayMoveMembersIn, mayMoveVoice, mayRoomInvite, roomPerms } from '../../lib/permissions';
+import { can, mayArrangeRooms, mayCreateTempRooms, mayInviteMembers, mayManageRoomWith, mayMoveMembersIn, mayMoveVoice, mayRoomInvite, roomPerms } from '../../lib/permissions';
+import { expiresMs, extendTo, formatRemaining, isExpiring, sortTempRooms } from '../../lib/tempRooms';
+import { addTempRoomMeeting, copyTempRoomLink, deleteTempRoom, extendTempRoom } from '../../services/tempRooms';
+import { useCalendar } from '../../stores/calendar';
 import { voice } from '../../services/voice';
 import { groupRooms, isUnread, isVoice, roomNotify, roomsOfWorkspace, showsUnread, useRooms, workspaceNotify } from '../../stores/rooms';
 import { setRoomNotifications } from '../../services/mentions';
@@ -165,15 +170,16 @@ export function Sidebar({ workspaceId }: { workspaceId: string }): ReactNode {
   // Pointer reordering on the desktop layout only: on a phone a drag would fight the scroll
   // (the room menu's «Переместить вверх/вниз» works everywhere).
   const canDrag = manageRooms && !mobile;
-  const groups = useMemo(() => {
+  const { groups, temps } = useMemo(() => {
     let rooms = roomsOfWorkspace(roomsById, workspaceId);
     // «Скрыть заглушённые»: the open room and my voice room stay (Discord).
     if (hideMuted) rooms = rooms.filter((r) => r.id === activeRoom || r.id === voiceRoom || roomNotify(notify[r.id]).mutedUntil === null);
     const cats = Object.values(categoriesById).filter((c) => c.workspaceId === workspaceId);
-    return groupRooms(rooms, cats, manageRooms);
+    // Temporary rooms (ADR-0044): the virtual «Временные» group under the categories, by expiry.
+    return { groups: groupRooms(rooms, cats, manageRooms), temps: sortTempRooms(rooms.filter((r) => !!r.expiresAt)) };
   }, [roomsById, categoriesById, workspaceId, manageRooms, hideMuted, notify, activeRoom, voiceRoom]);
   if (!entry) return null;
-  const empty = groups.length === 0;
+  const empty = groups.length === 0 && temps.length === 0;
 
   return (
     <aside className="mat-sidebar island-fade flex w-[var(--sidebar-width)] shrink-0 flex-col" aria-label={t('room.list')}>
@@ -238,6 +244,24 @@ export function Sidebar({ workspaceId }: { workspaceId: string }): ReactNode {
                 </CategoryGroup>
               );
             })}
+            {temps.length ? (
+              <TempGroup workspaceId={workspaceId}>
+                {temps.map((r) => (
+                  <VoiceRoomRow
+                    key={r.id}
+                    room={r}
+                    workspaceId={workspaceId}
+                    me={me}
+                    role={myRoles}
+                    admin={admin}
+                    voiceStates={voiceStates}
+                    container=""
+                    canOrder={false}
+                    canDrag={false}
+                  />
+                ))}
+              </TempGroup>
+            ) : null}
             <DropLine />
           </div>
         </SidebarMenu>
@@ -323,7 +347,15 @@ function WorkspaceHeader({ workspaceId, onCreateCategory }: { workspaceId: strin
         {/* Guests have no calendar or boards: no tabs (docs/09 #140). */}
         {guest ? <div className="flex-1" /> : <ModeTabs workspaceId={workspaceId} />}
         {manageRooms || inviter || !guest ? (
-          <CreateMenu workspaceId={workspaceId} onCreateCategory={onCreateCategory} rooms={manageRooms} invite={inviter} meeting={!guest} tasks={!guest} />
+          <CreateMenu
+            workspaceId={workspaceId}
+            onCreateCategory={onCreateCategory}
+            rooms={manageRooms}
+            temp={mayCreateTempRooms(myRoles)}
+            invite={inviter}
+            meeting={!guest}
+            tasks={!guest}
+          />
         ) : null}
       </div>
     </>
@@ -333,7 +365,8 @@ function WorkspaceHeader({ workspaceId, onCreateCategory }: { workspaceId: strin
 /**
  * «+» in the column header (owner, 28.09 / 29.09, docs/09 #135) — the header's only action button:
  * «Создать комнату» (the room dialog, text by default — it has the voice switch) and «Создать
- * категорию» (goes on top) with MANAGE_ROOM; after a separator «Добавить встречу» (members, not
+ * категорию» (goes on top) with MANAGE_ROOM; after a separator «Временная комната» (CREATE_TEMP_ROOMS,
+ * ADR-0044: the create dialog with its link), «Добавить встречу» (members, not
  * guests: the meeting dialog for today, the next quarter hour), «Создать задачу» (docs/09 #140: with
  * CREATE_TASKS on some board of the workspace — one board goes straight to it, several are a
  * submenu; the boards tab opens on that board with the create dialog) and, last, «Пригласить в
@@ -343,6 +376,7 @@ function CreateMenu({
   workspaceId,
   onCreateCategory,
   rooms,
+  temp,
   invite,
   meeting,
   tasks,
@@ -350,6 +384,8 @@ function CreateMenu({
   workspaceId: string;
   onCreateCategory: () => void;
   rooms: boolean;
+  /** CREATE_TEMP_ROOMS (ADR-0044): «Временная комната». */
+  temp: boolean;
   invite: boolean;
   meeting: boolean;
   tasks: boolean;
@@ -383,7 +419,12 @@ function CreateMenu({
               </Dropdown.Item>
             </>
           ) : null}
-          {rooms && (meeting || invite || taskBoards.length > 0) ? <Dropdown.Separator className={menuSeparator} /> : null}
+          {rooms && (temp || meeting || invite || taskBoards.length > 0) ? <Dropdown.Separator className={menuSeparator} /> : null}
+          {temp ? (
+            <Dropdown.Item className={menuItem} onSelect={() => open({ kind: 'temp-room-create', workspaceId })} data-testid="sidebar-new-temp">
+              <Timer className="size-4" /> {t('temp.create')}
+            </Dropdown.Item>
+          ) : null}
           {meeting ? (
             <Dropdown.Item className={menuItem} onSelect={() => newEvent(workspaceId, nextQuarter())} data-testid="sidebar-new-event">
               <CalendarPlus className="size-4" /> {t('shell.addMeeting')}
@@ -738,6 +779,10 @@ function RoomMenu({
 }): ReactNode {
   const open = useUi((s) => s.openDialog);
   const openRoom = useUi((s) => s.openRoom);
+  const temp = !!room.expiresAt;
+  // «Добавить встречу» only while the temporary room has no meeting (ADR-0044); a primitive, and
+  // permanent rooms answer false at once.
+  const hasEvent = useCalendar((s) => temp && (!!s.active[room.id]?.length || Object.values(s.occ).some((e) => e.roomId === room.id)));
   const last = useRooms((s) => s.lastMessage[room.id]);
   const unread = useRooms((s) => isUnread(room.id, s));
   const mobile = useMobile();
@@ -753,6 +798,8 @@ function RoomMenu({
     canManage,
     canOrder,
     hasCategories: canOrder && workspaceCategories(room.workspaceId).length > 0,
+    temp,
+    hasEvent,
   });
   const item = (id: RoomMenuItem): ReactNode => {
     switch (id) {
@@ -819,6 +866,26 @@ function RoomMenu({
         );
       case 'notify':
         return <RoomNotifySub key={id} room={room} />;
+      case 'copyLink':
+        return (
+          <ContextMenu.Item key={id} className={menuItem} data-testid="room-menu-copy-link" onSelect={() => void copyTempRoomLink(room)}>
+            <Link2 className="size-4" /> {t('temp.copyLink')}
+          </ContextMenu.Item>
+        );
+      case 'extend':
+        return <TempExtendSub key={id} room={room} />;
+      case 'addMeeting':
+        return (
+          <ContextMenu.Item key={id} className={menuItem} onSelect={() => addTempRoomMeeting(room)}>
+            <CalendarPlus className="size-4" /> {t('temp.addMeeting')}
+          </ContextMenu.Item>
+        );
+      case 'deleteRoom':
+        return (
+          <ContextMenu.Item key={id} className={cx(menuItem, 'text-danger-text')} data-testid="room-menu-delete" onSelect={() => void deleteTempRoom(room)}>
+            <Trash2 className="size-4" /> {t('temp.delete')}
+          </ContextMenu.Item>
+        );
       case 'moveUp':
       case 'moveDown':
       case 'toCategory':
@@ -873,6 +940,34 @@ function RoomNotifySub({ room }: { room: Room }): ReactNode {
             defaultLevel={NotificationLevel.INHERIT}
             onChange={(level, until) => void setRoomNotifications(room.id, level, until)}
           />
+        </ContextMenu.SubContent>
+      </ContextMenu.Portal>
+    </ContextMenu.Sub>
+  );
+}
+
+/** «Продлить ›» of a temporary room (ADR-0044): +1 ч / +1 день from its end (≤ 7 days from now), or a date. */
+function TempExtendSub({ room }: { room: Room }): ReactNode {
+  const open = useUi((s) => s.openDialog);
+  const by = (ms: number): void => void extendTempRoom(room.id, extendTo(expiresMs(room), ms, Date.now()));
+  return (
+    <ContextMenu.Sub>
+      <ContextMenu.SubTrigger className={cx(menuItem, 'data-[state=open]:not-data-[highlighted]:bg-hover')} data-testid="room-menu-extend">
+        <Timer className="size-4" aria-hidden />
+        <span className="flex-1">{t('temp.extend')}</span>
+        <ChevronRight className="size-4" aria-hidden />
+      </ContextMenu.SubTrigger>
+      <ContextMenu.Portal>
+        <ContextMenu.SubContent className={cx(menuBox, 'w-48')} sideOffset={4} collisionPadding={16}>
+          <ContextMenu.Item className={menuItem} onSelect={() => by(3_600_000)}>
+            {t('temp.extend1h')}
+          </ContextMenu.Item>
+          <ContextMenu.Item className={menuItem} onSelect={() => by(24 * 3_600_000)}>
+            {t('temp.extend1d')}
+          </ContextMenu.Item>
+          <ContextMenu.Item className={menuItem} onSelect={() => open({ kind: 'temp-room-extend', roomId: room.id })}>
+            {t('temp.extendDate')}
+          </ContextMenu.Item>
         </ContextMenu.SubContent>
       </ContextMenu.Portal>
     </ContextMenu.Sub>
@@ -1091,7 +1186,12 @@ function VoiceRoomRow({
   );
   const canConnect = can(perms, 'CONNECT');
   const canMove = mayMoveMembersIn(role, me, room);
-  const statusLine = useStatusLine(room.id, inRoom, canConnect, can(perms, 'MANAGE_ROOM'));
+  // A temporary room (ADR-0044): its creator manages it too; it sits in «Временные», not in the
+  // reorder layout (no drop slot).
+  const expires = expiresMs(room);
+  const temp = expires > 0;
+  const canManage = mayManageRoomWith(perms, role, me, room);
+  const statusLine = useStatusLine(room.id, inRoom, canConnect, canManage);
   const card = statusLine.shown;
   const limit = room.userLimit;
   // Unlike the click guard (joinOutcome: never blocks re-entering my own room), the invite row (docs/09 #10) hides whenever the room is actually at its limit, me included.
@@ -1120,8 +1220,8 @@ function VoiceRoomRow({
   return (
     <div
       ref={refs}
-      data-room-slot={room.id}
-      data-slot-category={container}
+      data-room-slot={temp ? undefined : room.id}
+      data-slot-category={temp ? undefined : container}
       {...msgDrop}
       className={cx(
         'rounded-[var(--radius-card)] transition-colors duration-[var(--motion-fast)]',
@@ -1142,7 +1242,7 @@ function VoiceRoomRow({
               },
             })}
       >
-        <RoomMenu room={room} canManage={can(perms, 'MANAGE_ROOM')} canOrder={canOrder} admin={admin} inviteRoom={mayRoomInvite(perms)} guest={role.some((r) => r.builtin === WorkspaceRole.GUEST)}>
+        <RoomMenu room={room} canManage={canManage} canOrder={canOrder} admin={admin} inviteRoom={mayRoomInvite(perms)} guest={role.some((r) => r.builtin === WorkspaceRole.GUEST)}>
           {/* With a status line the room is one raised two-line card (Discord): name + status. */}
           <div
             className={cx(
@@ -1169,6 +1269,8 @@ function VoiceRoomRow({
                 <span className="relative inline-flex shrink-0">
                   {connecting ? (
                     <Loader2 className="size-[18px] animate-spin text-muted" aria-label={t('voice.connecting')} role="img" />
+                  ) : temp ? (
+                    <TempIcon expires={expires} inRoom={inRoom} />
                   ) : (
                     <Volume2 className={cx('size-[18px]', inRoom ? 'text-ok' : 'text-muted')} aria-hidden />
                   )}
@@ -1180,9 +1282,10 @@ function VoiceRoomRow({
                     </span>
                   ) : null}
                 </span>
-                <span className="min-w-0 flex-1 truncate" title={room.name}>
+                <span className={cx('min-w-0 truncate', !temp && 'flex-1')} title={room.name}>
                   {room.name}
                 </span>
+                {temp ? <TempLeft expires={expires} /> : null}
               </button>
               <span className={cx('flex shrink-0 items-center gap-1', !card && 'pr-2.5')}>
                 <KnockBadge roomId={room.id} />
@@ -1228,6 +1331,86 @@ function VoiceRoomRow({
       ) : null}
       {inRoom && mayRoomInvite(perms) ? <VoiceInviteRow roomId={room.id} full={atCapacity} /> : null}
     </div>
+  );
+}
+
+/** Re-render cadence of the temporary rooms' countdown (ADR-0044): one shared 30 s ticker. */
+const TEMP_TICK = 30_000;
+
+/**
+ * The temporary room's icon (ADR-0044): `Timer` instead of the speaker — green while I am in it,
+ * the attention colour under 10 minutes. A leaf with its own 30 s clock: the row does not tick.
+ */
+const TempIcon = memo(function TempIcon({ expires, inRoom }: { expires: number; inRoom: boolean }): ReactNode {
+  const now = useNow(TEMP_TICK);
+  const soon = isExpiring(expires - now);
+  return (
+    <Timer
+      className={cx('size-[18px]', soon ? 'text-attention' : inRoom ? 'text-ok' : 'text-muted')}
+      aria-label={t('temp.icon')}
+      role="img"
+      data-testid="temp-icon"
+      data-expiring={soon || undefined}
+    />
+  );
+});
+
+/** «1 ч 20 м» after a temporary room's name: secondary, tabular; the attention colour under 10 minutes. */
+const TempLeft = memo(function TempLeft({ expires }: { expires: number }): ReactNode {
+  useLocale();
+  const now = useNow(TEMP_TICK);
+  const left = expires - now;
+  const text = formatRemaining(left, remainingUnits);
+  return (
+    <span
+      className={cx('shrink-0 text-micro font-medium tabular-nums', isExpiring(left) ? 'text-attention' : 'text-muted')}
+      aria-label={t('temp.left', { left: text })}
+      data-testid="temp-left"
+    >
+      {text}
+    </span>
+  );
+});
+
+const remainingUnits = {
+  d: (n: number) => t('temp.unit.d', { n }),
+  h: (n: number) => t('temp.unit.h', { n }),
+  m: (n: number) => t('temp.unit.m', { n }),
+};
+
+/**
+ * «Временные» (ADR-0044): a virtual group under the categories — not a DB category, not dragged,
+ * hidden when empty. Collapsible like a category (the open room and my voice room stay visible).
+ */
+function TempGroup({ workspaceId, children }: { workspaceId: string; children: ReactNode[] }): ReactNode {
+  const key = `temp:${workspaceId}`;
+  const collapsed = useUi((s) => !!s.collapsed[key]);
+  const toggle = useUi((s) => s.toggleCategory);
+  const activeRoom = useUi((s) => s.lastRoom[workspaceId]);
+  const voiceRoom = useVoice((s) => s.roomId);
+  const title = t('temp.group');
+  const visible = collapsed
+    ? children.filter((c) => {
+        const k = (c as { key?: string | null }).key;
+        return k === activeRoom || k === voiceRoom;
+      })
+    : children;
+  return (
+    <section className="mb-1" aria-label={title} data-testid="temp-group">
+      <div className="flex h-7 items-center pr-1 pt-1">
+        <button
+          type="button"
+          onClick={() => toggle(key)}
+          aria-expanded={!collapsed}
+          aria-label={collapsed ? t('shell.categoryExpand', { name: title }) : t('shell.categoryCollapse', { name: title })}
+          className="flex h-6 min-w-0 flex-1 items-center gap-0.5 rounded-[4px] pl-0.5 text-left text-micro font-semibold uppercase tracking-[0.04em] text-muted transition-colors duration-[var(--motion-fast)] hover:text-fg"
+        >
+          <ChevronDown className={cx('size-3 shrink-0 transition-transform duration-[var(--motion-fast)]', collapsed && '-rotate-90')} strokeWidth={2.25} aria-hidden />
+          <span className="truncate">{title}</span>
+        </button>
+      </div>
+      {visible.length ? <div className="mt-0.5 flex flex-col gap-px">{visible}</div> : null}
+    </section>
   );
 }
 

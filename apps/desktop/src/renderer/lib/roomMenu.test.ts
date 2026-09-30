@@ -38,4 +38,21 @@ describe('roomMenuGroups', () => {
   it('no categories: no «В категорию ›»', () => {
     expect(roomMenuGroups({ ...base, canOrder: true })[2]).toEqual(['moveUp', 'moveDown']);
   });
+
+  it('a temporary room I manage (ADR-0044): link, extend, meeting, delete; no reorder', () => {
+    expect(roomMenuGroups({ ...base, canManage: true, canOrder: true, hasCategories: true, temp: true })).toEqual([
+      ['record', 'settings'],
+      ['copyLink', 'extend', 'addMeeting'],
+      ['markRead', 'notify'],
+      ['deleteRoom'],
+    ]);
+  });
+
+  it('a temporary room with a meeting already: no «Добавить встречу»', () => {
+    expect(roomMenuGroups({ ...base, canManage: true, temp: true, hasEvent: true })[1]).toEqual(['copyLink', 'extend']);
+  });
+
+  it('a temporary room of someone else: the voice room items only', () => {
+    expect(roomMenuGroups({ ...base, canOrder: true, temp: true })).toEqual([['record'], ['markRead', 'notify']]);
+  });
 });

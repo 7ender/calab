@@ -128,7 +128,7 @@ export type PermGroupId = 'general' | 'invites' | 'rooms' | 'voice' | 'moderatio
 export const ROLE_PERM_GROUPS: ReadonlyArray<{ id: PermGroupId; perms: readonly PermissionName[] }> = [
   { id: 'general', perms: ['MANAGE_WORKSPACE', 'MANAGE_ROLES', 'MANAGE_ROOM', 'MANAGE_NICKNAMES', 'MANAGE_STICKERS'] },
   { id: 'invites', perms: ['INVITE_MEMBERS', 'INVITE_GUESTS'] },
-  { id: 'rooms', perms: ['VIEW_ROOM', 'SEND_MESSAGES', 'ATTACH_FILES', 'MENTION_EVERYONE'] },
+  { id: 'rooms', perms: ['VIEW_ROOM', 'SEND_MESSAGES', 'ATTACH_FILES', 'MENTION_EVERYONE', 'CREATE_TEMP_ROOMS'] },
   { id: 'voice', perms: ['CONNECT', 'SPEAK', 'STREAM', 'VIDEO'] },
   { id: 'moderation', perms: ['MANAGE_MESSAGES', 'MUTE_MEMBERS', 'MOVE_MEMBERS'] },
 ];

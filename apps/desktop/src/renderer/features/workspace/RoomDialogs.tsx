@@ -11,7 +11,7 @@ import {
   type Role,
 } from '@calaba/protocol';
 import { useMutation } from '@tanstack/react-query';
-import { AudioLines, Check, Hash, Link2, Minus, Plus, Settings2, ShieldCheck, Volume2, X } from 'lucide-react';
+import { AudioLines, Check, Hash, Link2, Minus, Plus, Settings2, ShieldCheck, Timer, Volume2, X } from 'lucide-react';
 import { useCallback, useMemo, useState, type ReactNode } from 'react';
 import { confirmAction } from '../../components/Confirm';
 import { Button, Card, Field, Input, Modal, Row, Select, Switch, Tip, Toggle, cx } from '../../components/ui';
@@ -19,7 +19,7 @@ import { t, type MessageKey } from '../../i18n';
 import { errorText } from '../../lib/api/errors';
 import { audioTierLabel } from '../../lib/audioTierLabel';
 import { api } from '../../lib/api/endpoints';
-import { can, isAdminRole, mayInviteGuestsIn, mayManageWorkspace, roomPerms, ROOM_EDITABLE, compactDrafts, toDrafts, triOf, withTri, type OverrideDraft, type Tri } from '../../lib/permissions';
+import { isAdminRole, mayInviteGuestsIn, mayManageRoom, mayManageWorkspace, ROOM_EDITABLE, compactDrafts, toDrafts, triOf, withTri, type OverrideDraft, type Tri } from '../../lib/permissions';
 import { useRooms } from '../../stores/rooms';
 import { toast } from '../../stores/toasts';
 import { useUi } from '../../stores/ui';
@@ -153,7 +153,8 @@ export function RoomSettingsDialog({ roomId, tab, onClose }: { roomId: string; t
   const voice = room.type === RoomType.VOICE;
   // By right, as the server checks (ADR-0043): the room's settings — MANAGE_ROOM; its guest
   // links — INVITE_GUESTS (a room's inviter may hold only that).
-  const manage = can(roomPerms(roles, me, room), 'MANAGE_ROOM');
+  // A temporary room's creator manages it too (ADR-0044, the server's rooms.MayManage).
+  const manage = mayManageRoom(roles, me, room);
   const guests = mayInviteGuestsIn(roles, me, room);
   const sections: SettingsSection[] = [
     ...(manage
@@ -166,7 +167,7 @@ export function RoomSettingsDialog({ roomId, tab, onClose }: { roomId: string; t
     ...(guests ? [{ id: 'guests', label: t('people.link.tab'), icon: Link2, content: <RoomLinkTab roomId={roomId} manage={manage} /> }] : []),
   ];
   if (sections.length === 0) return null;
-  const Glyph = voice ? Volume2 : Hash;
+  const Glyph = room.expiresAt ? Timer : voice ? Volume2 : Hash;
   return (
     <SettingsWindow
       title={room.name}
@@ -360,6 +361,7 @@ export const PERM_LABEL: Record<PermissionName, MessageKey> = {
 export const PERM_HINT: Partial<Record<PermissionName, MessageKey>> = {
   INVITE_MEMBERS: 'perm.hint.INVITE_MEMBERS',
   INVITE_GUESTS: 'perm.hint.INVITE_GUESTS',
+  CREATE_TEMP_ROOMS: 'perm.hint.CREATE_TEMP_ROOMS',
 };
 
 function targetKey(o: Pick<OverrideDraft, 'targetType' | 'targetId'>): string {

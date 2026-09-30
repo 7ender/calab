@@ -19,7 +19,8 @@ import { api, thumbnailPath, uploadFile, uploadPath } from '../../lib/api/endpoi
 import { fmt, type TimeFormatPref } from '../../lib/format';
 import { ICON_SIDE, IMAGE_ACCEPT, avatarFile } from '../../lib/image';
 import { workspaceInitials } from '../../lib/initials';
-import { can, mayInviteMembers, mayManageWorkspace, workspacePerms } from '../../lib/permissions';
+import { can, mayArrangeRooms, mayInviteMembers, mayManageWorkspace, workspacePerms } from '../../lib/permissions';
+import { TempRoomsCards } from './TempRoomsCards';
 import { inviteUrl } from '../../services/links';
 import { useSession } from '../../stores/session';
 import { toast } from '../../stores/toasts';
@@ -87,7 +88,12 @@ export function WorkspaceSettingsDialog({
   const sections: SettingsSection[] = [
     ...(admin
       ? [
-          { id: 'general', label: t('ws.tabGeneral'), icon: Settings2, content: <GeneralTab workspaceId={workspaceId} /> },
+          {
+            id: 'general',
+            label: t('ws.tabGeneral'),
+            icon: Settings2,
+            content: <GeneralTab workspaceId={workspaceId} manageRoles={manageRoles} manageRooms={mayArrangeRooms(myRoles)} />,
+          },
           { id: 'media', label: t('ws.tabMedia'), icon: AudioLines, content: <MediaTab workspaceId={workspaceId} /> },
         ]
       : []),
@@ -139,7 +145,7 @@ function WorkspaceGlyph({ name, iconFileId, size }: { name: string; iconFileId: 
   );
 }
 
-function GeneralTab({ workspaceId }: { workspaceId: string }): ReactNode {
+function GeneralTab({ workspaceId, manageRoles, manageRooms }: { workspaceId: string; manageRoles: boolean; manageRooms: boolean }): ReactNode {
   const ws = useWorkspaces((s) => s.byId[workspaceId]?.ws);
   const [uploading, setUploading] = useState(false);
   const input = useRef<HTMLInputElement>(null);
@@ -212,6 +218,8 @@ function GeneralTab({ workspaceId }: { workspaceId: string }): ReactNode {
           />
         </Row>
       </Card>
+      {/* Temporary rooms (ADR-0044): the members' right (MANAGE_ROLES) and the archive (MANAGE_ROOM). */}
+      <TempRoomsCards workspaceId={workspaceId} manageRoles={manageRoles} manageRooms={manageRooms} />
     </>
   );
 }

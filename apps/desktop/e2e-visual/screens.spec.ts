@@ -161,6 +161,12 @@ const KEY = new Set([
   // Timeline and task cards in chat (ADR-0042 §5, 1.1.0).
   'boards-timeline',
   'chat-task-card',
+  // Temporary rooms (ADR-0044).
+  'sidebar-temp-room',
+  'temp-room-dialog',
+  'temp-room-dialog-result',
+  'temp-room-menu',
+  'settings-temp-archive',
 ]);
 
 // Non-key screens: skipped unless CALABA_VISUAL_ALL=1 (before any fixture, so no app launch).
@@ -1370,9 +1376,107 @@ test('sidebar-create-menu', async ({ open, win, mock, shot }) => {
   await expect(menu.getByRole('menuitem', { name: 'Создать комнату' })).toBeVisible();
   await expect(menu.getByRole('menuitem', { name: 'Создать категорию' })).toBeVisible();
   // docs/09 #135 / #140: the header's only «+» also adds a meeting, creates a task and, last, invites to the workspace.
-  await expect(menu.getByRole('menuitem')).toHaveText(['Создать комнату', 'Создать категорию', 'Добавить встречу', 'Создать задачу', 'Пригласить в пространство']);
+  await expect(menu.getByRole('menuitem')).toHaveText(['Создать комнату', 'Создать категорию', 'Временная комната', 'Добавить встречу', 'Создать задачу', 'Пригласить в пространство']);
   await expect(win.locator('aside').getByRole('button', { name: 'Пригласить людей' })).toHaveCount(0);
   await checkpoint(shot, 'sidebar-create-menu');
+});
+
+// ---------------------------------------------------------------- temporary rooms (ADR-0044)
+
+/**
+ * Two temporary rooms of Анна in «Команда Calab» on the page's clock: «Встреча с клиентом» (1 ч 20 м
+ * left) and a private «Демо для партнёров» closing in 9 minutes (attention colour). Returns «now».
+ */
+async function seedTempRooms(win: Page, mock: MockServer): Promise<number> {
+  const nowMs = await win.evaluate(() => Date.now());
+  mock.setClock(nowMs);
+  mock.addTempRoom({ workspaceId: IDS.workspaces.main, name: 'Встреча с клиентом', expiresAtMs: nowMs + 80 * 60_000 });
+  mock.addTempRoom({ workspaceId: IDS.workspaces.main, name: 'Демо для партнёров', expiresAtMs: nowMs + 9 * 60_000, isPrivate: true });
+  const group = win.getByTestId('temp-group');
+  await expect(group.getByTestId('temp-left')).toHaveText(['9 м', '1 ч 20 м']);
+  return nowMs;
+}
+
+/** The «Временные» group under the categories: Timer rows, the remaining time, orange under 10 minutes. */
+test('sidebar-temp-room', async ({ open, win, mock, shot }) => {
+  await open();
+  await mainWindow(win, mock);
+  await seedTempRooms(win, mock);
+  const group = win.getByTestId('temp-group');
+  await expect(group.getByRole('button', { name: 'Свернуть «Временные»' })).toBeVisible();
+  await expect(group.locator('[data-testid="temp-icon"][data-expiring]')).toHaveCount(1);
+  await checkpoint(shot, 'sidebar-temp-room');
+});
+
+/** «+» → «Временная комната»: name, lifetime presets, «Только выбранные» with the people field, switches. */
+test('temp-room-dialog', async ({ open, win, mock, shot }) => {
+  await open();
+  await mainWindow(win, mock);
+  await win.getByTestId('sidebar-create').click();
+  await win.getByRole('menuitem', { name: 'Временная комната' }).click();
+  const dialog = win.getByRole('dialog');
+  await expect(dialog.getByRole('textbox', { name: 'Название' })).toBeFocused();
+  await dialog.getByRole('textbox', { name: 'Название' }).fill('Встреча с клиентом');
+  await dialog.getByRole('radio', { name: '3 ч' }).click();
+  await dialog.getByRole('radio', { name: 'Только выбранные' }).click();
+  await expect(dialog.getByTestId('temp-people-add')).toBeVisible();
+  await expect(dialog.getByRole('switch', { name: 'Пускать гостей по ссылке' })).toBeChecked();
+  await checkpoint(shot, 'temp-room-dialog');
+});
+
+/** After «Создать»: the link at once, «Скопировать», «Войти», «Готово»; the room is in the list. */
+test('temp-room-dialog-result', async ({ open, win, mock, shot }) => {
+  await open();
+  await mainWindow(win, mock);
+  mock.setClock(await win.evaluate(() => Date.now()));
+  await win.getByTestId('sidebar-create').click();
+  await win.getByRole('menuitem', { name: 'Временная комната' }).click();
+  const dialog = win.getByRole('dialog');
+  await dialog.getByRole('textbox', { name: 'Название' }).fill('Встреча с клиентом');
+  await win.keyboard.press('Enter');
+  await expect(dialog.getByTestId('temp-room-result')).toBeVisible();
+  await expect(dialog.getByRole('heading')).toHaveText('Комната «Встреча с клиентом» готова');
+  await expect(win.getByTestId('temp-group')).toContainText('Встреча с клиентом');
+  // The link carries the mock's port (per worker): masked.
+  await checkpoint(shot, 'temp-room-dialog-result', { mask: [dialog.getByRole('textbox', { name: 'Ссылка на комнату' })] });
+});
+
+/** The row menu of my temporary room: the voice room items plus link · extend › · meeting · delete. */
+test('temp-room-menu', async ({ open, win, mock, shot }) => {
+  await open();
+  await mainWindow(win, mock);
+  await seedTempRooms(win, mock);
+  await win.getByTestId('temp-group').getByRole('button', { name: /Встреча с клиентом/ }).first().click({ button: 'right' });
+  const menu = win.getByRole('menu');
+  await expect(menu.getByRole('menuitem', { name: 'Скопировать ссылку' })).toBeVisible();
+  await expect(menu.getByRole('menuitem', { name: 'Удалить комнату' })).toBeVisible();
+  await expect(menu.getByRole('menuitem', { name: 'Переместить вверх' })).toHaveCount(0);
+  await checkpoint(shot, 'temp-room-menu');
+});
+
+/** Workspace settings → «Общие»: the members' temporary-room switch and the archive of closed rooms. */
+test('settings-temp-archive', async ({ open, win, mock, shot }) => {
+  await open();
+  await mainWindow(win, mock);
+  const nowMs = await win.evaluate(() => Date.now());
+  mock.setClock(nowMs - 2 * 3_600_000);
+  const room = mock.addTempRoom({ workspaceId: IDS.workspaces.main, name: 'Созвон с подрядчиком', expiresAtMs: nowMs - 3_600_000, createdBy: IDS.users.vera });
+  mock.injectMessage({ roomId: room.id, authorId: IDS.users.vera, content: 'Спасибо, договорились' });
+  mock.injectMessage({ roomId: room.id, authorId: IDS.users.anna, content: 'До связи' });
+  mock.setClock(nowMs - 3_600_000);
+  mock.expireTempRooms();
+  mock.setClock(nowMs);
+  await win.getByTestId('titlebar-title').click();
+  await win.getByRole('menuitem', { name: 'Настройки пространства' }).click();
+  await expect(win.getByTestId('temp-archive-row')).toHaveCount(1);
+  await win.getByTestId('temp-archive').scrollIntoViewIfNeeded();
+  await expect(win.getByTestId('temp-archive-row')).toContainText('2 сообщения');
+  await checkpoint(shot, 'settings-temp-archive');
+  // «Открыть историю»: the read-only chat under «Комната в архиве», no composer.
+  await win.getByTestId('temp-archive-row').getByRole('button', { name: 'Открыть историю' }).click();
+  await expect(win.getByTestId('archived-banner')).toContainText('Комната в архиве');
+  await expect(win.getByTestId('archived-chat')).toContainText('До связи');
+  await expect(win.getByTestId('composer')).toHaveCount(0);
 });
 
 /** Settings windows: one test per section (left list = role «tab»), numbered like the snapshots. */

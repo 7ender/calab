@@ -22,6 +22,7 @@ import { esStickers } from './stickers';
 import { esSounds } from './sounds';
 import { esBots } from './bots';
 import { esGuests } from './guests';
+import { esTemp } from './temp';
 
 /** Spanish UI strings (ADR-0022): same keys and placeholders as `ru`/`en`; glossary docs/i18n-glossary.md. */
 export const es: Dict = {
@@ -34,6 +35,7 @@ export const es: Dict = {
   ...esSounds,
   ...esBots,
   ...esGuests,
+  ...esTemp,
   ...esDm,
   ...esNotes,
   ...esCall,
@@ -279,6 +281,7 @@ export const es: Dict = {
   'perm.CREATE_TEMP_ROOMS': 'Crear salas temporales',
   'perm.hint.INVITE_MEMBERS': 'Enlaces de invitación e invitaciones por correo al espacio; en una sala, un enlace solo para miembros del espacio.',
   'perm.hint.INVITE_GUESTS': 'Enlaces de invitado de las salas y decidir a qué invitados en espera dejar pasar.',
+  'perm.hint.CREATE_TEMP_ROOMS': 'Salas para una hora o unos días con enlace para invitados; se cierran solas y el historial queda en el archivo.',
   'perm.ADMINISTRATOR': 'Administrador',
   'perm.allow': 'permitido',
   'perm.deny': 'denegado',

@@ -1,7 +1,7 @@
 import { NotificationLevel, PresenceStatus, RoomType, WorkspaceRole, type Message, type PermissionBits, type Room } from '@calaba/protocol';
 import * as Dropdown from '@radix-ui/react-dropdown-menu';
 import * as Popover from '@radix-ui/react-popover';
-import { Bell, BellOff, BellRing, Hash, Phone, Pin, PinOff, Search, Settings, Users, Volume2 } from 'lucide-react';
+import { Bell, BellOff, BellRing, Hash, Phone, Pin, PinOff, Search, Settings, Timer, Users, Volume2 } from 'lucide-react';
 import { useCallback, useEffect, useLayoutEffect, useRef, useState, type ReactNode } from 'react';
 import { Avatar } from '../../components/Avatar';
 import { Button, IconButton, MOD, Tip, cx } from '../../components/ui';
@@ -63,7 +63,8 @@ export function RoomHeader({
   const searchOpen = useChatView((s) => s.searchRoom === room.id);
   const setSearch = useChatView((s) => s.setSearch);
   const voiceRoom = room.type === RoomType.VOICE;
-  const Icon = voiceRoom ? Volume2 : Hash;
+  // A temporary room (ADR-0044): its own `Timer` icon, as in the room list.
+  const Icon = room.expiresAt ? Timer : voiceRoom ? Volume2 : Hash;
   // Phone layout (ADR-0021): this header is the top bar — ☰ (rooms drawer) first, the name takes
   // the room; search, notifications and members stay (pins show in the pinned bar, room settings in
   // the drawer's room menu), 40 px touch targets.

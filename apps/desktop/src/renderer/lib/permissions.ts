@@ -77,6 +77,33 @@ export function mayInviteGuestsIn(roles: readonly RoleBits[] | undefined, userId
   return roomInviteAllowed(roles, userId, room, 'INVITE_GUESTS');
 }
 
+/**
+ * Temporary rooms (ADR-0044): «+» → «Временная комната» — workspace CREATE_TEMP_ROOMS (members by
+ * default); guests never.
+ */
+export function mayCreateTempRooms(roles: readonly RoleBits[] | undefined): boolean {
+  return !isGuestOnly(roles) && can(workspacePerms(roles), 'CREATE_TEMP_ROOMS');
+}
+
+/**
+ * Managing a room (settings, link, extend, delete): MANAGE_ROOM in it, or — a temporary room — its
+ * creator (ADR-0044 «Контракт для клиента»: `expires_at && created_by == me && not a guest`). The
+ * server does the same check (rooms.MayManage).
+ */
+export function mayManageRoom(roles: readonly RoleBits[] | undefined, userId: string, room: Room | undefined): boolean {
+  if (!room) return false;
+  return can(roomPerms(roles, userId, room), 'MANAGE_ROOM') || isTempCreator(roles, userId, room);
+}
+
+/** The same from already computed room bits (rows that have them). */
+export function mayManageRoomWith(perms: PermissionBits, roles: readonly RoleBits[] | undefined, userId: string, room: Room): boolean {
+  return can(perms, 'MANAGE_ROOM') || isTempCreator(roles, userId, room);
+}
+
+function isTempCreator(roles: readonly RoleBits[] | undefined, userId: string, room: Room): boolean {
+  return !!room.expiresAt && !!userId && room.createdBy === userId && !isGuestOnly(roles);
+}
+
 /** A room invite right in already computed room bits (rows that have them): either bit. */
 export function mayRoomInvite(perms: PermissionBits): boolean {
   return can(perms, 'INVITE_GUESTS') || can(perms, 'INVITE_MEMBERS');
