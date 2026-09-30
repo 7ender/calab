@@ -86,11 +86,19 @@ export function gridWindow(month: string, first: 0 | 1 = weekStart()): [number, 
   return [dayStart(g[0] ?? `${month}-01`), dayEnd(g[41] ?? `${month}-28`)];
 }
 
-/** Narrow weekday names in grid order («П В С Ч П С В»). */
+/**
+ * Short weekday names in grid order (owner, 30.09; docs/09 #140): «Пн Вт Ср Чт Пт Сб Вс», «Mon»,
+ * «Lun», «周一» — the locale's short form without a trailing dot, the first letter capitalised.
+ */
 export function weekdayNames(first: 0 | 1 = weekStart()): string[] {
-  const f = dateTimeFormat({ weekday: 'narrow' });
+  const f = dateTimeFormat({ weekday: 'short' });
   // 2026-01-04 is a Sunday.
-  return Array.from({ length: 7 }, (_, i) => f.format(new Date(2026, 0, 4 + first + i)));
+  return Array.from({ length: 7 }, (_, i) => shortWeekday(f.format(new Date(2026, 0, 4 + first + i))));
+}
+
+export function shortWeekday(s: string): string {
+  const w = s.replace(/\.$/, '');
+  return w.charAt(0).toLocaleUpperCase() + w.slice(1);
 }
 
 const tsMs = (ts: Timestamp | undefined, fallback = 0): number => (ts ? timestampMs(ts) : fallback);

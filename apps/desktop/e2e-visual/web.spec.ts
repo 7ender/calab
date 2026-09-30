@@ -45,13 +45,12 @@ for (const theme of THEMES) {
         const box = await bar.boundingBox();
         expect(box?.height, 'web top bar height').toBe(30);
         expect(box?.y).toBe(0);
-        // No traffic-light inset: ← sits at the left edge (8 px padding).
-        const back = await bar.getByRole('button', { name: 'Назад' }).boundingBox();
-        expect(back?.x ?? 99, '← at the left edge').toBeLessThanOrEqual(12);
-        // «Calab» centred in the window (±4 px; docs/09 #127).
-        await expect(bar.getByTestId('titlebar-title')).toHaveText('Calab');
-        const title = await bar.getByTestId('titlebar-title').boundingBox();
-        expect(Math.abs((title ? title.x + title.width / 2 : 0) - viewport.width / 2), 'title centred').toBeLessThanOrEqual(4);
+        // No traffic-light inset: the workspace menu sits at the left edge (docs/09 #140; no «‹ ›»).
+        const title = bar.getByTestId('titlebar-title');
+        await expect(title).toHaveText('Команда Calab');
+        await expect(bar.getByRole('button', { name: 'Назад' })).toHaveCount(0);
+        const box2 = await title.boundingBox();
+        expect(box2?.x ?? 99, 'workspace menu at the left edge').toBeLessThanOrEqual(8);
         await expect(bar.getByRole('button', { name: /^Упоминания/ })).toBeVisible();
         await expect(bar.getByRole('button', { name: 'Горячие клавиши' })).toBeVisible();
         // The search pill: at every width (docs/09 #53, no field in the room header).

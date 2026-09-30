@@ -6,8 +6,12 @@
 export const ruShell = {
   // title bar
   'shell.titlebar': 'Панель окна',
+  'shell.modes': 'Режим пространства',
+  'shell.modeVoice': 'Голос',
+  'shell.modeBoards': 'Доски',
+  'shell.createTask': 'Создать задачу',
+  'shell.createTaskOn': 'На доске',
   'shell.back': 'Назад',
-  'shell.forward': 'Вперёд',
   'shell.search': 'Поиск',
   'shell.inbox': 'Упоминания',
   'shell.inboxEmpty': 'Новых упоминаний нет',

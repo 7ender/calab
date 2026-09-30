@@ -12,23 +12,33 @@ import { AT_15, DAY, HOUR, expect, openDay, signIn, test } from './calendarWeb';
 const W = IDS.workspaces.main;
 const U = IDS.users;
 
-test('the calendar icon opens today’s day view at once; a second click goes back to the room', async ({ page, mock }) => {
+test('the «Календарь» tab opens today’s day view at once; «Голос» goes back to the room; ←/→ switch tabs', async ({ page, mock }) => {
   await signIn(page, mock);
   await expect(page.getByRole('heading', { name: 'общий' })).toBeVisible();
-  const icon = page.getByTestId('calendar-button');
-  await icon.click();
+  const tab = page.getByTestId('calendar-button');
+  const voice = page.getByTestId('mode-voice');
+  await expect(voice).toHaveAttribute('aria-selected', 'true');
+  await tab.click();
   await expect(page.getByTestId('day-view')).toBeVisible();
   await expect(page.getByTestId('day-view').getByRole('heading', { level: 1 })).toHaveText(/15 января/);
   await expect(page.getByTestId('mini-calendar')).toBeVisible();
-  await expect(icon).toHaveAttribute('aria-expanded', 'true');
-  // Keyboard: the same button, Enter.
-  await icon.focus();
-  await page.keyboard.press('Enter');
+  await expect(tab).toHaveAttribute('aria-selected', 'true');
+  // Keyboard (docs/09 #140): ← from «Календарь» selects «Голос» — the room again.
+  await tab.focus();
+  await page.keyboard.press('ArrowLeft');
+  await expect(voice).toHaveAttribute('aria-selected', 'true');
+  await expect(voice).toBeFocused();
   await expect(page.getByTestId('day-view')).toHaveCount(0);
   await expect(page.getByTestId('mini-calendar')).toHaveCount(0);
   await expect(page.getByRole('heading', { name: 'общий' })).toBeVisible();
-  await icon.focus();
-  await page.keyboard.press('Space');
+  // → twice: «Доски» (the calendar is off), then ← back to «Календарь» (the boards are off).
+  await page.keyboard.press('ArrowRight');
+  await expect(page.getByTestId('day-view')).toBeVisible();
+  await page.keyboard.press('ArrowRight');
+  await expect(page.getByTestId('boards-button')).toHaveAttribute('aria-selected', 'true');
+  await expect(page.getByTestId('day-view')).toHaveCount(0);
+  await page.keyboard.press('ArrowLeft');
+  await expect(tab).toHaveAttribute('aria-selected', 'true');
   await expect(page.getByTestId('day-view')).toBeVisible();
 });
 

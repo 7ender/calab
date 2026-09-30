@@ -8,8 +8,12 @@ import type { DictShape } from '../types';
 export const esShell: DictShape<typeof enShell> = {
   // title bar
   'shell.titlebar': 'Barra de la ventana',
+  'shell.modes': 'Modo del espacio',
+  'shell.modeVoice': 'Voz',
+  'shell.modeBoards': 'Tableros',
+  'shell.createTask': 'Crear tarea',
+  'shell.createTaskOn': 'En el tablero',
   'shell.back': 'Atrás',
-  'shell.forward': 'Adelante',
   'shell.search': 'Buscar',
   'shell.inbox': 'Menciones',
   'shell.inboxEmpty': 'No hay menciones nuevas',
