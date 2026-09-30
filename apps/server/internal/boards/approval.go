@@ -123,6 +123,19 @@ func checkApprovalGate(t Tally, from, to sqlc.BoardStatus) error {
 	if !t.Blocks() || !Forward(from, to) {
 		return nil
 	}
+	return approvalRequired(t)
+}
+
+// checkCreateGate: a new task with approvers cannot start in a COMPLETED status — its votes are
+// all pending, the same 409 as the gate (lead decision on ADR-0049 §2).
+func checkCreateGate(approvers int, required int16, st sqlc.BoardStatus) error {
+	if approvers == 0 || st.Type != "completed" {
+		return nil
+	}
+	return approvalRequired(TallyOf(make([]string, approvers), int(required)))
+}
+
+func approvalRequired(t Tally) error {
 	msg := "the task needs approval: " + strconv.Itoa(t.Approved) + " of " + strconv.Itoa(t.Quorum)
 	if t.Rejected > 0 {
 		msg = "the task was rejected by an approver"
@@ -514,15 +527,17 @@ func (s *Service) Remind(ctx context.Context) (int, error) {
 		}
 		for _, id := range order {
 			var c change
+			claimed := 0
 			err := s.tx(ctx, func(q *sqlc.Queries, tx pgx.Tx) error {
 				t, ok, err := taskByID(ctx, tx, id, true)
 				if err != nil || !ok {
 					return err
 				}
-				users := byTask[id]
-				if err := q.MarkApprovalReminded(ctx, sqlc.MarkApprovalRemindedParams{TaskID: id, UserIds: users}); err != nil {
+				users, err := q.ClaimApprovalReminders(ctx, sqlc.ClaimApprovalRemindersParams{TaskID: id, UserIds: byTask[id]})
+				if err != nil || len(users) == 0 {
 					return err
 				}
+				claimed = len(users)
 				if users, err = sees(ctx, q, t.BoardID, users); err != nil || len(users) == 0 {
 					return err
 				}
@@ -532,7 +547,7 @@ func (s *Service) Remind(ctx context.Context) (int, error) {
 				return total, err
 			}
 			s.sendNotices(ctx, id, c.notices)
-			total += len(byTask[id])
+			total += claimed
 		}
 		if len(due) < remindBatch {
 			break

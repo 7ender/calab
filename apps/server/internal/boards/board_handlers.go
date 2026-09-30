@@ -909,7 +909,9 @@ func (s *Service) deleteStatus(w http.ResponseWriter, r *http.Request) error {
 		// Moving the tasks forward is a status change like any other (ADR-0049 §2): refused
 		// while one of them waits for approval — pick another move_to.
 		if Forward(*from, *dst) {
-			rows, err := queryTasks(r.Context(), tx, "WHERE t.status_id = $1", sid)
+			// Row locks: a vote / approvers change (which lock the task) cannot slip in
+			// between this check and the move.
+			rows, err := queryTasks(r.Context(), tx, "WHERE t.status_id = $1 ORDER BY t.id FOR UPDATE OF t", sid)
 			if err != nil {
 				return err
 			}

@@ -135,6 +135,44 @@ func (q *Queries) BoardTaskRoomIDs(ctx context.Context, boardID uuid.UUID) ([]uu
 	return items, nil
 }
 
+const claimApprovalReminders = `-- name: ClaimApprovalReminders :many
+UPDATE task_approvers a SET reminders = a.reminders + 1, reminded_at = now()
+FROM tasks t JOIN board_statuses st ON st.id = t.status_id
+WHERE a.task_id = $1 AND a.user_id = ANY($2::uuid[])
+  AND t.id = a.task_id AND t.archived_at IS NULL AND st.type NOT IN ('completed', 'cancelled')
+  AND a.state = 'pending' AND a.reminders < 3
+  AND coalesce(a.reminded_at, a.requested_at) <= now() - interval '24 hours'
+  AND NOT EXISTS (SELECT 1 FROM task_approvers r WHERE r.task_id = a.task_id AND r.state = 'rejected')
+RETURNING a.user_id
+`
+
+type ClaimApprovalRemindersParams struct {
+	TaskID  uuid.UUID
+	UserIds []uuid.UUID
+}
+
+// Claims the reminders of one task: re-checks DueApprovalReminders' conditions under the row
+// locks, so a vote cast since, or another server instance's pass, never gets a second notice.
+func (q *Queries) ClaimApprovalReminders(ctx context.Context, arg ClaimApprovalRemindersParams) ([]uuid.UUID, error) {
+	rows, err := q.db.Query(ctx, claimApprovalReminders, arg.TaskID, arg.UserIds)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []uuid.UUID{}
+	for rows.Next() {
+		var user_id uuid.UUID
+		if err := rows.Scan(&user_id); err != nil {
+			return nil, err
+		}
+		items = append(items, user_id)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const clearDefaultBoardStatus = `-- name: ClearDefaultBoardStatus :exec
 UPDATE board_statuses SET is_default = false WHERE board_id = $1 AND is_default
 `
@@ -1986,21 +2024,6 @@ SELECT pg_advisory_xact_lock(hashtext('calaba.boards:' || $1::text))
 // Serializes board creation / ordering of one workspace (count limit, positions).
 func (q *Queries) LockBoards(ctx context.Context, workspaceID string) error {
 	_, err := q.db.Exec(ctx, lockBoards, workspaceID)
-	return err
-}
-
-const markApprovalReminded = `-- name: MarkApprovalReminded :exec
-UPDATE task_approvers SET reminders = reminders + 1, reminded_at = now()
-WHERE task_id = $1 AND user_id = ANY($2::uuid[])
-`
-
-type MarkApprovalRemindedParams struct {
-	TaskID  uuid.UUID
-	UserIds []uuid.UUID
-}
-
-func (q *Queries) MarkApprovalReminded(ctx context.Context, arg MarkApprovalRemindedParams) error {
-	_, err := q.db.Exec(ctx, markApprovalReminded, arg.TaskID, arg.UserIds)
 	return err
 }
 

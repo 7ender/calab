@@ -696,6 +696,9 @@ func (s *Service) createTask(w http.ResponseWriter, r *http.Request) error {
 		if err != nil {
 			return err
 		}
+		if err := checkCreateGate(len(approvers), required, *st); err != nil {
+			return err
+		}
 		number, err := q.NextTaskNumber(r.Context(), boardID)
 		if err != nil {
 			return err

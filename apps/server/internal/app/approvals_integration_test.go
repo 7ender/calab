@@ -5,6 +5,7 @@ package app_test
 import (
 	"context"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -79,6 +80,9 @@ func TestTaskApprovals(t *testing.T) {
 	createTask(t, o, b.GetId(), &v1.CreateTaskRequest{Title: "x", ApproverIds: []string{outsider.id}}, 422)
 	createTask(t, o, b.GetId(), &v1.CreateTaskRequest{Title: "x", ApproverIds: []string{bob.id, bob.id}}, 422)
 	createTask(t, o, b.GetId(), &v1.CreateTaskRequest{Title: "x", ApprovalRequired: 1}, 422)
+	// Created with approvers straight into COMPLETED: the same 409 as the gate.
+	createTask(t, o, b.GetId(), &v1.CreateTaskRequest{Title: "x", StatusId: done, ApproverIds: []string{bob.id, carol.id}, ApprovalRequired: 1}, 409)
+	gateRefused(t, o.client, 0, 1)
 
 	// Quorum «all» (0): pending until everyone approved.
 	task := createTask(t, o, b.GetId(), &v1.CreateTaskRequest{Title: "Согласовать", StatusId: todo, ApproverIds: []string{bob.id, carol.id}}, 201)
@@ -330,4 +334,29 @@ func TestTaskApprovalNotifications(t *testing.T) {
 	}
 	remind()
 	gc.quiet("reminder after the vote", 300*time.Millisecond, notice(v1.TaskNoticeKind_TASK_NOTICE_KIND_APPROVAL_REQUESTED, second.GetId()))
+
+	// Two instances sweeping at once (no Redis lock): each vote is reminded once.
+	third := createTask(t, o, b.GetId(), &v1.CreateTaskRequest{Title: "Третья", ApproverIds: []string{carol.id}}, 201)
+	if _, err := testDB.Pool.Exec(ctx, "UPDATE task_approvers SET requested_at = now() - interval '25 hours' WHERE task_id = $1", third.GetId()); err != nil {
+		t.Fatal(err)
+	}
+	var wg sync.WaitGroup
+	sent := make([]int, 2)
+	for i := range sent {
+		wg.Go(func() {
+			n, err := testApp.Boards.Remind(ctx)
+			if err != nil {
+				t.Error(err)
+			}
+			sent[i] = n
+		})
+	}
+	wg.Wait()
+	var n int
+	if err := testDB.Pool.QueryRow(ctx, "SELECT reminders FROM task_approvers WHERE task_id = $1", third.GetId()).Scan(&n); err != nil {
+		t.Fatal(err)
+	}
+	if n != 1 || sent[0]+sent[1] != 1 {
+		t.Fatalf("concurrent sweeps: reminders %d, sent %v", n, sent)
+	}
 }

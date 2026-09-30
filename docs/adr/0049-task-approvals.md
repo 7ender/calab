@@ -115,7 +115,7 @@
 - `POST /api/tasks/{id}/approval` `TaskApprovalRequest {decision: APPROVE|REJECT|WITHDRAW, comment}` — только свой голос.
   Не согласующий — `403`; не видит доску — `404`; бот — `403` reason `BOT_NOT_ALLOWED`; `REJECT` без комментария или комментарий > 500 — `422` (`field: comment`);
   `decision` не задан — `422`. `WITHDRAW` очищает комментарий. Повтор того же голоса — `200` без изменений.
-- `POST /api/boards/{id}/tasks` — `approverIds`, `approvalRequired` (те же проверки, поля `approverIds` / `approvalRequired`).
+- `POST /api/boards/{id}/tasks` — `approverIds`, `approvalRequired` (те же проверки, поля `approverIds` / `approvalRequired`); создание с согласующими сразу в статусе типа `COMPLETED` — `409 TASK_APPROVAL_REQUIRED` (как блокировка).
 
 **Блокировка** (сервер — арбитр; клиенту `mayMoveTo(task, from, to)` только для подсветки колонок):
 `blocked = (approvalState === PENDING || approvalState === REJECTED) && from.id !== to.id && to.type !== CANCELLED && (to.type === COMPLETED || to.position > from.position)`.

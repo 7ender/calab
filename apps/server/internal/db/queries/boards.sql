@@ -534,6 +534,14 @@ WHERE a.state = 'pending' AND a.reminders < 3
 ORDER BY a.task_id, a.user_id
 LIMIT sqlc.arg('lim');
 
--- name: MarkApprovalReminded :exec
-UPDATE task_approvers SET reminders = reminders + 1, reminded_at = now()
-WHERE task_id = $1 AND user_id = ANY(sqlc.arg('user_ids')::uuid[]);
+-- name: ClaimApprovalReminders :many
+-- Claims the reminders of one task: re-checks DueApprovalReminders' conditions under the row
+-- locks, so a vote cast since, or another server instance's pass, never gets a second notice.
+UPDATE task_approvers a SET reminders = a.reminders + 1, reminded_at = now()
+FROM tasks t JOIN board_statuses st ON st.id = t.status_id
+WHERE a.task_id = sqlc.arg('task_id') AND a.user_id = ANY(sqlc.arg('user_ids')::uuid[])
+  AND t.id = a.task_id AND t.archived_at IS NULL AND st.type NOT IN ('completed', 'cancelled')
+  AND a.state = 'pending' AND a.reminders < 3
+  AND coalesce(a.reminded_at, a.requested_at) <= now() - interval '24 hours'
+  AND NOT EXISTS (SELECT 1 FROM task_approvers r WHERE r.task_id = a.task_id AND r.state = 'rejected')
+RETURNING a.user_id;
