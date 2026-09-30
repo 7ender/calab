@@ -125,7 +125,7 @@ export function TempRoomDialog({ workspaceId, onClose }: { workspaceId: string; 
       }
     >
       <form
-        className="flex flex-col gap-4"
+        className="flex flex-col gap-3"
         data-testid="temp-room-dialog"
         onSubmit={(e) => {
           e.preventDefault();
@@ -149,11 +149,18 @@ export function TempRoomDialog({ workspaceId, onClose }: { workspaceId: string; 
           />
         </Field>
 
+        {/* Compact for the 600 px window (docs/09 #147): «Закроется …» on the label's line, the date
+            field in the pills' row. */}
         <div className="flex flex-col gap-1.5">
-          <span className="text-caption font-medium text-muted" id="temp-lifetime">
-            {t('temp.lifetime')}
-          </span>
-          <div role="radiogroup" aria-labelledby="temp-lifetime" className="flex flex-wrap gap-1.5">
+          <div className="flex items-baseline justify-between gap-3">
+            <span className="shrink-0 text-caption font-medium text-muted" id="temp-lifetime">
+              {t('temp.lifetime')}
+            </span>
+            <span className={cx('min-w-0 truncate text-caption', ttl === null ? 'text-danger-text' : 'text-muted')} aria-live="polite" data-testid="temp-closes">
+              {ttl === null ? t('temp.rangeInvalid') : t('temp.closesAt', { when: fmt.stamp(new Date(now + ttl * 1000), new Date(now)) })}
+            </span>
+          </div>
+          <div role="radiogroup" aria-labelledby="temp-lifetime" className="flex flex-wrap items-center gap-1.5">
             {LIFETIME_PRESETS.map((p) => (
               <button
                 key={p}
@@ -169,26 +176,24 @@ export function TempRoomDialog({ workspaceId, onClose }: { workspaceId: string; 
                 {t(PRESET_LABEL[p])}
               </button>
             ))}
+            {preset === 'date' ? (
+              <Input
+                type="datetime-local"
+                aria-label={t('temp.untilDate')}
+                value={until}
+                min={toLocalInput(now + 15 * 60_000)}
+                max={toLocalInput(now + MAX_LIFETIME_MS)}
+                onChange={(e) => setUntil(e.target.value)}
+                className="w-52"
+                data-testid="temp-until"
+              />
+            ) : null}
           </div>
-          {preset === 'date' ? (
-            <Input
-              type="datetime-local"
-              aria-label={t('temp.untilDate')}
-              value={until}
-              min={toLocalInput(now + 15 * 60_000)}
-              max={toLocalInput(now + MAX_LIFETIME_MS)}
-              onChange={(e) => setUntil(e.target.value)}
-              className="mt-1 w-60"
-            />
-          ) : null}
-          <span className={cx('text-caption', ttl === null ? 'text-danger-text' : 'text-muted')} aria-live="polite">
-            {ttl === null ? t('temp.rangeInvalid') : t('temp.closesAt', { when: fmt.stamp(new Date(now + ttl * 1000), new Date(now)) })}
-          </span>
         </div>
 
         <div className="flex flex-col gap-1.5">
-          <span className="text-caption font-medium text-muted">{t('temp.visibility')}</span>
-          <div>
+          <div className="flex flex-wrap items-center justify-between gap-x-3 gap-y-1.5">
+            <span className="text-caption font-medium text-muted">{t('temp.visibility')}</span>
             <Segmented<Visibility>
               label={t('temp.visibility')}
               value={vis}
@@ -201,7 +206,8 @@ export function TempRoomDialog({ workspaceId, onClose }: { workspaceId: string; 
           </div>
           <span className="text-caption text-muted">{vis === 'all' ? t('temp.visAllHint') : t('temp.visSelectedHint')}</span>
           {vis === 'selected' ? (
-            <div className="mt-1">
+            // Up to 3 rows of 28 px chips, then the field scrolls on its own (the dialog stays put).
+            <div className="-m-1 max-h-[108px] overflow-y-auto overscroll-contain p-1" data-testid="temp-people-scroll">
               <PeopleBar workspaceId={workspaceId} people={people} onAdd={addPeople} onRemove={removePerson} wrap max={MAX_MEMBERS} testId="temp-people" />
             </div>
           ) : null}

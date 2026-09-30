@@ -169,6 +169,7 @@ const KEY = new Set([
   // Temporary rooms (ADR-0044).
   'sidebar-temp-room',
   'temp-room-dialog',
+  'temp-room-dialog-expanded',
   'temp-room-dialog-result',
   'temp-room-menu',
   'settings-temp-archive',
@@ -1412,8 +1413,7 @@ test('sidebar-temp-room', async ({ open, win, mock, shot }) => {
   await expect(group.locator('[data-testid="temp-icon"][data-expiring]')).toHaveCount(1);
   await checkpoint(shot, 'sidebar-temp-room');
 });
-
-/** «+» → «Временная комната»: name, lifetime presets, «Только выбранные» with the people field, switches. */
+/** «+» → «Временная комната» as it opens (all members): name, lifetime presets, visibility, switches. */
 test('temp-room-dialog', async ({ open, win, mock, shot }) => {
   await open();
   await mainWindow(win, mock);
@@ -1423,10 +1423,41 @@ test('temp-room-dialog', async ({ open, win, mock, shot }) => {
   await expect(dialog.getByRole('textbox', { name: 'Название' })).toBeFocused();
   await dialog.getByRole('textbox', { name: 'Название' }).fill('Встреча с клиентом');
   await dialog.getByRole('radio', { name: '3 ч' }).click();
+  await expect(dialog.getByRole('switch', { name: 'Пускать гостей по ссылке' })).toBeChecked();
+  // 960×600 (docs/09 #147): the default state fits whole — the body does not scroll, no edge hairline.
+  await expect(dialog.getByRole('switch', { name: 'Добавить встречу в календарь' })).toBeInViewport({ ratio: 1 });
+  const body = dialog.getByTestId('temp-room-dialog').locator('..');
+  await expect(body).not.toHaveAttribute('data-scroll-bottom');
+  await checkpoint(shot, 'temp-room-dialog');
+});
+
+/**
+ * «До даты» (the date field in the pills' row) + «Только выбранные» with people: taller than the
+ * 600 px window — only the body scrolls, a hairline above the buttons says there is more; the
+ * header and «Отмена / Создать» stay (docs/09 #147).
+ */
+test('temp-room-dialog-expanded', async ({ open, win, mock, shot }) => {
+  await open();
+  await mainWindow(win, mock);
+  await win.getByTestId('sidebar-create').click();
+  await win.getByRole('menuitem', { name: 'Временная комната' }).click();
+  const dialog = win.getByRole('dialog', { name: 'Временная комната' });
+  await dialog.getByRole('textbox', { name: 'Название' }).fill('Встреча с клиентом');
+  await dialog.getByRole('radio', { name: 'До даты' }).click();
+  await expect(dialog.getByTestId('temp-until')).toBeVisible();
   await dialog.getByRole('radio', { name: 'Только выбранные' }).click();
   await expect(dialog.getByTestId('temp-people-add')).toBeVisible();
-  await expect(dialog.getByRole('switch', { name: 'Пускать гостей по ссылке' })).toBeChecked();
-  await checkpoint(shot, 'temp-room-dialog');
+  await dialog.getByTestId('temp-people-add').click();
+  const picker = win.getByTestId('temp-people-picker');
+  await picker.getByRole('option', { name: /Борис/ }).click();
+  await picker.getByRole('option', { name: /Вера/ }).click();
+  await win.keyboard.press('Escape');
+  await expect(dialog.getByTestId('person-chip')).toHaveCount(2);
+  const body = dialog.getByTestId('temp-room-dialog').locator('..');
+  await expect(body).toHaveAttribute('data-scroll-bottom', '');
+  await expect(dialog.getByTestId('temp-create')).toBeInViewport({ ratio: 1 });
+  await win.evaluate(() => (document.activeElement as HTMLElement | null)?.blur());
+  await checkpoint(shot, 'temp-room-dialog-expanded');
 });
 
 /** After «Создать»: the link at once, «Скопировать», «Войти», «Готово»; the room is in the list. */
