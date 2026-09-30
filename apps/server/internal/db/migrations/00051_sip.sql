@@ -1,6 +1,7 @@
 -- Telephony: outbound SIP calls from voice rooms (ADR-0046).
 --
--- sip_accounts   one SIP provider account per workspace. password_enc is sealed with sealbox
+-- sip_accounts   one SIP provider account per workspace; host is without the port (port column),
+--                auth_username '' = authenticate as username. password_enc is sealed with sealbox
 --                ("calaba/sip-password/v1", like the CalDAV password of ADR-0041); trunk_id is
 --                the LiveKit SIPOutboundTrunk made from the row ('' = none). The row always
 --                matches what LiveKit holds: a save LiveKit refuses changes only last_error.
@@ -19,6 +20,8 @@ CREATE TABLE sip_accounts (
     host             text NOT NULL DEFAULT '',
     transport        text NOT NULL DEFAULT 'udp' CHECK (transport IN ('udp', 'tcp', 'tls')),
     username         text NOT NULL DEFAULT '',
+    auth_username    text NOT NULL DEFAULT '',
+    port             integer NOT NULL DEFAULT 5060 CHECK (port BETWEEN 1 AND 65535),
     password_enc     bytea,
     caller_id        text NOT NULL DEFAULT '',
     outbound_prefix  text NOT NULL DEFAULT '',

@@ -10,6 +10,7 @@ import (
 	"net"
 	"net/http"
 	"net/netip"
+	"strconv"
 	"time"
 
 	"github.com/google/uuid"
@@ -152,7 +153,7 @@ func manage(r *http.Request) (uuid.UUID, error) {
 func (s *Service) account(ctx context.Context, q *sqlc.Queries, wsID uuid.UUID) (sqlc.SipAccount, bool, error) {
 	a, err := q.GetSipAccount(ctx, wsID)
 	if db.IsNotFound(err) {
-		return sqlc.SipAccount{WorkspaceID: wsID, Transport: "udp", AllowedPrefixes: []string{}}, false, nil
+		return sqlc.SipAccount{WorkspaceID: wsID, Transport: "udp", Port: defaultPort, AllowedPrefixes: []string{}}, false, nil
 	}
 	return a, err == nil, err
 }
@@ -175,7 +176,7 @@ var transportToLK = map[string]string{"udp": rtc.SIPTransportUDP, "tcp": rtc.SIP
 func settingsPB(a sqlc.SipAccount, saved bool) *v1.SipSettings {
 	out := &v1.SipSettings{
 		Enabled: a.Enabled, Provider: a.Provider, Host: a.Host, Transport: transportFromDB[a.Transport],
-		Username: a.Username, HasPassword: len(a.PasswordEnc) > 0, CallerId: a.CallerID,
+		Username: a.Username, AuthUsername: a.AuthUsername, Port: uint32(max(a.Port, 0)), HasPassword: len(a.PasswordEnc) > 0, CallerId: a.CallerID,
 		OutboundPrefix: a.OutboundPrefix, AllowedPrefixes: a.AllowedPrefixes, LastError: a.LastError,
 		TrunkSaved: a.TrunkID != "",
 	}
@@ -208,7 +209,8 @@ func (s *Service) getSettings(w http.ResponseWriter, r *http.Request) error {
 type input struct {
 	enabled                             bool
 	provider, host, transport, username string
-	callerID, prefix                    string
+	authUsername, callerID, prefix      string
+	port                                int32
 	allowed                             []string
 	password                            *string
 }
@@ -225,6 +227,13 @@ func (s *Service) validate(ctx context.Context, req *v1.PutSipSettingsRequest) (
 	if in.username = req.GetUsername(); !usernameOK(in.username) {
 		return in, httpx.Validation("username", "username must be up to 128 printable characters without quotes")
 	}
+	if in.authUsername = req.GetAuthUsername(); !usernameOK(in.authUsername) {
+		return in, httpx.Validation("authUsername", "auth username must be up to 128 printable characters without quotes")
+	}
+	if req.GetPort() > 65535 {
+		return in, httpx.Validation("port", "port must be 1 to 65535")
+	}
+	in.port = int32(req.GetPort()) //nolint:gosec // ≤ 65535, checked above
 	if in.password != nil && !passwordOK(*in.password) {
 		return in, httpx.Validation("password", "password must be up to 256 bytes without control characters")
 	}
@@ -233,7 +242,18 @@ func (s *Service) validate(ctx context.Context, req *v1.PutSipSettingsRequest) (
 		if err != nil {
 			return in, httpx.Validation("host", err.Error())
 		}
+		// The port lives in its own field; a «host:port» still works (ADR-0046).
+		if h, p, err := net.SplitHostPort(host); err == nil {
+			n, _ := strconv.Atoi(p)
+			if in.port != 0 && int32(n) != in.port { //nolint:gosec // ParseHost checked 1..65535
+				return in, httpx.Validation("port", "the port in host differs from port")
+			}
+			host, in.port = h, int32(n) //nolint:gosec // ParseHost checked 1..65535
+		}
 		in.host = host
+	}
+	if in.port == 0 {
+		in.port = defaultPort
 	}
 	if c := req.GetCallerId(); c != "" || in.enabled {
 		n, ok := NormalizeNumber(c)
@@ -260,6 +280,18 @@ func (s *Service) validate(ctx context.Context, req *v1.PutSipSettingsRequest) (
 		}
 	}
 	return in, nil
+}
+
+// defaultPort is the SIP port of a provider host unless the settings say otherwise.
+const defaultPort = 5060
+
+// trunkAddress is the LiveKit trunk address: the host alone on the default port (LiveKit may
+// then use SRV records), else host:port.
+func trunkAddress(host string, port int32) string {
+	if port == defaultPort || port == 0 {
+		return host
+	}
+	return net.JoinHostPort(host, strconv.Itoa(int(port)))
 }
 
 // providerError is a LiveKit refusal of the trunk: 502 SIP_PROVIDER_ERROR, text in last_error.
@@ -334,8 +366,12 @@ func (s *Service) putSettings(w http.ResponseWriter, r *http.Request) error {
 		}
 		trunkID := cur.TrunkID
 		if in.enabled {
-			t := rtc.SIPTrunk{Name: "calab-" + wsID.String(), Metadata: wsID.String(), Address: in.host,
-				Transport: transportToLK[in.transport], Numbers: []string{in.callerID}, AuthUsername: in.username, AuthPassword: plain}
+			authUser := in.authUsername
+			if authUser == "" {
+				authUser = in.username
+			}
+			t := rtc.SIPTrunk{Name: "calab-" + wsID.String(), Metadata: wsID.String(), Address: trunkAddress(in.host, in.port),
+				Transport: transportToLK[in.transport], Numbers: []string{in.callerID}, AuthUsername: authUser, AuthPassword: plain}
 			var out rtc.SIPTrunk
 			if trunkID != "" {
 				out, err = s.sip.UpdateSIPOutboundTrunk(ctx, trunkID, t)
@@ -364,6 +400,7 @@ func (s *Service) putSettings(w http.ResponseWriter, r *http.Request) error {
 		}
 		saved, err = q.PutSipAccount(ctx, sqlc.PutSipAccountParams{
 			WorkspaceID: wsID, Provider: in.provider, Host: in.host, Transport: in.transport, Username: in.username,
+			AuthUsername: in.authUsername, Port: in.port,
 			PasswordEnc: sealed, CallerID: in.callerID, OutboundPrefix: in.prefix, AllowedPrefixes: in.allowed,
 			TrunkID: trunkID, Enabled: in.enabled, UpdatedBy: &me,
 		})

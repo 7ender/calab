@@ -46,7 +46,7 @@ message SipSettings {
   // trunk (Workspace.sip_enabled = enabled && trunk saved).
   bool enabled = 1;
   string provider = 2;   // free label, e.g. «Zadarma»; ≤ 64 characters
-  string host = 3;       // provider SIP server: host name or IPv4 with an optional :port, no «sip:»
+  string host = 3;       // provider SIP server: host name or IP address, no «sip:» and no port (see port)
   SipTransport transport = 4;
   string username = 5;   // SIP login (may be empty: IP-authenticated trunks)
   bool has_password = 6; // a password is stored (it is never sent back)
@@ -61,6 +61,9 @@ message SipSettings {
   google.protobuf.Timestamp updated_at = 11; // unset = never saved
   string updated_by = 12;                    // user id; empty = unknown / account gone
   bool trunk_saved = 13;                     // LiveKit holds the trunk (calls possible when enabled)
+  // SIP authentication user when it differs from username (the From user); empty = username.
+  string auth_username = 14;
+  uint32 port = 15; // SIP signalling port of host, 1..65535 (5060 when never set)
 }
 
 // GET /api/workspaces/{id}/sip (MANAGE_WORKSPACE, people) → 200 GetSipSettingsResponse; a
@@ -87,6 +90,11 @@ message PutSipSettingsRequest {
   string caller_id = 7;          // normalised like a callee number (8 495… → +7495…)
   string outbound_prefix = 8;    // an optional «+» followed by up to 8 digits; may be empty
   repeated string allowed_prefixes = 9; // ≤ 50, each «+» and 1..15 digits
+  // Same characters as username; empty = authenticate as username.
+  string auth_username = 10;
+  // 0 = 5060, else 1..65535. A «host:port» in host is still accepted: its port is used when
+  // this is 0, and must equal this otherwise (422 field port).
+  uint32 port = 11;
 }
 
 message PutSipSettingsResponse {

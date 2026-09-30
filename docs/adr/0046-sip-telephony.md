@@ -27,7 +27,7 @@
 
 ### Модель (миграция `00051`; `00050` занял ADR-0047)
 - `sip_accounts (workspace_id PK, provider text, host text, transport text CHECK (udp|tcp|tls),
-  username text, password_enc bytea, caller_id text, outbound_prefix text, allowed_prefixes text[],
+  username text, auth_username text, port int (5060), password_enc bytea, caller_id text, outbound_prefix text, allowed_prefixes text[],
   trunk_id text, enabled bool, last_error text, updated_at)` — один аккаунт на пространство
   (позже — несколько). `trunk_id` — id `SIPOutboundTrunk` в LiveKit, создаётся/обновляется при
   сохранении настроек.
@@ -98,7 +98,7 @@
 
 **Завершить:** `DELETE /api/rooms/{id}/calls/{call.id}` → `200 {call}` (звонивший; остальные — с `MUTE_MEMBERS`). `409 CONFLICT` — звонок уже закончился (обновить из события).
 
-**Настройки** (вкладка «Телефония», `MANAGE_WORKSPACE`): `GET /api/workspaces/{id}/sip` → `{settings}`; `PUT` всей формой (`password` не слать = не менять, `""` = удалить) → `{settings}`; ошибки `422 VALIDATION` с `field` (`host` — только публичный адрес без `sip:`, `callerId`, `username`, `password`, `outboundPrefix`, `allowedPrefixes`, `provider`, `transport`), `502 SIP_PROVIDER_ERROR` (текст LiveKit в `message`, он же в `last_error`; прежние настройки остаются). `settings.last_error` — плашка; `trunk_saved` — LiveKit принял транк. «Проверить подключение» — `POST …/sip/test` → `{ok, message, sip_status}` до ~25 с (кнопка с лоадером), `429 SIP_RATE_LIMITED` (5 в час), `409 SIP_DISABLED`. Журнал — `GET /api/workspaces/{id}/calls?from&to&cursor` → `{calls, next_cursor}`, 100 на страницу, новые сверху; строки с пустым `room_id` — проверки подключения (или удалённая комната); имя звонившего — из участников по `started_by`.
+**Настройки** (вкладка «Телефония», `MANAGE_WORKSPACE`): `GET /api/workspaces/{id}/sip` → `{settings}`; `PUT` всей формой (`password` не слать = не менять, `""` = удалить) → `{settings}`; поля `auth_username` (пользователь SIP-аутентификации, если отличается от `username`/From; пусто = `username`) и `port` (порт сигнализации хоста, `0` в PUT = 5060; в GET — всегда число; `host` приходит без порта, `хост:порт` в PUT ещё принимается и должен совпасть с `port`); в транк LiveKit уходят `auth_username || username` и `address` = `host` или `host:port` при порте ≠ 5060; ошибки `422 VALIDATION` с `field` (`host` — только публичный адрес без `sip:`, `port` — 1–65535 или расходится с портом в `host`, `authUsername`, `callerId`, `username`, `password`, `outboundPrefix`, `allowedPrefixes`, `provider`, `transport`), `502 SIP_PROVIDER_ERROR` (текст LiveKit в `message`, он же в `last_error`; прежние настройки остаются). `settings.last_error` — плашка; `trunk_saved` — LiveKit принял транк. «Проверить подключение» — `POST …/sip/test` → `{ok, message, sip_status}` до ~25 с (кнопка с лоадером), `429 SIP_RATE_LIMITED` (5 в час), `409 SIP_DISABLED`. Журнал — `GET /api/workspaces/{id}/calls?from&to&cursor` → `{calls, next_cursor}`, 100 на страницу, новые сверху; строки с пустым `room_id` — проверки подключения (или удалённая комната); имя звонившего — из участников по `started_by`.
 
 **Права в редакторе ролей:** бит `PLACE_CALLS` (`perm.PLACE_CALLS`, подписи уже в 4 локалях) — группа «Телефония»; можно ставить и в переопределениях комнаты; у встроенной роли «Гость» его нет и быть не может.
 

@@ -210,6 +210,7 @@ func TestSIP(t *testing.T) {
 		"host ":           func(r *v1.PutSipSettingsRequest) { r.Host = "sip:203.0.113.10" },
 		"callerId":        func(r *v1.PutSipSettingsRequest) { r.CallerId = "12345" },
 		"username":        func(r *v1.PutSipSettingsRequest) { r.Username = `a"b` },
+		"authUsername":    func(r *v1.PutSipSettingsRequest) { r.AuthUsername = "a b" },
 		"outboundPrefix":  func(r *v1.PutSipSettingsRequest) { r.OutboundPrefix = "8+" },
 		"allowedPrefixes": func(r *v1.PutSipSettingsRequest) { r.AllowedPrefixes = []string{"7"} },
 	} {
@@ -226,7 +227,7 @@ func TestSIP(t *testing.T) {
 	o.must(200, "PUT", base, valid(), &put)
 	s := put.GetSettings()
 	if !s.GetEnabled() || !s.GetHasPassword() || !s.GetTrunkSaved() || s.GetCallerId() != "+74951234567" ||
-		s.GetHost() != "203.0.113.10:5060" || len(s.GetAllowedPrefixes()) != 1 || s.GetUpdatedBy() != o.id {
+		s.GetHost() != "203.0.113.10" || s.GetPort() != 5060 || s.GetAuthUsername() != "" || len(s.GetAllowedPrefixes()) != 1 || s.GetUpdatedBy() != o.id {
 		t.Fatalf("saved: %v", s)
 	}
 	if strings.Contains(string(o.lastBody), "s3cret") {
@@ -237,7 +238,7 @@ func TestSIP(t *testing.T) {
 		t.Fatalf("stored account: %+v %v", acct, err)
 	}
 	tr, creates, _ := sipFake.trunk(acct.TrunkID)
-	if creates == 0 || tr.AuthPassword != "s3cret-Пароль" || tr.Address != "203.0.113.10:5060" || tr.Transport != rtc.SIPTransportTCP ||
+	if creates == 0 || tr.AuthPassword != "s3cret-Пароль" || tr.Address != "203.0.113.10" || tr.Transport != rtc.SIPTransportTCP ||
 		len(tr.Numbers) != 1 || tr.Numbers[0] != "+74951234567" || tr.AuthUsername != "u100" {
 		t.Fatalf("trunk: %+v", tr)
 	}
@@ -251,15 +252,28 @@ func TestSIP(t *testing.T) {
 		t.Fatal("Workspace.sip_enabled not set")
 	}
 
-	// PUT without a password keeps it (the trunk is replaced, not recreated).
+	// PUT without a password keeps it (the trunk is replaced, not recreated); a separate auth
+	// user and a non-default port reach the trunk.
 	keep := valid()
 	keep.Password = nil
 	keep.OutboundPrefix = "8"
+	keep.Port = 5080
+	keep.AuthUsername = "auth-100"
+	st, e := o.apiErrBody("PUT", base, keep) // host:5060 contradicts port 5080
+	if st != 422 || e.GetField() != "port" {
+		t.Fatalf("port conflict: %d %v", st, e)
+	}
+	keep.Host = "203.0.113.10"
 	o.must(200, "PUT", base, keep, &put)
 	tr, creates2, updates := sipFake.trunk(acct.TrunkID)
 	if creates2 != creates || updates == 0 || tr.AuthPassword != "s3cret-Пароль" || !put.GetSettings().GetHasPassword() {
 		t.Fatalf("keep password: %+v creates %d→%d updates %d", tr, creates, creates2, updates)
 	}
+	if tr.Address != "203.0.113.10:5080" || tr.AuthUsername != "auth-100" || put.GetSettings().GetPort() != 5080 ||
+		put.GetSettings().GetAuthUsername() != "auth-100" || put.GetSettings().GetUsername() != "u100" {
+		t.Fatalf("auth user / port: %+v / %v", tr, put.GetSettings())
+	}
+	o.wantErr(422, v1.ErrorCode_ERROR_CODE_VALIDATION, "PUT", base, &v1.PutSipSettingsRequest{Host: "203.0.113.10", Port: 70000})
 
 	// LiveKit refuses: 502 SIP_PROVIDER_ERROR, nothing saved but last_error.
 	sipFake.mu.Lock()
@@ -272,7 +286,7 @@ func TestSIP(t *testing.T) {
 	sipFake.failTrunk = nil
 	sipFake.mu.Unlock()
 	o.must(200, "GET", base, nil, &g)
-	if g.GetSettings().GetLastError() != "invalid trunk address" || g.GetSettings().GetHost() != "203.0.113.10:5060" || g.GetSettings().GetOutboundPrefix() != "8" {
+	if g.GetSettings().GetLastError() != "invalid trunk address" || g.GetSettings().GetHost() != "203.0.113.10" || g.GetSettings().GetPort() != 5080 || g.GetSettings().GetOutboundPrefix() != "8" {
 		t.Fatalf("after a refusal: %v", g.GetSettings())
 	}
 	o.must(200, "PUT", base, keep, &put) // a good save clears last_error
@@ -480,6 +494,23 @@ func TestSIP(t *testing.T) {
 	sipFake.auto = nil
 	sipFake.mu.Unlock()
 	bob.wantErr(403, v1.ErrorCode_ERROR_CODE_FORBIDDEN, "POST", base+"/test", nil)
+
+	// The sweeper ends an active call past the 2 h cap even if LiveKit did not (backstop).
+	bob.must(201, "POST", calls, num, &pc)
+	cLong := pc.GetCall()
+	sipFake.answer(cLong.GetParticipantIdentity())
+	sipCallStatus(t, o, wid, cLong.GetId(), v1.SipCallStatus_SIP_CALL_STATUS_ACTIVE)
+	if _, err := testDB.Pool.Exec(context.Background(),
+		"UPDATE sip_calls SET started_at = now() - interval '3 hours', answered_at = now() - interval '3 hours' WHERE id = $1", cLong.GetId()); err != nil {
+		t.Fatal(err)
+	}
+	if err := testRedis.Do(context.Background(), testRedis.B().Del().Key(redisx.Key("sip:sweep")).Build()).Error(); err != nil {
+		t.Fatal(err)
+	}
+	testApp.SIP.Sweep(context.Background())
+	if c := sipCallStatus(t, o, wid, cLong.GetId(), v1.SipCallStatus_SIP_CALL_STATUS_ENDED); c.GetReason() != "remote" || !lkRec.wasRemoved(cLong.GetParticipantIdentity()) {
+		t.Fatalf("2 h cap: %v", c)
+	}
 
 	// Switching telephony off deletes the trunk, ends live calls and refuses new ones.
 	bob.must(201, "POST", calls, num, &pc)
