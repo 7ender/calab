@@ -1,3 +1,4 @@
+import { seedInlineButtons } from '../e2e-support/inline-buttons';
 import { existsSync, mkdirSync } from 'node:fs';
 import { join } from 'node:path';
 import { expect, test, type Locator, type Page } from '@playwright/test';
@@ -871,4 +872,13 @@ test('m-keyboard', async ({ page }) => {
   await expect(page.locator('html')).not.toHaveClass(/kb-open/);
   expect(await shellBottom()).toBe(vh);
   await keyboard(null);
+});
+
+
+test('m-chat-inline-buttons', async ({ page }) => {
+  seedInlineButtons(mock);
+  await signedIn(page);
+  await feedToBottom(page);
+  await expect(page.getByTestId('inline-keyboard')).toBeVisible();
+  await checkpoint(page, 'm-chat-inline-buttons', { main: true });
 });

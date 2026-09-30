@@ -4,6 +4,13 @@
  * verb-first, no exclamation marks (docs/08).
  */
 export const ruChat = {
+  'chat.inlineActions': 'Действия бота',
+  'chat.inlinePending': 'Отправляется боту…',
+  'chat.inlineSent': 'Отправлено боту',
+  'chat.inlineFailed': 'Не удалось отправить. Попробуйте снова.',
+  'chat.inlineStale': 'Кнопки изменились. Обновите сообщение.',
+  'chat.inlineForbidden': 'Действие недоступно.',
+  'chat.inlineRefresh': 'Обновить сообщение',
   // feed
   'chat.today': 'Сегодня',
   'chat.yesterday': 'Вчера',

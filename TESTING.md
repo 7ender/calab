@@ -1992,3 +1992,15 @@ CALABA_WEB_URL=http://127.0.0.1:39571 npx playwright test --config playwright.we
 | K.23 | Клиент: в чате `https://<APP_HOST>/t/CAL-3` и `/b/<id>`; сменить статус CAL-3 на доске; клик по карточке. Меню пространства → Уведомления → «Задачи: ничего»; архивировать доску → «Архив» → «Восстановить» | Карточка: ключ, заголовок, статус, исполнители, срок; статус обновляется без перезагрузки; клик — режим досок и панель; `PUT …/notifications {taskLevel}`; доска возвращается в список |
 
 Автотесты: `go test -tags integration ./internal/app -run 'Board|Task'`, unit `internal/boards`, векторы `pnpm -F @calaba/protocol test`.
+
+## Bot inline buttons (ADR-0047)
+1. Bot sends text with an author-bound keyboard; only that author can press it.
+2. Press: local pending then accepted, whole keyboard disabled; no automatic chat message.
+3. Bot receives one private callback with authenticated user and saved data; another bot/human receives none.
+4. Retry a timed-out press with the same nonce: same id, no new outbox entry; bot dedupes effects by callback id.
+5. Text edit invalidates the old revision; keyboard-only edit preserves text; empty keyboard removes buttons.
+6. Stale click refreshes the visible draft without executing its new button; new revision enables deliberate press.
+7. Disabled/foreign buttons, lost access, blocked/revoked bot, removed last shared DM workspace, cleared/deleted message reject.
+8. Forward keeps text but no active keyboard; ordinary human create/edit still works and cannot forge buttons.
+9. `go test -race -tags integration ./internal/app -run 'TestInline|TestBotRouteTable'`; `pnpm -F @calaba/bot-sdk test`.
+10. Visual: `e2e:visual -g chat-inline-buttons`, `e2e:visual:mobile -g m-chat-inline-buttons --project webkit-iphone-14`; behaviour: visual project `inline-buttons`.

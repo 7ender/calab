@@ -47,6 +47,7 @@ import { StickerPackDialog } from './stickers/StickerPackDialog';
 import { BotBadge } from '../people/MemberBits';
 import { MemberBadge } from '../people/MemberBadge';
 import { highlightCommand } from '../../lib/botCommands';
+import { InlineKeyboardView } from './InlineKeyboard';
 
 /** Widest image inside a bubble (docs/09 #36). */
 const IMAGE_MAX = 420;
@@ -406,6 +407,9 @@ function Bubble({
           {...bar.handlers}
         >
           {body}
+          {m.inlineKeyboard?.rows.length && !m.forward && c.status === 'sent' ? (
+            <InlineKeyboardView key={`${m.id}:${m.keyboardRevision}`} messageId={m.id} roomId={roomId} revision={m.keyboardRevision} keyboard={m.inlineKeyboard} canSend={can(perms, 'SEND_MESSAGES')} />
+          ) : null}
           {bar.visible ? (
             <ActionBarSlot own={own}>
               <MessageActions c={c} roomId={roomId} perms={perms} onPickerOpenChange={bar.setPicker} />

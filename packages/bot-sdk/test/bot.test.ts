@@ -1,3 +1,5 @@
+import { create } from '@bufbuild/protobuf';
+import { DispatchEventSchema } from '@calaba/protocol';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { ApiError, Bot, GatewayFatalError, parseRetryAfter, signWebhook, verifyWebhookSignature, type BotOptions, type CommandEvent, type Message, type ReactionEvent } from '../src/index.js';
 import { BOT_ID, FakeServer, TEXT_ROOM, TOKEN, VOICE_ROOM, WS_ID, messageEvent, waitFor } from './fake-server.js';
@@ -273,5 +275,37 @@ describe('webhook', () => {
     expect(bot.handleWebhook(body, new Headers({ 'X-Calab-Signature': sig, 'X-Calab-Delivery': 'd-1' }))).toBe(true);
     expect(bot.handleWebhook(body, { 'x-calab-signature': sig })).toBe(true); // a retry of the same delivery
     expect(cmds.map((c) => c.name)).toEqual(['ping']);
+  });
+});
+
+describe('inline callbacks', () => {
+  it('sends and replaces or removes keyboards without erasing omitted text', async () => {
+    const keyboard = { rows: [{ buttons: [{ id: 'approve', label: 'Approve', data: 'draft:1' }] }], allowedUserIds: ['actor'] };
+    srv.route(`POST /api/rooms/${TEXT_ROOM}/messages`, { json: messageJson('m', 'draft', { inlineKeyboard: keyboard, keyboardRevision: '1' }) });
+    srv.route('PATCH /api/messages/m', { json: messageJson('m', 'draft') });
+    const bot = newBot();
+    const m = await bot.send(TEXT_ROOM, { text: 'draft', inlineKeyboard: keyboard });
+    expect(m.inlineKeyboard?.rows[0]?.buttons[0]?.id).toBe('approve');
+    expect(srv.requests.at(-1)?.json).toMatchObject({ inlineKeyboard: keyboard });
+    await bot.edit('m', { inlineKeyboard: { rows: [] } });
+    expect(srv.requests.at(-1)?.json).toEqual({ inlineKeyboard: {}, preserveContent: true });
+    await bot.edit('m', '');
+    expect(srv.requests.at(-1)?.json).toEqual({});
+  });
+
+  it('exposes the same typed callback through gateway and signed webhook', async () => {
+    const secret = 'callback-secret-for-testing';
+    const bot = newBot(TOKEN, { webhookSecret: secret });
+    const got: string[] = [];
+    bot.on('callback', (c) => { got.push(`${c.id}:${c.userId}:${c.data}:${c.keyboardRevision}`); });
+    await bot.start();
+    const callback = { id: 'interaction-1', botUserId: BOT_ID, userId: 'actor', roomId: TEXT_ROOM, messageId: 'm', buttonId: 'approve', data: 'draft:1', keyboardRevision: 1n };
+    srv.dispatch(create(DispatchEventSchema, { event: { case: 'botCallback', value: callback } }));
+    await waitFor(() => got.length === 1);
+    const body = JSON.stringify({ id: 'delivery-1', botUserId: BOT_ID, event: { botCallback: { ...callback, keyboardRevision: '1' } } });
+    expect(bot.handleWebhook(body, { 'X-Calab-Signature': signWebhook(secret, body) })).toBe(true);
+    expect(bot.handleWebhook(body, { 'X-Calab-Signature': signWebhook(secret, body) })).toBe(true);
+    // Cross-transport durable effect dedup belongs to the bot, not the SDK's bounded delivery cache.
+    expect(got).toEqual(['interaction-1:actor:draft:1:1', 'interaction-1:actor:draft:1:1']);
   });
 });

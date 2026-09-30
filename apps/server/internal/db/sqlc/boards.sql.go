@@ -1648,7 +1648,7 @@ func (q *Queries) ListTaskRelations(ctx context.Context, taskIds []uuid.UUID) ([
 }
 
 const listTaskRoomMessages = `-- name: ListTaskRoomMessages :many
-SELECT id, room_id, author_id, content, reply_to_id, nonce, created_at, edited_at, deleted_at, pinned_at, pinned_by, embeds_hidden, kind, payload, sticker_id, forwarded_from, forward_author_id, forward_sent_at FROM messages WHERE room_id = $1 AND deleted_at IS NULL
+SELECT id, room_id, author_id, content, reply_to_id, nonce, created_at, edited_at, deleted_at, pinned_at, pinned_by, embeds_hidden, kind, payload, sticker_id, forwarded_from, forward_author_id, forward_sent_at, inline_keyboard, keyboard_revision FROM messages WHERE room_id = $1 AND deleted_at IS NULL
   AND ($2::uuid IS NULL OR id < $2::uuid)
 ORDER BY id DESC LIMIT $3
 `
@@ -1687,6 +1687,8 @@ func (q *Queries) ListTaskRoomMessages(ctx context.Context, arg ListTaskRoomMess
 			&i.ForwardedFrom,
 			&i.ForwardAuthorID,
 			&i.ForwardSentAt,
+			&i.InlineKeyboard,
+			&i.KeyboardRevision,
 		); err != nil {
 			return nil, err
 		}

@@ -20,7 +20,7 @@ import type { Message as Message$1 } from "@bufbuild/protobuf";
  * Describes the file calaba/v1/message.proto.
  */
 export const file_calaba_v1_message: GenFile = /*@__PURE__*/
-  fileDesc("ChdjYWxhYmEvdjEvbWVzc2FnZS5wcm90bxIJY2FsYWJhLnYxIr4ECgdNZXNzYWdlEgoKAmlkGAEgASgJEg8KB3Jvb21faWQYAiABKAkSEQoJYXV0aG9yX2lkGAMgASgJEg8KB2NvbnRlbnQYBCABKAkSKAoLYXR0YWNobWVudHMYBSADKAsyEy5jYWxhYmEudjEuRmlsZU1ldGESEwoLcmVwbHlfdG9faWQYBiABKAkSDQoFbm9uY2UYByABKAkSLgoKY3JlYXRlZF9hdBgIIAEoCzIaLmdvb2dsZS5wcm90b2J1Zi5UaW1lc3RhbXASLQoJZWRpdGVkX2F0GAkgASgLMhouZ29vZ2xlLnByb3RvYnVmLlRpbWVzdGFtcBImCglyZWFjdGlvbnMYCiADKAsyEy5jYWxhYmEudjEuUmVhY3Rpb24SLQoJcGlubmVkX2F0GAsgASgLMhouZ29vZ2xlLnByb3RvYnVmLlRpbWVzdGFtcBIRCglwaW5uZWRfYnkYDCABKAkSFQoNZW1iZWRzX2hpZGRlbhgNIAEoCBIkCgRraW5kGA4gASgOMhYuY2FsYWJhLnYxLk1lc3NhZ2VLaW5kEigKBnN5c3RlbRgPIAEoCzIYLmNhbGFiYS52MS5TeXN0ZW1NZXNzYWdlEiMKB3N0aWNrZXIYECABKAsyEi5jYWxhYmEudjEuU3RpY2tlchIqCgdjb21tYW5kGB4gASgLMhkuY2FsYWJhLnYxLk1lc3NhZ2VDb21tYW5kEiMKB2ZvcndhcmQYESABKAsyEi5jYWxhYmEudjEuRm9yd2FyZCJuCgdGb3J3YXJkEhEKCWF1dGhvcl9pZBgBIAEoCRIPCgdyb29tX2lkGAIgASgJEhIKCm1lc3NhZ2VfaWQYAyABKAkSKwoHc2VudF9hdBgEIAEoCzIaLmdvb2dsZS5wcm90b2J1Zi5UaW1lc3RhbXAiQQoOTWVzc2FnZUNvbW1hbmQSEwoLYm90X3VzZXJfaWQYASABKAkSDAoEbmFtZRgCIAEoCRIMCgRhcmdzGAMgASgJIpsBCg1TeXN0ZW1NZXNzYWdlEi0KCXJlY29yZGluZxgBIAEoCzIYLmNhbGFiYS52MS5SZWNvcmRpbmdDYXJkSAASKwoIYmlydGhkYXkYAiABKAsyFy5jYWxhYmEudjEuQmlydGhkYXlDYXJkSAASIwoEY2FsbBgDIAEoCzITLmNhbGFiYS52MS5DYWxsQ2FyZEgAQgkKB3BheWxvYWQiKgoMQmlydGhkYXlDYXJkEgsKA2RheRgBIAEoDRINCgVtb250aBgCIAEoDSI0CghSZWFjdGlvbhINCgVlbW9qaRgBIAEoCRINCgVjb3VudBgCIAEoDRIKCgJtZRgDIAEoCCJOChRMaXN0TWVzc2FnZXNSZXNwb25zZRIkCghtZXNzYWdlcxgBIAMoCzISLmNhbGFiYS52MS5NZXNzYWdlEhAKCGhhc19tb3JlGAIgASgIIncKFENyZWF0ZU1lc3NhZ2VSZXF1ZXN0Eg8KB2NvbnRlbnQYASABKAkSFgoOYXR0YWNobWVudF9pZHMYAiADKAkSEwoLcmVwbHlfdG9faWQYAyABKAkSDQoFbm9uY2UYBCABKAkSEgoKc3RpY2tlcl9pZBgFIAEoCSI8ChVDcmVhdGVNZXNzYWdlUmVzcG9uc2USIwoHbWVzc2FnZRgBIAEoCzISLmNhbGFiYS52MS5NZXNzYWdlIicKFFVwZGF0ZU1lc3NhZ2VSZXF1ZXN0Eg8KB2NvbnRlbnQYASABKAkiPAoVVXBkYXRlTWVzc2FnZVJlc3BvbnNlEiMKB21lc3NhZ2UYASABKAsyEi5jYWxhYmEudjEuTWVzc2FnZSIrChVGb3J3YXJkTWVzc2FnZVJlcXVlc3QSEgoKdG9fcm9vbV9pZBgBIAEoCSI9ChZGb3J3YXJkTWVzc2FnZVJlc3BvbnNlEiMKB21lc3NhZ2UYASABKAsyEi5jYWxhYmEudjEuTWVzc2FnZSIoChZTZXRFbWJlZHNIaWRkZW5SZXF1ZXN0Eg4KBmhpZGRlbhgBIAEoCCIsChZVcGRhdGVSZWFkU3RhdGVSZXF1ZXN0EhIKCm1lc3NhZ2VfaWQYASABKAkqRAoLTWVzc2FnZUtpbmQSHAoYTUVTU0FHRV9LSU5EX1VOU1BFQ0lGSUVEEAASFwoTTUVTU0FHRV9LSU5EX1NZU1RFTRABQpoBCg1jb20uY2FsYWJhLnYxQgxNZXNzYWdlUHJvdG9QAVo2Z2l0aHViLmNvbS9jYWxhYmEvY2FsYWJhL3NlcnZlci9nZW4vY2FsYWJhL3YxO2NhbGFiYXYxogIDQ1hYqgIJQ2FsYWJhLlYxygIJQ2FsYWJhXFYx4gIVQ2FsYWJhXFYxXEdQQk1ldGFkYXRh6gIKQ2FsYWJhOjpWMWIGcHJvdG8z", [file_google_protobuf_timestamp, file_calaba_v1_call, file_calaba_v1_file, file_calaba_v1_recording, file_calaba_v1_sticker]);
+  fileDesc("ChdjYWxhYmEvdjEvbWVzc2FnZS5wcm90bxIJY2FsYWJhLnYxIo0FCgdNZXNzYWdlEgoKAmlkGAEgASgJEg8KB3Jvb21faWQYAiABKAkSEQoJYXV0aG9yX2lkGAMgASgJEg8KB2NvbnRlbnQYBCABKAkSKAoLYXR0YWNobWVudHMYBSADKAsyEy5jYWxhYmEudjEuRmlsZU1ldGESEwoLcmVwbHlfdG9faWQYBiABKAkSDQoFbm9uY2UYByABKAkSLgoKY3JlYXRlZF9hdBgIIAEoCzIaLmdvb2dsZS5wcm90b2J1Zi5UaW1lc3RhbXASLQoJZWRpdGVkX2F0GAkgASgLMhouZ29vZ2xlLnByb3RvYnVmLlRpbWVzdGFtcBImCglyZWFjdGlvbnMYCiADKAsyEy5jYWxhYmEudjEuUmVhY3Rpb24SLQoJcGlubmVkX2F0GAsgASgLMhouZ29vZ2xlLnByb3RvYnVmLlRpbWVzdGFtcBIRCglwaW5uZWRfYnkYDCABKAkSFQoNZW1iZWRzX2hpZGRlbhgNIAEoCBIkCgRraW5kGA4gASgOMhYuY2FsYWJhLnYxLk1lc3NhZ2VLaW5kEigKBnN5c3RlbRgPIAEoCzIYLmNhbGFiYS52MS5TeXN0ZW1NZXNzYWdlEiMKB3N0aWNrZXIYECABKAsyEi5jYWxhYmEudjEuU3RpY2tlchIqCgdjb21tYW5kGB4gASgLMhkuY2FsYWJhLnYxLk1lc3NhZ2VDb21tYW5kEiMKB2ZvcndhcmQYESABKAsyEi5jYWxhYmEudjEuRm9yd2FyZBIyCg9pbmxpbmVfa2V5Ym9hcmQYEiABKAsyGS5jYWxhYmEudjEuSW5saW5lS2V5Ym9hcmQSGQoRa2V5Ym9hcmRfcmV2aXNpb24YEyABKAQibgoHRm9yd2FyZBIRCglhdXRob3JfaWQYASABKAkSDwoHcm9vbV9pZBgCIAEoCRISCgptZXNzYWdlX2lkGAMgASgJEisKB3NlbnRfYXQYBCABKAsyGi5nb29nbGUucHJvdG9idWYuVGltZXN0YW1wIkEKDk1lc3NhZ2VDb21tYW5kEhMKC2JvdF91c2VyX2lkGAEgASgJEgwKBG5hbWUYAiABKAkSDAoEYXJncxgDIAEoCSKbAQoNU3lzdGVtTWVzc2FnZRItCglyZWNvcmRpbmcYASABKAsyGC5jYWxhYmEudjEuUmVjb3JkaW5nQ2FyZEgAEisKCGJpcnRoZGF5GAIgASgLMhcuY2FsYWJhLnYxLkJpcnRoZGF5Q2FyZEgAEiMKBGNhbGwYAyABKAsyEy5jYWxhYmEudjEuQ2FsbENhcmRIAEIJCgdwYXlsb2FkIioKDEJpcnRoZGF5Q2FyZBILCgNkYXkYASABKA0SDQoFbW9udGgYAiABKA0iNAoIUmVhY3Rpb24SDQoFZW1vamkYASABKAkSDQoFY291bnQYAiABKA0SCgoCbWUYAyABKAgiTgoUTGlzdE1lc3NhZ2VzUmVzcG9uc2USJAoIbWVzc2FnZXMYASADKAsyEi5jYWxhYmEudjEuTWVzc2FnZRIQCghoYXNfbW9yZRgCIAEoCCKrAQoUQ3JlYXRlTWVzc2FnZVJlcXVlc3QSDwoHY29udGVudBgBIAEoCRIWCg5hdHRhY2htZW50X2lkcxgCIAMoCRITCgtyZXBseV90b19pZBgDIAEoCRINCgVub25jZRgEIAEoCRISCgpzdGlja2VyX2lkGAUgASgJEjIKD2lubGluZV9rZXlib2FyZBgGIAEoCzIZLmNhbGFiYS52MS5JbmxpbmVLZXlib2FyZCI8ChVDcmVhdGVNZXNzYWdlUmVzcG9uc2USIwoHbWVzc2FnZRgBIAEoCzISLmNhbGFiYS52MS5NZXNzYWdlInUKFFVwZGF0ZU1lc3NhZ2VSZXF1ZXN0Eg8KB2NvbnRlbnQYASABKAkSMgoPaW5saW5lX2tleWJvYXJkGAIgASgLMhkuY2FsYWJhLnYxLklubGluZUtleWJvYXJkEhgKEHByZXNlcnZlX2NvbnRlbnQYAyABKAgiPAoVVXBkYXRlTWVzc2FnZVJlc3BvbnNlEiMKB21lc3NhZ2UYASABKAsyEi5jYWxhYmEudjEuTWVzc2FnZSIrChVGb3J3YXJkTWVzc2FnZVJlcXVlc3QSEgoKdG9fcm9vbV9pZBgBIAEoCSI9ChZGb3J3YXJkTWVzc2FnZVJlc3BvbnNlEiMKB21lc3NhZ2UYASABKAsyEi5jYWxhYmEudjEuTWVzc2FnZSIoChZTZXRFbWJlZHNIaWRkZW5SZXF1ZXN0Eg4KBmhpZGRlbhgBIAEoCCIsChZVcGRhdGVSZWFkU3RhdGVSZXF1ZXN0EhIKCm1lc3NhZ2VfaWQYASABKAkiVgoOSW5saW5lS2V5Ym9hcmQSKgoEcm93cxgBIAMoCzIcLmNhbGFiYS52MS5JbmxpbmVLZXlib2FyZFJvdxIYChBhbGxvd2VkX3VzZXJfaWRzGAIgAygJIj0KEUlubGluZUtleWJvYXJkUm93EigKB2J1dHRvbnMYASADKAsyFy5jYWxhYmEudjEuSW5saW5lQnV0dG9uIkkKDElubGluZUJ1dHRvbhIKCgJpZBgBIAEoCRINCgVsYWJlbBgCIAEoCRIMCgRkYXRhGAMgASgJEhAKCGRpc2FibGVkGAQgASgIIl4KH0NyZWF0ZU1lc3NhZ2VJbnRlcmFjdGlvblJlcXVlc3QSEQoJYnV0dG9uX2lkGAEgASgJEhkKEWtleWJvYXJkX3JldmlzaW9uGAIgASgEEg0KBW5vbmNlGAMgASgJIjoKIENyZWF0ZU1lc3NhZ2VJbnRlcmFjdGlvblJlc3BvbnNlEhYKDmludGVyYWN0aW9uX2lkGAEgASgJIuYBCgtCb3RDYWxsYmFjaxIKCgJpZBgBIAEoCRITCgtib3RfdXNlcl9pZBgCIAEoCRIPCgd1c2VyX2lkGAMgASgJEhQKDHdvcmtzcGFjZV9pZBgEIAEoCRIPCgdyb29tX2lkGAUgASgJEhIKCm1lc3NhZ2VfaWQYBiABKAkSEQoJYnV0dG9uX2lkGAcgASgJEgwKBGRhdGEYCCABKAkSGQoRa2V5Ym9hcmRfcmV2aXNpb24YCSABKAQSLgoKY3JlYXRlZF9hdBgKIAEoCzIaLmdvb2dsZS5wcm90b2J1Zi5UaW1lc3RhbXAqRAoLTWVzc2FnZUtpbmQSHAoYTUVTU0FHRV9LSU5EX1VOU1BFQ0lGSUVEEAASFwoTTUVTU0FHRV9LSU5EX1NZU1RFTRABQpoBCg1jb20uY2FsYWJhLnYxQgxNZXNzYWdlUHJvdG9QAVo2Z2l0aHViLmNvbS9jYWxhYmEvY2FsYWJhL3NlcnZlci9nZW4vY2FsYWJhL3YxO2NhbGFiYXYxogIDQ1hYqgIJQ2FsYWJhLlYxygIJQ2FsYWJhXFYx4gIVQ2FsYWJhXFYxXEdQQk1ldGFkYXRh6gIKQ2FsYWJhOjpWMWIGcHJvdG8z", [file_google_protobuf_timestamp, file_calaba_v1_call, file_calaba_v1_file, file_calaba_v1_recording, file_calaba_v1_sticker]);
 
 /**
  * @generated from message calaba.v1.Message
@@ -149,6 +149,20 @@ export type Message = Message$1<"calaba.v1.Message"> & {
    * @generated from field: calaba.v1.Forward forward = 17;
    */
   forward?: Forward | undefined;
+
+  /**
+   * bot-authored ordinary messages only
+   *
+   * @generated from field: calaba.v1.InlineKeyboard inline_keyboard = 18;
+   */
+  inlineKeyboard?: InlineKeyboard | undefined;
+
+  /**
+   * server-owned; changes on text or keyboard edits
+   *
+   * @generated from field: uint64 keyboard_revision = 19;
+   */
+  keyboardRevision: bigint;
 };
 
 /**
@@ -394,6 +408,11 @@ export type CreateMessageRequest = Message$1<"calaba.v1.CreateMessageRequest"> &
    * @generated from field: string sticker_id = 5;
    */
   stickerId: string;
+
+  /**
+   * @generated from field: calaba.v1.InlineKeyboard inline_keyboard = 6;
+   */
+  inlineKeyboard?: InlineKeyboard | undefined;
 };
 
 /**
@@ -428,9 +447,25 @@ export const CreateMessageResponseSchema: GenMessage<CreateMessageResponse> = /*
  */
 export type UpdateMessageRequest = Message$1<"calaba.v1.UpdateMessageRequest"> & {
   /**
+   * same empty-text semantics as older clients
+   *
    * @generated from field: string content = 1;
    */
   content: string;
+
+  /**
+   * omitted = keep; empty rows = remove
+   *
+   * @generated from field: calaba.v1.InlineKeyboard inline_keyboard = 2;
+   */
+  inlineKeyboard?: InlineKeyboard | undefined;
+
+  /**
+   * keyboard-only edit: requires inline_keyboard and empty content
+   *
+   * @generated from field: bool preserve_content = 3;
+   */
+  preserveContent: boolean;
 };
 
 /**
@@ -537,6 +572,211 @@ export type UpdateReadStateRequest = Message$1<"calaba.v1.UpdateReadStateRequest
  */
 export const UpdateReadStateRequestSchema: GenMessage<UpdateReadStateRequest> = /*@__PURE__*/
   messageDesc(file_calaba_v1_message, 14);
+
+/**
+ * Callback metadata is public to everyone who can read the message. Never put secrets here.
+ * At most 5 rows, 5 buttons per row, 25 buttons total and 50 allowed users.
+ *
+ * @generated from message calaba.v1.InlineKeyboard
+ */
+export type InlineKeyboard = Message$1<"calaba.v1.InlineKeyboard"> & {
+  /**
+   * @generated from field: repeated calaba.v1.InlineKeyboardRow rows = 1;
+   */
+  rows: InlineKeyboardRow[];
+
+  /**
+   * empty = any reader with SEND_MESSAGES
+   *
+   * @generated from field: repeated string allowed_user_ids = 2;
+   */
+  allowedUserIds: string[];
+};
+
+/**
+ * Describes the message calaba.v1.InlineKeyboard.
+ * Use `create(InlineKeyboardSchema)` to create a new message.
+ */
+export const InlineKeyboardSchema: GenMessage<InlineKeyboard> = /*@__PURE__*/
+  messageDesc(file_calaba_v1_message, 15);
+
+/**
+ * @generated from message calaba.v1.InlineKeyboardRow
+ */
+export type InlineKeyboardRow = Message$1<"calaba.v1.InlineKeyboardRow"> & {
+  /**
+   * @generated from field: repeated calaba.v1.InlineButton buttons = 1;
+   */
+  buttons: InlineButton[];
+};
+
+/**
+ * Describes the message calaba.v1.InlineKeyboardRow.
+ * Use `create(InlineKeyboardRowSchema)` to create a new message.
+ */
+export const InlineKeyboardRowSchema: GenMessage<InlineKeyboardRow> = /*@__PURE__*/
+  messageDesc(file_calaba_v1_message, 16);
+
+/**
+ * @generated from message calaba.v1.InlineButton
+ */
+export type InlineButton = Message$1<"calaba.v1.InlineButton"> & {
+  /**
+   * unique within this keyboard, 1..64 ASCII letters/digits/_/-
+   *
+   * @generated from field: string id = 1;
+   */
+  id: string;
+
+  /**
+   * 1..80 characters
+   *
+   * @generated from field: string label = 2;
+   */
+  label: string;
+
+  /**
+   * opaque public metadata, at most 512 bytes
+   *
+   * @generated from field: string data = 3;
+   */
+  data: string;
+
+  /**
+   * @generated from field: bool disabled = 4;
+   */
+  disabled: boolean;
+};
+
+/**
+ * Describes the message calaba.v1.InlineButton.
+ * Use `create(InlineButtonSchema)` to create a new message.
+ */
+export const InlineButtonSchema: GenMessage<InlineButton> = /*@__PURE__*/
+  messageDesc(file_calaba_v1_message, 17);
+
+/**
+ * POST /api/messages/{id}/interactions (people only; VIEW_ROOM and SEND_MESSAGES).
+ * A retry with the same actor + nonce returns the original receipt; never repeats delivery.
+ *
+ * @generated from message calaba.v1.CreateMessageInteractionRequest
+ */
+export type CreateMessageInteractionRequest = Message$1<"calaba.v1.CreateMessageInteractionRequest"> & {
+  /**
+   * @generated from field: string button_id = 1;
+   */
+  buttonId: string;
+
+  /**
+   * @generated from field: uint64 keyboard_revision = 2;
+   */
+  keyboardRevision: bigint;
+
+  /**
+   * required, 1..64 bytes; reuse on network retries
+   *
+   * @generated from field: string nonce = 3;
+   */
+  nonce: string;
+};
+
+/**
+ * Describes the message calaba.v1.CreateMessageInteractionRequest.
+ * Use `create(CreateMessageInteractionRequestSchema)` to create a new message.
+ */
+export const CreateMessageInteractionRequestSchema: GenMessage<CreateMessageInteractionRequest> = /*@__PURE__*/
+  messageDesc(file_calaba_v1_message, 18);
+
+/**
+ * @generated from message calaba.v1.CreateMessageInteractionResponse
+ */
+export type CreateMessageInteractionResponse = Message$1<"calaba.v1.CreateMessageInteractionResponse"> & {
+  /**
+   * accepted for delivery, NOT proof the bot completed an action
+   *
+   * @generated from field: string interaction_id = 1;
+   */
+  interactionId: string;
+};
+
+/**
+ * Describes the message calaba.v1.CreateMessageInteractionResponse.
+ * Use `create(CreateMessageInteractionResponseSchema)` to create a new message.
+ */
+export const CreateMessageInteractionResponseSchema: GenMessage<CreateMessageInteractionResponse> = /*@__PURE__*/
+  messageDesc(file_calaba_v1_message, 19);
+
+/**
+ * Private to the message's author bot, over gateway and configured webhook.
+ *
+ * @generated from message calaba.v1.BotCallback
+ */
+export type BotCallback = Message$1<"calaba.v1.BotCallback"> & {
+  /**
+   * stable across transports and retries; bots MUST durably dedupe effects
+   *
+   * @generated from field: string id = 1;
+   */
+  id: string;
+
+  /**
+   * @generated from field: string bot_user_id = 2;
+   */
+  botUserId: string;
+
+  /**
+   * authenticated actor, never supplied by the client
+   *
+   * @generated from field: string user_id = 3;
+   */
+  userId: string;
+
+  /**
+   * empty for a DM
+   *
+   * @generated from field: string workspace_id = 4;
+   */
+  workspaceId: string;
+
+  /**
+   * @generated from field: string room_id = 5;
+   */
+  roomId: string;
+
+  /**
+   * @generated from field: string message_id = 6;
+   */
+  messageId: string;
+
+  /**
+   * @generated from field: string button_id = 7;
+   */
+  buttonId: string;
+
+  /**
+   * loaded from the saved keyboard
+   *
+   * @generated from field: string data = 8;
+   */
+  data: string;
+
+  /**
+   * @generated from field: uint64 keyboard_revision = 9;
+   */
+  keyboardRevision: bigint;
+
+  /**
+   * @generated from field: google.protobuf.Timestamp created_at = 10;
+   */
+  createdAt?: Timestamp | undefined;
+};
+
+/**
+ * Describes the message calaba.v1.BotCallback.
+ * Use `create(BotCallbackSchema)` to create a new message.
+ */
+export const BotCallbackSchema: GenMessage<BotCallback> = /*@__PURE__*/
+  messageDesc(file_calaba_v1_message, 20);
 
 /**
  * @generated from enum calaba.v1.MessageKind

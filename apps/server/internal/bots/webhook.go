@@ -168,6 +168,8 @@ func (p Publisher) User(ctx context.Context, userID uuid.UUID, ev *v1.DispatchEv
 	p.S.onUserEvent(ctx, userID, ev)
 }
 
+// BotCallback is intentionally excluded: its private outbox entry is committed atomically
+// with the interaction receipt by messages.interact, never fanned out to room bots.
 // deliverable: the room and actor (author / reacting user; Nil = unknown) of an event bots
 // get by webhook.
 func deliverable(ev *v1.DispatchEvent) (room, actor uuid.UUID, ok bool) {

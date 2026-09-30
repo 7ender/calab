@@ -5,6 +5,7 @@ export type {
   BotOptions,
   CommandEvent,
   FileInput,
+  EditOptions,
   MessageDeleteEvent,
   ReactionEvent,
   SendContent,
@@ -18,6 +19,10 @@ export { DELIVERY_HEADER, SIGNATURE_HEADER, parseWebhookUpdate, signWebhook, ver
 export type {
   Bot as BotProfile,
   BotCommand,
+  BotCallback,
+  InlineKeyboard,
+  InlineKeyboardRow,
+  InlineButton,
   BotWebhook,
   BotWebhookUpdate,
   DispatchEvent,
