@@ -2,6 +2,7 @@ import { TaskField, TaskOp } from '@calaba/protocol';
 import {
   AlignLeft,
   Archive,
+  BadgeCheck,
   Bell,
   CalendarClock,
   CalendarPlus,
@@ -18,6 +19,7 @@ import {
   SignalHigh,
   Tag,
   Triangle,
+  UserCheck,
   UserPen,
   Users,
   type LucideIcon,
@@ -86,6 +88,9 @@ export const FILTER_FIELDS: readonly FieldDef[] = [
   { field: TaskField.HAS_COMMENTS, label: 'boards.f.hasComments', icon: MessageSquare, kind: 'bool', ops: [IS], op: IS, multi: false },
   { field: TaskField.TEXT, label: 'boards.f.text', icon: AlignLeft, kind: 'text', ops: [CONTAINS], op: CONTAINS, multi: false },
   { field: TaskField.ARCHIVED, label: 'boards.f.archived', icon: Archive, kind: 'bool', ops: [IS], op: IS, multi: false, hidden: true },
+  // Approvals (ADR-0049): matched locally (filter.ts); their pickers come with the approvals UI.
+  { field: TaskField.APPROVAL_STATE, label: 'boards.f.approvalState', icon: BadgeCheck, kind: 'text', ops: [IS, IS_NOT], op: IS, multi: true, hidden: true },
+  { field: TaskField.APPROVER_PENDING, label: 'boards.f.approverPending', icon: UserCheck, kind: 'user', ops: [IS, IS_NOT], op: IS, multi: true, hidden: true },
 ];
 
 const BY_FIELD = new Map(FILTER_FIELDS.map((f) => [f.field, f]));

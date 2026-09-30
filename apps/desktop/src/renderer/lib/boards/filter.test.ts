@@ -1,5 +1,5 @@
 import { create, fromJson, toJson, type MessageInitShape } from '@bufbuild/protobuf';
-import { BoardStatusType, TaskAssigneeSchema, TaskField, TaskFilterSchema, TaskOp, TaskPriority, TaskRelationKind, TaskRelationSchema, TaskSchema, type Task } from '@calaba/protocol';
+import { ApproverState, BoardStatusType, TaskApprovalState, TaskAssigneeSchema, TaskField, TaskFilterSchema, TaskOp, TaskPriority, TaskRelationKind, TaskRelationSchema, TaskSchema, type Task } from '@calaba/protocol';
 import { timestampFromMs } from '@bufbuild/protobuf/wkt';
 import { describe, expect, it } from 'vitest';
 import { FILTER_FIELDS, fieldDef, opLabel } from './filterFields';
@@ -128,5 +128,23 @@ describe('matchTask', () => {
     ];
     expect(m(t, two)).toBe(false);
     expect(m(t, two, true)).toBe(true);
+  });
+});
+
+describe('approval filters (ADR-0049)', () => {
+  const m = (t: Task, conds: FilterState['conds']): boolean => matchTask(t, { conds, any: false }, ctx);
+  it('matches the derived state and my pending vote', () => {
+    const t = task({
+      approvalState: TaskApprovalState.PENDING,
+      approvers: [
+        { userId: 'u-me', state: ApproverState.PENDING },
+        { userId: 'u-2', state: ApproverState.APPROVED },
+      ],
+    });
+    expect(m(t, [{ field: TaskField.APPROVAL_STATE, op: TaskOp.IS, values: ['pending', 'rejected'] }])).toBe(true);
+    expect(m(t, [{ field: TaskField.APPROVAL_STATE, op: TaskOp.IS_NOT, values: ['pending'] }])).toBe(false);
+    expect(m(task(), [{ field: TaskField.APPROVAL_STATE, op: TaskOp.IS, values: ['none'] }])).toBe(true);
+    expect(m(t, [{ field: TaskField.APPROVER_PENDING, op: TaskOp.IS, values: ['me'] }])).toBe(true);
+    expect(m(t, [{ field: TaskField.APPROVER_PENDING, op: TaskOp.IS, values: ['u-2'] }])).toBe(false);
   });
 });

@@ -110,6 +110,8 @@ export const esBoards: DictShape<typeof ruBoards> = {
   'boards.f.hasComments': 'Tiene comentarios',
   'boards.f.text': 'Texto',
   'boards.f.archived': 'Archivada',
+  'boards.f.approvalState': 'Aprobación',
+  'boards.f.approverPending': 'Pendiente de aprobación de',
   'boards.op.is': 'es',
   'boards.op.isNot': 'no es',
   'boards.op.anyOf': 'es cualquiera de',

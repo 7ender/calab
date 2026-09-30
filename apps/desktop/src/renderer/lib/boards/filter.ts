@@ -1,7 +1,9 @@
 import { create } from '@bufbuild/protobuf';
 import { timestampFromMs, timestampMs } from '@bufbuild/protobuf/wkt';
 import {
+  ApproverState,
   BoardStatusType,
+  TaskApprovalState,
   TaskConditionSchema,
   TaskField,
   TaskFilterSchema,
@@ -197,6 +199,14 @@ const TYPE_TOKEN: Record<number, string> = {
 
 const PRIORITY_TOKEN: Record<string, string> = { none: '0', low: '1', medium: '2', high: '3', urgent: '4' };
 
+/** Task.approvalState → the APPROVAL_STATE filter value (ADR-0049). */
+const APPROVAL_TOKEN: Record<number, string> = {
+  [TaskApprovalState.NONE]: 'none',
+  [TaskApprovalState.PENDING]: 'pending',
+  [TaskApprovalState.APPROVED]: 'approved',
+  [TaskApprovalState.REJECTED]: 'rejected',
+};
+
 const me = (v: string, ctx: MatchCtx): string => (v === 'me' ? ctx.me : v);
 
 function setMatch(have: readonly string[], c: Cond, ctx: MatchCtx, all = false): boolean {
@@ -312,6 +322,14 @@ export function matchCond(t: Task, c: Cond, ctx: MatchCtx): boolean {
       return boolMatch(t.commentCount > 0, c);
     case TaskField.ARCHIVED:
       return boolMatch(!!t.archivedAt, c);
+    case TaskField.APPROVAL_STATE:
+      return setMatch([APPROVAL_TOKEN[t.approvalState] ?? 'none'], c, ctx);
+    case TaskField.APPROVER_PENDING:
+      return setMatch(
+        t.approvers.filter((a) => a.state === ApproverState.PENDING).map((a) => a.userId),
+        c,
+        ctx,
+      );
     case TaskField.TEXT: {
       const q = (c.values[0] ?? '').trim().toLowerCase();
       if (!q) return true;

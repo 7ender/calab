@@ -110,6 +110,8 @@ export const enBoards: DictShape<typeof ruBoards> = {
   'boards.f.hasComments': 'Has comments',
   'boards.f.text': 'Text',
   'boards.f.archived': 'Archived',
+  'boards.f.approvalState': 'Approval',
+  'boards.f.approverPending': 'Awaiting approval from',
   'boards.op.is': 'is',
   'boards.op.isNot': 'is not',
   'boards.op.anyOf': 'is any of',

@@ -110,6 +110,8 @@ export const zhBoards: DictShape<typeof ruBoards> = {
   'boards.f.hasComments': '有评论',
   'boards.f.text': '文本',
   'boards.f.archived': '已归档',
+  'boards.f.approvalState': '审批',
+  'boards.f.approverPending': '等待审批人',
   'boards.op.is': '是',
   'boards.op.isNot': '不是',
   'boards.op.anyOf': '属于以下任一',

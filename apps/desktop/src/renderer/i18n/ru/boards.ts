@@ -113,6 +113,8 @@ export const ruBoards = {
   'boards.f.hasComments': 'Есть комментарии',
   'boards.f.text': 'Текст',
   'boards.f.archived': 'В архиве',
+  'boards.f.approvalState': 'Согласование',
+  'boards.f.approverPending': 'Ждёт согласования от',
   'boards.op.is': 'это',
   'boards.op.isNot': 'не',
   'boards.op.anyOf': 'любой из',
