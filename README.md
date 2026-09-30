@@ -45,6 +45,8 @@ It is built for teams of up to 20–30 people in voice at once and up to 3 scree
 - **One-on-one calls** in direct messages, with ringing, camera and screen sharing.
 - **Meeting recordings** — the server records, GPTunneL transcribes; a card with the summary, audio and full transcript arrives in the room chat.
 - **Soundboard**, moderation (server mute, disconnect, move by drag and drop), statuses.
+- **Phone calls (SIP)** — connect your own SIP provider and dial a landline or mobile number from a voice room; the callee joins as a participant, everyone sees “Dialling → Ringing → On the call”. Provider settings, a call log, a “Place calls” permission that nobody has by default ([ADR-0046](docs/adr/0046-sip-telephony.md)).
+- **Temporary rooms** — a room for an hour or a day with a ready guest link and an optional calendar meeting: a Zoom replacement that disappears by itself ([ADR-0044](docs/adr/0044-temp-rooms.md)).
 
 ### 💬 Chat
 
@@ -84,6 +86,7 @@ It is built for teams of up to 20–30 people in voice at once and up to 3 scree
 - Comments like chat — reactions, stickers, voice messages — mixed with the change history.
 - Filters, saved views, bulk actions; **create a task from any message**; a task link unfolds into a card in the chat.
 
+- **Approvals** — assign approvers and how many approvals are needed (all or N of M); a task can’t move on until it is approved ([ADR-0049](docs/adr/0049-task-approvals.md)).
 ### 📝 Notes
 
 <img src="apps/landing/public/screens/en/notes.webp" width="880" alt="Notes shelves">
@@ -96,9 +99,13 @@ Up to 20 private shelves with your own names and emoji — like Saved Messages i
 
 A guest link leads straight into a room — no sign-up. With approval turned on (per room or per link), the guest waits on this screen until the organizer clicks “Let in”.
 
+### 🧩 Web apps
+
+An admin pins site shortcuts (Grafana, the wiki, the CRM) under the workspace icon in the left rail. A click opens the site full-window inside Calab and the call keeps going; logins are kept separately per app, camera and microphone only with your permission ([ADR-0050](docs/adr/0050-workspace-apps.md)).
+
 ### 🤖 Bots and SDK
 
-A bot is a member with a token: the same REST and gateway as the app, rights through roles. It reads and writes chat, answers `/commands`, talks in voice rooms (LiveKit, Node / Python / Go) and works with boards within its rights; events arrive over WebSocket or a webhook with an HMAC signature.
+A bot is a member with a token: the same REST and gateway as the app, rights through roles. It reads and writes chat, answers `/commands`, talks in voice rooms (LiveKit, Node / Python / Go) and works with boards within its rights; events arrive over WebSocket or a webhook with an HMAC signature. Bot API v2 adds the calendar (meetings, free/busy, finding a time), member profiles, invitations, badges, guest admission and meeting recording, plus buttons under messages ([ADR-0051](docs/adr/0051-bot-api-v2.md)).
 
 ```ts
 import { Bot } from '@calaba/bot-sdk';
@@ -115,7 +122,16 @@ SDK — [`packages/bot-sdk`](packages/bot-sdk), examples — [`examples/bots`](e
 - **Works everywhere**: UDP → ICE/TCP → TURN/UDP 443 → TURN/TLS 443 automatically; one public IP; tested behind VPNs.
 - Media — DTLS-SRTP; API — HTTPS/WSS, HSTS, strict CSP, `HttpOnly/SameSite=Strict` cookies for the web, argon2id, refresh-token rotation with reuse detection, rate limits. No end-to-end encryption yet: media goes through your own media server.
 - Every right (rooms, boards, calendar) is checked on the server; the LiveKit grant mirrors the rights.
+- **Roles by function** — separate rights for boards, members, bots, integrations, journals, events and recordings; private and closed rooms and boards that even administrators can’t see ([ADR-0048](docs/adr/0048-roles-v2.md)).
 - **Docker Compose** with hardened containers, automatic Let’s Encrypt certificates, daily backups with verified restore, Prometheus metrics; PostgreSQL 17 or 18.
+
+## Roadmap
+
+Planned, not available yet:
+
+- **IVR** — a voice menu and internal extension numbers for phone calls (SIP).
+- **Wiki** — a team knowledge base.
+- **Disk** — shared file storage for the workspace.
 
 ## Quick start
 

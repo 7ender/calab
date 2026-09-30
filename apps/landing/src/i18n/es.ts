@@ -352,7 +352,7 @@ const es: Dict = {
       },
       whatsNew: {
         q: '¿Qué hay de nuevo en las últimas versiones?',
-        a: 'Llamadas a fijos y móviles por SIP desde una sala de voz, aplicaciones web del espacio (Grafana, la wiki, el CRM dentro de la ventana de Calab), aprobación de tareas y una Bot API ampliada: reuniones, libre/ocupado, miembros, invitaciones, insignias y grabación. Antes llegaron los tableros de tareas, «Buscar hora», el calendario por CalDAV y las Notas. La lista completa está en el {changelog}.',
+        a: 'Llamadas a fijos y móviles por SIP desde una sala de voz, aplicaciones web del espacio (Grafana, la wiki, el CRM dentro de la ventana de Calab), aprobación de tareas y una Bot API ampliada: reuniones, libre/ocupado, miembros, invitaciones, insignias y grabación. Antes llegaron los tableros de tareas, «Buscar hora», el calendario por CalDAV y las Notas. Próximamente: IVR para las llamadas telefónicas, una Wiki del equipo y un Disco compartido. La lista completa está en el {changelog}.',
       },
       security: {
         q: '¿Cómo se protege la conexión?',

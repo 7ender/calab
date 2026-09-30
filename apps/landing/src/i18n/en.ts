@@ -352,7 +352,7 @@ const en: Dict = {
       },
       whatsNew: {
         q: 'What’s new in recent versions?',
-        a: 'Calls to landlines and mobiles over SIP straight from a voice room, workspace web apps (Grafana, the wiki, the CRM inside the Calab window), task approvals and an extended Bot API: meetings, free/busy, members, invitations, badges and recording. Earlier came task boards, “Find a time”, CalDAV calendars and Notes. The full list is in the {changelog}.',
+        a: 'Calls to landlines and mobiles over SIP straight from a voice room, workspace web apps (Grafana, the wiki, the CRM inside the Calab window), task approvals and an extended Bot API: meetings, free/busy, members, invitations, badges and recording. Earlier came task boards, “Find a time”, CalDAV calendars and Notes. Coming soon: IVR for phone calls, a team Wiki and a shared Disk. The full list is in the {changelog}.',
       },
       security: {
         q: 'How is the connection secured?',

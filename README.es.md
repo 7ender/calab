@@ -45,6 +45,8 @@ Está pensado para equipos de hasta 20–30 personas en voz a la vez y hasta 3 p
 - **Llamadas uno a uno** en mensajes directos, con tono de llamada, cámara y pantalla compartida.
 - **Grabaciones de reuniones**: graba el servidor y transcribe GPTunneL; al chat de la sala llega una tarjeta con el resumen, el audio y la transcripción completa.
 - **Botonera de sonidos**, moderación (silenciar desde el servidor, desconectar, mover arrastrando), estados.
+- **Llamadas telefónicas (SIP)** — conecta tu propio proveedor SIP y marca un número fijo o móvil desde una sala de voz; el interlocutor entra como participante y todos ven «Marcando → Llamando → En la llamada». Ajustes del proveedor, registro de llamadas y el permiso «Hacer llamadas», que por defecto no tiene nadie ([ADR-0046](docs/adr/0046-sip-telephony.md)).
+- **Salas temporales** — una sala por una hora o un día con enlace de invitado listo y, si quieres, una reunión en el calendario: un sustituto de Zoom que desaparece solo ([ADR-0044](docs/adr/0044-temp-rooms.md)).
 
 ### 💬 Chat
 
@@ -84,6 +86,7 @@ Está pensado para equipos de hasta 20–30 personas en voz a la vez y hasta 3 p
 - Comentarios como en el chat (reacciones, stickers, mensajes de voz) junto al historial de cambios.
 - Filtros, vistas guardadas, acciones en bloque; **una tarea desde cualquier mensaje**; el enlace a una tarea se despliega como tarjeta en el chat.
 
+- **Aprobaciones** — asigna aprobadores y cuántas aprobaciones hacen falta (todas o N de M); una tarea no avanza en el tablero hasta que se aprueba ([ADR-0049](docs/adr/0049-task-approvals.md)).
 ### 📝 Notas
 
 <img src="apps/landing/public/screens/es/notes.webp" width="880" alt="Estantes de Notas">
@@ -96,9 +99,13 @@ Hasta 20 estantes privados con tus nombres y emoji, como «Mensajes guardados» 
 
 Un enlace de invitado lleva directo a una sala, sin registro. Con la aprobación activada (por sala o por enlace), el invitado espera en esta pantalla hasta que el organizador pulsa «Dejar entrar».
 
+### 🧩 Aplicaciones web
+
+Un administrador fija accesos a sitios (Grafana, la wiki, el CRM) bajo el icono del espacio en la barra izquierda. Un clic abre el sitio a pantalla completa dentro de Calab y la llamada continúa; los inicios de sesión se guardan por separado para cada aplicación, y la cámara y el micrófono solo con tu permiso ([ADR-0050](docs/adr/0050-workspace-apps.md)).
+
 ### 🤖 Bots y SDK
 
-Un bot es un miembro con token: la misma API REST y el mismo gateway que la aplicación, permisos por roles. Lee y escribe en el chat, responde a `/comandos`, habla en las salas de voz (LiveKit, Node / Python / Go) y trabaja con los tableros según sus permisos; los eventos llegan por WebSocket o por un webhook firmado con HMAC.
+Un bot es un miembro con token: la misma API REST y el mismo gateway que la aplicación, permisos por roles. Lee y escribe en el chat, responde a `/comandos`, habla en las salas de voz (LiveKit, Node / Python / Go) y trabaja con los tableros según sus permisos; los eventos llegan por WebSocket o por un webhook firmado con HMAC. Bot API v2 añade el calendario (reuniones, libre/ocupado, búsqueda de hora), perfiles de miembros, invitaciones, insignias, admisión de invitados y grabación de reuniones, además de botones bajo los mensajes ([ADR-0051](docs/adr/0051-bot-api-v2.md)).
 
 ```ts
 import { Bot } from '@calaba/bot-sdk';
@@ -115,7 +122,16 @@ SDK: [`packages/bot-sdk`](packages/bot-sdk); ejemplos: [`examples/bots`](example
 - **Funciona en cualquier red**: UDP → ICE/TCP → TURN/UDP 443 → TURN/TLS 443 automáticamente; una sola IP pública; probado detrás de VPN.
 - Medios con DTLS-SRTP; API por HTTPS/WSS, HSTS, CSP estricta, cookies `HttpOnly/SameSite=Strict` en la web, argon2id, rotación de tokens de actualización con detección de reutilización, límites de frecuencia. Aún no hay cifrado de extremo a extremo: los medios pasan por tu propio servidor de medios.
 - Todos los permisos (salas, tableros, calendario) los comprueba el servidor; el permiso de LiveKit los replica.
+- **Roles por función** — permisos separados para tableros, miembros, bots, integraciones, registros, eventos y grabaciones; salas y tableros privados y cerrados que ni los administradores ven ([ADR-0048](docs/adr/0048-roles-v2.md)).
 - **Docker Compose** con contenedores endurecidos, certificados de Let’s Encrypt automáticos, copias de seguridad diarias con restauración verificada, métricas de Prometheus; PostgreSQL 17 o 18.
+
+## Próximamente
+
+Planificado, aún no disponible:
+
+- **IVR** — menú de voz y números internos para las llamadas telefónicas (SIP).
+- **Wiki** — base de conocimiento del equipo.
+- **Disco** — almacenamiento compartido de archivos del espacio.
 
 ## Inicio rápido
 
