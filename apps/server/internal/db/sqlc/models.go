@@ -502,6 +502,8 @@ type SipAccount struct {
 	Host            string
 	Transport       string
 	Username        string
+	AuthUsername    string
+	Port            int32
 	PasswordEnc     []byte
 	CallerID        string
 	OutboundPrefix  string

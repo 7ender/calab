@@ -9,11 +9,13 @@ SELECT * FROM sip_accounts WHERE workspace_id = $1;
 
 -- name: PutSipAccount :one
 INSERT INTO sip_accounts (workspace_id, provider, host, transport, username, password_enc, caller_id,
-                          outbound_prefix, allowed_prefixes, trunk_id, enabled, last_error, updated_at, updated_by)
-VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, '', now(), $12)
+                          outbound_prefix, allowed_prefixes, trunk_id, enabled, last_error, updated_at, updated_by,
+                          auth_username, port)
+VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, '', now(), $12, $13, $14)
 ON CONFLICT (workspace_id) DO UPDATE
 SET provider = excluded.provider, host = excluded.host, transport = excluded.transport,
-    username = excluded.username, password_enc = excluded.password_enc, caller_id = excluded.caller_id,
+    username = excluded.username, auth_username = excluded.auth_username, port = excluded.port,
+    password_enc = excluded.password_enc, caller_id = excluded.caller_id,
     outbound_prefix = excluded.outbound_prefix, allowed_prefixes = excluded.allowed_prefixes,
     trunk_id = excluded.trunk_id, enabled = excluded.enabled, last_error = '',
     updated_at = now(), updated_by = excluded.updated_by

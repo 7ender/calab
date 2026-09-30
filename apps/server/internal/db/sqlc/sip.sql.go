@@ -84,7 +84,7 @@ func (q *Queries) GetLiveSipCallByRoom(ctx context.Context, roomID *uuid.UUID) (
 }
 
 const getSipAccount = `-- name: GetSipAccount :one
-SELECT workspace_id, provider, host, transport, username, password_enc, caller_id, outbound_prefix, allowed_prefixes, trunk_id, enabled, last_error, updated_at, updated_by FROM sip_accounts WHERE workspace_id = $1
+SELECT workspace_id, provider, host, transport, username, auth_username, port, password_enc, caller_id, outbound_prefix, allowed_prefixes, trunk_id, enabled, last_error, updated_at, updated_by FROM sip_accounts WHERE workspace_id = $1
 `
 
 func (q *Queries) GetSipAccount(ctx context.Context, workspaceID uuid.UUID) (SipAccount, error) {
@@ -96,6 +96,8 @@ func (q *Queries) GetSipAccount(ctx context.Context, workspaceID uuid.UUID) (Sip
 		&i.Host,
 		&i.Transport,
 		&i.Username,
+		&i.AuthUsername,
+		&i.Port,
 		&i.PasswordEnc,
 		&i.CallerID,
 		&i.OutboundPrefix,
@@ -401,15 +403,17 @@ func (q *Queries) MarkSipCallRinging(ctx context.Context, id uuid.UUID) (SipCall
 
 const putSipAccount = `-- name: PutSipAccount :one
 INSERT INTO sip_accounts (workspace_id, provider, host, transport, username, password_enc, caller_id,
-                          outbound_prefix, allowed_prefixes, trunk_id, enabled, last_error, updated_at, updated_by)
-VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, '', now(), $12)
+                          outbound_prefix, allowed_prefixes, trunk_id, enabled, last_error, updated_at, updated_by,
+                          auth_username, port)
+VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, '', now(), $12, $13, $14)
 ON CONFLICT (workspace_id) DO UPDATE
 SET provider = excluded.provider, host = excluded.host, transport = excluded.transport,
-    username = excluded.username, password_enc = excluded.password_enc, caller_id = excluded.caller_id,
+    username = excluded.username, auth_username = excluded.auth_username, port = excluded.port,
+    password_enc = excluded.password_enc, caller_id = excluded.caller_id,
     outbound_prefix = excluded.outbound_prefix, allowed_prefixes = excluded.allowed_prefixes,
     trunk_id = excluded.trunk_id, enabled = excluded.enabled, last_error = '',
     updated_at = now(), updated_by = excluded.updated_by
-RETURNING workspace_id, provider, host, transport, username, password_enc, caller_id, outbound_prefix, allowed_prefixes, trunk_id, enabled, last_error, updated_at, updated_by
+RETURNING workspace_id, provider, host, transport, username, auth_username, port, password_enc, caller_id, outbound_prefix, allowed_prefixes, trunk_id, enabled, last_error, updated_at, updated_by
 `
 
 type PutSipAccountParams struct {
@@ -425,6 +429,8 @@ type PutSipAccountParams struct {
 	TrunkID         string
 	Enabled         bool
 	UpdatedBy       *uuid.UUID
+	AuthUsername    string
+	Port            int32
 }
 
 func (q *Queries) PutSipAccount(ctx context.Context, arg PutSipAccountParams) (SipAccount, error) {
@@ -441,6 +447,8 @@ func (q *Queries) PutSipAccount(ctx context.Context, arg PutSipAccountParams) (S
 		arg.TrunkID,
 		arg.Enabled,
 		arg.UpdatedBy,
+		arg.AuthUsername,
+		arg.Port,
 	)
 	var i SipAccount
 	err := row.Scan(
@@ -449,6 +457,8 @@ func (q *Queries) PutSipAccount(ctx context.Context, arg PutSipAccountParams) (S
 		&i.Host,
 		&i.Transport,
 		&i.Username,
+		&i.AuthUsername,
+		&i.Port,
 		&i.PasswordEnc,
 		&i.CallerID,
 		&i.OutboundPrefix,

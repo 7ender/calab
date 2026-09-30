@@ -191,7 +191,7 @@ type SipSettings struct {
 	// trunk (Workspace.sip_enabled = enabled && trunk saved).
 	Enabled     bool         `protobuf:"varint,1,opt,name=enabled,proto3" json:"enabled,omitempty"`
 	Provider    string       `protobuf:"bytes,2,opt,name=provider,proto3" json:"provider,omitempty"` // free label, e.g. «Zadarma»; ≤ 64 characters
-	Host        string       `protobuf:"bytes,3,opt,name=host,proto3" json:"host,omitempty"`         // provider SIP server: host name or IPv4 with an optional :port, no «sip:»
+	Host        string       `protobuf:"bytes,3,opt,name=host,proto3" json:"host,omitempty"`         // provider SIP server: host name or IP address, no «sip:» and no port (see port)
 	Transport   SipTransport `protobuf:"varint,4,opt,name=transport,proto3,enum=calaba.v1.SipTransport" json:"transport,omitempty"`
 	Username    string       `protobuf:"bytes,5,opt,name=username,proto3" json:"username,omitempty"`                           // SIP login (may be empty: IP-authenticated trunks)
 	HasPassword bool         `protobuf:"varint,6,opt,name=has_password,json=hasPassword,proto3" json:"has_password,omitempty"` // a password is stored (it is never sent back)
@@ -202,10 +202,13 @@ type SipSettings struct {
 	// Numbers that may be called, as E.164 prefixes («+7», «+7495»); empty = any number.
 	AllowedPrefixes []string `protobuf:"bytes,9,rep,name=allowed_prefixes,json=allowedPrefixes,proto3" json:"allowed_prefixes,omitempty"`
 	// The last error of LiveKit (saving) or of the provider (connection test); empty = none.
-	LastError     string                 `protobuf:"bytes,10,opt,name=last_error,json=lastError,proto3" json:"last_error,omitempty"`
-	UpdatedAt     *timestamppb.Timestamp `protobuf:"bytes,11,opt,name=updated_at,json=updatedAt,proto3" json:"updated_at,omitempty"`     // unset = never saved
-	UpdatedBy     string                 `protobuf:"bytes,12,opt,name=updated_by,json=updatedBy,proto3" json:"updated_by,omitempty"`     // user id; empty = unknown / account gone
-	TrunkSaved    bool                   `protobuf:"varint,13,opt,name=trunk_saved,json=trunkSaved,proto3" json:"trunk_saved,omitempty"` // LiveKit holds the trunk (calls possible when enabled)
+	LastError  string                 `protobuf:"bytes,10,opt,name=last_error,json=lastError,proto3" json:"last_error,omitempty"`
+	UpdatedAt  *timestamppb.Timestamp `protobuf:"bytes,11,opt,name=updated_at,json=updatedAt,proto3" json:"updated_at,omitempty"`     // unset = never saved
+	UpdatedBy  string                 `protobuf:"bytes,12,opt,name=updated_by,json=updatedBy,proto3" json:"updated_by,omitempty"`     // user id; empty = unknown / account gone
+	TrunkSaved bool                   `protobuf:"varint,13,opt,name=trunk_saved,json=trunkSaved,proto3" json:"trunk_saved,omitempty"` // LiveKit holds the trunk (calls possible when enabled)
+	// SIP authentication user when it differs from username (the From user); empty = username.
+	AuthUsername  string `protobuf:"bytes,14,opt,name=auth_username,json=authUsername,proto3" json:"auth_username,omitempty"`
+	Port          uint32 `protobuf:"varint,15,opt,name=port,proto3" json:"port,omitempty"` // SIP signalling port of host, 1..65535 (5060 when never set)
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -331,6 +334,20 @@ func (x *SipSettings) GetTrunkSaved() bool {
 	return false
 }
 
+func (x *SipSettings) GetAuthUsername() string {
+	if x != nil {
+		return x.AuthUsername
+	}
+	return ""
+}
+
+func (x *SipSettings) GetPort() uint32 {
+	if x != nil {
+		return x.Port
+	}
+	return 0
+}
+
 // GET /api/workspaces/{id}/sip (MANAGE_WORKSPACE, people) → 200 GetSipSettingsResponse; a
 // workspace that never saved settings gets the defaults (enabled false, transport UDP).
 type GetSipSettingsResponse struct {
@@ -396,8 +413,13 @@ type PutSipSettingsRequest struct {
 	CallerId        string                 `protobuf:"bytes,7,opt,name=caller_id,json=callerId,proto3" json:"caller_id,omitempty"`                      // normalised like a callee number (8 495… → +7495…)
 	OutboundPrefix  string                 `protobuf:"bytes,8,opt,name=outbound_prefix,json=outboundPrefix,proto3" json:"outbound_prefix,omitempty"`    // an optional «+» followed by up to 8 digits; may be empty
 	AllowedPrefixes []string               `protobuf:"bytes,9,rep,name=allowed_prefixes,json=allowedPrefixes,proto3" json:"allowed_prefixes,omitempty"` // ≤ 50, each «+» and 1..15 digits
-	unknownFields   protoimpl.UnknownFields
-	sizeCache       protoimpl.SizeCache
+	// Same characters as username; empty = authenticate as username.
+	AuthUsername string `protobuf:"bytes,10,opt,name=auth_username,json=authUsername,proto3" json:"auth_username,omitempty"`
+	// 0 = 5060, else 1..65535. A «host:port» in host is still accepted: its port is used when
+	// this is 0, and must equal this otherwise (422 field port).
+	Port          uint32 `protobuf:"varint,11,opt,name=port,proto3" json:"port,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
 }
 
 func (x *PutSipSettingsRequest) Reset() {
@@ -491,6 +513,20 @@ func (x *PutSipSettingsRequest) GetAllowedPrefixes() []string {
 		return x.AllowedPrefixes
 	}
 	return nil
+}
+
+func (x *PutSipSettingsRequest) GetAuthUsername() string {
+	if x != nil {
+		return x.AuthUsername
+	}
+	return ""
+}
+
+func (x *PutSipSettingsRequest) GetPort() uint32 {
+	if x != nil {
+		return x.Port
+	}
+	return 0
 }
 
 type PutSipSettingsResponse struct {
@@ -969,7 +1005,7 @@ var File_calaba_v1_sip_proto protoreflect.FileDescriptor
 
 const file_calaba_v1_sip_proto_rawDesc = "" +
 	"\n" +
-	"\x13calaba/v1/sip.proto\x12\tcalaba.v1\x1a\x1fgoogle/protobuf/timestamp.proto\"\xd8\x03\n" +
+	"\x13calaba/v1/sip.proto\x12\tcalaba.v1\x1a\x1fgoogle/protobuf/timestamp.proto\"\x91\x04\n" +
 	"\vSipSettings\x12\x18\n" +
 	"\aenabled\x18\x01 \x01(\bR\aenabled\x12\x1a\n" +
 	"\bprovider\x18\x02 \x01(\tR\bprovider\x12\x12\n" +
@@ -988,9 +1024,11 @@ const file_calaba_v1_sip_proto_rawDesc = "" +
 	"\n" +
 	"updated_by\x18\f \x01(\tR\tupdatedBy\x12\x1f\n" +
 	"\vtrunk_saved\x18\r \x01(\bR\n" +
-	"trunkSaved\"L\n" +
+	"trunkSaved\x12#\n" +
+	"\rauth_username\x18\x0e \x01(\tR\fauthUsername\x12\x12\n" +
+	"\x04port\x18\x0f \x01(\rR\x04port\"L\n" +
 	"\x16GetSipSettingsResponse\x122\n" +
-	"\bsettings\x18\x01 \x01(\v2\x16.calaba.v1.SipSettingsR\bsettings\"\xd3\x02\n" +
+	"\bsettings\x18\x01 \x01(\v2\x16.calaba.v1.SipSettingsR\bsettings\"\x8c\x03\n" +
 	"\x15PutSipSettingsRequest\x12\x18\n" +
 	"\aenabled\x18\x01 \x01(\bR\aenabled\x12\x1a\n" +
 	"\bprovider\x18\x02 \x01(\tR\bprovider\x12\x12\n" +
@@ -1000,7 +1038,10 @@ const file_calaba_v1_sip_proto_rawDesc = "" +
 	"\bpassword\x18\x06 \x01(\tH\x00R\bpassword\x88\x01\x01\x12\x1b\n" +
 	"\tcaller_id\x18\a \x01(\tR\bcallerId\x12'\n" +
 	"\x0foutbound_prefix\x18\b \x01(\tR\x0eoutboundPrefix\x12)\n" +
-	"\x10allowed_prefixes\x18\t \x03(\tR\x0fallowedPrefixesB\v\n" +
+	"\x10allowed_prefixes\x18\t \x03(\tR\x0fallowedPrefixes\x12#\n" +
+	"\rauth_username\x18\n" +
+	" \x01(\tR\fauthUsername\x12\x12\n" +
+	"\x04port\x18\v \x01(\rR\x04portB\v\n" +
 	"\t_password\"L\n" +
 	"\x16PutSipSettingsResponse\x122\n" +
 	"\bsettings\x18\x01 \x01(\v2\x16.calaba.v1.SipSettingsR\bsettings\"Z\n" +
