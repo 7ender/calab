@@ -37,15 +37,15 @@ message Bot {
   repeated BotCommand commands = 6;
   // The first characters of the current token's secret, to tell tokens apart; empty = the
   // token was revoked (the bot cannot sign in until a new one is issued). Like webhook: for
-  // the bot, its owner and MANAGE_WORKSPACE members of its home workspace only.
+  // the bot, its owner and MANAGE_BOTS members of its home workspace only.
   string token_prefix = 7;
   google.protobuf.Timestamp created_at = 8;
   google.protobuf.Timestamp revoked_at = 9;
-  // Set for the bot itself, its owner and MANAGE_WORKSPACE members of its home workspace.
+  // Set for the bot itself, its owner and MANAGE_BOTS members of its home workspace.
   BotWebhook webhook = 10;
 }
 
-// POST /api/workspaces/{id}/bots (the owner or MANAGE_WORKSPACE; plan limit `bots`, 409
+// POST /api/workspaces/{id}/bots (MANAGE_BOTS, ADR-0048; plan limit `bots`, 409
 // CONFLICT reason PLAN_LIMIT) → 201. The bot joins the workspace with the member role. The
 // token is returned only here and by POST …/bots/{botId}/token.
 message CreateBotRequest {
@@ -59,13 +59,13 @@ message CreateBotResponse {
   string token = 2;
 }
 
-// GET /api/workspaces/{id}/bots (MANAGE_WORKSPACE): bots that are members of the workspace.
+// GET /api/workspaces/{id}/bots (MANAGE_BOTS): bots that are members of the workspace.
 message ListBotsResponse {
   repeated Bot bots = 1;
 }
 
 // POST /api/workspaces/{id}/bots/{botId}/token — a new token (home workspace: the bot's
-// owner or MANAGE_WORKSPACE); the previous one stops working at once. DELETE of the same
+// owner or MANAGE_BOTS); the previous one stops working at once. DELETE of the same
 // path revokes the token without a new one (204).
 message ReissueBotTokenResponse {
   Bot bot = 1;
@@ -74,14 +74,14 @@ message ReissueBotTokenResponse {
 
 // POST /api/workspaces/{id}/bots/{botId}/avatar — sets the bot's avatar from the multipart
 // field "file" (an image ≤ 5 MB, like POST /api/me/avatar: 422 VALIDATION otherwise); DELETE
-// of the same path removes it. Home workspace only: the bot's owner or MANAGE_WORKSPACE
+// of the same path removes it. Home workspace only: the bot's owner or MANAGE_BOTS
 // (403 elsewhere, 404 when the bot is not a member of {id}). Members see USER_UPDATE, the
 // managers BOT_UPDATE (docs/09 #87).
 message SetBotAvatarResponse {
   Bot bot = 1;
 }
 
-// POST /api/workspaces/{id}/bots/add (MANAGE_WORKSPACE of that workspace): adds an existing
+// POST /api/workspaces/{id}/bots/add (MANAGE_BOTS of that workspace): adds an existing
 // bot by id or username (member role). 409 CONFLICT: already a member or plan limit.
 message AddBotRequest {
   string bot_user_id = 1;
@@ -143,7 +143,7 @@ message ListBlockedBotsResponse {
 }
 
 // BOT_CREATE / BOT_UPDATE: a bot joined the workspace / changed (profile, commands, token,
-// webhook state). To MANAGE_WORKSPACE members and the bot's owner.
+// webhook state). To MANAGE_BOTS members and the bot's owner.
 message BotCreate {
   string workspace_id = 1;
   Bot bot = 2;

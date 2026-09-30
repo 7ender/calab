@@ -2199,7 +2199,7 @@ type DispatchEvent_SoundPlay struct {
 }
 
 type DispatchEvent_BotCreate struct {
-	// Bots (ADR-0031); to MANAGE_WORKSPACE members and the bot's owner.
+	// Bots (ADR-0031); to MANAGE_BOTS members (ADR-0048) and the bot's owner.
 	BotCreate *BotCreate `protobuf:"bytes,60,opt,name=bot_create,json=botCreate,proto3,oneof"`
 }
 

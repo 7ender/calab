@@ -681,7 +681,7 @@ func (x *GetGptunnelIntegrationResponse) GetIntegration() *GptunnelIntegration {
 	return nil
 }
 
-// POST /api/workspaces/{id}/integrations/gptunnel (MANAGE_WORKSPACE): pair with a code shown
+// POST /api/workspaces/{id}/integrations/gptunnel (MANAGE_INTEGRATIONS, ADR-0048): pair with a code shown
 // by GPTunneL (8 characters, "ABCD-EFGH"; case, dashes and spaces are ignored). Replaces an
 // existing connection. Errors: 422 CODE_INVALID (wrong or expired code), 429 RATE_LIMITED,
 // 503 UNAVAILABLE (GPTunneL unreachable).

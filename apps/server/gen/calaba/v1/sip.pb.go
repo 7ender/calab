@@ -348,7 +348,7 @@ func (x *SipSettings) GetPort() uint32 {
 	return 0
 }
 
-// GET /api/workspaces/{id}/sip (MANAGE_WORKSPACE, people) → 200 GetSipSettingsResponse; a
+// GET /api/workspaces/{id}/sip (MANAGE_INTEGRATIONS, people) → 200 GetSipSettingsResponse; a
 // workspace that never saved settings gets the defaults (enabled false, transport UDP).
 type GetSipSettingsResponse struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
@@ -394,7 +394,7 @@ func (x *GetSipSettingsResponse) GetSettings() *SipSettings {
 	return nil
 }
 
-// PUT /api/workspaces/{id}/sip (MANAGE_WORKSPACE, people) → 200 PutSipSettingsResponse with the
+// PUT /api/workspaces/{id}/sip (MANAGE_INTEGRATIONS, people) → 200 PutSipSettingsResponse with the
 // saved settings; WORKSPACE_UPDATE carries the new Workspace.sip_enabled. The whole object is
 // replaced, except the password: unset keeps the stored one, "" removes it, a value replaces it.
 // enabled = true needs host and caller_id. With enabled = true the LiveKit trunk is created or
@@ -573,7 +573,7 @@ func (x *PutSipSettingsResponse) GetSettings() *SipSettings {
 	return nil
 }
 
-// POST /api/workspaces/{id}/sip/test (MANAGE_WORKSPACE, people; 5 per hour per workspace,
+// POST /api/workspaces/{id}/sip/test (MANAGE_INTEGRATIONS, people; 5 per hour per workspace,
 // else 429 SIP_RATE_LIMITED) → 200 TestSipResponse. LiveKit has no registration / OPTIONS
 // probe, so the server calls the workspace's own caller_id for at most 5 s from a service
 // LiveKit room (a real, billable call; it appears in the journal with an empty room_id) and
@@ -900,8 +900,10 @@ func (x *SipCallResponse) GetCall() *SipCall {
 // ended (the response body is then an ApiError).
 //
 // GET /api/workspaces/{id}/calls?from=<RFC 3339>&to=<RFC 3339>&cursor=<next_cursor>
-// (MANAGE_WORKSPACE, people) → 200 ListSipCallsResponse: the workspace's calls, newest first,
-// 100 per page, started_at in [from, to) when given. Connection tests are included.
+// (VIEW_JOURNALS, people) → 200 ListSipCallsResponse: the workspace's calls, newest first,
+// 100 per page, started_at in [from, to) when given. Connection tests are included; calls of
+// rooms the caller cannot see (a closed room without an override) are left out, so a page may
+// hold fewer than 100 (next_cursor still set while more rows follow).
 type ListSipCallsResponse struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	Calls         []*SipCall             `protobuf:"bytes,1,rep,name=calls,proto3" json:"calls,omitempty"`

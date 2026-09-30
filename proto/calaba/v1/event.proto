@@ -16,8 +16,8 @@ import "calaba/v1/user.proto";
 // GET /api/events/{id}) without its attendees (empty list, counts only). Bots (ADR-0031) may
 // list and read (external attendees' emails are empty for them) but not change anything.
 //
-// Editing: the organizer; else MANAGE_ROOM in the event's room, or MANAGE_WORKSPACE for an
-// event without a room.
+// Editing: the organizer; else MANAGE_ROOM in the event's room, or MANAGE_EVENTS (ADR-0048) for
+// an event without a room or in a room the editor sees.
 
 // An attendee's answer (informational, ADR-0038 §3).
 enum AttendeeStatus {

@@ -150,7 +150,7 @@ export const WorkspaceSuspensionSchema: GenMessage<WorkspaceSuspension> = /*@__P
   messageDesc(file_calaba_v1_workspace, 1);
 
 /**
- * A banned user (settings → «Banned»; MANAGE_WORKSPACE).
+ * A banned user (settings → «Banned»; MANAGE_MEMBERS, ADR-0048).
  *
  * @generated from message calaba.v1.WorkspaceBan
  */
@@ -619,7 +619,7 @@ export const JoinWorkspaceResponseSchema: GenMessage<JoinWorkspaceResponse> = /*
   messageDesc(file_calaba_v1_workspace, 14);
 
 /**
- * POST /api/workspaces/{id}/invites (MANAGE_WORKSPACE)
+ * POST /api/workspaces/{id}/invites (INVITE_MEMBERS, ADR-0043)
  *
  * @generated from message calaba.v1.CreateInviteRequest
  */
@@ -664,7 +664,7 @@ export const CreateInviteResponseSchema: GenMessage<CreateInviteResponse> = /*@_
   messageDesc(file_calaba_v1_workspace, 16);
 
 /**
- * GET /api/workspaces/{id}/invites (MANAGE_WORKSPACE)
+ * GET /api/workspaces/{id}/invites (INVITE_MEMBERS)
  *
  * @generated from message calaba.v1.ListInvitesResponse
  */
@@ -704,8 +704,8 @@ export const ListMembersResponseSchema: GenMessage<ListMembersResponse> = /*@__P
 /**
  * PATCH /api/workspaces/{id}/members/{user_id}.
  * role (legacy, kept for clients before ADR-0026; prefer PUT …/members/{user_id}/roles):
- * changes the built-in role only, custom roles are kept. MANAGE_WORKSPACE; only the owner may grant/revoke ADMIN; OWNER cannot be granted here.
- * nickname: the member themself or MANAGE_WORKSPACE.
+ * changes the built-in role only, custom roles are kept. MANAGE_MEMBERS (ADR-0048); only the owner may grant/revoke ADMIN; OWNER cannot be granted here.
+ * nickname: the member themself or MANAGE_NICKNAMES.
  *
  * @generated from message calaba.v1.UpdateMemberRequest
  */
@@ -1242,7 +1242,7 @@ export const SetRoleOrderResponseSchema: GenMessage<SetRoleOrderResponse> = /*@_
   messageDesc(file_calaba_v1_workspace, 39);
 
 /**
- * PUT /api/workspaces/{id}/members/{user_id}/roles (MANAGE_ROLES): the member's complete
+ * PUT /api/workspaces/{id}/members/{user_id}/roles (MANAGE_MEMBERS or MANAGE_ROLES, ADR-0048): the member's complete
  * role set. MEMBER / GUEST may be listed or omitted but not swapped (guest → member is
  * POST …/promote); OWNER cannot be granted or revoked; ADMIN only by the owner. Every added
  * or removed role must be below the caller's highest role and, for a non-admin, carry no

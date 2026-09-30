@@ -211,7 +211,7 @@ message DispatchEvent {
     SoundUpdate sound_update = 54;
     SoundDelete sound_delete = 55;
     SoundPlay sound_play = 56;
-    // Bots (ADR-0031); to MANAGE_WORKSPACE members and the bot's owner.
+    // Bots (ADR-0031); to MANAGE_BOTS members (ADR-0048) and the bot's owner.
     BotCreate bot_create = 60;
     BotUpdate bot_update = 61;
     BotDelete bot_delete = 62;

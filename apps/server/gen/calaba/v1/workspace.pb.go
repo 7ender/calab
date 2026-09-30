@@ -342,7 +342,7 @@ func (x *WorkspaceSuspension) GetReason() string {
 	return ""
 }
 
-// A banned user (settings → «Banned»; MANAGE_WORKSPACE).
+// A banned user (settings → «Banned»; MANAGE_MEMBERS, ADR-0048).
 type WorkspaceBan struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	WorkspaceId   string                 `protobuf:"bytes,1,opt,name=workspace_id,json=workspaceId,proto3" json:"workspace_id,omitempty"`
@@ -1228,7 +1228,7 @@ func (x *JoinWorkspaceResponse) GetMember() *WorkspaceMember {
 	return nil
 }
 
-// POST /api/workspaces/{id}/invites (MANAGE_WORKSPACE)
+// POST /api/workspaces/{id}/invites (INVITE_MEMBERS, ADR-0043)
 type CreateInviteRequest struct {
 	state            protoimpl.MessageState `protogen:"open.v1"`
 	MaxUses          uint32                 `protobuf:"varint,1,opt,name=max_uses,json=maxUses,proto3" json:"max_uses,omitempty"`                              // 0 = unlimited
@@ -1325,7 +1325,7 @@ func (x *CreateInviteResponse) GetInvite() *Invite {
 	return nil
 }
 
-// GET /api/workspaces/{id}/invites (MANAGE_WORKSPACE)
+// GET /api/workspaces/{id}/invites (INVITE_MEMBERS)
 type ListInvitesResponse struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	Invites       []*Invite              `protobuf:"bytes,1,rep,name=invites,proto3" json:"invites,omitempty"`
@@ -1417,8 +1417,8 @@ func (x *ListMembersResponse) GetMembers() []*WorkspaceMember {
 
 // PATCH /api/workspaces/{id}/members/{user_id}.
 // role (legacy, kept for clients before ADR-0026; prefer PUT …/members/{user_id}/roles):
-// changes the built-in role only, custom roles are kept. MANAGE_WORKSPACE; only the owner may grant/revoke ADMIN; OWNER cannot be granted here.
-// nickname: the member themself or MANAGE_WORKSPACE.
+// changes the built-in role only, custom roles are kept. MANAGE_MEMBERS (ADR-0048); only the owner may grant/revoke ADMIN; OWNER cannot be granted here.
+// nickname: the member themself or MANAGE_NICKNAMES.
 type UpdateMemberRequest struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	Role          *WorkspaceRole         `protobuf:"varint,1,opt,name=role,proto3,enum=calaba.v1.WorkspaceRole,oneof" json:"role,omitempty"`
@@ -2548,7 +2548,7 @@ func (x *SetRoleOrderResponse) GetRoles() []*Role {
 	return nil
 }
 
-// PUT /api/workspaces/{id}/members/{user_id}/roles (MANAGE_ROLES): the member's complete
+// PUT /api/workspaces/{id}/members/{user_id}/roles (MANAGE_MEMBERS or MANAGE_ROLES, ADR-0048): the member's complete
 // role set. MEMBER / GUEST may be listed or omitted but not swapped (guest → member is
 // POST …/promote); OWNER cannot be granted or revoked; ADMIN only by the owner. Every added
 // or removed role must be below the caller's highest role and, for a non-admin, carry no

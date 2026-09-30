@@ -11,9 +11,9 @@ import "google/protobuf/timestamp.proto";
 // Who: PLACE_CALLS (ADR-0046, nobody by default) with VIEW_ROOM and CONNECT in the room, never
 // guests, and only while the caller is in that room's call. Workspace.sip_enabled says whether
 // telephony is on (the client shows the «call a number» button when it is set and the caller
-// has PLACE_CALLS in the room). Settings, the connection test and the journal need
-// MANAGE_WORKSPACE and are for people only (bots: 403 BOT_NOT_ALLOWED); bots may place and end
-// calls like people.
+// has PLACE_CALLS in the room). Settings and the connection test need MANAGE_INTEGRATIONS, the
+// journal VIEW_JOURNALS (ADR-0048); they are for people only (bots: 403 BOT_NOT_ALLOWED); bots
+// may place and end calls like people.
 
 enum SipTransport {
   SIP_TRANSPORT_UNSPECIFIED = 0; // in PUT: UDP
@@ -66,13 +66,13 @@ message SipSettings {
   uint32 port = 15; // SIP signalling port of host, 1..65535 (5060 when never set)
 }
 
-// GET /api/workspaces/{id}/sip (MANAGE_WORKSPACE, people) → 200 GetSipSettingsResponse; a
+// GET /api/workspaces/{id}/sip (MANAGE_INTEGRATIONS, people) → 200 GetSipSettingsResponse; a
 // workspace that never saved settings gets the defaults (enabled false, transport UDP).
 message GetSipSettingsResponse {
   SipSettings settings = 1;
 }
 
-// PUT /api/workspaces/{id}/sip (MANAGE_WORKSPACE, people) → 200 PutSipSettingsResponse with the
+// PUT /api/workspaces/{id}/sip (MANAGE_INTEGRATIONS, people) → 200 PutSipSettingsResponse with the
 // saved settings; WORKSPACE_UPDATE carries the new Workspace.sip_enabled. The whole object is
 // replaced, except the password: unset keeps the stored one, "" removes it, a value replaces it.
 // enabled = true needs host and caller_id. With enabled = true the LiveKit trunk is created or
@@ -101,7 +101,7 @@ message PutSipSettingsResponse {
   SipSettings settings = 1;
 }
 
-// POST /api/workspaces/{id}/sip/test (MANAGE_WORKSPACE, people; 5 per hour per workspace,
+// POST /api/workspaces/{id}/sip/test (MANAGE_INTEGRATIONS, people; 5 per hour per workspace,
 // else 429 SIP_RATE_LIMITED) → 200 TestSipResponse. LiveKit has no registration / OPTIONS
 // probe, so the server calls the workspace's own caller_id for at most 5 s from a service
 // LiveKit room (a real, billable call; it appears in the journal with an empty room_id) and
@@ -170,8 +170,10 @@ message SipCallResponse {
 // ended (the response body is then an ApiError).
 //
 // GET /api/workspaces/{id}/calls?from=<RFC 3339>&to=<RFC 3339>&cursor=<next_cursor>
-// (MANAGE_WORKSPACE, people) → 200 ListSipCallsResponse: the workspace's calls, newest first,
-// 100 per page, started_at in [from, to) when given. Connection tests are included.
+// (VIEW_JOURNALS, people) → 200 ListSipCallsResponse: the workspace's calls, newest first,
+// 100 per page, started_at in [from, to) when given. Connection tests are included; calls of
+// rooms the caller cannot see (a closed room without an override) are left out, so a page may
+// hold fewer than 100 (next_cursor still set while more rows follow).
 message ListSipCallsResponse {
   repeated SipCall calls = 1;
   string next_cursor = 2; // empty = no more

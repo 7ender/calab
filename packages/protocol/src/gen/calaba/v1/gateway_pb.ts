@@ -758,7 +758,7 @@ export type DispatchEvent = Message<"calaba.v1.DispatchEvent"> & {
     case: "soundPlay";
   } | {
     /**
-     * Bots (ADR-0031); to MANAGE_WORKSPACE members and the bot's owner.
+     * Bots (ADR-0031); to MANAGE_BOTS members (ADR-0048) and the bot's owner.
      *
      * @generated from field: calaba.v1.BotCreate bot_create = 60;
      */
