@@ -132,10 +132,12 @@ export function toggleValue(c: Cond, value: string): Cond {
 
 // ------------------------------------------------------------------ quick chips
 
-export type QuickChip = 'mine' | 'overdue' | 'unassigned';
+export type QuickChip = 'mine' | 'overdue' | 'unassigned' | 'approval';
 
 const QUICK: Record<QuickChip, Cond> = {
   mine: { field: TaskField.ASSIGNEE, op: TaskOp.IS, values: ['me'] },
+  // «Ждут моего согласования» (ADR-0049): my vote is still pending.
+  approval: { field: TaskField.APPROVER_PENDING, op: TaskOp.IS, values: ['me'] },
   overdue: { field: TaskField.DUE_ON, op: TaskOp.BEFORE, values: ['today'] },
   unassigned: { field: TaskField.ASSIGNEE, op: TaskOp.EMPTY, values: [] },
 };

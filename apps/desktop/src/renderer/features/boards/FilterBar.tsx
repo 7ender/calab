@@ -9,7 +9,7 @@ import type { PickerGroup } from '../../components/picker/pickerModel';
 import { Tip, cx } from '../../components/ui';
 import { t } from '../../i18n';
 import { addCond, quickOn, removeCond, resolveDay, setCond, toggleQuick, toggleValue, type Cond, type FilterState, type QuickChip } from '../../lib/boards/filter';
-import { DATE_PRESETS, FILTER_FIELDS, RELATION_VALUES, fieldDef, opLabel, opNeedsValue, type FieldDef } from '../../lib/boards/filterFields';
+import { APPROVAL_VALUES, DATE_PRESETS, FILTER_FIELDS, RELATION_VALUES, fieldDef, opLabel, opNeedsValue, type FieldDef } from '../../lib/boards/filterFields';
 import { autoFocusAllowed } from '../../lib/mobile';
 import { useBoards } from '../../stores/boards';
 import { prefsOf, useBoardsUi } from '../../stores/boardsUi';
@@ -75,6 +75,8 @@ function useValueChoices(def: FieldDef, board: Board | undefined, workspaceId: s
         return [...ESTIMATES.map((n) => c(String(n), `> ${n}`, undefined, TaskOp.GT)), c('', t('boards.noEstimate'), undefined, TaskOp.EMPTY)];
       case 'bool':
         return [c('true', t('boards.yes')), c('false', t('boards.no'))];
+      case 'approval':
+        return APPROVAL_VALUES.map((a) => c(a.value, t(a.label)));
       case 'date':
         return [
           c('today', t('boards.date.overdue'), undefined, TaskOp.BEFORE),
@@ -299,6 +301,10 @@ function valueText(c: Cond, board: Board | undefined, workspaceId: string, today
         return t(`boards.rel.${v}` as 'boards.rel.blocks');
       case 'bool':
         return v === 'true' ? t('boards.yes') : t('boards.no');
+      case 'approval': {
+        const a = APPROVAL_VALUES.find((x) => x.value === v);
+        return a ? t(a.label) : v;
+      }
       case 'date':
       case 'datetime': {
         const preset = DATE_PRESETS.find((p) => p.value === v);
@@ -392,13 +398,14 @@ function FilterChip({ cond, board, workspaceId, text, onChange, onRemove }: { co
   );
 }
 
-const QUICK: ReadonlyArray<{ chip: QuickChip; label: 'boards.quick.mine' | 'boards.quick.overdue' | 'boards.quick.unassigned' }> = [
+const QUICK: ReadonlyArray<{ chip: QuickChip; label: 'boards.quick.mine' | 'boards.quick.overdue' | 'boards.quick.unassigned' | 'boards.quick.approval' }> = [
   { chip: 'mine', label: 'boards.quick.mine' },
   { chip: 'overdue', label: 'boards.quick.overdue' },
   { chip: 'unassigned', label: 'boards.quick.unassigned' },
+  { chip: 'approval', label: 'boards.quick.approval' },
 ];
 
-/** «Мои», «Просрочено», «Без исполнителя». */
+/** «Мои», «Просрочено», «Без исполнителя», «Ждут моего согласования» (ADR-0049). */
 export function QuickChips({ boardId }: { boardId: string }): ReactNode {
   const [filter, setFilter] = useFilter(boardId);
   return (

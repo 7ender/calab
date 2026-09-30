@@ -7,11 +7,13 @@ import { Virtuoso } from 'react-virtuoso';
 import { useShallow } from 'zustand/react/shallow';
 import { Button, Modal, Select, Tip, cx } from '../../components/ui';
 import { t } from '../../i18n';
+import { blockedStatusIds } from '../../lib/boards/approvals';
 import type { FilterState, MatchCtx } from '../../lib/boards/filter';
 import { dropIndex } from '../../lib/boards/position';
-import { createStatus, deleteStatus, moveStatus, moveTask, updateStatus } from '../../services/boards';
+import { createStatus, deleteStatus, gateText, moveStatus, moveTask, updateStatus } from '../../services/boards';
 import { useBoards } from '../../stores/boards';
 import { prefsOf, useBoardsUi } from '../../stores/boardsUi';
+import { toast } from '../../stores/toasts';
 import { menuBox, menuItem, menuSeparator } from '../shell/menu';
 import { columnsOf, hasBit, visibleColumn, CREATE_TASKS, MANAGE_BOARD } from './model';
 import { TaskCard } from './TaskCard';
@@ -27,6 +29,18 @@ const EDGE = 48;
 type DragKind = { kind: 'card'; id: string; from: string } | { kind: 'column'; id: string };
 /** A drag in progress: what, and the overlay's width / grab offset / start point. */
 type Drag = DragKind & { w: number; dx: number; dy: number; x: number; y: number };
+
+const NO_BLOCK: ReadonlySet<string> = new Set();
+
+/**
+ * Columns a dragged card may not drop into (ADR-0049: a task not approved yet does not go
+ * «further»): read from the store at drag start, the same rule as the status menus.
+ */
+function blockedFor(taskId: string): ReadonlySet<string> {
+  const s = useBoards.getState();
+  const task = s.tasks[taskId];
+  return task ? blockedStatusIds(task, s.boards[task.boardId]?.statuses ?? []) : NO_BLOCK;
+}
 interface CardTarget {
   statusId: string;
   index: number;
@@ -55,6 +69,9 @@ export function Kanban({ boardId, workspaceId }: { boardId: string; workspaceId:
   const [cardTarget, setCardTarget] = useState<CardTarget | null>(null);
   const [colTarget, setColTarget] = useState<number | null>(null);
   const press = useRef<{ kind: DragKind; x: number; y: number; dx: number; dy: number; w: number; started: boolean } | null>(null);
+  // The drag's forbidden columns (approvals): fixed for the drag, dims those columns.
+  const [blocked, setBlocked] = useState<ReadonlySet<string>>(NO_BLOCK);
+  const blockedRef = useRef<ReadonlySet<string>>(NO_BLOCK);
   const suppressClick = useRef(false);
   const pointer = useRef({ x: 0, y: 0 });
   const raf = useRef(0);
@@ -122,11 +139,17 @@ export function Kanban({ boardId, workspaceId }: { boardId: string; workspaceId:
       if (!p.started) {
         if (Math.hypot(e.clientX - p.x, e.clientY - p.y) < DRAG_THRESHOLD) return;
         p.started = true;
+        if (p.kind.kind === 'card') {
+          blockedRef.current = blockedFor(p.kind.id);
+          setBlocked(blockedRef.current);
+        }
         setDrag({ ...p.kind, w: p.w, dx: p.dx, dy: p.dy, x: e.clientX, y: e.clientY });
       }
       if (overlay.current) overlay.current.style.transform = `translate(${e.clientX - p.dx}px, ${e.clientY - p.dy}px)`;
       if (p.kind.kind === 'card') {
-        const tgt = cardTargetAt(e.clientX, e.clientY, p.kind.id);
+        const hit = cardTargetAt(e.clientX, e.clientY, p.kind.id);
+        // A forbidden column is not a target: no drop line there.
+        const tgt = hit && blockedRef.current.has(hit.statusId) ? null : hit;
         setCardTarget((cur) => (cur?.statusId === tgt?.statusId && cur?.index === tgt?.index ? cur : tgt));
       } else {
         const i = colTargetAt(e.clientX);
@@ -145,7 +168,11 @@ export function Kanban({ boardId, workspaceId }: { boardId: string; workspaceId:
         const { x, y } = pointer.current;
         if (p.kind.kind === 'card') {
           const tgt = cardTargetAt(x, y, p.kind.id);
-          if (tgt) dropCard(p.kind.id, tgt);
+          const task = useBoards.getState().tasks[p.kind.id];
+          // Dropped on a forbidden column: the card stays where it was, the toast says why.
+          if (tgt && blockedRef.current.has(tgt.statusId)) {
+            if (task) toast.error(gateText(task));
+          } else if (tgt) dropCard(p.kind.id, tgt);
         } else {
           const i = colTargetAt(x);
           const ids = [...(scroller.current?.querySelectorAll<HTMLElement>('[data-column]') ?? [])].map((n) => n.dataset.column ?? '');
@@ -160,6 +187,8 @@ export function Kanban({ boardId, workspaceId }: { boardId: string; workspaceId:
           }
         }
       }
+      blockedRef.current = NO_BLOCK;
+      setBlocked(NO_BLOCK);
       setDrag(null);
       setCardTarget(null);
       setColTarget(null);
@@ -264,6 +293,7 @@ export function Kanban({ boardId, workspaceId }: { boardId: string; workspaceId:
           dropAt={cardTarget?.statusId === s.id ? cardTarget.index : null}
           draggingId={drag?.kind === 'card' ? drag.id : null}
           columnDragging={drag?.kind === 'column' && drag.id === s.id}
+          blocked={blocked.has(s.id)}
           onCardPointerDown={onCardPointerDown}
           onHeaderPointerDown={onHeaderPointerDown}
           statuses={statuses}
@@ -318,6 +348,7 @@ const KanbanColumn = memo(function KanbanColumn({
   dropAt,
   draggingId,
   columnDragging,
+  blocked,
   onCardPointerDown,
   onHeaderPointerDown,
   statuses,
@@ -332,6 +363,8 @@ const KanbanColumn = memo(function KanbanColumn({
   dropAt: number | null;
   draggingId: string | null;
   columnDragging: boolean;
+  /** A card is dragged that may not go here (approvals): dimmed, not a target. */
+  blocked: boolean;
   onCardPointerDown: (e: ReactPointerEvent, taskId: string, statusId: string) => void;
   onHeaderPointerDown: (e: ReactPointerEvent, statusId: string) => void;
   statuses: readonly BoardStatus[];
@@ -352,8 +385,12 @@ const KanbanColumn = memo(function KanbanColumn({
 
   return (
     <section
-      className={cx('flex w-[280px] shrink-0 flex-col rounded-[var(--radius-panel)] bg-[color-mix(in_srgb,var(--color-fill)_45%,transparent)] mobile:w-[calc(100vw-48px)] mobile:snap-start', columnDragging && 'opacity-40')}
+      className={cx(
+        'flex w-[280px] shrink-0 flex-col rounded-[var(--radius-panel)] bg-[color-mix(in_srgb,var(--color-fill)_45%,transparent)] transition-opacity duration-[var(--motion-fast)] mobile:w-[calc(100vw-48px)] mobile:snap-start',
+        (columnDragging || blocked) && 'opacity-40',
+      )}
       data-column={status.id}
+      data-blocked={blocked || undefined}
       aria-label={status.name}
       data-testid="kanban-column"
     >

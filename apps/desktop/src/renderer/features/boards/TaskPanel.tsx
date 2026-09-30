@@ -21,10 +21,12 @@ import {
 } from 'lucide-react';
 import { memo, useCallback, useEffect, useMemo, useRef, useState, type DragEvent, type ReactNode } from 'react';
 import { useShallow } from 'zustand/react/shallow';
-import { Button, CloseButton, IconButton, Spinner, Tip, cx } from '../../components/ui';
+import { Button, CloseButton, IconButton, Segmented, Spinner, Tip, cx } from '../../components/ui';
 import { t } from '../../i18n';
 import { fmt, toDate } from '../../lib/format';
 import { Markdown } from '../../lib/markdown/Markdown';
+import { filterFeed, startsRun, type ActivityTab } from '../../lib/boards/activity';
+import { blockedStatusIds } from '../../lib/boards/approvals';
 import { addAssignee, draftsOf, removeAssignee, setLead, setNote, MAX_NOTE } from '../../lib/boards/assignees';
 import { uploadFile } from '../../lib/api/endpoints';
 import { useMobile } from '../../lib/mobile';
@@ -59,6 +61,7 @@ import { MessageRow, SystemRow } from '../chat/MessageBubble';
 import { useFileDrop } from '../chat/useFileDrop';
 import { menuBox, menuItem, menuSeparator } from '../shell/menu';
 import { DRAG_USER, dragKind } from '../calendar/dragState';
+import { ApprovalsSection } from './Approvals';
 import { AssigneeMenu, ChoiceMenu, DateMenu, EstimateMenu, LabelMenu, MemberAvatar, MilestoneMenu, PriorityMenu, StatusMenu, useToday, type Choice } from './menus';
 import { doneType, hasBit, mayArchiveTask, mayEditTask, CREATE_TASKS, EDIT_TASKS, MANAGE_BOARD, VIEW_BOARD } from './model';
 import { Dot, PRIORITY_LABEL, PriorityIcon, StatusIcon, formatDue, isOverdue } from './visuals';
@@ -390,7 +393,10 @@ function Prop({ label, children, testId }: { label: string; children: ReactNode;
 const valueBtn = 'inline-flex h-7 min-w-0 max-w-full items-center gap-1.5 rounded-[var(--radius-row)] px-2 text-control text-fg hover:bg-hover disabled:hover:bg-transparent data-[state=open]:bg-active';
 
 function Properties({ task, canEdit, perms }: { task: Task; canEdit: boolean; perms: bigint | undefined }): ReactNode {
-  const status = useBoards((s) => s.boards[task.boardId]?.statuses.find((x) => x.id === task.statusId));
+  const statuses = useBoards((s) => s.boards[task.boardId]?.statuses);
+  const status = statuses?.find((x) => x.id === task.statusId);
+  // ADR-0049: statuses «further» are disabled while the task waits for approval.
+  const blocked = useMemo(() => blockedStatusIds(task, statuses ?? []), [task, statuses]);
   const labels = useBoards((s) => s.boards[task.boardId]?.labels);
   const milestone = useBoards((s) => s.boards[task.boardId]?.milestones.find((m) => m.id === task.milestoneId));
   const parent = useBoards((s) => (task.parentId ? s.tasks[task.parentId] : undefined));
@@ -402,7 +408,7 @@ function Properties({ task, canEdit, perms }: { task: Task; canEdit: boolean; pe
   return (
     <section className="flex flex-col gap-0.5 rounded-[var(--radius-card)] border border-line p-2" aria-label={t('boards.properties')} data-testid="task-properties">
       <Prop label={t('boards.f.status')}>
-        <StatusMenu boardId={task.boardId} value={task.statusId} onPick={(s) => s !== task.statusId && void updateTask(task.id, { statusId: s })} {...req('status')}>
+        <StatusMenu boardId={task.boardId} value={task.statusId} blocked={blocked} onPick={(s) => s !== task.statusId && void updateTask(task.id, { statusId: s })} {...req('status')}>
           <button type="button" disabled={!canEdit} className={valueBtn} data-testid="prop-status">
             <StatusIcon type={status?.type ?? 0} color={status?.color ?? 0} /> <span className="truncate">{status?.name ?? ''}</span>
           </button>
@@ -416,6 +422,7 @@ function Properties({ task, canEdit, perms }: { task: Task; canEdit: boolean; pe
         </PriorityMenu>
       </Prop>
       <Assignees task={task} canEdit={canEdit} req={req('assignee')} />
+      <ApprovalsSection task={task} canEdit={canEdit} perms={perms} />
       <Prop label={t('boards.f.label')}>
         {mine.map((l) => (
           <span key={l.id} className="inline-flex h-6 items-center gap-1.5 rounded-full border border-line px-2 text-caption" draggable onDragStart={(e) => e.dataTransfer.setData('application/x-calab-label', l.id)}>
@@ -803,26 +810,47 @@ function Activity({ task, room, toEnd }: { task: Task; room: Room; toEnd: () => 
   useEffect(() => {
     if (last?.msg.authorId === me && last.status !== 'sent') toEnd();
   }, [count, last, me, toEnd]);
+  const tab = useBoardsUi((s) => s.activityTab);
+  const shown = useMemo(() => filterFeed(rows, tab), [rows, tab]);
+  const tabs: Array<{ value: ActivityTab; label: string }> = [
+    { value: 'all', label: t('boards.feed.all') },
+    { value: 'changes', label: t('boards.feed.changes') },
+    { value: 'comments', label: t('boards.feed.comments') },
+  ];
   return (
     <section className="-mx-5 flex flex-col border-t border-line pt-3" aria-label={t('boards.activity')} data-testid="task-activity">
-      <h3 className="px-5 pb-2 text-control font-semibold">{t('boards.activity')}</h3>
+      <div className="flex flex-wrap items-center gap-2 px-5 pb-2">
+        <h3 className="mr-auto text-control font-semibold">{t('boards.activity')}</h3>
+        <Segmented value={tab} options={tabs} onChange={useBoardsUi.getState().setActivityTab} label={t('boards.feed.label')} />
+      </div>
       {state.hasMoreBefore ? (
         <button type="button" onClick={() => void loadOlder(room.id)} className="mx-5 mb-2 h-7 self-start rounded-full px-2.5 text-caption text-accent-text hover:bg-hover" data-testid="activity-older">
           {state.loading ? <Spinner className="size-3.5" /> : t('boards.olderComments')}
         </button>
       ) : null}
-      <div className="flex flex-col">
-        {rows.map((r) => {
-          if (r.kind === 'act') return <ActivityRow key={r.key} a={r.a} task={task} />;
+      <div className="flex flex-col" data-testid="activity-feed" data-tab={tab}>
+        {shown.map((r, i) => {
+          // A comment group and a run of journal lines are set apart (docs/08: 8 px above / below).
+          const gap = startsRun(shown, i) ? 'mt-2' : '';
+          if (r.kind === 'act') return <ActivityRow key={r.key} a={r.a} task={task} className={gap} />;
           const c = state.items[r.index];
           const meta = metas[r.index];
           if (!c || !meta) return null;
-          return c.msg.kind === MessageKind.SYSTEM ? (
-            <SystemRow key={r.key} c={c} meta={meta} workspaceId={task.workspaceId} perms={roomPerms} highlighted={false} />
-          ) : (
-            <MessageRow key={r.key} c={c} meta={{ ...meta, day: false, isNew: false }} own={c.msg.authorId === me} workspaceId={task.workspaceId} roomId={room.id} perms={roomPerms} highlighted={false} />
+          return (
+            <div key={r.key} className={gap}>
+              {c.msg.kind === MessageKind.SYSTEM ? (
+                <SystemRow c={c} meta={meta} workspaceId={task.workspaceId} perms={roomPerms} highlighted={false} />
+              ) : (
+                <MessageRow c={c} meta={{ ...meta, day: false, isNew: false }} own={c.msg.authorId === me} workspaceId={task.workspaceId} roomId={room.id} perms={roomPerms} highlighted={false} />
+              )}
+            </div>
           );
         })}
+        {shown.length === 0 && tab !== 'all' ? (
+          <p className="px-5 py-3 text-caption text-muted" data-testid="activity-empty">
+            {tab === 'comments' ? t('boards.feed.noComments') : t('boards.feed.noChanges')}
+          </p>
+        ) : null}
       </div>
     </section>
   );
@@ -836,13 +864,13 @@ export function taskRoomPerms(perms: bigint | undefined, archived: boolean): big
   return VIEW | BigInt(Permission.SEND_MESSAGES) | BigInt(Permission.ATTACH_FILES) | (hasBit(perms, EDIT_TASKS) ? BigInt(Permission.MANAGE_MESSAGES) : 0n);
 }
 
-function ActivityRow({ a, task }: { a: TaskActivity; task: Task }): ReactNode {
+function ActivityRow({ a, task, className }: { a: TaskActivity; task: Task; className?: string }): ReactNode {
   const name = useMemberName(task.workspaceId, a.actorId);
   const board = useBoards((s) => s.boards[task.boardId]);
   const text = activityText(a, board, task.workspaceId);
   const at = a.createdAt ? toDate(a.createdAt) : null;
   return (
-    <div className="flex items-center gap-2 px-5 py-1 text-caption text-muted" data-testid="activity-row" data-kind={a.kind}>
+    <div className={cx('flex items-center gap-2 px-5 py-0.5 text-caption text-muted', className)} data-testid="activity-row" data-kind={a.kind}>
       <MemberAvatar workspaceId={task.workspaceId} userId={a.actorId} size={16} />
       <span className="min-w-0 flex-1">
         <span className="font-medium text-fg">{name}</span> {text}
@@ -893,6 +921,21 @@ export function activityText(a: Pick<TaskActivity, 'kind' | 'before' | 'after'>,
       return t('boards.act.restored');
     case 'moved_board':
       return t('boards.act.moved');
+    case 'approvers': {
+      const ids = Array.isArray(f?.['user_ids']) ? (f['user_ids'] as unknown[]).map(str) : [];
+      if (!ids.length) return t('boards.act.noApprovers');
+      const names = ids.map((u) => memberName(workspaceId, u)).join(', ');
+      const required = Number(f?.['required'] ?? 0);
+      return required > 0 && required < ids.length ? t('boards.act.approversQuorum', { names, n: required, m: ids.length }) : t('boards.act.approvers', { names });
+    }
+    case 'approval': {
+      const state = str(f?.['state']);
+      if (state === 'approved') return t('boards.act.approved');
+      if (state === 'rejected') return t('boards.act.rejected', { comment: str(f?.['comment']) });
+      return t('boards.act.withdrawn');
+    }
+    case 'approvals_reset':
+      return t('boards.act.approvalsReset');
     default:
       return t('boards.act.changed');
   }

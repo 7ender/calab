@@ -147,4 +147,14 @@ describe('approval filters (ADR-0049)', () => {
     expect(m(t, [{ field: TaskField.APPROVER_PENDING, op: TaskOp.IS, values: ['me'] }])).toBe(true);
     expect(m(t, [{ field: TaskField.APPROVER_PENDING, op: TaskOp.IS, values: ['u-2'] }])).toBe(false);
   });
+
+  it('«Ждут моего согласования» is a quick chip: APPROVER_PENDING IS me, shown in the field list', () => {
+    const f = toggleQuick(EMPTY_FILTER, 'approval');
+    expect(f.conds).toEqual([{ field: TaskField.APPROVER_PENDING, op: TaskOp.IS, values: ['me'] }]);
+    expect(quickOn(f, 'approval')).toBe(true);
+    expect(toggleQuick(f, 'approval').conds).toEqual([]);
+    expect(fieldDef(TaskField.APPROVAL_STATE)).toMatchObject({ kind: 'approval' });
+    expect(fieldDef(TaskField.APPROVAL_STATE)?.hidden).toBeFalsy();
+    expect(fieldDef(TaskField.APPROVER_PENDING)?.hidden).toBeFalsy();
+  });
 });
