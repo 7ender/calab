@@ -47,16 +47,17 @@ export function applyCallEvent(ev: CallEvent): void {
     collapsed: next.phase === 'outgoing' && prev.phase === 'outgoing' && prev.call?.id === next.call?.id ? useCall.getState().collapsed : false,
     busy: next.call?.id === prev.call?.id ? useCall.getState().busy : false,
   });
-  effects(prev, next, peerId);
+  effects(prev, next, peerId, ev.kind === 'resume');
 }
 
-function effects(prev: CallModel, next: CallModel, peerId: string): void {
+/** `resumed`: back into the call after a restart for an update — the «reconnect» cue, not «join». */
+function effects(prev: CallModel, next: CallModel, peerId: string, resumed: boolean): void {
   syncRing(next);
   if (next.phase === 'incoming' && prev.phase !== 'incoming') notifyIncoming(next.call, peerId);
   if (next.phase !== 'incoming') closeIncomingNotice();
   const call = next.call;
   // Answered: both sides join the DM's voice session (the callee's switch leaves a room first).
-  if (next.phase === 'active' && prev.phase !== 'active' && call) joinCallVoice(call);
+  if (next.phase === 'active' && prev.phase !== 'active' && call) joinCallVoice(call, resumed);
   // Over (hung up, lost, answered elsewhere): out of the call's voice session.
   const prevCall = prev.call;
   if (prev.phase === 'active' && next.phase !== 'active' && prevCall && useVoice.getState().roomId === prevCall.dmRoomId) void voice.leave();
@@ -211,8 +212,8 @@ export function callErrorText(e: unknown): string {
 
 // ---------------------------------------------------------------- voice
 
-function joinCallVoice(call: Call): void {
-  void voice.join(call.dmRoomId, '', { call: true });
+function joinCallVoice(call: Call, resumed: boolean): void {
+  void voice.join(call.dmRoomId, '', { call: true, resumed });
 }
 
 /**

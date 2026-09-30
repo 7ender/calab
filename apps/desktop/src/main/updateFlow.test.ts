@@ -403,37 +403,6 @@ describe('update flow', () => {
       expect(t.updater.installs).toEqual([]); // nobody pressed «Перезапустить»
       t.flow.stop();
     });
-
-    it('a newer version found during a call downloads when the call ends', async () => {
-      const t = await pending();
-      t.flow.setInCall(true);
-      t.updater.next = { version: '0.1.2' };
-      await t.flow.check();
-      expect(t.updater.downloads).toBe(1);
-      expect(t.flow.status()).toEqual({ state: 'available', version: '0.1.2', installable: true });
-      t.flow.setInCall(false);
-      expect(t.updater.downloads).toBe(2);
-      expect(t.flow.status().state).toBe('downloading');
-    });
-
-    it('«Перезапустить после звонка»: scheduled during the call, installs when it ends', async () => {
-      const t = await pending();
-      t.flow.setInCall(true);
-      expect(t.flow.install({ afterCall: true })).toBe(true);
-      expect(t.flow.status()).toEqual({ state: 'downloaded', version: '0.1.1', afterCall: true });
-      await vi.advanceTimersByTimeAsync(60_000);
-      expect(t.updater.installs).toEqual([]);
-      t.flow.setInCall(false);
-      await vi.advanceTimersByTimeAsync(0);
-      expect(t.updater.installs).toEqual([[false, true]]);
-    });
-
-    it('afterCall outside a call installs now', async () => {
-      const t = await pending();
-      expect(t.flow.install({ afterCall: true })).toBe(true);
-      await vi.advanceTimersByTimeAsync(0);
-      expect(t.updater.installs).toEqual([[false, true]]);
-    });
   });
 
   it('a stale feed offering the running version or older is ignored', async () => {
@@ -543,18 +512,6 @@ describe('update flow', () => {
       expect(t.flow.install()).toBe(true);
       expect(t.updater.installs).toEqual([[false, true]]);
       expect(t.updater.downloads).toBe(1);
-    });
-
-    it('during a call: the user may download a deferred update now; the call end does not download again', async () => {
-      const t = setup();
-      t.flow.setInCall(true);
-      t.updater.next = { version: '0.1.1' };
-      await t.flow.check();
-      expect(t.flow.download()).toBe(true);
-      expect(t.updater.downloads).toBe(1);
-      t.flow.setInCall(false);
-      expect(t.updater.downloads).toBe(1);
-      expect(t.flow.status().state).toBe('downloading');
     });
 
     const notInstallable = [
@@ -717,62 +674,6 @@ describe('update flow', () => {
       expect(t.updater.checks).toBe(2);
       expect(vi.getTimerCount()).toBe(1);
       t.flow.stop();
-    });
-  });
-
-  describe('call in progress', () => {
-    it('an update found during a call is not downloaded until the call ends', async () => {
-      const t = setup();
-      t.flow.setInCall(true);
-      t.updater.next = { version: '0.1.1' };
-      await t.flow.check();
-      expect(t.updater.autoDownload).toBe(false);
-      expect(t.updater.autoInstallOnAppQuit).toBe(true);
-      expect(t.updater.downloads).toBe(0);
-      expect(t.flow.status()).toEqual({ state: 'available', version: '0.1.1', installable: true });
-      expect(t.notified).toEqual([]); // auto mode: no «Скачать» notification
-      t.flow.setInCall(true); // repeated state: nothing
-      expect(t.updater.downloads).toBe(0);
-      t.flow.setInCall(false);
-      expect(t.updater.autoDownload).toBe(true);
-      expect(t.updater.downloads).toBe(1);
-      expect(t.flow.status()).toEqual({ state: 'downloading', version: '0.1.1', percent: 0 });
-      t.updater.finishDownload('0.1.1');
-      expect(t.flow.status()).toEqual({ state: 'downloaded', version: '0.1.1' });
-    });
-
-    it('a download already running when the call starts keeps going', async () => {
-      const t = setup();
-      t.updater.next = { version: '0.1.1' };
-      await t.flow.check();
-      t.flow.setInCall(true);
-      t.updater.finishDownload('0.1.1');
-      expect(t.flow.status().state).toBe('downloaded');
-      t.flow.setInCall(false);
-      expect(t.updater.downloads).toBe(1);
-    });
-
-    it('notify-only mode: the call changes nothing (notification as usual, never a download)', async () => {
-      const t = setup({ platform: 'darwin' });
-      t.flow.setInCall(true);
-      t.updater.next = { version: '0.1.1' };
-      await t.flow.check();
-      expect(t.notified).toEqual([['0.1.1', PAGE]]);
-      t.flow.setInCall(false);
-      expect(t.updater.downloads).toBe(0);
-      expect(t.flow.status().state).toBe('available');
-    });
-
-    it('turning «Автоматически обновлять» on during a call waits for the call to end', async () => {
-      const t = setup({ auto: false });
-      t.updater.next = { version: '0.1.1' };
-      await t.flow.check();
-      t.flow.setInCall(true);
-      t.setAuto(true);
-      t.flow.applySettings();
-      expect(t.updater.downloads).toBe(0);
-      t.flow.setInCall(false);
-      expect(t.updater.downloads).toBe(1);
     });
   });
 });

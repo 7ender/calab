@@ -62,10 +62,10 @@ export interface CalabaApi {
     /** Current update status (after a renderer reload). */
     updateStatus(): Promise<UpdateStatus>;
     /**
-     * «Перезапустить»: quit and install the downloaded update (main re-checks the feed first);
-     * `afterCall` during a call: when the call ends. false when none is downloaded.
+     * «Перезапустить»: quit and install the downloaded update (main re-checks the feed first) —
+     * at once, also during a call (the relaunched app rejoins it). false when none is downloaded.
      */
-    installUpdate(afterCall?: boolean): Promise<boolean>;
+    installUpdate(): Promise<boolean>;
     /** «Скачать и установить»: download an `installable` available update; false when there is none. */
     downloadUpdate(): Promise<boolean>;
     /** Main is about to restart for an update: answer with setResumeVoice (docs/09 #126). */

@@ -11,16 +11,15 @@ describe('pendingUpdate', () => {
       expect(pendingUpdate(at(s))).toBeNull();
     }
   });
-  it('downloaded → the bar, with the «after the call» flag', () => {
-    expect(pendingUpdate(at({ state: 'downloaded', version: '0.9.1' }))).toEqual({ kind: 'downloaded', version: '0.9.1', afterCall: false });
-    expect(pendingUpdate(at({ state: 'downloaded', version: '0.9.1', afterCall: true }))).toMatchObject({ afterCall: true });
+  it('downloaded → the bar', () => {
+    expect(pendingUpdate(at({ state: 'downloaded', version: '0.9.1' }))).toEqual({ kind: 'downloaded', version: '0.9.1' });
   });
   it('never offers a version not newer than the running one (stale feed)', () => {
     expect(pendingUpdate(at({ state: 'downloaded', version: '0.9.0' }))).toBeNull();
     expect(pendingUpdate(at({ state: 'available', version: '0.7.0', downloadPage: 'https://x/' }))).toBeNull();
     expect(pendingUpdate(at({ state: 'none' }, { webVersion: '0.8.0' }))).toBeNull();
   });
-  it('available: notify-only and manual are shown; auto mode deferred by a call is not', () => {
+  it('available: notify-only and manual are shown; a newer version replacing a pending download in auto mode is not', () => {
     expect(pendingUpdate(at({ state: 'available', version: '0.9.1', downloadPage: 'https://x/' }))).toEqual({
       kind: 'available',
       version: '0.9.1',

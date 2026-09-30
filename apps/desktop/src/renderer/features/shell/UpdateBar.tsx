@@ -20,8 +20,9 @@ declare global {
 /**
  * The update bar (docs/08 «Обновление», docs/09 #125; owner, 29.09: «обновление слабо видят»):
  * a 32 px accent strip under the title bar — the reconnect banner's slot — while an update waits:
- * «Доступна версия X — обновление уже загружено» + «Перезапустить и обновить» (in a call:
- * «Перезапустить после звонка», main installs when the call ends) + a quiet «Позже» (4 h, until
+ * «Доступна версия X — обновление уже загружено» + «Перезапустить и обновить» (restarts at once,
+ * also in a call: the relaunched app rejoins the same room / call, docs/09 #126; in a call the
+ * hint says so) + a quiet «Позже» (4 h, until
  * the next start at most); after three «Позже» only «×» (24 h). Web: «Обновить страницу» when the
  * server is newer than the loaded bundle. The logic is pure in updateBarModel.ts; this leaf is the only
  * subscriber to the update status (download progress re-renders just the bar).
@@ -55,9 +56,8 @@ export function UpdateBar(): ReactNode {
 
   const hide = (how: 'later' | 'close'): void => usePrefs.getState().setPrefs({ updateNag: snooze(nag, appVersion, Date.now(), how) });
   const install = (): void => {
-    const afterCall = inVoice;
-    if (!afterCall) setInstalling(true);
-    platform.app.installUpdate(afterCall).then(
+    setInstalling(true);
+    platform.app.installUpdate().then(
       (ok) => {
         if (!ok) setInstalling(false);
       },
@@ -116,24 +116,12 @@ function text(m: UpdateBarModel): string {
 function Action({ model, inVoice, installing, onInstall }: { model: UpdateBarModel; inVoice: boolean; installing: boolean; onInstall: () => void }): ReactNode {
   switch (model.kind) {
     case 'downloaded':
-      if (model.afterCall) {
-        return (
-          <button type="button" disabled className={primary}>
-            {t('update.scheduled')}
-          </button>
-        );
-      }
       return (
-        <button
-          type="button"
-          disabled={installing}
-          aria-label={inVoice ? t('update.afterCallHint', { v: model.version }) : t('update.restartHint', { v: model.version })}
-          onClick={onInstall}
-          className={primary}
-          data-testid="update-bar-restart"
-        >
-          {inVoice ? t('update.afterCall') : t('update.restart')}
-        </button>
+        <Tip label={t(inVoice ? 'update.restartInCallHint' : 'update.restartHint', { v: model.version })}>
+          <button type="button" disabled={installing} onClick={onInstall} className={primary} data-testid="update-bar-restart">
+            {t('update.restart')}
+          </button>
+        </Tip>
       );
     case 'available':
       return model.installable ? (

@@ -33,7 +33,7 @@ export interface UpdateNag {
 }
 
 export type UpdateBarModel =
-  | { kind: 'downloaded'; version: string; afterCall: boolean }
+  | { kind: 'downloaded'; version: string }
   | { kind: 'available'; version: string; installable: boolean; downloadPage: string }
   | { kind: 'downloading'; version: string; percent: number }
   | { kind: 'web'; version: string };
@@ -53,10 +53,10 @@ export function pendingUpdate(i: UpdateInput): UpdateBarModel | null {
   const u = i.update;
   const newer = (v: string): boolean => isNewerVersion(v, i.appVersion);
   if (i.webVersion && newer(i.webVersion)) return { kind: 'web', version: i.webVersion };
-  if (u.state === 'downloaded') return newer(u.version) ? { kind: 'downloaded', version: u.version, afterCall: u.afterCall === true } : null;
+  if (u.state === 'downloaded') return newer(u.version) ? { kind: 'downloaded', version: u.version } : null;
   if (u.state === 'available') {
     if (!newer(u.version)) return null;
-    // Auto mode deferred by a call: it downloads by itself when the call ends.
+    // A newer version replacing a pending download (no page): it starts downloading by itself.
     if (i.autoUpdate && u.installable && !u.downloadPage) return null;
     return { kind: 'available', version: u.version, installable: u.installable === true, downloadPage: u.downloadPage ?? '' };
   }

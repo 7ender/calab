@@ -24,15 +24,16 @@ import { createUpdateFlow, type NudgeReason, type UpdateFlow } from './updateFlo
  * - Checks: 10 s after start, then hourly (± 5 min), «Проверить» in «О программе», and — at most
  *   once per 10 min — after wake from sleep, screen unlock and when the network returns (the
  *   renderer's `online` event). «Проверять обновления автоматически» off → only «Проверить».
- * - During a call / stream (tray state inVoice) a found update is not downloaded until it ends.
+ * - A call / stream defers nothing: the update downloads, and «Перезапустить» restarts at once —
+ *   the relaunched app rejoins the same room / 1:1 call (prepareRestart, main/resumeVoice.ts).
  * - Auto (build feed + «Автоматически обновлять» on + Windows / Linux AppImage / macOS built with
  *   MAIN_VITE_UPDATES_SIGNED=1): background download with progress, an accent bar under the
  *   title bar («Доступна версия X — обновление уже загружено · Перезапустить и обновить», docs/09
  *   #125) and a tray item, install on restart or on quit (autoInstallOnAppQuit). A pending
  *   download is re-validated against the feed before install and every 6 h (updateFlow.ts).
  * - Otherwise notify only — «Доступна версия X — Скачать» opens `<server>/download/`. When the
- *   update is `installable` (build feed + a platform able to apply it, only the setting is off or
- *   a call is running) «О программе» offers «Скачать и установить» — the same flow, on request.
+ *   update is `installable` (build feed + a platform able to apply it, only the setting is off)
+ *   «О программе» offers «Скачать и установить» — the same flow, on request.
  * - Errors go to the log (electron-log) only; the status turns 'error' for «О программе».
  */
 /** Build-time only: a runtime env must not change what gets installed silently. */
@@ -49,8 +50,7 @@ let flow: UpdateFlow | null = null;
 let notification: Notification | null = null;
 
 function broadcast(s: UpdateStatus): void {
-  // The tray item never cuts a call short: during one it installs when the call ends.
-  setTrayUpdate(s.state === 'downloaded' ? s.version : null, () => installUpdate(true));
+  setTrayUpdate(s.state === 'downloaded' ? s.version : null, () => installUpdate());
   for (const w of BrowserWindow.getAllWindows()) w.webContents.send(IPC.appUpdateStatus, s);
 }
 
@@ -111,12 +111,6 @@ export function updatesNudge(reason: NudgeReason): void {
   flow?.nudge(reason);
 }
 
-/** A call / stream started or ended: a found update waits for the end of the call to download. */
-export function setUpdateInCall(inCall: boolean): void {
-  if (process.env['CALABA_VISUAL_TEST'] === '1') return;
-  getFlow().setInCall(inCall);
-}
-
 /** «Проверить» in «О программе». Never throws. */
 export function checkForUpdates(): Promise<UpdateStatus> {
   return getFlow().check();
@@ -128,10 +122,10 @@ export function updateStatus(): UpdateStatus {
 
 /**
  * «Перезапустить» (bar, «О программе», tray): re-check the feed, then quit and install the
- * downloaded update; `afterCall` during a call — «Перезапустить после звонка», installs when it ends.
+ * downloaded update — at once, also during a call (the relaunched app rejoins it).
  */
-export function installUpdate(afterCall = false): boolean {
-  return getFlow().install({ afterCall });
+export function installUpdate(): boolean {
+  return getFlow().install();
 }
 
 /** «Скачать и установить» in «О программе»: download an installable available update now. */

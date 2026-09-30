@@ -35,7 +35,7 @@ import { parseMainStrings, setMainStrings } from './strings';
 import { setTrayBadge, setTrayState } from './tray';
 import { setMenuState } from './appMenu';
 import { parseMenuState } from '../shared/menu';
-import { checkForUpdates, downloadUpdate, installUpdate, setUpdateInCall, updateSettingsChanged, updatesNudge, updateStatus } from './updater';
+import { checkForUpdates, downloadUpdate, installUpdate, updateSettingsChanged, updatesNudge, updateStatus } from './updater';
 import { reloadIfServerChanged } from './csp';
 import { setResumeSeat, takeResumeVoice } from './resumeVoice';
 import { isOwnPage, isShown } from './windows';
@@ -196,7 +196,7 @@ export function registerIpc(): void {
   handle(IPC.appTakeDeepLink, () => takePendingDeepLink());
   handle(IPC.appCheckUpdates, () => checkForUpdates());
   handle(IPC.appGetUpdateStatus, () => updateStatus());
-  handle(IPC.appInstallUpdate, (_e, afterCall) => installUpdate(afterCall === true));
+  handle(IPC.appInstallUpdate, () => installUpdate());
   handle(IPC.appDownloadUpdate, () => downloadUpdate());
   handle(IPC.appNetworkOnline, () => updatesNudge('online'));
   handle(IPC.appResumeVoice, (_e, a) => setResumeSeat(a));
@@ -280,10 +280,7 @@ export function registerIpc(): void {
   // ---- tray ----
   handle(IPC.trayState, (_e, a) => {
     const r = obj(a);
-    const inVoice = Boolean(r['inVoice']);
-    setTrayState({ inVoice, muted: Boolean(r['muted']), deafened: Boolean(r['deafened']) } satisfies TrayState);
-    // A call / stream in progress: an update does not start downloading until it ends.
-    setUpdateInCall(inVoice);
+    setTrayState({ inVoice: Boolean(r['inVoice']), muted: Boolean(r['muted']), deafened: Boolean(r['deafened']) } satisfies TrayState);
   });
 
   // ---- macOS menu ----

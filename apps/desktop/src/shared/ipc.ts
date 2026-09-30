@@ -403,11 +403,8 @@ export type UpdateStatus =
     }
   /** Download in progress; `percent` is an integer 0–100, `bytesPerSecond` once progress is known. */
   | { state: 'downloading'; version: string; percent: number; bytesPerSecond?: number }
-  /**
-   * Ready: installs on «Перезапустить» or on quit. `afterCall`: «Перезапустить после звонка» was
-   * pressed — main installs when the call ends (docs/09 #125).
-   */
-  | { state: 'downloaded'; version: string; afterCall?: true }
+  /** Ready: installs on «Перезапустить» (at once, also in a call) or on quit (docs/09 #125). */
+  | { state: 'downloaded'; version: string }
   | { state: 'error'; message: string };
 
 export interface TrayState {

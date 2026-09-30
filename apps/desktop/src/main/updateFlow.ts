@@ -19,16 +19,17 @@ import { isNewerVersion } from '../shared/version';
  *            self-built), a runtime feed override, unsigned macOS, Linux deb/other, or
  *            «Автоматически обновлять» off.
  * - manual — notify, but the update is `installable` (build feed + a platform able to apply it;
- *            only the setting is off, or a call defers it): «Скачать и установить» in «О программе»
- *            calls download() — the same download / install-on-quit as auto, on the user's request.
+ *            only the setting is off): «Скачать и установить» in «О программе» calls
+ *            download() — the same download / install-on-quit as auto, on the user's request.
  * Errors are logged and end in status 'error' (shown only in «О программе»); never thrown.
  *
  * Checks (docs/09 P1 #16): 10 s after start, then every hour (the period is shifted by a random
  * ±5 min once per run so a fleet of clients does not hit the feed on the hour), «Проверить», and
  * — debounced and at most once per 10 min — after wake from sleep, screen unlock and when the
  * network comes back (the renderer's `online` event). «Проверять обновления автоматически» off →
- * only «Проверить» checks. During a call / stream (renderer tray state `inVoice`) nothing starts
- * downloading: the update waits as 'available' and downloads when the call ends.
+ * only «Проверить» checks. A call / stream does not defer anything (owner, 30.09): the update
+ * downloads in the background and «Перезапустить» restarts at once — prepareRestart hands the
+ * voice seat to the relaunched app, which rejoins the same room / 1:1 call (docs/09 #126).
  *
  * A pending download is re-validated against the feed (docs/09 #125, «обновлялись дважды»): the
  * flow used to stop checking once an update was downloaded, so a client that fetched 0.8.0 and ran
@@ -152,19 +153,17 @@ export interface UpdateFlow {
    * downloading / downloaded, and not within NUDGE_MIN_GAP_MS of the last check).
    */
   nudge(reason: NudgeReason): void;
-  /** A call / stream started or ended (renderer tray state). Ending it starts a deferred download. */
-  setInCall(inCall: boolean): void;
   /** A check now (startup timer, periodic timer, «Проверить»). Concurrent calls share one check. */
   check(): Promise<UpdateStatus>;
   /**
-   * «Перезапустить»: re-check the feed (a newer version replaces the pending download and installs
-   * once ready), then quit and install. `afterCall` during a call: install when the call ends
-   * (the `downloaded` status gets `afterCall: true`). false when nothing is downloaded.
+   * «Перезапустить» (also during a call — the relaunched app rejoins it): re-check the feed (a
+   * newer version replaces the pending download and installs once ready), then quit and install.
+   * false when nothing is downloaded.
    */
-  install(opts?: { afterCall?: boolean }): boolean;
+  install(): boolean;
   /**
-   * «Скачать и установить»: download an `installable` available update now (also during a call —
-   * the user asked) and install it on quit. false when there is nothing to download.
+   * «Скачать и установить»: download an `installable` available update now and install it on
+   * quit. false when there is nothing to download.
    */
   download(): boolean;
   /** Re-reads the settings (autoUpdate / autoCheck toggled); may start a download of an available update. */
@@ -201,7 +200,6 @@ export function createUpdateFlow(updater: UpdaterLike, env: UpdateFlowEnv): Upda
   let first: ReturnType<typeof setTimeout> | null = null;
   let periodic: ReturnType<typeof setInterval> | null = null;
   let nudgeTimer: ReturnType<typeof setTimeout> | null = null;
-  let inCall = false;
   /** install() is waiting for settle(): a second click does not queue a second quit. */
   let installing = false;
   /** Date.now() when the last updater check started (0 = never). */
@@ -210,10 +208,8 @@ export function createUpdateFlow(updater: UpdaterLike, env: UpdateFlowEnv): Upda
   let feed = '';
   /** The user asked for a download («Скачать и установить»): install on quit even with auto off. */
   let requested = false;
-  /** A version newer than the pending download was found: download it (after the call, if any). */
+  /** A version newer than the pending download was found: download it. */
   let replacing = false;
-  /** «Перезапустить после звонка»: install when the call ends. */
-  let installAfterCall = false;
   /** «Перезапустить» found a newer version: install as soon as it is downloaded. */
   let installWhenReady = false;
 
@@ -271,10 +267,10 @@ export function createUpdateFlow(updater: UpdaterLike, env: UpdateFlowEnv): Upda
 
   /**
    * Starts a download now if one may run (auto mode, or a newer version replacing a pending
-   * download; not in a call) and an update is waiting.
+   * download) and an update is waiting.
    */
   const downloadIfWaiting = (): void => {
-    if (status.state === 'available' && (updater.autoDownload || (replacing && !inCall))) {
+    if (status.state === 'available' && (updater.autoDownload || replacing)) {
       env.log.info('[update] download', status.version);
       replacing = false;
       publish({ state: 'downloading', version: status.version, percent: 0 });
@@ -284,9 +280,7 @@ export function createUpdateFlow(updater: UpdaterLike, env: UpdateFlowEnv): Upda
 
   const applyFlags = (): void => {
     const on = feed !== '' && autoFor(feed);
-    // In a call nothing starts downloading (bandwidth / CPU belong to the call); an update that
-    // is already downloading keeps going. Install-on-quit is unaffected.
-    updater.autoDownload = on && !inCall;
+    updater.autoDownload = on;
     updater.autoInstallOnAppQuit = on || (requested && feed !== '' && installableFrom(feed));
   };
 
@@ -326,19 +320,13 @@ export function createUpdateFlow(updater: UpdaterLike, env: UpdateFlowEnv): Upda
       pendingVersion = version;
       replacing = true;
       publish({ state: 'available', version, installable: true });
-      downloadIfWaiting(); // not in a call: now; else setInCall(false) starts it
+      downloadIfWaiting();
       return;
     }
     pendingVersion = version;
     if (updater.autoDownload) {
       // electron-updater starts the download itself (autoDownload).
       publish({ state: 'downloading', version, percent: 0 });
-      return;
-    }
-    if (inCall && feed !== '' && autoFor(feed)) {
-      // Auto mode, deferred: no notification, no download page — it downloads after the call.
-      env.log.info('[update] download deferred until the call ends', version);
-      publish({ state: 'available', version, installable: true });
       return;
     }
     publish({ state: 'available', version, downloadPage: page, ...(installableFrom(feed) ? { installable: true as const } : {}) });
@@ -364,8 +352,7 @@ export function createUpdateFlow(updater: UpdaterLike, env: UpdateFlowEnv): Upda
     if (installWhenReady) {
       // «Перезапустить» found this newer version: install it now (the feed was just read).
       installWhenReady = false;
-      if (inCall) scheduleAfterCall();
-      else installNow(false);
+      installNow(false);
     }
   });
   on('error', (e) => {
@@ -407,15 +394,6 @@ export function createUpdateFlow(updater: UpdaterLike, env: UpdateFlowEnv): Upda
     return status;
   };
 
-  /** «Перезапустить после звонка»: remembered, shown in the status, run by setInCall(false). */
-  function scheduleAfterCall(): void {
-    installAfterCall = true;
-    if (status.state === 'downloaded' && !status.afterCall) {
-      env.log.info('[update] install after the call', status.version);
-      publish({ ...status, afterCall: true });
-    }
-  }
-
   /**
    * Quit and install — after re-reading the feed (unless `recheck` is false or the last check is
    * fresh; bounded by INSTALL_RECHECK_TIMEOUT_MS) and after settle(). A newer version found by the
@@ -427,7 +405,7 @@ export function createUpdateFlow(updater: UpdaterLike, env: UpdateFlowEnv): Upda
     const go = (): void => {
       installing = false;
       if (status.state !== 'downloaded') {
-        // The re-check found a newer version (downloading, or waiting for the call to end).
+        // The re-check found a newer version: it is downloading.
         env.log.info('[update] install when', pendingVersion, 'is downloaded');
         installWhenReady = true;
         return;
@@ -482,25 +460,8 @@ export function createUpdateFlow(updater: UpdaterLike, env: UpdateFlowEnv): Upda
       nudgeTimer = null;
     },
     nudge,
-    setInCall(next) {
-      if (inCall === next) return;
-      inCall = next;
-      applyFlags();
-      if (inCall) return;
-      downloadIfWaiting();
-      if (installAfterCall) {
-        installAfterCall = false;
-        if (status.state === 'downloaded') installNow(true);
-        else if (status.state === 'downloading' || status.state === 'available') installWhenReady = true;
-      }
-    },
     check,
-    install(opts) {
-      if (status.state !== 'downloaded') return false;
-      if (opts?.afterCall && inCall) {
-        scheduleAfterCall();
-        return true;
-      }
+    install() {
       return installNow(true);
     },
     download() {
