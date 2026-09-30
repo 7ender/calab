@@ -1,4 +1,11 @@
 import {
+  GetSipSettingsResponseSchema,
+  ListSipCallsResponseSchema,
+  PlaceSipCallRequestSchema,
+  PutSipSettingsRequestSchema,
+  PutSipSettingsResponseSchema,
+  SipCallResponseSchema,
+  TestSipResponseSchema,
   CreateNotesRequestSchema,
   CreateNotesResponseSchema,
   ListNotesResponseSchema,
@@ -544,6 +551,21 @@ export const api = {
   calls: {
     start: (dmRoomId: string) => call('POST', `/api/dms/${dmRoomId}/call`, StartCallResponseSchema),
     act: (callId: string, action: 'accept' | 'decline' | 'cancel' | 'hangup') => call('POST', `/api/calls/${callId}/${action}`, CallActionResponseSchema),
+  },
+  /**
+   * Telephony (ADR-0046, sip.proto). Settings, the connection test (a real call, up to ~25 s) and
+   * the journal — MANAGE_WORKSPACE; PUT replaces the form (password unset = keep, "" = remove):
+   * 422 VALIDATION field, 502 SIP_PROVIDER_ERROR. place / hangup — see PlaceSipCallRequest.
+   */
+  sip: {
+    settings: (workspaceId: string) => call('GET', `/api/workspaces/${workspaceId}/sip`, GetSipSettingsResponseSchema),
+    save: (workspaceId: string, init: MessageInitShape<typeof PutSipSettingsRequestSchema>) =>
+      call('PUT', `/api/workspaces/${workspaceId}/sip`, PutSipSettingsResponseSchema, body(PutSipSettingsRequestSchema, init)),
+    test: (workspaceId: string) => call('POST', `/api/workspaces/${workspaceId}/sip/test`, TestSipResponseSchema),
+    journal: (workspaceId: string, cursor?: string, signal?: AbortSignal) =>
+      call('GET', `/api/workspaces/${workspaceId}/calls${qs({ cursor })}`, ListSipCallsResponseSchema, undefined, signal),
+    place: (roomId: string, number: string) => call('POST', `/api/rooms/${roomId}/calls`, SipCallResponseSchema, body(PlaceSipCallRequestSchema, { number })),
+    hangup: (roomId: string, callId: string) => call('DELETE', `/api/rooms/${roomId}/calls/${callId}`, SipCallResponseSchema),
   },
   /** Link preview; image URLs are server-proxied API paths (never third-party hosts). */
   unfurl: {

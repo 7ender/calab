@@ -230,4 +230,6 @@ export const ROOM_EDITABLE: PermissionName[] = [
   'MANAGE_ROOM',
   'INVITE_MEMBERS',
   'INVITE_GUESTS',
+  // ADR-0046: who may call phone numbers from this room.
+  'PLACE_CALLS',
 ];

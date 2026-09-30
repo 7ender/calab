@@ -31,6 +31,7 @@ import { useOnCall } from '../call/CallBits';
 import { DRAG_USER } from '../calendar/dragState';
 import { AdmissionsGroup } from '../guests/AdmissionsGroup';
 import { useKnockingKey } from '../guests/stores/admissions';
+import { SipDialButton } from '../voice/Sip';
 
 export const ROLE_LABEL: Record<WorkspaceRole, MessageKey> = {
   [WorkspaceRole.UNSPECIFIED]: 'role.member',
@@ -99,6 +100,7 @@ export function MembersPanel({ workspaceId, floating = false, drawer = false }: 
       }
       aria-label={t('shell.members')}
     >
+      {drawer ? <DrawerDial workspaceId={workspaceId} /> : null}
       <AdmissionsGroup workspaceId={workspaceId} />
       <BirthdaysSection workspaceId={workspaceId} />
       {section('on', t('members.online'), groups.online)}
@@ -107,6 +109,15 @@ export function MembersPanel({ workspaceId, floating = false, drawer = false }: 
       {groups.online.length + groups.offline.length + groups.bots.length === 0 ? <p className="px-2 text-body text-muted">{t('people.empty')}</p> : null}
     </aside>
   );
+}
+
+/**
+ * Phone layout (ADR-0021): «Позвонить на номер» on top of the members drawer for the room of my
+ * call (ADR-0046) — the room header there has no room for it. Nothing unless the gate passes.
+ */
+function DrawerDial({ workspaceId }: { workspaceId: string }): ReactNode {
+  const roomId = useVoice((s) => (s.workspaceId === workspaceId ? s.roomId : null));
+  return roomId ? <SipDialButton workspaceId={workspaceId} roomId={roomId} variant="sheet" /> : null;
 }
 
 /**

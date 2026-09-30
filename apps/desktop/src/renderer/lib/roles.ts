@@ -119,10 +119,10 @@ export const GUEST_BITS: PermissionBits =
   PERMISSION_BITS.STREAM |
   PERMISSION_BITS.VIDEO;
 
-export type PermGroupId = 'general' | 'invites' | 'rooms' | 'voice' | 'moderation';
+export type PermGroupId = 'general' | 'invites' | 'rooms' | 'voice' | 'telephony' | 'moderation';
 
 /**
- * The role card's matrix (ADR-0026 §5): Общие / Приглашения (ADR-0043) / Комнаты / Голос / Модерация.
+ * The role card's matrix (ADR-0026 §5): Общие / Приглашения (ADR-0043) / Комнаты / Голос / Телефония (ADR-0046) / Модерация.
  * ADMINISTRATOR is never grantable.
  */
 export const ROLE_PERM_GROUPS: ReadonlyArray<{ id: PermGroupId; perms: readonly PermissionName[] }> = [
@@ -130,6 +130,8 @@ export const ROLE_PERM_GROUPS: ReadonlyArray<{ id: PermGroupId; perms: readonly 
   { id: 'invites', perms: ['INVITE_MEMBERS', 'INVITE_GUESTS'] },
   { id: 'rooms', perms: ['VIEW_ROOM', 'SEND_MESSAGES', 'ATTACH_FILES', 'MENTION_EVERYONE', 'CREATE_TEMP_ROOMS'] },
   { id: 'voice', perms: ['CONNECT', 'SPEAK', 'STREAM', 'VIDEO'] },
+  // ADR-0046: nobody by default (calls cost money); never a guest.
+  { id: 'telephony', perms: ['PLACE_CALLS'] },
   { id: 'moderation', perms: ['MANAGE_MESSAGES', 'MUTE_MEMBERS', 'MOVE_MEMBERS'] },
 ];
 

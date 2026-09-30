@@ -61,6 +61,8 @@ import {
   type WorkspaceNotificationSettings,
   type RoomPermissionOverride,
   type RoomRecording,
+  type SipCall,
+  type SipSettings,
   type Badge,
   type WorkspaceBackground,
   type Sound,
@@ -434,6 +436,12 @@ export interface MockState {
   gptunnel: Map<string, GptunnelIntegration>;
   /** Rooms being recorded now (state ACTIVE), by room id. */
   recordings: Map<string, RoomRecording>;
+  /** SIP account per workspace (ADR-0046); absent = never saved (the defaults). */
+  sipSettings: Map<string, SipSettings>;
+  /** SIP password per workspace (write-only in the API). */
+  sipPasswords: Map<string, string>;
+  /** Phone calls by id in creation order (live and journal). */
+  sipCalls: Map<string, SipCall>;
   /** Sticker packs by id (ADR-0030), live stickers inside in order; deleted stickers stay in `deletedStickers`. */
   stickerPacks: Map<string, StickerPack>;
   /** Stickers removed from a pack that messages still show, by id. */
@@ -742,6 +750,9 @@ export function buildState(scenario: Scenario): MockState {
     emailInvites: new Map(),
     gptunnel: new Map(),
     recordings: new Map(),
+    sipSettings: new Map(),
+    sipPasswords: new Map(),
+    sipCalls: new Map(),
     stickerPacks: new Map(),
     deletedStickers: new Map(),
     userStickerPacks: new Map(),

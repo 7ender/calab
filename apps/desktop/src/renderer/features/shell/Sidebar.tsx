@@ -94,6 +94,8 @@ import { useLocalTimeTag } from '../../services/timezone';
 import { roomMenuGroups, type RoomMenuItem } from '../../lib/roomMenu';
 import { RoomRecBadge } from '../voice/Recording';
 import { useRecordings } from '../../stores/recordings';
+import { useSipCalls } from '../../stores/sipCalls';
+import { SipCallRow } from '../voice/Sip';
 import { startRecording, stopRecording } from '../../services/recording';
 import { MiniCalendar } from '../calendar/MiniCalendar';
 import { CREATE_TASKS, hasBit } from '../boards/model';
@@ -1185,6 +1187,8 @@ function VoiceRoomRow({
     [voiceStates, room.id],
   );
   const canConnect = can(perms, 'CONNECT');
+  // The room's phone line (ADR-0046): one more row under the people, drawn from the SipCall.
+  const sipLine = useSipCalls((s) => !!s.byRoom[room.id]);
   const canMove = mayMoveMembersIn(role, me, room);
   // A temporary room (ADR-0044): its creator manages it too; it sits in «Временные», not in the
   // reorder layout (no drop slot).
@@ -1315,7 +1319,7 @@ function VoiceRoomRow({
       </div>
       {/* A meeting here within 15 minutes / now (ADR-0038 §6): «Планёрка в 15:00» → its card. */}
       <RoomEventBadge roomId={room.id} variant="row" />
-      {people.length > 0 ? (
+      {people.length > 0 || sipLine ? (
         <ul className="flex flex-col gap-px pb-1 pt-0.5" aria-label={room.name}>
           {people.map((v) => (
             <VoiceMember
@@ -1327,6 +1331,7 @@ function VoiceRoomRow({
               canMove={canMove}
             />
           ))}
+          {sipLine ? <SipCallRow workspaceId={workspaceId} roomId={room.id} /> : null}
         </ul>
       ) : null}
       {inRoom && mayRoomInvite(perms) ? <VoiceInviteRow roomId={room.id} full={atCapacity} /> : null}

@@ -6,7 +6,7 @@ import {
 } from '@calaba/protocol';
 import { timestampDate } from '@bufbuild/protobuf/wkt';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { Award, AudioLines, Ban, Music, Bot as BotIcon, Cake, CircleDot, Copy, Gem, Search, Settings2, Shield, Sticker, Trash2, TriangleAlert, Upload, UserPlus, Users, Wallpaper } from 'lucide-react';
+import { Award, AudioLines, Ban, Music, Bot as BotIcon, Cake, CircleDot, Copy, Gem, Phone, Search, Settings2, Shield, Sticker, Trash2, TriangleAlert, Upload, UserPlus, Users, Wallpaper } from 'lucide-react';
 import { useRef, useState, type ReactNode } from 'react';
 import { Avatar } from '../../components/Avatar';
 import { confirmAction } from '../../components/Confirm';
@@ -36,6 +36,7 @@ import { PRESETS, presetDetail, presetText } from '../voice/StreamPicker';
 import { PlanFullNote, PlanTab, useMembersCap } from './PlanTab';
 import { AudioTierHint, AudioTierOptions } from './AudioTierOptions';
 import { GptunnelTab } from './GptunnelTab';
+import { TelephonyTab } from './TelephonyTab';
 import { reportPlanError } from '../../services/plan';
 import { fromTimeFormatPref, toTimeFormatPref } from '../../services/timeFormat';
 import { RoomGuestInviteCard } from '../people/RoomGuestInviteCard';
@@ -114,6 +115,8 @@ export function WorkspaceSettingsDialog({
     ...(entry.role !== WorkspaceRole.GUEST
       ? [{ id: 'gptunnel', label: t('gpt.tab'), icon: CircleDot, content: <GptunnelTab workspaceId={workspaceId} canManage={admin} /> }]
       : []),
+    // «Телефония» (ADR-0046): the SIP account, the connection test and the call journal — MANAGE_WORKSPACE.
+    ...(admin ? [{ id: 'telephony', label: t('sip.tab'), icon: Phone, content: <TelephonyTab workspaceId={workspaceId} /> }] : []),
     ...(inviter ? [{ id: 'invites', label: t('ws.tabInvites'), icon: UserPlus, content: <InvitesTab workspaceId={workspaceId} roomId={roomId} /> }] : []),
     // «Забаненные» (docs/09 #32): the same right as kicking (MANAGE_WORKSPACE).
     ...(admin ? [{ id: 'bans', label: t('bans.tab'), icon: Ban, content: <BansTab workspaceId={workspaceId} /> }] : []),

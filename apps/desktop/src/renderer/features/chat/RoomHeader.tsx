@@ -36,6 +36,7 @@ import { TypingDots, useTypingText } from './TypingIndicator';
 import { systemPreview } from '../../lib/recording';
 import { headerFit, measureHeader, type HeaderFit } from './headerFit';
 import { RoomEventBadge } from '../calendar/RoomEvent';
+import { SipDialButton } from '../voice/Sip';
 
 const NO_PINS: never[] = [];
 
@@ -104,6 +105,8 @@ export function RoomHeader({
         <div data-header-fill className="flex-1" />
       )}
       <div className="no-drag flex shrink-0 items-center gap-0.5">
+        {/* ADR-0046: «Позвонить на номер» — in this room's call, PLACE_CALLS, telephony on (phone: the members drawer). */}
+        {voiceRoom && !mobile ? <SipDialButton workspaceId={workspaceId} roomId={room.id} variant="header" /> : null}
         <IconButton label={t('chat.searchInRoom', { room: roomLabel(room) })} shortcut={`${MOD}F`} active={searchOpen} onClick={() => setSearch(searchOpen ? null : room.id)} className={touch}>
           <Search className="size-[18px]" />
         </IconButton>
