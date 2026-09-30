@@ -22,6 +22,7 @@ export const zhRoles: DictShape<typeof ruRoles> = {
   'roles.perms': '权限',
   'roles.fullAccess': '完全访问：该角色拥有所有权限，无法更改。',
   'roles.guestNote': '访客只能获得房间和语音权限。',
+  'roles.botsAdmin': { other: '{n} 个机器人拥有此角色：有管理权限时，其令牌相当于管理员。请谨慎为机器人授予此类权限。' },
   'roles.group.workspace': '工作区',
   'roles.group.members': '成员',
   'roles.group.rooms': '房间',
