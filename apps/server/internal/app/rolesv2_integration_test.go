@@ -231,6 +231,14 @@ func TestRolesV2ClosedBoard(t *testing.T) {
 	}
 	adminOv.must(200, "GET", "/api/boards/"+bid, nil, nil)
 	pmo.must(404, "GET", "/api/boards/"+bid, nil, nil)
+
+	// An archived closed board stays readable to those let in: the role guard covers it too.
+	blind := register(t, code)
+	o.must(200, "PATCH", base+"/members/"+blind.id, &v1.UpdateMemberRequest{Role: &adminR}, nil)
+	pm.must(204, "DELETE", "/api/boards/"+bid, nil, nil)
+	if st, _ := setMemberRoles(blind, wid, plain.id, sales.GetId()); st != 403 {
+		t.Fatalf("admin grants the sales role of an archived closed board: %d, want 403", st)
+	}
 }
 
 // TestRolesV2ClosedRoom: the ADR-0048 rule for closed rooms — VIEW_ROOM of the roles no longer

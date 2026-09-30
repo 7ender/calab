@@ -114,6 +114,20 @@ INVITE_GUESTS, MANAGE_EVENTS, VIEW_JOURNALS), «Наблюдатель» (тол
 - Тесты: `internal/app` `TestRolesV2`, `TestRolesV2ClosedBoard`, `TestRolesV2ClosedRoom`, `TestRestrictedFlagManageRoom`;
   `internal/db` `TestRolesV2Migration`; векторы `v2:` / `closed room:` / `closed board:` в `proto/testdata/permissions.json`.
 
+## Следующие биты (предложение, не реализовано)
+
+Бит 31 — последний, который вмещает int32-enum `Permission`. Маски на проводе и в БД уже 64-битные
+(`uint64` в сообщениях, `bigint` в `workspace_roles.permissions` / `*_permissions.allow|deny`, `perm.Bits uint64`,
+`bigint` в TS), тесно только самому enum. Предложение для битов ≥ 32:
+- новый enum `PermissionBit` с **позицией** бита (`PERMISSION_BIT_<NAME> = 32…63`), а не маской; `Permission`
+  замораживается на битах 0–31 (значения не меняются — `buf breaking` чист). Маска = `1 << PermissionBit`; в TS
+  `1n << BigInt(PermissionBit.X)`, в Go `perm.Bits(1) << v1.PermissionBit_X`. Старые биты можно продублировать в
+  `PermissionBit` (0–31) для единообразия, клиенты читают любой из двух;
+- `perm.All` и `ALL_PERMISSIONS` считаются из максимальной позиции, а не `ManageRecordings<<1 - 1`; векторы
+  `proto/testdata` получают кейс с битом ≥ 32 (Go и TS, без потери точности в JSON — маски строкой);
+- отклонено: второе поле маски (`permissions_hi`) — удваивает все сообщения с масками и проверки «не шире своих
+  битов»; нужен только при переходе за 64 бита, чего не ожидается.
+
 ## Контракт для клиента
 
 **Биты** (`PERMISSION_BITS` в `@calaba/protocol`): `CREATE_BOARDS`, `MANAGE_MEMBERS`, `MANAGE_BOTS`,

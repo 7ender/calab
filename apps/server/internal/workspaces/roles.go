@@ -622,58 +622,79 @@ func (h *Handlers) setMemberRoles(w http.ResponseWriter, r *http.Request) error 
 	return nil
 }
 
-// restrictedViews is who sees each restricted room of the workspace (ADR-0029), read through q
-// (inside a transaction: including its own writes).
+// restrictedViews is who sees each restricted room (ADR-0029) and closed board (ADR-0048) of
+// the workspace, archived temporary rooms and archived boards included (their history stays
+// readable to whoever sees them), read through q (inside a transaction: including its own writes).
 func restrictedViews(ctx context.Context, q *sqlc.Queries, wsID uuid.UUID) (map[uuid.UUID]map[uuid.UUID]bool, error) {
+	out := map[uuid.UUID]map[uuid.UUID]bool{}
+	var members map[uuid.UUID]perm.Member
+	loadMembers := func() error {
+		if members != nil {
+			return nil
+		}
+		var err error
+		members, err = perm.LoadMembers(ctx, q, wsID)
+		return err
+	}
 	rs, err := q.ListRooms(ctx, wsID)
 	if err != nil {
 		return nil, err
 	}
-	out := map[uuid.UUID]map[uuid.UUID]bool{}
-	var (
-		ovRows  []sqlc.RoomPermission
-		members map[uuid.UUID]perm.Member
-	)
-	for _, room := range rs {
-		if !room.Restricted {
-			continue
-		}
-		if members == nil {
-			if ovRows, err = q.ListWorkspaceRoomOverrides(ctx, wsID); err != nil {
-				return nil, err
-			}
-			if members, err = perm.LoadMembers(ctx, q, wsID); err != nil {
-				return nil, err
-			}
-		}
-		var ovs []perm.OverrideTarget
-		for _, o := range ovRows {
-			if o.RoomID == room.ID {
-				ovs = append(ovs, pbconv.OverrideTargets([]sqlc.RoomPermission{o})...)
-			}
-		}
-		seen := map[uuid.UUID]bool{}
-		for id, m := range members {
-			if perm.ComputeIn(m, true, ovs).Has(perm.ViewRoom) {
-				seen[id] = true
-			}
-		}
-		out[room.ID] = seen
-	}
-	// Closed boards (ADR-0048) the same way: role overrides decide who sees them.
-	bs, err := q.ListBoards(ctx, sqlc.ListBoardsParams{WorkspaceID: wsID, Archived: false})
+	archived, err := q.ListArchivedTempRooms(ctx, wsID)
 	if err != nil {
 		return nil, err
+	}
+	var closed []uuid.UUID
+	for _, room := range rs {
+		if room.Restricted {
+			closed = append(closed, room.ID)
+		}
+	}
+	for _, a := range archived {
+		if a.Room.Restricted {
+			closed = append(closed, a.Room.ID)
+		}
+	}
+	if len(closed) > 0 {
+		ovRows, err := q.ListRoomOverridesIn(ctx, closed)
+		if err != nil {
+			return nil, err
+		}
+		if err := loadMembers(); err != nil {
+			return nil, err
+		}
+		for _, rid := range closed {
+			var ovs []perm.OverrideTarget
+			for _, o := range ovRows {
+				if o.RoomID == rid {
+					ovs = append(ovs, pbconv.OverrideTargets([]sqlc.RoomPermission{o})...)
+				}
+			}
+			seen := map[uuid.UUID]bool{}
+			for id, m := range members {
+				if perm.ComputeIn(m, true, ovs).Has(perm.ViewRoom) {
+					seen[id] = true
+				}
+			}
+			out[rid] = seen
+		}
+	}
+	// Closed boards (ADR-0048) the same way, live and archived: role overrides decide who sees them.
+	var bs []sqlc.Board
+	for _, arch := range []bool{false, true} {
+		part, err := q.ListBoards(ctx, sqlc.ListBoardsParams{WorkspaceID: wsID, Archived: arch})
+		if err != nil {
+			return nil, err
+		}
+		bs = append(bs, part...)
 	}
 	var bovs []sqlc.BoardPermission
 	for _, b := range bs {
 		if !b.Restricted {
 			continue
 		}
-		if members == nil {
-			if members, err = perm.LoadMembers(ctx, q, wsID); err != nil {
-				return nil, err
-			}
+		if err := loadMembers(); err != nil {
+			return nil, err
 		}
 		if bovs == nil {
 			if bovs, err = q.ListWorkspaceBoardOverrides(ctx, wsID); err != nil {
