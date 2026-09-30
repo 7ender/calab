@@ -13,6 +13,7 @@
 import { clone, create, type MessageInitShape } from '@bufbuild/protobuf';
 import { timestampFromMs, timestampMs, type Timestamp } from '@bufbuild/protobuf/wkt';
 import {
+  ApproverState,
   BoardSchema,
   BoardStatusSchema,
   BoardStatusType,
@@ -29,6 +30,9 @@ import {
   RoomSchema,
   RoomType,
   TaskActivitySchema,
+  TaskApprovalDecision,
+  TaskApprovalState,
+  TaskApproverSchema,
   TaskAssigneeSchema,
   TaskField,
   TaskNoticeKind,
@@ -78,9 +82,45 @@ export class BoardError extends Error {
     message: string,
     readonly field = '',
     readonly reason = '',
+    /** 409 TASK_APPROVAL_REQUIRED: approvals / the quorum (ADR-0049). */
+    readonly counts: { used?: number; limit?: number } = {},
   ) {
     super(message);
   }
+}
+
+// ---------------------------------------------------------------- approvals (ADR-0049)
+
+const MAX_APPROVERS = 10;
+const APPROVAL_TOKEN: Record<number, string> = {
+  [TaskApprovalState.NONE]: 'none',
+  [TaskApprovalState.PENDING]: 'pending',
+  [TaskApprovalState.APPROVED]: 'approved',
+  [TaskApprovalState.REJECTED]: 'rejected',
+};
+const VOTE_TOKEN: Record<number, string> = { [ApproverState.PENDING]: 'pending', [ApproverState.APPROVED]: 'approved', [ApproverState.REJECTED]: 'rejected' };
+
+function quorum(t: Task): number {
+  const n = t.approvers.length;
+  return t.approvalRequired === 0 ? n : Math.min(t.approvalRequired, n);
+}
+
+/** The derived state (the server computes it; clients read it). */
+function approvalOf(t: Task): TaskApprovalState {
+  if (!t.approvers.length) return TaskApprovalState.NONE;
+  if (t.approvers.some((a) => a.state === ApproverState.REJECTED)) return TaskApprovalState.REJECTED;
+  return t.approvers.filter((a) => a.state === ApproverState.APPROVED).length >= quorum(t) ? TaskApprovalState.APPROVED : TaskApprovalState.PENDING;
+}
+
+const approvalRequired = (t: Task): BoardError =>
+  new BoardError(409, ErrorCode.CONFLICT, 'approval required', '', 'TASK_APPROVAL_REQUIRED', { used: t.approvers.filter((a) => a.state === ApproverState.APPROVED).length, limit: quorum(t) });
+
+/** checkApprovalGate: a task not approved goes no «further» (larger position or COMPLETED); CANCELLED is fine. */
+function approvalGate(t: Task, from: { id: string; position: number } | undefined, to: { id: string; position: number; type: BoardStatusType }): void {
+  const s = approvalOf(t);
+  if (s !== TaskApprovalState.PENDING && s !== TaskApprovalState.REJECTED) return;
+  if (from?.id === to.id || to.type === BoardStatusType.CANCELLED) return;
+  if (to.type === BoardStatusType.COMPLETED || (from && to.position > from.position)) throw approvalRequired(t);
 }
 
 const notFound = (what: string): BoardError => new BoardError(404, ErrorCode.NOT_FOUND, what);
@@ -235,6 +275,10 @@ export function matchCondition(rec: TaskRec, c: TaskCondition, ctx: { me: string
       return bool(t.commentCount > 0);
     case TaskField.ARCHIVED:
       return bool(!!t.archivedAt);
+    case TaskField.APPROVAL_STATE:
+      return set([APPROVAL_TOKEN[approvalOf(t)] ?? 'none']);
+    case TaskField.APPROVER_PENDING:
+      return set(t.approvers.filter((a) => a.state === ApproverState.PENDING).map((a) => a.userId));
     case TaskField.TEXT: {
       const words = (vals[0] ?? '').toLowerCase().split(/\s+/).filter(Boolean);
       const hay = `${t.key} ${t.title} ${t.description}`.toLowerCase();
@@ -417,6 +461,7 @@ export class BoardsMock {
   /** The task as `userId` sees it (`viewer` = with their subscription / unread). */
   taskOut(rec: TaskRec, userId: string, viewer: boolean): Task {
     const out = clone(TaskSchema, rec.task);
+    out.approvalState = approvalOf(rec.task);
     out.viewerState = viewer;
     if (viewer) {
       out.subscribed = rec.subscribers.has(userId);
@@ -943,16 +988,21 @@ export class BoardsMock {
       parentId: string;
       milestoneId: string;
       afterTaskId: string;
+      approverIds?: readonly string[];
+      approvalRequired?: number;
     },
   ): TaskRec {
     const rec = this.boardFor(boardId, userId);
     this.need(rec, userId, CREATE_TASKS);
+    const approverIds = [...(req.approverIds ?? [])];
+    this.checkApprovers(rec, approverIds, req.approvalRequired ?? 0, 'approverIds', 'approvalRequired');
     const title = req.title.trim();
     if (!title || chars(title) > 200) throw invalid('title', 'title must be 1..200 characters');
     if ([...this.tasks.values()].filter((t) => t.task.boardId === boardId && !t.task.archivedAt).length >= 5000) throw conflict('too many tasks', '', 'BOARD_TASK_LIMIT');
     const status = req.statusId ? rec.board.statuses.find((s) => s.id === req.statusId) : rec.board.statuses.find((s) => s.isDefault);
     if (!status) throw invalid('status_id', 'unknown status');
     this.checkAssignees(rec, req.assignees);
+    if (approverIds.length && status.type === BoardStatusType.COMPLETED) throw new BoardError(409, ErrorCode.CONFLICT, 'approval required', '', 'TASK_APPROVAL_REQUIRED', { used: 0, limit: req.approvalRequired || approverIds.length });
     for (const l of req.labelIds) if (!rec.board.labels.some((x) => x.id === l)) throw invalid('label_ids', 'unknown label');
     if (req.parentId && this.tasks.get(req.parentId)?.task.boardId !== boardId) throw invalid('parent_id', 'unknown parent');
     let position = this.lastPosition(boardId, status.id) + 1024;
@@ -990,6 +1040,8 @@ export class BoardsMock {
       position,
       roomId,
       labelIds: [...req.labelIds],
+      approvers: approverIds.map((u) => create(TaskApproverSchema, { userId: u, state: ApproverState.PENDING, addedBy: userId, addedAt: now })),
+      approvalRequired: req.approvalRequired ?? 0,
       createdAt: now,
       updatedAt: now,
       ...(status.type === BoardStatusType.STARTED ? { startedAt: now } : {}),
@@ -1000,6 +1052,10 @@ export class BoardsMock {
       t.subscribers.set(a.userId, false);
       if (a.userId !== userId) t.unread.add(a.userId);
     }
+    for (const u of approverIds) {
+      if (!t.subscribers.has(u)) t.subscribers.set(u, false);
+      if (u !== userId) t.unread.add(u);
+    }
     this.tasks.set(id, t);
     this.roomTask.set(roomId, id);
     if (req.parentId) this.bumpParent(req.parentId);
@@ -1007,6 +1063,8 @@ export class BoardsMock {
     this.emitTask(t, 'taskCreate');
     const assigned = new Set(task.assignees.map((a) => a.userId).filter((u) => u !== userId));
     if (assigned.size) this.emitTask(t, 'taskUpdate', { kind: TaskNoticeKind.ASSIGNED, actor: userId, to: assigned });
+    const asked = new Set(approverIds.filter((u) => u !== userId));
+    if (asked.size) this.emitTask(t, 'taskUpdate', { kind: TaskNoticeKind.APPROVAL_REQUESTED, actor: userId, to: asked });
     return t;
   }
 
@@ -1085,10 +1143,12 @@ export class BoardsMock {
       const title = req.title.trim();
       if (!title || chars(title) > 200) throw invalid('title', 'title must be 1..200 characters');
       log.push(['title', { title: task.title }, { title }]);
+      if (title !== task.title) this.resetVotes(t, userId);
       task.title = title;
     }
     if (req.description !== undefined && req.description !== task.description) {
       log.push(['description', {}, {}]);
+      this.resetVotes(t, userId);
       task.description = req.description.slice(0, 20000);
     }
     if (req.priority !== undefined && req.priority !== task.priority) {
@@ -1129,6 +1189,7 @@ export class BoardsMock {
     if (req.statusId !== undefined) {
       const st = b.board.statuses.find((s) => s.id === req.statusId);
       if (!st) throw invalid('status_id', 'unknown status');
+      approvalGate(task, b.board.statuses.find((s) => s.id === task.statusId), st);
       const from = task.statusId;
       task.statusId = st.id;
       // A kanban move: between the neighbours (neither = last).
@@ -1165,6 +1226,81 @@ export class BoardsMock {
     task.updatedAt = this.host.tick();
     for (const [kind, bf, af] of log) this.journal(t, userId, kind, bf, af);
     this.emitTask(t, 'taskUpdate', notice ? { ...notice, actor: userId } : undefined);
+    return t;
+  }
+
+  /** ADR-0049 §3: a new title / description puts every vote back to pending (before the gate). */
+  private resetVotes(t: TaskRec, userId: string): void {
+    const voted = t.task.approvers.filter((a) => a.state !== ApproverState.PENDING);
+    if (!voted.length) return;
+    const approved = voted.filter((a) => a.state === ApproverState.APPROVED).length;
+    for (const a of t.task.approvers) {
+      a.state = ApproverState.PENDING;
+      a.comment = '';
+      delete a.decidedAt;
+    }
+    this.journal(t, userId, 'approvals_reset', { approved, rejected: voted.length - approved }, {});
+    const to = new Set(t.task.approvers.map((a) => a.userId).filter((u) => u !== userId));
+    for (const u of to) t.unread.add(u);
+    if (to.size) this.emitTask(t, 'taskUpdate', { kind: TaskNoticeKind.APPROVAL_REQUESTED, actor: userId, to });
+  }
+
+  private checkApprovers(rec: BoardRec, ids: readonly string[], required: number, idsField: string, requiredField: string): void {
+    if (ids.length > MAX_APPROVERS) throw invalid(idsField, 'at most 10 approvers');
+    const seen = new Set<string>();
+    ids.forEach((u, i) => {
+      const m = this.host.member(rec.board.workspaceId, u);
+      const bot = this.host.state.users.get(u)?.user.isBot ?? false;
+      if (seen.has(u) || !m || m.role === WorkspaceRole.GUEST || bot || !this.perms(rec.board, u)) throw invalid(`${idsField}[${i}]`, 'not a possible approver');
+      seen.add(u);
+    });
+    if (required > ids.length) throw invalid(requiredField, 'more approvals than approvers');
+  }
+
+  /** PUT /tasks/{id}/approvers: the full list and the quorum; kept votes stay, new ones pending. */
+  setApprovers(id: string, userId: string, userIds: readonly string[], required: number): TaskRec {
+    const { t, b, p } = this.taskFor(id, userId);
+    if (t.task.archivedAt) throw conflict('the task is archived');
+    if (!this.canEdit(t.task, userId, p)) throw forbidden('cannot edit this task');
+    this.checkApprovers(b, userIds, required, 'userIds', 'required');
+    const now = this.host.tick();
+    const prev = new Map(t.task.approvers.map((a) => [a.userId, a]));
+    const before = { user_ids: t.task.approvers.map((a) => a.userId), required: t.task.approvalRequired };
+    t.task.approvers = userIds.map((u) => prev.get(u) ?? create(TaskApproverSchema, { userId: u, state: ApproverState.PENDING, addedBy: userId, addedAt: now }));
+    t.task.approvalRequired = required;
+    t.task.updatedAt = now;
+    const newly = new Set(userIds.filter((u) => !prev.has(u) && u !== userId));
+    for (const u of newly) {
+      if (!t.subscribers.has(u)) t.subscribers.set(u, false);
+      t.unread.add(u);
+    }
+    this.journal(t, userId, 'approvers', before, { user_ids: [...userIds], required });
+    this.emitTask(t, 'taskUpdate', newly.size ? { kind: TaskNoticeKind.APPROVAL_REQUESTED, actor: userId, to: newly } : undefined);
+    return t;
+  }
+
+  /** POST /tasks/{id}/approval: the caller's own vote. */
+  vote(id: string, userId: string, decision: TaskApprovalDecision, comment: string): TaskRec {
+    const { t } = this.taskFor(id, userId);
+    const a = t.task.approvers.find((x) => x.userId === userId);
+    if (!a) throw forbidden('not an approver');
+    if (decision === TaskApprovalDecision.UNSPECIFIED) throw invalid('decision', 'decision required');
+    const text = comment.trim();
+    if (decision === TaskApprovalDecision.REJECT && (!text || chars(text) > 500)) throw invalid('comment', 'a comment of 1..500 characters');
+    const state = decision === TaskApprovalDecision.APPROVE ? ApproverState.APPROVED : decision === TaskApprovalDecision.REJECT ? ApproverState.REJECTED : ApproverState.PENDING;
+    if (a.state === state && (state !== ApproverState.REJECTED || a.comment === text)) return t;
+    const was = approvalOf(t.task);
+    a.state = state;
+    a.comment = state === ApproverState.REJECTED ? text : '';
+    if (state === ApproverState.PENDING) delete a.decidedAt;
+    else a.decidedAt = this.host.tick();
+    t.task.updatedAt = this.host.tick();
+    this.journal(t, userId, 'approval', {}, { user_id: userId, state: VOTE_TOKEN[state] ?? 'pending', comment: a.comment });
+    const now = approvalOf(t.task);
+    const kind = now === TaskApprovalState.REJECTED && state === ApproverState.REJECTED ? TaskNoticeKind.REJECTED : now === TaskApprovalState.APPROVED && was !== TaskApprovalState.APPROVED ? TaskNoticeKind.APPROVED : undefined;
+    const to = new Set([t.task.createdBy, ...t.task.assignees.filter((x) => x.isLead).map((x) => x.userId)].filter((u) => u && u !== userId));
+    if (kind) for (const u of to) t.unread.add(u);
+    this.emitTask(t, 'taskUpdate', kind && to.size ? { kind, actor: userId, to } : undefined);
     return t;
   }
 
@@ -1409,7 +1545,7 @@ export class BoardsMock {
       });
       this.createTask(b, anna, { ...base, title: 'Карточки задач в чате (unfurl)', statusId: st('В работе'), priority: TaskPriority.HIGH, labelIds: [lb('Фича')], assignees: [lead(anna)], startOn: '2026-01-13', dueOn: '2026-01-15', estimate: 5, milestoneId: milestone });
       this.createTask(b, anna, { ...base, title: 'Подзадача: воспроизвести на стенде', statusId: st('Todo'), parentId: t3.task.id, assignees: [lead(boris)] });
-      this.createTask(b, anna, { ...base, title: 'Ревью: права досок и приватные доски', statusId: st('Ревью'), priority: TaskPriority.HIGH, assignees: [lead(grigory, 'Security-ревью')], dueOn: '2026-01-22' });
+      const review = this.createTask(b, anna, { ...base, title: 'Ревью: права досок и приватные доски', statusId: st('Ревью'), priority: TaskPriority.HIGH, assignees: [lead(grigory, 'Security-ревью')], dueOn: '2026-01-22', approverIds: [anna, boris] });
       this.createTask(b, anna, { ...base, title: 'Горячие клавиши досок', statusId: st('Готово'), priority: TaskPriority.MEDIUM, labelIds: [lb('Фича')], assignees: [lead(anna)] });
       this.createTask(b, anna, { ...base, title: 'Старый прототип канбана', statusId: st('Отменено'), priority: TaskPriority.NONE });
       this.setRelation(t3.task.id, anna, [...this.tasks.values()].find((x) => x.task.title.startsWith('Карточки'))?.task.id ?? '', TaskRelationKind.BLOCKS, true);
@@ -1417,7 +1553,11 @@ export class BoardsMock {
       const mst = (name: string): string => mk.board.statuses.find((s) => s.name === name)?.id ?? '';
       this.createTask(mk.board.id, anna, { ...base, title: 'Пост о досках задач', statusId: mst('Todo'), assignees: [lead(vera)], dueOn: '2026-01-28' });
       this.createTask(mk.board.id, anna, { ...base, title: 'Скриншоты для лендинга', statusId: mst('В работе'), assignees: [lead(anna)] });
+      // ADR-0049: CAL-6 — Анна approved, Борис has not yet (the card shows ✓ 1/2). Last, so the
+      // ids and times of the other fixtures stay as they were.
+      this.vote(review.task.id, anna, TaskApprovalDecision.APPROVE, '');
       // Unread: CAL-3 for Анна (Борис commented), nothing else.
+      review.unread.clear();
       t3.unread.add(anna);
     } finally {
       host.fanout = quiet;

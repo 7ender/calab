@@ -41,12 +41,14 @@ import {
   MyTasksResponseSchema,
   SearchTasksResponseSchema,
   SetAssigneesRequestSchema,
+  SetTaskApproversRequestSchema,
   SetBoardPermissionsRequestSchema,
   SetBoardPositionRequestSchema,
   SetTaskRelationRequestSchema,
   SetTaskSubscriptionRequestSchema,
   TaskActivityPageSchema,
   TaskFilterSchema,
+  TaskApprovalRequestSchema,
   TaskResponseSchema,
   TaskSchema,
   UpdateBoardLabelRequestSchema,
@@ -6821,7 +6823,14 @@ class MockImpl {
       try {
         await h(c, me);
       } catch (e) {
-        if (e instanceof BoardError) throw new HttpError(e.status, e.code, e.message, e.field, e.reason ? { reason: e.reason } : {});
+        if (e instanceof BoardError) {
+          const extra = {
+            ...(e.reason ? { reason: e.reason } : {}),
+            ...(e.counts.used !== undefined ? { used: BigInt(e.counts.used) } : {}),
+            ...(e.counts.limit !== undefined ? { limit: BigInt(e.counts.limit) } : {}),
+          };
+          throw new HttpError(e.status, e.code, e.message, e.field, extra);
+        }
         throw e;
       }
     });
@@ -6970,6 +6979,15 @@ class MockImpl {
     this.boardRoute('PUT', '/api/tasks/:id/assignees', (c, me) => {
       const r = parseBody(c, SetAssigneesRequestSchema);
       sendMsg(c.res, 200, TaskResponseSchema, taskRes(b().setAssignees(c.params[0] ?? '', me, r.assignees).task.id, me));
+    });
+    // ADR-0049: approvers + quorum, and my vote.
+    this.boardRoute('PUT', '/api/tasks/:id/approvers', (c, me) => {
+      const r = parseBody(c, SetTaskApproversRequestSchema);
+      sendMsg(c.res, 200, TaskResponseSchema, taskRes(b().setApprovers(c.params[0] ?? '', me, r.userIds, r.required).task.id, me));
+    });
+    this.boardRoute('POST', '/api/tasks/:id/approval', (c, me) => {
+      const r = parseBody(c, TaskApprovalRequestSchema);
+      sendMsg(c.res, 200, TaskResponseSchema, taskRes(b().vote(c.params[0] ?? '', me, r.decision, r.comment).task.id, me));
     });
     this.boardRoute('PUT', '/api/tasks/:id/relations', (c, me) => {
       const r = parseBody(c, SetTaskRelationRequestSchema);
