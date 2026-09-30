@@ -547,8 +547,8 @@ func (s *Service) Run(ctx context.Context) {
 }
 
 // Sweep ends calls whose end no event reported (one instance per period, Redis lock):
-// dialing / ringing past the ringing timeout, active lines gone from LiveKit or left alone in
-// the room, calls of deleted rooms and interrupted connection tests.
+// dialing / ringing past the ringing timeout, active lines past the 2 h cap, gone from LiveKit
+// or left alone in the room, calls of deleted rooms and interrupted connection tests.
 func (s *Service) Sweep(ctx context.Context) {
 	lock := s.redis.B().Set().Key(redisx.Key("sip:sweep")).Value("1").Nx().Ex(s.opts.SweepInterval - time.Second/2).Build()
 	if err := s.redis.Do(ctx, lock).Error(); err != nil {
@@ -572,6 +572,17 @@ func (s *Service) Sweep(ctx context.Context) {
 				s.removeLine(ctx, lkRoom, c.ParticipantIdentity)
 				s.finish(ctx, c.ID, pbconv.SipFailed, reasonLost, nil)
 			}
+			continue
+		}
+		// The 2 h cap is LiveKit's max_call_duration; this is the backstop should the line
+		// outlive it (a lost event, an older livekit/sip): calls cost money (ADR-0046).
+		answered := c.StartedAt
+		if c.AnsweredAt != nil {
+			answered = *c.AnsweredAt
+		}
+		if now.Sub(answered) > s.opts.MaxCallTime+time.Minute {
+			s.removeLine(ctx, lkRoom, c.ParticipantIdentity)
+			s.finish(ctx, c.ID, pbconv.SipEnded, reasonRemote, nil)
 			continue
 		}
 		if s.lk == nil {
