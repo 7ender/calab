@@ -69,7 +69,9 @@ def tick(m,dur=.07,g=1): t=T(dur); return lp(np.sin(2*np.pi*f(m)*t),2500)*ad(t,.
 def render(ev,total,room=.08):
     n=int(total*SR); L=np.zeros(n);R=np.zeros(n)
     for at,y,p in ev:
-        i=int(at*SR); s=y[:max(0,n-i)]
+        i=int(at*SR); s=y[:max(0,n-i)].copy()
+        # A partial cut off before it has decayed ends in a step (an audible click): 8 ms fade out.
+        k=min(len(s),int(.008*SR)); s[len(s)-k:]*=0.5+0.5*np.cos(np.linspace(0,np.pi,k))
         L[i:i+len(s)]+=s*np.cos((p+1)*np.pi/4); R[i:i+len(s)]+=s*np.sin((p+1)*np.pi/4)
     for d,g in [(.023,room),(.041,room*.6)]:
         k=int(d*SR); L[k:]+=R[:n-k]*g; R[k:]+=L[:n-k]*g*.9
