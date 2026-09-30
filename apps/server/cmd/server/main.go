@@ -108,7 +108,11 @@ func serve(ctx context.Context, cfg *config.Config) error {
 	}
 	defer rc.Close()
 
-	store, err := blob.Open(cfg.StorageDriver, cfg.StoragePath)
+	store, err := blob.Open(ctx, blob.Config{Driver: cfg.StorageDriver, Path: cfg.StoragePath, S3: blob.S3Config{
+		Endpoint: cfg.StorageS3Endpoint, Region: cfg.StorageS3Region, Bucket: cfg.StorageS3Bucket,
+		AccessKeyID: cfg.StorageS3AccessKeyID, SecretAccessKey: cfg.StorageS3SecretAccessKey,
+		KeyPrefix: cfg.StorageS3KeyPrefix, ForcePathStyle: cfg.StorageS3ForcePathStyle,
+	}})
 	if err != nil {
 		return err
 	}

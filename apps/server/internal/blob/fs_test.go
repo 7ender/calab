@@ -1,11 +1,9 @@
 package blob
 
 import (
-	"bytes"
 	"context"
 	"errors"
-	"io"
-	"os"
+	"io/fs"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -13,87 +11,30 @@ import (
 	"github.com/google/uuid"
 )
 
-func TestFSRoundTrip(t *testing.T) {
-	ctx := context.Background()
-	s, err := NewFS(filepath.Join(t.TempDir(), "files"))
+func TestFSContract(t *testing.T) {
+	root := filepath.Join(t.TempDir(), "files")
+	s, err := NewFS(root)
 	if err != nil {
 		t.Fatal(err)
 	}
+	testStoreContract(t, s)
+	// Failed writes remove their temp files.
+	err = filepath.WalkDir(root, func(path string, d fs.DirEntry, err error) error {
+		if err == nil && strings.HasPrefix(d.Name(), ".tmp-") {
+			t.Errorf("temp file left behind: %s", path)
+		}
+		return err
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestKeyLayout(t *testing.T) {
 	ws, id := uuid.New(), uuid.New()
 	key := FileKey(ws, id)
-	if ThumbKey(ws, id) != key+".thumb" {
-		t.Fatal("thumb key layout")
-	}
-	data := []byte("hello, calaba")
-	if err := s.Put(ctx, key, bytes.NewReader(data), int64(len(data)), "text/plain"); err != nil {
-		t.Fatal(err)
-	}
-	m, err := s.Stat(ctx, key)
-	if err != nil || m.Size != int64(len(data)) {
-		t.Fatalf("stat: %+v %v", m, err)
-	}
-	r, m, err := s.Get(ctx, key)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if _, err := r.Seek(7, io.SeekStart); err != nil {
-		t.Fatal(err)
-	}
-	rest, _ := io.ReadAll(r)
-	_ = r.Close()
-	if string(rest) != "calaba" || m.Size != int64(len(data)) {
-		t.Fatalf("got %q", rest)
-	}
-	// Overwrite with unknown size.
-	if err := s.Put(ctx, key, strings.NewReader("v2"), -1, ""); err != nil {
-		t.Fatal(err)
-	}
-	if m, _ := s.Stat(ctx, key); m.Size != 2 {
-		t.Fatalf("overwrite size %d", m.Size)
-	}
-	if err := s.Delete(ctx, key); err != nil {
-		t.Fatal(err)
-	}
-	if err := s.Delete(ctx, key); err != nil {
-		t.Fatalf("second delete: %v", err)
-	}
-	if _, _, err := s.Get(ctx, key); !errors.Is(err, ErrNotFound) {
-		t.Fatalf("get after delete: %v", err)
-	}
-	if _, err := s.Stat(ctx, key); !errors.Is(err, ErrNotFound) {
-		t.Fatalf("stat after delete: %v", err)
-	}
-}
-
-func TestFSSizeMismatchLeavesNothing(t *testing.T) {
-	ctx := context.Background()
-	root := t.TempDir()
-	s, _ := NewFS(root)
-	key := FileKey(uuid.New(), uuid.New())
-	for _, n := range []int64{3, 100} { // declared smaller and larger than actual
-		if err := s.Put(ctx, key, strings.NewReader("hello"), n, ""); !errors.Is(err, ErrSizeMismatch) {
-			t.Fatalf("declared %d: %v", n, err)
-		}
-	}
-	if _, err := s.Stat(ctx, key); !errors.Is(err, ErrNotFound) {
-		t.Fatal("partial object visible")
-	}
-	entries, _ := os.ReadDir(filepath.Dir(filepath.Join(root, filepath.FromSlash(key))))
-	if len(entries) != 0 {
-		t.Fatalf("temp files left behind: %v", entries)
-	}
-}
-
-func TestFSCancelledContext(t *testing.T) {
-	s, _ := NewFS(t.TempDir())
-	ctx, cancel := context.WithCancel(context.Background())
-	cancel()
-	key := FileKey(uuid.New(), uuid.New())
-	if err := s.Put(ctx, key, strings.NewReader("x"), 1, ""); err == nil {
-		t.Fatal("put with cancelled ctx succeeded")
-	}
-	if _, err := s.Stat(context.Background(), key); !errors.Is(err, ErrNotFound) {
-		t.Fatal("object stored despite cancellation")
+	if key != ws.String()+"/"+id.String() || ThumbKey(ws, id) != key+".thumb" || LargeThumbKey(key) != key+".thumb1024" {
+		t.Fatal("key layout")
 	}
 }
 
@@ -118,13 +59,16 @@ func TestValidateKey(t *testing.T) {
 }
 
 func TestOpen(t *testing.T) {
-	if _, err := Open(DriverFS, t.TempDir()); err != nil {
+	ctx := context.Background()
+	if _, err := Open(ctx, Config{Driver: DriverFS, Path: t.TempDir()}); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := Open(DriverS3, ""); err == nil {
-		t.Fatal("s3 should not be available yet")
+	// An incomplete s3 config fails before any network call.
+	_, err := Open(ctx, Config{Driver: DriverS3, S3: S3Config{Endpoint: "https://s3.example.com", Region: "r"}})
+	if err == nil || !strings.Contains(err.Error(), "STORAGE_S3_BUCKET") {
+		t.Fatalf("incomplete s3 config: %v", err)
 	}
-	if _, err := Open("nope", ""); err == nil {
+	if _, err := Open(ctx, Config{Driver: "nope"}); err == nil {
 		t.Fatal("unknown driver accepted")
 	}
 }
