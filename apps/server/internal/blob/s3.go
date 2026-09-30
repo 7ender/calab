@@ -58,6 +58,16 @@ func (c S3Config) validate() error {
 	return nil
 }
 
+// ObjectKey is the object in the bucket that holds key: "<KeyPrefix>/<key>", or key itself
+// without a prefix. Whoever writes into the bucket past the driver (the LiveKit egress uploads
+// meeting recordings, ADR-0025) puts an object here so that Get(key) finds it.
+func (c S3Config) ObjectKey(key string) string {
+	if p := strings.Trim(c.KeyPrefix, "/"); p != "" {
+		return p + "/" + key
+	}
+	return key
+}
+
 // Upload tuning: parts of the S3 minimum size, two sent in parallel. The uploader reads one
 // more part ahead, so an upload keeps at most s3PartSize*(s3Concurrency+2) bytes in memory.
 const (
@@ -88,7 +98,7 @@ type S3 struct {
 	api    s3API
 	up     *manager.Uploader //nolint:staticcheck // SA1019: see newS3
 	bucket string
-	prefix string // "" or "<KeyPrefix>/"
+	keys   S3Config // only KeyPrefix: maps keys to objects (ObjectKey)
 }
 
 // NewS3 creates the driver with static credentials and checks the bucket (HeadBucket).
@@ -125,10 +135,7 @@ func NewS3(ctx context.Context, cfg S3Config) (*S3, error) {
 // The uploader of feature/s3/manager is deprecated in favour of feature/s3/transfermanager,
 // which is still v0 (unstable API); the manager is kept until that one reaches v1.
 func newS3(api s3API, cfg S3Config) *S3 {
-	s := &S3{api: api, bucket: cfg.Bucket}
-	if p := strings.Trim(cfg.KeyPrefix, "/"); p != "" {
-		s.prefix = p + "/"
-	}
+	s := &S3{api: api, bucket: cfg.Bucket, keys: S3Config{KeyPrefix: cfg.KeyPrefix}}
 	s.up = manager.NewUploader(api, func(u *manager.Uploader) { //nolint:staticcheck // SA1019: see above
 		u.PartSize = s3PartSize
 		u.Concurrency = s3Concurrency
@@ -142,7 +149,7 @@ func (s *S3) objectKey(key string) (string, error) {
 	if err := ValidateKey(key); err != nil {
 		return "", err
 	}
-	return s.prefix + key, nil
+	return s.keys.ObjectKey(key), nil
 }
 
 // Put implements Store. Input that fits one part goes up as a single PutObject, larger input

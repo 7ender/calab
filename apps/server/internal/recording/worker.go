@@ -4,10 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"io/fs"
 	"log/slog"
-	"os"
-	"strings"
 	"time"
 
 	"github.com/google/uuid"
@@ -41,20 +38,28 @@ func (s *Service) HandleEgress(ctx context.Context, event string, info *rtc.Egre
 	return s.finish(ctx, rec, info, "egress")
 }
 
-// finish takes over a recording whose egress ended: with a file on the volume it goes to
-// the upload queue, without one it failed. The volume is the source of truth for the file
-// (the egress may report a file it could not write, or none after a crash).
+// finish takes over a recording whose egress ended: with a file it goes to the upload queue,
+// without one it failed. The volume (or the bucket) is the source of truth for the file (the
+// egress may report a file it could not write or upload, or none after a crash). A bucket that
+// does not answer decides nothing — the row stays and the reconcile takes it again — until
+// StorageWait has passed: then it failed, so the room may record again.
 func (s *Service) finish(ctx context.Context, rec sqlc.RoomRecording, info *rtc.EgressInfo, reason string) error {
 	if rec.Status != "pending" && rec.Status != "recording" {
 		return nil // already taken over (webhook redelivery, reconcile)
 	}
-	var size int64
-	if st, err := os.Stat(s.localPath(rec.File)); err == nil && st.Mode().IsRegular() {
-		size = st.Size()
+	size, err := s.store.stat(ctx, rec.File)
+	unavailable := errors.Is(err, errUnavailable)
+	if unavailable && !s.storageWaitOver(rec) {
+		return err
+	}
+	if err != nil {
+		size = 0
 	}
 	var upd sqlc.RoomRecording
-	var err error
-	if size > 0 {
+	if unavailable {
+		slog.WarnContext(ctx, "recording: file storage did not answer, giving up", "recording", rec.ID, "err", err)
+		upd, err = s.db.Q.MarkRecordingFailed(ctx, sqlc.MarkRecordingFailedParams{ID: rec.ID, Error: "recorder_failed", StopReason: reason})
+	} else if size > 0 {
 		dur := s.Now().Sub(rec.StartedAt)
 		if f := info.File(); f.Duration > 0 {
 			dur = f.Duration
@@ -84,6 +89,17 @@ func (s *Service) finish(ctx context.Context, rec sqlc.RoomRecording, info *rtc.
 	s.card(ctx, upd)
 	s.Wake()
 	return nil
+}
+
+// storageWaitOver reports that an ended recording has waited StorageWait for its file's
+// storage to answer: counted from the stop, or for a recording that ended by itself from the
+// latest it could have run.
+func (s *Service) storageWaitOver(rec sqlc.RoomRecording) bool {
+	end := rec.StartedAt.Add(gptunnel.MaxDuration)
+	if rec.StoppedAt != nil && rec.StoppedAt.Before(end) {
+		end = *rec.StoppedAt
+	}
+	return s.Now().Sub(end) > s.StorageWait
 }
 
 // card posts the recording's chat card, or updates it.
@@ -292,21 +308,24 @@ func (s *Service) upload(ctx context.Context, rec sqlc.RoomRecording) {
 		s.fail(ctx, rec, "not_paired")
 		return
 	}
-	f, err := os.Open(s.localPath(rec.File))
+	f, size, err := s.store.open(ctx, rec.File)
+	if errors.Is(err, errUnavailable) {
+		s.retry(ctx, rec, err)
+		return
+	}
 	if err != nil {
 		slog.WarnContext(ctx, "recording: open file", "recording", rec.ID, "err", err)
 		s.fail(ctx, rec, "upload_failed")
 		return
 	}
 	defer func() { _ = f.Close() }()
-	st, err := f.Stat()
-	if err != nil || st.Size() == 0 {
+	if size == 0 {
 		s.fail(ctx, rec, "no_audio")
 		return
 	}
-	if st.Size() > gptunnel.MaxBytes || time.Duration(rec.DurationSec)*time.Second > gptunnel.MaxDuration {
+	if size > gptunnel.MaxBytes || time.Duration(rec.DurationSec)*time.Second > gptunnel.MaxDuration {
 		// GPTunneL rejects it anyway: do not send gigabytes first.
-		slog.WarnContext(ctx, "recording: over GPTunneL's limits", "recording", rec.ID, "bytes", st.Size(), "duration_sec", rec.DurationSec)
+		slog.WarnContext(ctx, "recording: over GPTunneL's limits", "recording", rec.ID, "bytes", size, "duration_sec", rec.DurationSec)
 		s.fail(ctx, rec, gptunnel.CodeTooLarge)
 		return
 	}
@@ -322,7 +341,7 @@ func (s *Service) upload(ctx context.Context, rec sqlc.RoomRecording) {
 		clientID += fmt.Sprintf("#%d", rec.Reuploads)
 	}
 	req := gptunnel.CreateRequest{
-		ClientID: clientID, Title: title, Kind: "video", Mime: "video/mp4", SizeBytes: st.Size(),
+		ClientID: clientID, Title: title, Kind: "video", Mime: "video/mp4", SizeBytes: size,
 		DurationSec: int64(max(rec.DurationSec, 1)), StartedAt: rec.StartedAt.UTC().Format(time.RFC3339),
 	}
 	res, err := s.gpt.Upload(ctx, token, f, req, rec.GptunnelID, func(id string) error {
@@ -343,7 +362,7 @@ func (s *Service) upload(ctx context.Context, rec sqlc.RoomRecording) {
 		slog.WarnContext(ctx, "recording: mark processing", "recording", rec.ID, "err", err)
 		return
 	}
-	slog.InfoContext(ctx, "recording uploaded", "recording", rec.ID, "gptunnel_id", res.ID, "bytes", st.Size())
+	slog.InfoContext(ctx, "recording uploaded", "recording", rec.ID, "gptunnel_id", res.ID, "bytes", size)
 	if !s.applyStatus(ctx, upd, res) {
 		s.card(ctx, upd)
 	}
@@ -614,14 +633,14 @@ func (s *Service) removeFile(ctx context.Context, rec sqlc.RoomRecording) {
 	if rec.File == "" {
 		return
 	}
-	if err := os.Remove(s.localPath(rec.File)); err != nil && !errors.Is(err, fs.ErrNotExist) {
+	if err := s.store.remove(ctx, rec.File); err != nil {
 		slog.WarnContext(ctx, "recording: remove file", "recording", rec.ID, "err", err)
 		return
 	}
 	s.forgetFile(ctx, rec)
 }
 
-// forgetFile records that the local file is gone; a failed recording's card is updated (it
+// forgetFile records that the recording's file is gone; a failed recording's card is updated (it
 // no longer offers «Отправить снова»).
 func (s *Service) forgetFile(ctx context.Context, rec sqlc.RoomRecording) {
 	if err := s.db.Q.MarkRecordingFileDeleted(ctx, rec.ID); err != nil {
@@ -635,9 +654,10 @@ func (s *Service) forgetFile(ctx context.Context, rec sqlc.RoomRecording) {
 	}
 }
 
-// Janitor removes audio attachments older than RECORDING_KEEP_DAYS and local files that are no
-// longer needed: of done recordings (once the audio is kept), of the others 7 days after they
-// stopped, and any stray .mp4 older than that plus a day.
+// Janitor removes audio attachments older than RECORDING_KEEP_DAYS and recording files that are
+// no longer needed: of done recordings (once the audio is kept), of the others 7 days after
+// they stopped, and on the volume any stray .mp4 older than that plus a day (the bucket is not
+// swept, storage.go).
 func (s *Service) Janitor(ctx context.Context) {
 	s.expireAudio(ctx)
 	before := s.Now().Add(-s.KeepFiles)
@@ -649,21 +669,5 @@ func (s *Service) Janitor(ctx context.Context) {
 	for _, rec := range rows {
 		s.removeFile(ctx, rec)
 	}
-	stray := before.Add(-24 * time.Hour)
-	root, err := os.OpenRoot(s.cfg.Dir) // no symlink escapes out of the volume
-	if err != nil {
-		return
-	}
-	defer func() { _ = root.Close() }()
-	_ = fs.WalkDir(root.FS(), ".", func(path string, d fs.DirEntry, err error) error {
-		if err != nil || d.IsDir() || !strings.HasSuffix(path, ".mp4") {
-			return nil //nolint:nilerr // best effort
-		}
-		if info, err := d.Info(); err == nil && info.ModTime().Before(stray) {
-			if err := root.Remove(path); err == nil {
-				slog.InfoContext(ctx, "recording: removed a stray file", "path", path)
-			}
-		}
-		return nil
-	})
+	s.store.sweep(ctx, before.Add(-24*time.Hour))
 }

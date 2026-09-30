@@ -127,7 +127,8 @@ type Config struct {
 	SMTPPassword string `env:"SMTP_PASSWORD"`                  //
 	SMTPFrom     string `env:"SMTP_FROM"`                      // "Calab <noreply@calab.ru>"
 	// Meeting recording (ADR-0025). Needs LiveKit and the egress service; the recordings
-	// volume is RECORDINGS_PATH here and RECORDING_EGRESS_DIR in the egress container.
+	// volume is RECORDINGS_PATH here and RECORDING_EGRESS_DIR in the egress container. With
+	// STORAGE_DRIVER=s3 there is no such volume: the egress uploads into the files bucket.
 	// GPTUNNEL_WEB_URL replaces the host app.gptunnel.ai in links GPTunneL gives (docs/17 §4);
 	// RECORDING_KEEP_DAYS: a done recording's audio stays attached to its chat card this long.
 	GPTunnelAPIURL    string `env:"GPTUNNEL_API_URL" envDefault:"https://gptunnel.ru"`
@@ -285,8 +286,12 @@ func (c *Config) Validate() error {
 	if c.TempRoomRetentionDays < 1 || c.TempRoomRetentionDays > 3650 {
 		errs = append(errs, errors.New("TEMP_ROOM_RETENTION_DAYS must be 1..3650"))
 	}
-	if c.RecordingMaxConcurrent < 1 || c.RecordingsPath == "" || !strings.HasPrefix(c.RecordingEgressDir, "/") {
-		errs = append(errs, errors.New("RECORDING_MAX_CONCURRENT must be >= 1, RECORDINGS_PATH set and RECORDING_EGRESS_DIR an absolute path"))
+	if c.RecordingMaxConcurrent < 1 {
+		errs = append(errs, errors.New("RECORDING_MAX_CONCURRENT must be >= 1"))
+	}
+	// The recordings volume shared with the egress; with s3 recordings go to the files bucket.
+	if c.StorageDriver != "s3" && (c.RecordingsPath == "" || !strings.HasPrefix(c.RecordingEgressDir, "/")) {
+		errs = append(errs, errors.New("RECORDINGS_PATH must be set and RECORDING_EGRESS_DIR an absolute path (STORAGE_DRIVER=fs)"))
 	}
 	if c.BotRatePerSec < 0 || c.BotRatePerSec > 10000 || c.BotMessagesPerMin < 0 || c.BotMessagesPerMin > 100000 {
 		errs = append(errs, errors.New("BOT_RATE_PER_SEC must be 0..10000 and BOT_MESSAGES_PER_MIN 0..100000 (0 = default)"))

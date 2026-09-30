@@ -8,7 +8,6 @@ import (
 	"log/slog"
 	"math"
 	"net/http"
-	"os"
 	"strings"
 	"time"
 	"unicode/utf8"
@@ -28,7 +27,7 @@ import (
 )
 
 // After GPTunneL reports done (docs/09 #47, docs/17) a result job runs for the recording:
-//  1. the local file becomes the audio attachment of the chat card (a workspace file,
+//  1. the recording's file becomes the audio attachment of the chat card (a workspace file,
 //     audio/mp4, quota as any attachment), kept RECORDING_KEEP_DAYS, then the janitor removes
 //     the file and so the attachment;
 //  2. the summary and the transcript are copied from GPTunneL's device API and kept here, so
@@ -36,7 +35,7 @@ import (
 //
 // GPTunneL without these methods (404), or failing, is asked again with backoff for ~3.5 days;
 // then the card stays with «Открыть в GPTunneL» only. Deleting a recording (#50) removes the
-// audio, the local file, the summary and the transcript, and the recording in GPTunneL.
+// audio, the recording's file, the summary and the transcript, and the recording in GPTunneL.
 
 // AudioMime is the stored type of a recording's audio: LiveKit Egress writes AAC in an MP4
 // container (audio only), which <audio> plays in Chromium and WebKit.
@@ -213,7 +212,7 @@ func (s *Service) finishResult(ctx context.Context, rec sqlc.RoomRecording, summ
 		return
 	}
 	slog.InfoContext(ctx, "recording result", "recording", rec.ID, "state", state, "summary", summary != "", "transcript", transcript != nil)
-	s.removeFile(ctx, upd) // kept as the attachment now (or not kept): the volume copy goes
+	s.removeFile(ctx, upd) // kept as the attachment now (or not kept): the recording's file goes
 	s.card(ctx, upd)
 }
 
@@ -224,22 +223,21 @@ func (s *Service) forgetToken(ctx context.Context, rec sqlc.RoomRecording, seale
 	}
 }
 
-// attachAudio makes the local file the audio attachment of the card; again = a transient
+// attachAudio makes the recording's file the audio attachment of the card; again = a transient
 // failure worth another attempt. A file that does not fit the quota is not kept (logged).
 func (s *Service) attachAudio(ctx context.Context, rec sqlc.RoomRecording) (sqlc.RoomRecording, bool) {
 	if s.files == nil || rec.FileID != nil || rec.MessageID == nil || rec.StartedBy == nil || !pbconv.RecordingHasFile(rec) {
 		return rec, false
 	}
-	f, err := os.Open(s.localPath(rec.File))
+	f, size, err := s.store.open(ctx, rec.File)
 	if err != nil {
 		if !errors.Is(err, fs.ErrNotExist) {
 			slog.WarnContext(ctx, "recording: open file to keep", "recording", rec.ID, "err", err)
 		}
-		return rec, false
+		return rec, errors.Is(err, errUnavailable)
 	}
 	defer func() { _ = f.Close() }()
-	st, err := f.Stat()
-	if err != nil || !st.Mode().IsRegular() || st.Size() == 0 {
+	if size == 0 {
 		return rec, false
 	}
 	name := "Calab"
@@ -247,9 +245,9 @@ func (s *Service) attachAudio(ctx context.Context, rec sqlc.RoomRecording) (sqlc
 		name = room.Name
 	}
 	name += " " + rec.StartedAt.UTC().Format("2006-01-02 15-04") + ".m4a"
-	file, err := s.files.StoreSystemFile(ctx, rec.WorkspaceID, *rec.StartedBy, name, AudioMime, f, st.Size())
+	file, err := s.files.StoreSystemFile(ctx, rec.WorkspaceID, *rec.StartedBy, name, AudioMime, f, size)
 	if errors.Is(err, files.ErrNoRoom) {
-		slog.WarnContext(ctx, "recording: no room to keep the audio", "recording", rec.ID, "bytes", st.Size())
+		slog.WarnContext(ctx, "recording: no room to keep the audio", "recording", rec.ID, "bytes", size)
 		return rec, false
 	}
 	if err != nil {
@@ -278,7 +276,7 @@ func (s *Service) attachAudio(ctx context.Context, rec sqlc.RoomRecording) (sqlc
 		slog.WarnContext(ctx, "recording: attach the audio", "recording", rec.ID, "err", err)
 		return rec, true
 	}
-	slog.InfoContext(ctx, "recording: audio kept", "recording", rec.ID, "file", file.ID, "bytes", st.Size())
+	slog.InfoContext(ctx, "recording: audio kept", "recording", rec.ID, "file", file.ID, "bytes", size)
 	return upd, false
 }
 
@@ -430,8 +428,8 @@ func (s *Service) remove(w http.ResponseWriter, r *http.Request) error {
 		}
 	}
 	if pbconv.RecordingHasFile(upd) {
-		if err := os.Remove(s.localPath(upd.File)); err != nil && !errors.Is(err, fs.ErrNotExist) {
-			slog.WarnContext(ctx, "recording: delete the local file (the janitor retries)", "recording", rec.ID, "err", err)
+		if err := s.store.remove(bg, upd.File); err != nil {
+			slog.WarnContext(ctx, "recording: delete the recording's file (the janitor retries)", "recording", rec.ID, "err", err)
 		} else if err := s.db.Q.MarkRecordingFileDeleted(bg, upd.ID); err != nil {
 			slog.WarnContext(ctx, "recording: mark file deleted", "recording", rec.ID, "err", err)
 		}
