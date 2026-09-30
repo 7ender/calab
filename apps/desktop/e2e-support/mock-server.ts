@@ -191,6 +191,8 @@ import {
   ForwardMessageResponseSchema,
   CreateRoomRequestSchema,
   CreateRoomResponseSchema,
+  CreateTempRoomRequestSchema,
+  TempRoomResponseSchema,
   CreateWorkspaceRequestSchema,
   CreateWorkspaceResponseSchema,
   DiscoverWorkspacesResponseSchema,
@@ -579,6 +581,13 @@ export interface MockServer {
   /** The mock's «now» for date answers (GET …/birthdays): a visual test's page clock; null = real time. */
   setClock(nowMs: number | null): void;
   /**
+   * ADR-0044: a temporary voice room as POST …/rooms/temp by `createdBy` (default Анна) → ROOM_CREATE,
+   * with its link (members-only unless `guests`); `expiresAtMs` absolute (a visual test's clock).
+   */
+  addTempRoom(args: { workspaceId: string; name: string; expiresAtMs: number; createdBy?: string; isPrivate?: boolean; guests?: boolean }): Room;
+  /** ADR-0044: the sweeper — temporary rooms with expires_at ≤ `nowMs` are archived (ROOM_DELETE). Returns their ids. */
+  expireTempRooms(nowMs?: number): string[];
+  /**
    * docs/09 #51: a user's own state of a DM, like PATCH /api/dms/{id}/state — archive / «Удалить
    * чат» (for them only) — and DM_STATE_UPDATE to their devices.
    */
@@ -702,6 +711,8 @@ export async function startMockServer(opts: MockServerOptions = {}): Promise<Moc
     setBirthday: (u, b, card) => impl.setBirthday(u, b, card),
     setBirthdayHidden: (u, hidden) => impl.setBirthdayHidden(u, hidden),
     setClock: (ms) => impl.setClock(ms),
+    addTempRoom: (a) => impl.addTempRoom(a),
+    expireTempRooms: (ms) => impl.expireTempRooms(ms),
     seedBots: () => impl.seedBots(),
     seedLaughStickers: () => impl.seedLaughStickers(),
     setBotAvatar: (id, colors) => impl.setBotAvatar(id, colors),
@@ -798,6 +809,8 @@ function mailLocale(tag: string): string | null {
 
 const notFound = (what = 'not found'): HttpError => new HttpError(404, ErrorCode.NOT_FOUND, what);
 const forbidden = (what = 'forbidden'): HttpError => new HttpError(403, ErrorCode.FORBIDDEN, what);
+/** ADR-0044: an archived temporary room — anything but its history. */
+const archived = (): HttpError => new HttpError(410, ErrorCode.ROOM_ARCHIVED, 'the room is archived');
 const invalid = (field: string, what: string): HttpError => new HttpError(422, ErrorCode.VALIDATION, what, field);
 
 /**
@@ -1108,6 +1121,7 @@ class MockImpl {
     this.droppedSessions.clear();
     this.gatewayDownUntil = 0;
     this.clockMs = null;
+    this.archivedRooms.clear();
     for (const c of this.conns) c.ws.close(GatewayCloseCode.SESSION_TIMED_OUT, 'mock reset');
   }
 
@@ -1320,11 +1334,34 @@ class MockImpl {
     return { ws, m };
   }
 
-  /** Room visible to the caller; 404 otherwise. */
+  /** Room visible to the caller; 404 otherwise; 410 ROOM_ARCHIVED for an archived temporary room it could see (ADR-0044). */
   private roomFor(roomId: string, userId: string): Room {
     const r = this.state.rooms.get(roomId);
-    if (!r || !this.canView(r, userId)) throw notFound('room not found');
+    if (!r) {
+      const a = this.archivedRooms.get(roomId);
+      if (a && this.canView(a, userId)) throw archived();
+      throw notFound('room not found');
+    }
+    if (!this.canView(r, userId)) throw notFound('room not found');
     return r;
+  }
+
+  /** A live room, or an archived temporary one — its history stays readable (ADR-0044). */
+  private roomOrArchivedFor(roomId: string, userId: string): Room {
+    const a = this.archivedRooms.get(roomId);
+    if (a && this.canView(a, userId)) return a;
+    return this.roomFor(roomId, userId);
+  }
+
+  /** ADR-0044 rooms.MayManage: MANAGE_ROOM in the room, or the creator of a temporary room (not a guest). */
+  private mayManageRoom(room: Room, userId: string): boolean {
+    if (has(this.perms(room, userId), MANAGE_ROOM)) return true;
+    const m = this.member(room.workspaceId, userId);
+    return !!room.expiresAt && room.createdBy === userId && !!m && m.role !== WorkspaceRole.GUEST;
+  }
+
+  private requireManage(room: Room, userId: string): void {
+    if (!this.mayManageRoom(room, userId)) throw forbidden('MANAGE_ROOM required');
   }
 
   private requireRoomPerm(room: Room, userId: string, bit: bigint): void {
@@ -3586,6 +3623,33 @@ class MockImpl {
       sendMsg(c.res, 201, CreateRoomResponseSchema, { room });
     });
 
+    // ---------------- temporary rooms (ADR-0044)
+    this.route('POST', '/api/workspaces/:id/rooms/temp', (c) => {
+      const me = this.uid(c);
+      const { ws, m } = this.workspaceFor(c.params[0] ?? '', me);
+      this.requireActive(ws.id);
+      const wsPerms = workspacePermissions(this.memberRoles(m));
+      if (m.role === WorkspaceRole.GUEST || !has(wsPerms, PERMISSION_BITS.CREATE_TEMP_ROOMS)) throw forbidden('CREATE_TEMP_ROOMS required');
+      const b = parseBody(c, CreateTempRoomRequestSchema);
+      const name = b.name.trim();
+      if (!name || name.length > 100) throw invalid('name', 'name must be 1..100 characters');
+      if (b.ttlSeconds < 900 || b.ttlSeconds > 604800) throw invalid('ttlSeconds', 'ttl_seconds must be 900..604800');
+      const guests = b.guests ?? true;
+      if (guests && !has(wsPerms, PERMISSION_BITS.INVITE_GUESTS)) throw forbidden('INVITE_GUESTS required for a link that admits guests (guests=false: members only)');
+      if (b.memberIds.length > 50) throw invalid('memberIds', 'at most 50 members');
+      const live = [...s().rooms.values()].filter((r) => r.workspaceId === ws.id && r.expiresAt);
+      if (live.length >= 20) throw new HttpError(409, ErrorCode.TEMP_ROOM_LIMIT, 'temporary room limit', '', { used: BigInt(live.length), limit: 20n });
+      const mine = live.filter((r) => r.createdBy === me).length;
+      if (mine >= 5) throw new HttpError(409, ErrorCode.TEMP_ROOM_LIMIT, 'temporary room limit', '', { reason: 'PER_USER', used: BigInt(mine), limit: 5n });
+      const expiresAtMs = this.calNow() + b.ttlSeconds * 1000;
+      const { room, invite } = this.createTempRoom({ workspaceId: ws.id, name, createdBy: me, expiresAtMs, isPrivate: b.private, memberIds: b.memberIds, guests });
+      const step = 5 * 60_000;
+      const event = b.withEvent
+        ? this.addEvent({ workspaceId: ws.id, organizerId: me, title: name, startMs: Math.ceil(this.calNow() / step) * step, endMs: expiresAtMs, roomId: room.id })
+        : undefined;
+      sendMsg(c.res, 201, TempRoomResponseSchema, { room, inviteUrl: `${this.url}/r/${invite.code}`, inviteCode: invite.code, ...(event ? { event } : {}) });
+    });
+
     // ---------------- categories (MANAGE_ROOM at workspace level = admins)
     this.route('GET', '/api/workspaces/:id/categories', (c) => {
       const me = this.uid(c);
@@ -3673,7 +3737,16 @@ class MockImpl {
 
     this.route('GET', '/api/workspaces/:id/rooms', (c) => {
       const me = this.uid(c);
-      const { ws } = this.workspaceFor(c.params[0] ?? '', me);
+      const { ws, m } = this.workspaceFor(c.params[0] ?? '', me);
+      // ADR-0044: the archive of temporary rooms — MANAGE_ROOM at workspace level, rooms I may view, newest first.
+      if (c.url.searchParams.get('archived') === '1') {
+        if (!has(workspacePermissions(this.memberRoles(m)), MANAGE_ROOM)) throw forbidden('MANAGE_ROOM required');
+        const rooms = [...this.archivedRooms.values()]
+          .filter((r) => r.workspaceId === ws.id && this.canView(r, me))
+          .sort((a, b) => (b.archivedAt ? timestampMs(b.archivedAt) : 0) - (a.archivedAt ? timestampMs(a.archivedAt) : 0));
+        sendMsg(c.res, 200, ListRoomsResponseSchema, { rooms });
+        return;
+      }
       sendMsg(c.res, 200, ListRoomsResponseSchema, { rooms: this.snapshot(ws.id, me).rooms });
     });
 
@@ -3686,9 +3759,30 @@ class MockImpl {
     this.route('PATCH', '/api/rooms/:id', (c) => {
       const me = this.uid(c);
       const room = this.roomFor(c.params[0] ?? '', me);
-      this.requireRoomPerm(room, me, MANAGE_ROOM);
+      // ADR-0044: a temporary room's creator too.
+      this.requireManage(room, me);
       const b = parseBody(c, UpdateRoomRequestSchema);
       const before = create(RoomSchema, room);
+      if (b.expiresAt !== undefined) {
+        if (!room.expiresAt) throw invalid('expiresAt', 'only temporary rooms expire');
+        const at = timestampMs(b.expiresAt);
+        const now = this.calNow();
+        if (at <= now || at > now + 7 * 86_400_000) throw invalid('expiresAt', 'expires_at must be within 7 days from now');
+        room.expiresAt = b.expiresAt;
+        for (const inv of s().roomInvites.values()) if (inv.roomId === room.id) inv.expiresAt = b.expiresAt;
+      }
+      if (b.makePermanent) {
+        if (!has(this.perms(room, me), MANAGE_ROOM)) throw forbidden('MANAGE_ROOM required');
+        delete room.expiresAt;
+      }
+      if (b.isPrivate !== undefined) {
+        if (!room.expiresAt) throw invalid('isPrivate', 'only temporary rooms');
+        room.isPrivate = b.isPrivate;
+        const rest = room.permissionOverrides.filter((o) => !(o.targetType === PermissionTargetType.ROLE && o.targetId === 'member'));
+        room.permissionOverrides = b.isPrivate
+          ? [create(RoomPermissionOverrideSchema, { targetType: PermissionTargetType.ROLE, targetId: 'member', allow: 0n, deny: VIEW_ROOM }), ...rest]
+          : rest;
+      }
       if (b.name !== undefined) {
         if (!b.name.trim() || b.name.length > 100) throw invalid('name', 'name must be 1..100 characters');
         room.name = b.name.trim();
@@ -3727,7 +3821,13 @@ class MockImpl {
     this.route('DELETE', '/api/rooms/:id', (c) => {
       const me = this.uid(c);
       const room = this.roomFor(c.params[0] ?? '', me);
-      this.requireRoomPerm(room, me, MANAGE_ROOM);
+      this.requireManage(room, me);
+      // ADR-0044: a temporary room goes to the archive (history readable, links revoked).
+      if (room.expiresAt) {
+        this.archiveTempRoom(room);
+        noContent(c.res);
+        return;
+      }
       for (const v of [...s().voiceStates.values()]) if (v.roomId === room.id) this.setVoice(v.userId, '', {});
       this.toWorkspace(room.workspaceId, { event: { case: 'roomDelete', value: { workspaceId: room.workspaceId, roomId: room.id } } }, room.id);
       s().rooms.delete(room.id);
@@ -3749,7 +3849,7 @@ class MockImpl {
 
     // ---------------- messages
     this.route('GET', '/api/rooms/:id/messages', (c) => {
-      const room = this.roomFor(c.params[0] ?? '', this.uid(c));
+      const room = this.roomOrArchivedFor(c.params[0] ?? '', this.uid(c));
       if (c.url.searchParams.has('q')) {
         this.search(c, [room.id]);
         return;
@@ -4816,7 +4916,7 @@ class MockImpl {
     this.route('GET', '/api/rooms/:id/invites', (c) => {
       const me = this.uid(c);
       const room = this.roomFor(c.params[0] ?? '', me);
-      this.requireRoomPerm(room, me, MANAGE_ROOM);
+      this.requireManage(room, me);
       const invites = [...s().roomInvites.values()].filter((i) => i.roomId === room.id).sort((a, b) => b.id.localeCompare(a.id));
       sendMsg(c.res, 200, ListRoomInvitesResponseSchema, { invites });
     });
@@ -5299,6 +5399,86 @@ class MockImpl {
   }
 
   private clockMs: number | null = null;
+
+  // ------------------------------------------------ temporary rooms (ADR-0044)
+
+  /** Archived temporary rooms (not in `state.rooms`): their history stays readable. */
+  private readonly archivedRooms = new Map<string, Room>();
+
+  /** The room and its link, as the server's one transaction; ROOM_CREATE to whoever sees it. */
+  private createTempRoom(a: { workspaceId: string; name: string; createdBy: string; expiresAtMs: number; isPrivate: boolean; memberIds: readonly string[]; guests: boolean }): { room: Room; invite: RoomInvite } {
+    const s = this.state;
+    const ws = s.workspaces.get(a.workspaceId);
+    const positions = [...s.rooms.values()].filter((r) => r.workspaceId === a.workspaceId).map((r) => r.position);
+    const mediaOverride = create(RoomMediaOverrideSchema, {});
+    const bits = VIEW_ROOM | PERMISSION_BITS.CONNECT | PERMISSION_BITS.SPEAK | PERMISSION_BITS.VIDEO | PERMISSION_BITS.STREAM | PERMISSION_BITS.SEND_MESSAGES | PERMISSION_BITS.ATTACH_FILES;
+    const expiresAt = timestampFromMs(a.expiresAtMs);
+    const room = create(RoomSchema, {
+      id: nextId(s, 'room'),
+      workspaceId: a.workspaceId,
+      type: RoomType.VOICE,
+      name: a.name,
+      position: positions.length ? Math.max(...positions) + 1 : 0,
+      isPrivate: a.isPrivate,
+      media: effectiveMedia(ws, mediaOverride),
+      mediaOverride,
+      permissionOverrides: a.isPrivate
+        ? [
+            create(RoomPermissionOverrideSchema, { targetType: PermissionTargetType.ROLE, targetId: 'member', allow: 0n, deny: VIEW_ROOM }),
+            ...[a.createdBy, ...a.memberIds.filter((id) => id !== a.createdBy)].map((id) =>
+              create(RoomPermissionOverrideSchema, { targetType: PermissionTargetType.USER, targetId: id, allow: bits, deny: 0n }),
+            ),
+          ]
+        : [],
+      createdAt: tick(s),
+      allowRecording: true,
+      createdBy: a.createdBy,
+      expiresAt,
+    });
+    s.rooms.set(room.id, room);
+    this.toWorkspace(a.workspaceId, { event: { case: 'roomCreate', value: { room } } }, room.id);
+    const id = nextId(s, 'invite');
+    const invite = create(RoomInviteSchema, {
+      id,
+      roomId: room.id,
+      workspaceId: a.workspaceId,
+      code: `mock-temp-${id.slice(-4)}`,
+      createdBy: a.createdBy,
+      allowGuests: a.guests,
+      membersOnly: !a.guests,
+      allowSpeak: true,
+      allowMessages: true,
+      allowFiles: true,
+      allowStream: true,
+      expiresAt,
+      createdAt: room.createdAt,
+    });
+    s.roomInvites.set(id, invite);
+    return { room, invite };
+  }
+
+  addTempRoom(a: { workspaceId: string; name: string; expiresAtMs: number; createdBy?: string; isPrivate?: boolean; guests?: boolean }): Room {
+    return this.createTempRoom({ workspaceId: a.workspaceId, name: a.name, createdBy: a.createdBy ?? IDS.users.anna, expiresAtMs: a.expiresAtMs, isPrivate: a.isPrivate ?? false, memberIds: [], guests: a.guests ?? true }).room;
+  }
+
+  /** Closing (DELETE or expiry): archived, links revoked, voice emptied, ROOM_DELETE to whoever saw it. */
+  private archiveTempRoom(room: Room): void {
+    const s = this.state;
+    for (const v of [...s.voiceStates.values()]) if (v.roomId === room.id) this.setVoice(v.userId, '', {});
+    this.toWorkspace(room.workspaceId, { event: { case: 'roomDelete', value: { workspaceId: room.workspaceId, roomId: room.id } } }, room.id);
+    for (const [id, inv] of s.roomInvites) if (inv.roomId === room.id) s.roomInvites.delete(id);
+    s.rooms.delete(room.id);
+    room.archivedAt = timestampFromMs(this.calNow());
+    room.messageCount = (s.messages.get(room.id) ?? []).length;
+    this.archivedRooms.set(room.id, room);
+  }
+
+  expireTempRooms(nowMs?: number): string[] {
+    const now = nowMs ?? this.calNow();
+    const due = [...this.state.rooms.values()].filter((r) => r.expiresAt && timestampMs(r.expiresAt) <= now);
+    for (const r of due) this.archiveTempRoom(r);
+    return due.map((r) => r.id);
+  }
 
   setClock(nowMs: number | null): void {
     this.clockMs = nowMs;
