@@ -49,10 +49,10 @@ const builtins = legacyRoles('w');
 const as = (role: WorkspaceRole, ...extra: Role[]): Role[] => [...rolesOfMember(builtins, { role, roleIds: [] }), ...extra];
 
 describe('role editor groups (ADR-0048 «Контракт для клиента»)', () => {
-  it('lists every bit once, in the contract order, but ADMINISTRATOR and PLACE_CALLS (Телефония slot)', () => {
+  it('lists every bit once, in the contract order, but ADMINISTRATOR (Телефония = PLACE_CALLS, ADR-0046)', () => {
     const listed = ROLE_PERM_GROUPS.flatMap((g) => g.perms);
     expect(new Set(listed).size).toBe(listed.length);
-    const all = (Object.keys(B) as PermissionName[]).filter((n) => n !== 'ADMINISTRATOR' && n !== 'PLACE_CALLS');
+    const all = (Object.keys(B) as PermissionName[]).filter((n) => n !== 'ADMINISTRATOR');
     expect([...listed].sort()).toEqual([...all].sort());
     expect(ROLE_PERM_GROUPS.map((g) => g.id)).toEqual([
       'workspace',
