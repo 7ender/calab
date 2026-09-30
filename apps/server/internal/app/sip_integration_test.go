@@ -549,3 +549,79 @@ func countRemoved(identity string) int {
 	}
 	return n
 }
+
+// TestSIPDialingSeenByRoom: while the line dials, every viewer of the room — people in its call
+// and members outside it — gets SIP_CALL_UPDATE DIALING (not only the caller, not only on the
+// answer); a moderator may end it while it rings; busy / cancel reach everyone as a final status.
+func TestSIPDialingSeenByRoom(t *testing.T) {
+	liveKitUp(t)
+	o, bob, ws, room := setupTeam(t)
+	wid, rid := ws.GetId(), room.GetId()
+	calls := "/api/rooms/" + rid + "/calls"
+	alice := register(t, invite(t, o, wid)) // in the room's call, no PLACE_CALLS
+	carol := register(t, invite(t, o, wid)) // a member outside the call
+	pw := "pw"
+	o.must(200, "PUT", "/api/workspaces/"+wid+"/sip", &v1.PutSipSettingsRequest{Enabled: true, Host: "203.0.113.10",
+		Username: "u", Password: &pw, CallerId: "+74951234567", AllowedPrefixes: []string{"+7"}}, nil)
+	o.must(200, "PUT", "/api/rooms/"+rid+"/permissions", &v1.SetRoomPermissionsRequest{Overrides: []*v1.RoomPermissionOverride{
+		{TargetType: v1.PermissionTargetType_PERMISSION_TARGET_TYPE_USER, TargetId: bob.id, Allow: uint64(perm.PlaceCalls)},
+	}}, nil)
+	joinVoice(t, bob, wid, rid)
+	joinVoice(t, alice, wid, rid)
+	ga, gc := dialGW(t), dialGW(t)
+	ga.identify(alice.token)
+	gc.identify(carol.token)
+	status := func(g *gw, what, id string, want v1.SipCallStatus) *v1.SipCall {
+		t.Helper()
+		return g.wait(what, func(e *v1.DispatchEvent) bool {
+			c := e.GetSipCallUpdate().GetCall()
+			return c.GetId() == id && c.GetStatus() == want
+		}).GetSipCallUpdate().GetCall()
+	}
+	num := &v1.PlaceSipCallRequest{Number: "+7 916 123-45-67"}
+
+	// Dialing: the others see the line before any answer (the dial is still blocked in LiveKit).
+	var pc v1.SipCallResponse
+	bob.must(201, "POST", calls, num, &pc)
+	c1 := pc.GetCall()
+	sipFake.dialed(t, c1.GetParticipantIdentity())
+	for _, g := range []*gw{ga, gc} {
+		if c := status(g, "dialing", c1.GetId(), v1.SipCallStatus_SIP_CALL_STATUS_DIALING); c.GetNumber() != "+79161234567" ||
+			c.GetRoomId() != rid || c.GetStartedBy() != bob.id || c.GetParticipantIdentity() != "sip:"+c1.GetId() {
+			t.Fatalf("dialing event: %v", c)
+		}
+	}
+	// A reconnect while dialing (it replaces carol's session): READY carries the dialing line.
+	gc = dialGW(t)
+	ready := gc.identify(carol.token)
+	seen := false
+	for _, w := range ready.GetWorkspaces() {
+		if w.GetWorkspace().GetId() == wid {
+			seen = len(w.GetSipCalls()) == 1 && w.GetSipCalls()[0].GetStatus() == v1.SipCallStatus_SIP_CALL_STATUS_DIALING
+		}
+	}
+	if !seen {
+		t.Fatal("READY without the dialing line")
+	}
+	// Busy → FAILED busy for everyone.
+	sipFake.fail(c1.GetParticipantIdentity(), 486, "Busy Here")
+	for _, g := range []*gw{ga, gc} {
+		if c := status(g, "failed", c1.GetId(), v1.SipCallStatus_SIP_CALL_STATUS_FAILED); c.GetReason() != "busy" {
+			t.Fatalf("busy: %v", c)
+		}
+	}
+
+	// A moderator (MUTE_MEMBERS: the owner) ends a ringing line; alice (no MUTE_MEMBERS) may not.
+	bob.must(201, "POST", calls, num, &pc)
+	c2 := pc.GetCall()
+	sipFake.dialed(t, c2.GetParticipantIdentity())
+	status(ga, "dialing 2", c2.GetId(), v1.SipCallStatus_SIP_CALL_STATUS_DIALING)
+	alice.wantErr(403, v1.ErrorCode_ERROR_CODE_FORBIDDEN, "DELETE", calls+"/"+c2.GetId(), nil)
+	o.must(200, "DELETE", calls+"/"+c2.GetId(), nil, nil)
+	for _, g := range []*gw{ga, gc} {
+		if c := status(g, "cancelled", c2.GetId(), v1.SipCallStatus_SIP_CALL_STATUS_ENDED); c.GetReason() != "cancelled" {
+			t.Fatalf("cancel: %v", c)
+		}
+	}
+	sipFake.fail(c2.GetParticipantIdentity(), 487, "Request Terminated")
+}
