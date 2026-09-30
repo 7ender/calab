@@ -6,6 +6,7 @@ import { RoomType } from '@calaba/protocol';
 import { useRooms } from './rooms';
 import type { LightboxImage } from '../lib/lightbox';
 import { useBoardsUi } from './boardsUi';
+import { useWebApps } from './webApps';
 
 export type Dialog =
   | { kind: 'create-workspace' }
@@ -39,7 +40,9 @@ export type Dialog =
    * Create / edit a meeting (ADR-0038 §7). `eventKey`: the occurrence edited (its series is
    * changed); `draft`: prefilled values of a new one (a range selected on the grid, «Дублировать»).
    */
-  | { kind: 'event'; workspaceId: string; eventKey?: string; draft?: EventDraftInit };
+  | { kind: 'event'; workspaceId: string; eventKey?: string; draft?: EventDraftInit }
+  /** Add (no `appId`) / edit a web app of the workspace (ADR-0050 §3). */
+  | { kind: 'web-app'; workspaceId: string; appId?: string };
 
 /** Prefill of the meeting dialog (features/calendar/EventDialog.tsx). */
 export interface EventDraftInit {
@@ -156,16 +159,22 @@ export const useUi = create<UiState>()(
       selectCalEvent: (calEvent) => set({ calEvent }),
       closeCalendar: () => set({ calDay: null, calEvent: null }),
       setWorkspace: (id) =>
-        set((s) => ({
+        set((s) => {
+          // A click on a workspace (the open one too) leads back to its rooms (ADR-0050 §3).
+          if (useWebApps.getState().open) useWebApps.getState().setOpen(null);
+          return {
           calDay: null,
           calEvent: null,
           activeWorkspaceId: id,
           history: id ? pushLoc(s.history, here(s), { ws: id, room: s.lastRoom[id] ?? null }) : s.history,
-        })),
+          };
+        }),
       openRoom: (wsId, roomId) =>
         set((s) => {
-          // A room opened from anywhere (⌘K, a notification, a link) leaves the boards mode.
+          // A room opened from anywhere (⌘K, a notification, a link) leaves the boards mode and
+          // a web app (ADR-0050).
           if (useBoardsUi.getState().active) useBoardsUi.getState().setActive(false);
+          if (useWebApps.getState().open) useWebApps.getState().setOpen(null);
           return {
           calDay: null,
           calEvent: null,
@@ -236,6 +245,7 @@ function reachable(l: Loc): boolean {
 function travel(s: UiState, dir: -1 | 1): Partial<UiState> {
   const r = step(s.history, here(s), dir, reachable);
   if (!r) return {};
+  if (useWebApps.getState().open) useWebApps.getState().setOpen(null);
   const { ws, room } = r.to;
   return {
     calDay: null,

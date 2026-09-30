@@ -112,6 +112,13 @@ import {
   UpdateBackgroundRequestSchema,
   UpdateBackgroundResponseSchema,
   CreateBadgeRequestSchema,
+  CreateWorkspaceAppRequestSchema,
+  CreateWorkspaceAppResponseSchema,
+  ListWorkspaceAppsResponseSchema,
+  SetWorkspaceAppPositionRequestSchema,
+  SetWorkspaceAppPositionResponseSchema,
+  UpdateWorkspaceAppRequestSchema,
+  UpdateWorkspaceAppResponseSchema,
   CreateBadgeResponseSchema,
   UpdateBadgeRequestSchema,
   UpdateBadgeResponseSchema,
@@ -306,6 +313,24 @@ export const api = {
     /** "" clears → WORKSPACE_MEMBER_UPDATE. */
     setMember: (workspaceId: string, userId: string, badgeId: string) =>
       call('PUT', `/api/workspaces/${workspaceId}/members/${userId}/badge`, SetMemberBadgeResponseSchema, body(SetMemberBadgeRequestSchema, { badgeId })),
+  },
+  /**
+   * Web apps of a workspace (ADR-0050): the list for members (not guests); create / edit / delete
+   * / move with MANAGE_INTEGRATIONS. The server checks the address (https, http only to private
+   * hosts) and never fetches it.
+   */
+  apps: {
+    list: (workspaceId: string) => call('GET', `/api/workspaces/${workspaceId}/apps`, ListWorkspaceAppsResponseSchema),
+    /** 201; 409 = 20 apps already; 422 = bad name / url / icon. */
+    create: (workspaceId: string, init: MessageInitShape<typeof CreateWorkspaceAppRequestSchema>) =>
+      call('POST', `/api/workspaces/${workspaceId}/apps`, CreateWorkspaceAppResponseSchema, body(CreateWorkspaceAppRequestSchema, init)),
+    /** Unset fields unchanged; iconFileId "" clears. */
+    update: (appId: string, init: MessageInitShape<typeof UpdateWorkspaceAppRequestSchema>) =>
+      call('PATCH', `/api/workspace-apps/${appId}`, UpdateWorkspaceAppResponseSchema, body(UpdateWorkspaceAppRequestSchema, init)),
+    remove: (appId: string) => callEmpty('DELETE', `/api/workspace-apps/${appId}`),
+    /** Between two neighbours ("" = first / last); → all apps by position. */
+    move: (appId: string, afterAppId: string, beforeAppId: string) =>
+      call('PUT', `/api/workspace-apps/${appId}/position`, SetWorkspaceAppPositionResponseSchema, body(SetWorkspaceAppPositionRequestSchema, { afterAppId, beforeAppId })),
   },
   /**
    * Camera backgrounds of a workspace (ADR-0035 addendum): the list for any member; create / rename

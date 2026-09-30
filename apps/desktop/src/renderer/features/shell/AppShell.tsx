@@ -38,6 +38,9 @@ import { ArchivedChat } from '../chat/ArchivedChat';
 import { useArchiveView } from '../../stores/archiveView';
 import { TitleBar } from './TitleBar';
 import { WorkspaceRail } from './WorkspaceRail';
+import { AppScreen } from '../webapps/AppScreen';
+import { installWebApps } from '../../services/webApps';
+import { useOpenApp } from '../../stores/webApps';
 
 /**
  * Main layout (docs/08, «Layout»; docs/09 #1–#2):
@@ -67,6 +70,8 @@ export function AppShell(): ReactNode {
   const boards = useBoardsUi((s) => s.active) && !home && !!wsId && !guestWs;
   // «Открыть историю» of an archived temporary room (ADR-0044) in place of the room.
   const archived = useArchiveView((s) => (s.room && s.room.workspaceId === wsId ? s.room : null));
+  // A web app of this workspace (ADR-0050 §3) replaces the room column and the chat.
+  const appId = useOpenApp(home ? null : wsId);
 
   // Short reconnects (a server deploy re-IDENTIFYs in 1–5 s) don't flash the banner; it goes
   // away the moment READY/RESUMED arrives (lib/gateway/banner.ts).
@@ -78,6 +83,7 @@ export function AppShell(): ReactNode {
   useEffect(() => installAfk(), []);
   useEffect(() => installPresenceTimer(), []);
   useEffect(() => installEmail(), []);
+  useEffect(() => installWebApps(), []);
   const superadmin = useSession((s) => s.me?.isSuperadmin === true);
   useEffect(() => (ready ? whenIdle(() => preloadWindows(superadmin)) : undefined), [ready, superadmin]);
 
@@ -160,6 +166,8 @@ export function AppShell(): ReactNode {
               {dmId ? <ChatPane key={dmId} workspaceId="" roomId={dmId} /> : <DmPick />}
             </div>
           </div>
+        ) : hasWs && wsId && appId ? (
+          <AppScreen key={appId} appId={appId} />
         ) : hasWs && wsId ? (
           <div className="flex min-w-0 flex-1 overflow-hidden rounded-tl-[var(--radius-panel)] border-l border-t border-line" data-testid="main-island">
             <Sidebar workspaceId={wsId} />

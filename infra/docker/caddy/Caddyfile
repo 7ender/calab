@@ -75,7 +75,9 @@
 (web_security_headers) {
 	header {
 		# 'wasm-unsafe-eval': RNNoise noise suppression (WASM in the mic AudioWorklet).
-		Content-Security-Policy "default-src 'self'; script-src 'self' 'wasm-unsafe-eval'; connect-src 'self'{$RTC_ORIGINS}; img-src 'self' blob: data:; media-src 'self' blob:; worker-src 'self' blob:; style-src 'self' 'unsafe-inline'; frame-ancestors 'none'; base-uri 'self'; form-action 'self'"
+		# frame-src https: http: — the sandboxed iframe of a workspace web app (ADR-0050 §6); the page
+		# has no other frames. http: only matters for a web client served over http (dev / LAN).
+		Content-Security-Policy "default-src 'self'; script-src 'self' 'wasm-unsafe-eval'; connect-src 'self'{$RTC_ORIGINS}; img-src 'self' blob: data:; media-src 'self' blob:; worker-src 'self' blob:; style-src 'self' 'unsafe-inline'; frame-src https: http:; frame-ancestors 'none'; base-uri 'self'; form-action 'self'"
 		X-Content-Type-Options nosniff
 		Referrer-Policy same-origin
 		X-Frame-Options DENY
