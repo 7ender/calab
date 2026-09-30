@@ -12,6 +12,7 @@ import { useSession } from '../../stores/session';
 import { useSipCalls } from '../../stores/sipCalls';
 import { useSipDial } from '../../stores/sipDial';
 import { useVoice } from '../../stores/voice';
+import { usePlanHas } from '../../services/plan';
 import { isGuest, useMemberRoles, useWorkspaces } from '../../stores/workspaces';
 import { formatDuration, useNow } from '../shell/voiceFormat';
 
@@ -28,7 +29,8 @@ import { formatDuration, useNow } from '../shell/voiceFormat';
  */
 export function useCanDial(workspaceId: string, roomId: string, anyCall = false): boolean {
   const me = useSession((s) => s.me?.user?.id ?? '');
-  const sipEnabled = useWorkspaces((s) => !!s.byId[workspaceId]?.ws.sipEnabled);
+  const included = usePlanHas(workspaceId, 'telephony'); // Business only
+  const sipEnabled = useWorkspaces((s) => !!s.byId[workspaceId]?.ws.sipEnabled) && included;
   const guest = useWorkspaces((s) => isGuest(s.byId[workspaceId]?.members[me]));
   const roles = useMemberRoles(workspaceId, me);
   const room = useRooms((s) => s.byId[roomId]);

@@ -150,16 +150,17 @@ export async function saveMyWorkHours(wh: WorkHours): Promise<boolean> {
 
 export async function loadCalDav(): Promise<void> {
   try {
-    useFreeBusy.setState({ caldav: await freebusyApi.caldav.get() });
+    const { account, planLocked } = await freebusyApi.caldav.get();
+    useFreeBusy.setState({ caldav: account, caldavLocked: planLocked });
   } catch (e) {
     log.warn('caldav: get failed', e);
-    useFreeBusy.setState({ caldav: null });
+    useFreeBusy.setState({ caldav: null, caldavLocked: false });
   }
 }
 
 /** The account's new state (a connect, a change, a sync); my busy windows and external events are asked again. */
 export function setCalDav(account: CalDavAccount | null): void {
-  useFreeBusy.setState({ caldav: account, external: {}, externalWs: '', externalChunks: {} });
+  useFreeBusy.setState({ caldav: account, caldavLocked: false, external: {}, externalWs: '', externalChunks: {} });
   invalidateMe();
 }
 
@@ -185,7 +186,7 @@ export async function setShareLevel(level: ShareLevel): Promise<void> {
  */
 export function ensureExternal(ws: string, from: number, to: number): void {
   const s = fb();
-  if (!ws || !s.caldav?.calendarHref || !s.caldav.import) return;
+  if (!ws || !s.caldav?.calendarHref || !s.caldav.import || s.caldavLocked) return;
   const held = s.externalWs === ws ? s.externalChunks : {};
   const todo = chunksIn(from, to).filter((c) => !held[c]);
   if (!todo.length) return;

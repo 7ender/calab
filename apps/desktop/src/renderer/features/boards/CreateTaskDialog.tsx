@@ -16,6 +16,7 @@ import { useToasts } from '../../stores/toasts';
 import { ApproverMenu, AssigneeMenu, DateMenu, EstimateMenu, LabelMenu, MemberAvatar, MilestoneMenu, PriorityMenu, StatusMenu, useToday } from './menus';
 import { hasBit, sortedStatuses, CREATE_TASKS } from './model';
 import { Dot, PRIORITY_LABEL, PriorityIcon, StatusIcon, formatDue } from './visuals';
+import { usePlanHas } from '../../services/plan';
 
 const NONE: string[] = [];
 
@@ -94,6 +95,7 @@ function Dialog({
   const [milestone, setMilestone] = useState('');
   // ADR-0049: optional approvers from the start and the quorum (0 = all).
   const [approvers, setApprovers] = useState<string[]>([]);
+  const approvalsIncluded = usePlanHas(board?.workspaceId, 'approvals'); // Business and above
   const [required, setRequired] = useState(0);
   const [more, setMore] = useState(false);
   const [busy, setBusy] = useState(false);
@@ -293,6 +295,8 @@ function Dialog({
               <Triangle className="size-3.5" aria-hidden /> {estimate ? t('boards.points', { n: estimate }) : t('boards.f.estimate')}
             </button>
           </EstimateMenu>
+          {approvalsIncluded ? (
+            <>
           <ApproverMenu
             workspaceId={board.workspaceId}
             value={approvers}
@@ -339,6 +343,8 @@ function Dialog({
                 </Dropdown.Content>
               </Dropdown.Portal>
             </Dropdown.Root>
+          ) : null}
+            </>
           ) : null}
           {board.milestones.length ? (
             <MilestoneMenu boardId={boardId} value={milestone} onPick={setMilestone}>

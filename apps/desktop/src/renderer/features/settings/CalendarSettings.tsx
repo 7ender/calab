@@ -12,6 +12,7 @@ import { WORK_ENDS, WORK_STARTS, toggleWeekday, validateWorkHours, weekdayOrder,
 import { dateTimeFormat } from '../../lib/format';
 import { loadCalDav, saveMyWorkHours, setCalDav, setShareLevel } from '../../services/freebusy';
 import { useFreeBusy } from '../../stores/freebusy';
+import { openPlanContact, planContact } from '../../services/plan';
 import { useSession } from '../../stores/session';
 import { toast } from '../../stores/toasts';
 
@@ -112,6 +113,7 @@ function RemindersLink(): ReactNode {
 
 function CalDavCard(): ReactNode {
   const account = useFreeBusy((s) => s.caldav);
+  const locked = useFreeBusy((s) => s.caldavLocked);
   useEffect(() => {
     void loadCalDav();
   }, []);
@@ -121,12 +123,37 @@ function CalDavCard(): ReactNode {
         <div className="grid h-16 place-items-center">
           <Spinner />
         </div>
+      ) : locked ? (
+        <CalDavLocked account={account} />
       ) : account ? (
         <CalDavConnected account={account} />
       ) : (
         <CalDavConnect />
       )}
     </Card>
+  );
+}
+
+/** No plan of mine includes CalDAV (Free): what the plan says, who to ask; a stored account is kept, not shown as working. */
+function CalDavLocked({ account }: { account: CalDavAccount | null }): ReactNode {
+  const contact = planContact();
+  return (
+    <div className="flex flex-col items-start gap-2 px-3 py-3" data-testid="caldav-locked">
+      <span className="text-body">{t('fb.dav.locked')}</span>
+      {account ? <span className="text-caption text-faint">{t('fb.dav.lockedStopped', { host: hostOf(account.url) })}</span> : null}
+      <div className="flex items-center gap-2">
+        {contact ? (
+          <Button variant="secondary" size="sm" onClick={openPlanContact} data-testid="caldav-locked-contact">
+            {t('fb.dav.lockedContact')}
+          </Button>
+        ) : null}
+        {account ? (
+          <Button variant="destructive" size="sm" onClick={() => void freebusyApi.caldav.remove().then(() => setCalDav(null))} data-testid="caldav-disconnect">
+            {t('fb.dav.disconnect')}
+          </Button>
+        ) : null}
+      </div>
+    </div>
   );
 }
 

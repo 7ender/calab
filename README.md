@@ -148,21 +148,28 @@ Checks: `make test` (Go + TS), `make test-integration`, visual tests per screen 
 
 ## Plans
 
-| | Free | Team | Enterprise | Self-hosted |
+| | Free | Team | Business | Enterprise (your own server) |
 |---|---|---|---|---|
-| Voice room | up to 5 people | up to 50 people | unlimited | unlimited |
-| Workspace members | up to 50 | unlimited | unlimited | unlimited |
+| Voice room | up to 5 people | up to 15 people | up to 100 people | unlimited |
+| Workspace members | up to 50 | up to 100 | up to 500 | unlimited |
 | Audio quality | up to “Normal” | any, up to “Excellent” | any | any |
-| Screen sharing and camera | up to 720p / 15 fps, 1 share per room | no quality limits | no quality limits | no quality limits |
-| Files | 5 GB per workspace | up to 1 TB per workspace | unlimited | unlimited |
-| Bots | 1 | 20 | unlimited | unlimited |
+| Screen sharing and camera quality | up to 720p / 15 fps | no quality limits | no quality limits | no quality limits |
+| Screen shares at once in a room | 1 | 5 | 10 | unlimited |
+| Cameras at once in a room | 3 | 10 | 30 | unlimited |
+| Files | 5 GB per workspace | 300 GB per workspace | 1 TB per workspace | unlimited |
+| Bots | 1 | 5 | 20 | unlimited |
 | Sticker packs | 1 | unlimited | unlimited | unlimited |
-| Task boards | 3 | unlimited | unlimited | unlimited |
-| Calendar and CalDAV | ✓ | ✓ | ✓ | ✓ |
+| Task boards | 3 | 30 | 50 | unlimited |
+| Calendar | ✓ | ✓ | ✓ | ✓ |
+| CalDAV sync | — | ✓ | ✓ | ✓ |
+| Task approvals | — | — | ✓ | ✓ |
+| Embedded web apps | — | — | ✓ | ✓ |
+| Telephony (SIP) | — | — | ✓ | ✓ |
+| White-label | — | — | — | ✓ |
 | Support | — | support | priority | — |
 | Price | free | on request (**it@gptunnel.ai**) | on request (**it@gptunnel.ai**) | free for non-commercial use (BSL 1.1, “Powered by GPTunneL”); commercial licence on request |
 
-Free, Team and Enterprise are cloud plans of a workspace ([ADR-0024](docs/adr/0024-plans-and-limits.md)); Enterprise is the cloud without limits, like your own server. Details — [calab.ru/en/#pricing](https://calab.ru/en/#pricing) and [COMMERCIAL-LICENSE.md](COMMERCIAL-LICENSE.md).
+Free, Team and Business are cloud plans of a workspace ([ADR-0024](docs/adr/0024-plans-and-limits.md)); Enterprise is your own server with no plan limits. CalDAV belongs to a person: it works if any of their workspaces is on Team or above. Details — [calab.ru/en/#pricing](https://calab.ru/en/#pricing) and [COMMERCIAL-LICENSE.md](COMMERCIAL-LICENSE.md).
 
 ## Licence
 

@@ -1,7 +1,7 @@
 import type { WorkspacePlan } from '@calaba/protocol';
 import { t } from '../i18n';
 import { log } from '../lib/log';
-import { contactHref, planErrorNotice, planKind } from '../lib/plan';
+import { contactHref, planErrorNotice, planHas, planKind, type PlanFeature } from '../lib/plan';
 import { platform } from '../platform';
 import { useSession } from '../stores/session';
 import { useToasts, type ToastAction } from '../stores/toasts';
@@ -15,6 +15,11 @@ import { useWorkspaces } from '../stores/workspaces';
 /** The plan of a workspace as members see it (Workspace.plan); undefined from an older server. */
 export function workspacePlan(workspaceId: string | null | undefined): WorkspacePlan | undefined {
   return workspaceId ? useWorkspaces.getState().byId[workspaceId]?.ws.plan : undefined;
+}
+
+/** Does the plan of the workspace include the feature? (Selector: a boolean, so only a flip re-renders.) */
+export function usePlanHas(workspaceId: string | null | undefined, feature: PlanFeature): boolean {
+  return useWorkspaces((s) => planHas(workspaceId ? s.byId[workspaceId]?.ws.plan : undefined, feature));
 }
 
 /** «Связаться для покупки» target (READY.plan_contact), or null when the server gave none usable. */

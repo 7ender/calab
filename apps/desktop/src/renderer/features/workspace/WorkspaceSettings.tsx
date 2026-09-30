@@ -37,7 +37,8 @@ import { PlanFullNote, PlanTab, useMembersCap } from './PlanTab';
 import { AudioTierHint, AudioTierOptions } from './AudioTierOptions';
 import { GptunnelTab } from './GptunnelTab';
 import { TelephonyTab } from './TelephonyTab';
-import { reportPlanError } from '../../services/plan';
+import { PLAN_LABEL, planKind } from '../../lib/plan';
+import { reportPlanError, workspacePlan } from '../../services/plan';
 import { fromTimeFormatPref, toTimeFormatPref } from '../../services/timeFormat';
 import { RoomGuestInviteCard } from '../people/RoomGuestInviteCard';
 import { EmailInviteCard, EmailInvitesList } from './EmailInvite';
@@ -445,7 +446,7 @@ function InvitesTab({ workspaceId, roomId }: { workspaceId: string; roomId: stri
     <>
       {/* docs/09 #55: from a room, a guest without an account first (the card hides itself without MANAGE_ROOM). */}
       {roomId ? <RoomGuestInviteCard roomId={roomId} /> : null}
-      {cap.full ? <PlanFullNote text={t('plan.membersFull', { n: cap.limit })} testId="invite-plan-full" /> : null}
+      {cap.full ? <PlanFullNote text={t('plan.membersFull', { plan: t(PLAN_LABEL[planKind(workspacePlan(workspaceId))]), n: cap.limit })} testId="invite-plan-full" /> : null}
       {/* ADR-0023: by an exact address first; the links below stay for everyone else. */}
       <EmailInviteCard workspaceId={workspaceId} full={cap.full} />
       <EmailInvitesList workspaceId={workspaceId} />
