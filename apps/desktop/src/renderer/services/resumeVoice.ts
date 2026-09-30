@@ -112,7 +112,7 @@ async function resume(rec: ResumeVoice, readyCall: Call | null): Promise<void> {
         return;
       }
       restoreSelf(rec);
-      await voice.join(d.roomId, d.workspaceId);
+      await voice.join(d.roomId, d.workspaceId, { resumed: true });
       const after = useVoice.getState();
       if (after.roomId === d.roomId && after.phase === 'connected') toast.info(t('call.resumeRoom', { room: roomLabel(room) }));
       return;

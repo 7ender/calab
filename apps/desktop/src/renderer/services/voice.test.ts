@@ -1469,6 +1469,28 @@ describe('own stream (docs/09 #18a)', () => {
     expect(v.watching).toBeNull();
     expect(voice.streamVideo('TR_mine')).toBeNull();
   });
+
+  it('cues: viewers coming / going, my stream ending, my own leave (1.3.1 sounds)', async () => {
+    await voice.join('A', 'ws');
+    await settle();
+    const engine = voice as unknown as { screen: unknown; viewers: Map<string, Set<string>> };
+    engine.screen = { video: { sid: 'TR_mine', mediaStreamTrack: {} }, audio: null, stop: () => Promise.resolve() };
+    engine.viewers.set('TR_mine', new Set());
+    const room = FakeRoom.all.at(-1);
+    const watch = (on: boolean): void => room?.emit('DataReceived', new TextEncoder().encode(JSON.stringify({ sid: 'TR_mine', on })), { identity: 'u2:d' }, 0, 'calaba.watch');
+    playSound.mockClear();
+    watch(true);
+    watch(true); // repeated: no second cue
+    watch(false);
+    watch(false);
+    expect(playSound.mock.calls.map((c) => c[0])).toEqual(['watchStart', 'watchStop']);
+    playSound.mockClear();
+    await voice.stopStream();
+    expect(playSound.mock.calls.map((c) => c[0])).toEqual(['streamEnd']);
+    playSound.mockClear();
+    await voice.leave();
+    expect(playSound.mock.calls.map((c) => c[0])).toEqual(['disconnect']);
+  });
 });
 
 describe('stream codec (ADR-0032)', () => {
