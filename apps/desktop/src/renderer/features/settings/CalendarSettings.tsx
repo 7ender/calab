@@ -1,6 +1,7 @@
 import { ChevronRight, RefreshCw, TriangleAlert } from 'lucide-react';
 import { useEffect, useId, useMemo, useState, type ReactNode } from 'react';
 import { confirmAction } from '../../components/Confirm';
+import { PlanLock } from '../../components/PlanLock';
 import { useSettingsNav } from '../../components/SettingsWindow';
 import { Button, Card, Field, Input, PasswordInput, Row, Segmented, Select, Spinner, Toggle, cx } from '../../components/ui';
 import { t, useLocale } from '../../i18n';
@@ -12,7 +13,6 @@ import { WORK_ENDS, WORK_STARTS, toggleWeekday, validateWorkHours, weekdayOrder,
 import { dateTimeFormat } from '../../lib/format';
 import { loadCalDav, saveMyWorkHours, setCalDav, setShareLevel } from '../../services/freebusy';
 import { useFreeBusy } from '../../stores/freebusy';
-import { openPlanContact, planContact } from '../../services/plan';
 import { useSession } from '../../stores/session';
 import { toast } from '../../stores/toasts';
 
@@ -134,26 +134,22 @@ function CalDavCard(): ReactNode {
   );
 }
 
-/** No plan of mine includes CalDAV (Free): what the plan says, who to ask; a stored account is kept, not shown as working. */
+/** No plan of mine includes CalDAV (Free): the form stays visible under a lock (PlanLock); a stored account is kept, not shown as working. */
 function CalDavLocked({ account }: { account: CalDavAccount | null }): ReactNode {
-  const contact = planContact();
   return (
-    <div className="flex flex-col items-start gap-2 px-3 py-3" data-testid="caldav-locked">
-      <span className="text-body">{t('fb.dav.locked')}</span>
-      {account ? <span className="text-caption text-faint">{t('fb.dav.lockedStopped', { host: hostOf(account.url) })}</span> : null}
-      <div className="flex items-center gap-2">
-        {contact ? (
-          <Button variant="secondary" size="sm" onClick={openPlanContact} data-testid="caldav-locked-contact">
-            {t('fb.dav.lockedContact')}
-          </Button>
-        ) : null}
-        {account ? (
+    <>
+      {account ? (
+        <div className="flex flex-wrap items-center justify-between gap-2 px-3 pt-3" data-testid="caldav-locked">
+          <span className="text-caption text-faint">{t('fb.dav.lockedStopped', { host: hostOf(account.url) })}</span>
           <Button variant="destructive" size="sm" onClick={() => void freebusyApi.caldav.remove().then(() => setCalDav(null))} data-testid="caldav-disconnect">
             {t('fb.dav.disconnect')}
           </Button>
-        ) : null}
-      </div>
-    </div>
+        </div>
+      ) : null}
+      <PlanLock plan="team" testId="caldav-locked-lock">
+        <CalDavConnect />
+      </PlanLock>
+    </>
   );
 }
 

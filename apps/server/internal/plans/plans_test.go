@@ -29,7 +29,7 @@ func TestParseLimitsEnv(t *testing.T) {
 		t.Fatalf("defaults: %+v %+v %+v %v", free, team, biz, err)
 	}
 	if team != (Limits{RoomMembers: 15, Members: 100, Bots: 5, Boards: 30, StorageMB: 300 * 1024,
-		StreamsPerRoom: 2, CamerasPerRoom: 10, TelephonyDisabled: true, WebAppsDisabled: true, ApprovalsDisabled: true}) ||
+		StreamsPerRoom: 2, CamerasPerRoom: 10}) ||
 		biz != (Limits{RoomMembers: 50, Members: 500, Bots: 20, Boards: 50, StorageMB: 1 << 20, StreamsPerRoom: 5, CamerasPerRoom: 25}) {
 		t.Fatalf("team / business defaults: %+v %+v", team, biz)
 	}
@@ -87,7 +87,7 @@ func TestLimitsJSONRoundTrip(t *testing.T) {
 	}
 	// Unlimited limits serialize every key (a stored custom plan is complete).
 	b, _ = json.Marshal(Limits{})
-	if string(b) != `{"room_members":0,"stream_max_preset":"","stream_max_fps":0,"camera_max_preset":"","camera_max_fps":0,"streams_per_room":0,"cameras_per_room":0,"storage_mb":0,"members":0,"sticker_packs":0,"stickers":0,"bots":0,"audio_tier_max_kbps":0,"boards":0,"caldav_disabled":false,"telephony_disabled":false,"web_apps_disabled":false,"approvals_disabled":false}` {
+	if string(b) != `{"room_members":0,"stream_max_preset":"","stream_max_fps":0,"camera_max_preset":"","camera_max_fps":0,"streams_per_room":0,"cameras_per_room":0,"storage_mb":0,"members":0,"sticker_packs":0,"stickers":0,"bots":0,"audio_tier_max_kbps":0,"boards":0,"caldav_disabled":false}` {
 		t.Fatalf("zero limits: %s", b)
 	}
 }

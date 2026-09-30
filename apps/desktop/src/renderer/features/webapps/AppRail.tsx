@@ -13,7 +13,6 @@ import { deleteWebApp, moveWebApp, openAppInBrowser, openWebApp } from '../../se
 import { useSession } from '../../stores/session';
 import { toast } from '../../stores/toasts';
 import { useUi } from '../../stores/ui';
-import { usePlanHas } from '../../services/plan';
 import { useWebApps, useWorkspaceAppIds } from '../../stores/webApps';
 import { useMemberRoles } from '../../stores/workspaces';
 import { menuBox, menuItem, menuSeparator } from '../shell/menu';
@@ -39,8 +38,7 @@ export function WorkspaceAppsColumn({ wsId }: { wsId: string }): ReactNode {
   const active = useUi((s) => s.activeWorkspaceId === wsId);
   const ids = useWorkspaceAppIds(wsId);
   const manage = useManageApps(wsId);
-  const included = usePlanHas(wsId, 'webApps'); // Business and above; the apps stay stored, hidden without it
-  if (!active || !included || (!ids.length && !manage)) return null;
+  if (!active || (!ids.length && !manage)) return null;
   return <AppList wsId={wsId} ids={ids} manage={manage} />;
 }
 

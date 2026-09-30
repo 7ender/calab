@@ -44,26 +44,20 @@ export const PLAN_LABEL: Record<Plan, MessageKey> = {
   [Plan.ENTERPRISE]: 'plan.name.enterprise',
 };
 
-/** Plan features that are not part of every plan (Business and above; CalDAV: Team and above). */
-export type PlanFeature = 'telephony' | 'webApps' | 'approvals' | 'caldav';
+/** Plan features that are not part of every plan (CalDAV: Team and above). */
+export type PlanFeature = 'caldav';
+
+/** The «disabled» flag of PlanLimits behind each feature. */
+const DISABLED_FLAG = { caldav: 'caldavDisabled' } as const satisfies Record<PlanFeature, keyof PlanLimits>;
 
 /**
  * Is the feature part of the plan? PlanLimits carries «disabled» flags, so an absent plan (an older
- * server) or a plan without the flag allows it. The server enforces (409 PLAN_LIMIT); the client hides.
+ * server) or a plan without the flag allows it. The server enforces (409 PLAN_LIMIT); the client
+ * shows the feature locked (PlanLock), never hides it.
  */
 export function planHas(p: WorkspacePlan | undefined, f: PlanFeature): boolean {
   const l = p?.limits;
-  if (!l) return true;
-  switch (f) {
-    case 'telephony':
-      return !l.telephonyDisabled;
-    case 'webApps':
-      return !l.webAppsDisabled;
-    case 'approvals':
-      return !l.approvalsDisabled;
-    case 'caldav':
-      return !l.caldavDisabled;
-  }
+  return !l || !l[DISABLED_FLAG[f]];
 }
 
 /** The stored plan (UNSPECIFIED reads as FREE: the server's default when none was ever set). */

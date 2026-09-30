@@ -12,7 +12,6 @@ import { DRAG_USER, dragKind } from '../calendar/dragState';
 import { menuBox, menuItem } from '../shell/menu';
 import { ApproverMenu, MemberAvatar } from './menus';
 import { hasBit, VIEW_BOARD } from './model';
-import { usePlanHas } from '../../services/plan';
 
 /**
  * Task approvals UI (ADR-0049 §6, docs/08 «Доски»): the card / row badge and the panel section
@@ -66,9 +65,7 @@ const valueBtn = 'inline-flex h-7 min-w-0 max-w-full items-center gap-1.5 rounde
  */
 export function ApprovalsSection({ task, canEdit, perms }: { task: Task; canEdit: boolean; perms: bigint | undefined }): ReactNode {
   const me = myUserId();
-  const included = usePlanHas(task.workspaceId, 'approvals'); // Business and above: without it nothing new, votes stopped
-  const ac = approvalControls(task, canEdit && included, hasBit(perms, VIEW_BOARD), me);
-  const c = included ? ac : { ...ac, vote: false, edit: false };
+  const c = approvalControls(task, canEdit, hasBit(perms, VIEW_BOARD), me);
   const [over, setOver] = useState(false);
   if (!c.visible) return null;
   const ids = task.approvers.map((a) => a.userId);

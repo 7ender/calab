@@ -141,13 +141,9 @@ describe('30.09 lineup: Business naming, features by plan', () => {
 
   it('planHas: a missing plan or flag allows; the disabled flags lock', () => {
     const p = (limits: MessageInitShape<typeof PlanLimitsSchema>) => create(WorkspacePlanSchema, { plan: Plan.FREE, limits: create(PlanLimitsSchema, limits) });
-    expect(planHas(undefined, 'telephony')).toBe(true);
+    expect(planHas(undefined, 'caldav')).toBe(true);
     expect(planHas(p({}), 'caldav')).toBe(true);
-    expect(planHas(p({ telephonyDisabled: true }), 'telephony')).toBe(false);
-    expect(planHas(p({ webAppsDisabled: true }), 'webApps')).toBe(false);
-    expect(planHas(p({ approvalsDisabled: true }), 'approvals')).toBe(false);
     expect(planHas(p({ caldavDisabled: true }), 'caldav')).toBe(false);
-    expect(planHas(p({ caldavDisabled: true }), 'telephony')).toBe(true);
   });
 });
 

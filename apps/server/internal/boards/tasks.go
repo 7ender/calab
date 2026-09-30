@@ -23,7 +23,6 @@ import (
 	"github.com/calaba/calaba/server/internal/messages"
 	"github.com/calaba/calaba/server/internal/notifications"
 	"github.com/calaba/calaba/server/internal/perm"
-	"github.com/calaba/calaba/server/internal/plans"
 	"github.com/calaba/calaba/server/internal/rooms"
 )
 
@@ -697,13 +696,6 @@ func (s *Service) createTask(w http.ResponseWriter, r *http.Request) error {
 		if err != nil {
 			return err
 		}
-		if len(approvers) > 0 {
-			if on, err := s.approvalsOn(r.Context(), b.WorkspaceID); err != nil {
-				return err
-			} else if !on {
-				return plans.FeatureError("approvals")
-			}
-		}
 		if err := checkCreateGate(len(approvers), required, *st); err != nil {
 			return err
 		}
@@ -1122,7 +1114,7 @@ func (s *Service) updateTask(w http.ResponseWriter, r *http.Request) error {
 			if resets {
 				tl = tl.reset() // the same request resets the votes: they do not count
 			}
-			if err := s.gate(r.Context(), old.WorkspaceID, tl, from, to); err != nil {
+			if err := checkApprovalGate(tl, from, to); err != nil {
 				return err
 			}
 		}
@@ -1348,7 +1340,7 @@ func (s *Service) moveBoard(r *http.Request, q *sqlc.Queries, tx pgx.Tx, t *task
 	if err != nil {
 		return err
 	}
-	if err := s.gate(r.Context(), t.WorkspaceID, tl, from, *to); err != nil {
+	if err := checkApprovalGate(tl, from, *to); err != nil {
 		return err
 	}
 	cur, err := q.ListTaskLabelIDs(r.Context(), []uuid.UUID{t.ID})

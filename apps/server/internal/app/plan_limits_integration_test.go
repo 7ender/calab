@@ -293,49 +293,21 @@ func TestPlanCalDAV(t *testing.T) {
 	o.must(204, "DELETE", "/api/me/caldav", nil, nil)
 }
 
-// Business-only features (owner, 30.09): web apps, task approvals, telephony. Free and Team
-// refuse them (409 PLAN_LIMIT, used = limit = 0); Business has them; a downgrade keeps the data,
-// stops the gate and refuses new approvers / votes.
-func TestPlanBusinessOnlyFeatures(t *testing.T) {
+// Web apps, task approvals and telephony are part of every plan (owner, 30.09): on Free they are
+// not refused with PLAN_LIMIT.
+func TestPlanFreeHasAppsApprovalsTelephony(t *testing.T) {
 	withFreeLimits(t)
 	o := owner(t)
 	wsID := createWorkspace(t, o, v1.WorkspaceVisibility_WORKSPACE_VISIBILITY_PRIVATE).GetId()
 	bob := register(t, invite(t, o, wsID))
 	b := createBoard(t, o, wsID, &v1.CreateBoardRequest{Name: "Plans", Key: "PLN", Template: v1.BoardTemplate_BOARD_TEMPLATE_DEVELOPMENT}, 201)
-	todo, done := statusOf(b, v1.BoardStatusType_BOARD_STATUS_TYPE_UNSTARTED), statusOf(b, v1.BoardStatusType_BOARD_STATUS_TYPE_COMPLETED)
-	pw := "s3cret-Пароль" //nolint:gosec // G101: a test fixture
-	sip := &v1.PutSipSettingsRequest{Enabled: true, Provider: "Zadarma", Host: "203.0.113.10:5060",
-		Transport: v1.SipTransport_SIP_TRANSPORT_TCP, Username: "u100", Password: &pw, CallerId: "8 (495) 123-45-67"}
-	app := &v1.CreateWorkspaceAppRequest{Name: "Grafana", Url: "https://grafana.example.com"}
-	refused := func(plan string) {
-		t.Helper()
-		st, e := o.apiErrBody("POST", "/api/workspaces/"+wsID+"/apps", app)
-		wantPlanLimit(t, plan+": web app", st, e, 0, 0)
-		st, e = o.apiErrBody("POST", "/api/boards/"+b.GetId()+"/tasks", &v1.CreateTaskRequest{Title: "x", ApproverIds: []string{bob.id}})
-		wantPlanLimit(t, plan+": approvers on create", st, e, 0, 0)
-		st, e = o.apiErrBody("PUT", "/api/workspaces/"+wsID+"/sip", sip)
-		wantPlanLimit(t, plan+": telephony", st, e, 0, 0)
-	}
-	refused("free")
-	setPlan(t, wsID, &v1.AdminSetPlanRequest{Plan: v1.Plan_PLAN_TEAM})
-	refused("team")
-
-	setPlan(t, wsID, &v1.AdminSetPlanRequest{Plan: v1.Plan_PLAN_ENTERPRISE})
+	todo := statusOf(b, v1.BoardStatusType_BOARD_STATUS_TYPE_UNSTARTED)
 	newApp(t, o, wsID, "Grafana", "https://grafana.example.com", "")
 	task := createTask(t, o, b.GetId(), &v1.CreateTaskRequest{Title: "Согласовать", StatusId: todo, ApproverIds: []string{bob.id}}, 201)
 	if task.GetApprovalState() != v1.TaskApprovalState_TASK_APPROVAL_STATE_PENDING {
-		t.Fatalf("business approvals: %v", task)
+		t.Fatalf("free approvals: %v", task)
 	}
-	// Forward is blocked while the approval is pending...
-	o.must(409, "PATCH", "/api/tasks/"+task.GetId(), &v1.UpdateTaskRequest{StatusId: &done}, nil)
-
-	// ...a downgrade turns the gate off (nothing is stranded), keeps the approvers, refuses
-	// votes and new approvers, and allows removing them.
-	setPlan(t, wsID, &v1.AdminSetPlanRequest{Plan: v1.Plan_PLAN_TEAM})
-	st, e := bob.apiErrBody("POST", "/api/tasks/"+task.GetId()+"/approval", &v1.TaskApprovalRequest{Decision: approve})
-	wantPlanLimit(t, "team: vote", st, e, 0, 0)
-	st, e = o.apiErrBody("PUT", "/api/tasks/"+task.GetId()+"/approvers", &v1.SetTaskApproversRequest{UserIds: []string{bob.id}, Required: 1})
-	wantPlanLimit(t, "team: set approvers", st, e, 0, 0)
-	o.must(200, "PATCH", "/api/tasks/"+task.GetId(), &v1.UpdateTaskRequest{StatusId: &done}, nil)
-	o.must(200, "PUT", "/api/tasks/"+task.GetId()+"/approvers", &v1.SetTaskApproversRequest{}, nil)
+	pw := "s3cret-Пароль" //nolint:gosec // G101: a test fixture
+	o.must(200, "PUT", "/api/workspaces/"+wsID+"/sip", &v1.PutSipSettingsRequest{Enabled: true, Provider: "Zadarma", Host: "203.0.113.10:5060",
+		Transport: v1.SipTransport_SIP_TRANSPORT_TCP, Username: "u100", Password: &pw, CallerId: "8 (495) 123-45-67"}, nil)
 }

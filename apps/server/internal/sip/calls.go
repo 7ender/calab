@@ -130,9 +130,6 @@ func (s *Service) place(w http.ResponseWriter, r *http.Request) error {
 	if !a.Enabled || a.TrunkID == "" || s.sip == nil || s.lk == nil {
 		return errDisabled
 	}
-	if err := s.planAllows(ctx, acc.WorkspaceID); err != nil {
-		return err
-	}
 	if !Allowed(number, a.AllowedPrefixes) {
 		return numberNotAllowed()
 	}
@@ -397,9 +394,6 @@ func (s *Service) test(w http.ResponseWriter, r *http.Request) error {
 	}
 	if !a.Enabled || a.TrunkID == "" || s.sip == nil || s.lk == nil {
 		return errDisabled
-	}
-	if err := s.planAllows(ctx, wsID); err != nil {
-		return err
 	}
 	if err := s.TestLimit.Take(ctx, wsID.String()); err != nil {
 		if e := httpx.AsError(err); e.Code == v1.ErrorCode_ERROR_CODE_RATE_LIMITED {

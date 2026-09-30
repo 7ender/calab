@@ -19,7 +19,6 @@ import { describeError } from '../../lib/api/errors';
 import { api } from '../../lib/api/endpoints';
 import { fmt } from '../../lib/format';
 import { callDurationMs, formatPhone, isLiveStatus, normalizePrefix, reasonCode, reasonKey, statusKey } from '../../lib/sip';
-import { openPlanContact, planContact, usePlanHas } from '../../services/plan';
 import { useRooms } from '../../stores/rooms';
 import { toast } from '../../stores/toasts';
 import { memberName, useWorkspaces } from '../../stores/workspaces';
@@ -32,23 +31,6 @@ import { formatDuration } from '../shell/voiceFormat';
  * the call journal (100 per page, «Показать ещё» by cursor). A primitive screen by the owner's
  * word (30.09); IVR and inbound numbers come later.
  */
-
-/** Telephony is Business only (ADR-0024, 30.09): what the plan says and whom to ask; the stored settings stay. */
-function TelephonyLocked(): ReactNode {
-  const contact = planContact();
-  return (
-    <Card>
-      <div className="flex flex-wrap items-center justify-between gap-3 px-3 py-2.5" data-testid="sip-plan-locked">
-        <span className="text-body">{t('plan.telephonyLocked')}</span>
-        {contact ? (
-          <Button variant="secondary" size="sm" onClick={openPlanContact}>
-            {t('plan.contactShort')}
-          </Button>
-        ) : null}
-      </div>
-    </Card>
-  );
-}
 
 /** SipSettings.port when never set (sip.proto: PUT 0 = 5060). */
 export const DEFAULT_SIP_PORT = 5060;
@@ -79,8 +61,6 @@ const FIELD_ERROR: Record<string, MessageKey> = {
 export function TelephonyTab({ workspaceId }: { workspaceId: string }): ReactNode {
   const q = useQuery({ queryKey: settingsKey(workspaceId), queryFn: () => api.sip.settings(workspaceId) });
   const settings = q.data?.settings;
-  const included = usePlanHas(workspaceId, 'telephony');
-  if (!included) return <TelephonyLocked />;
   return (
     <>
       <p className="px-1 text-body text-muted">{t('sip.intro')}</p>

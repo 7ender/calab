@@ -162,9 +162,9 @@ Checks: `make test` (Go + TS), `make test-integration`, visual tests per screen 
 | Task boards | 3 | 30 | 50 | unlimited |
 | Calendar | ✓ | ✓ | ✓ | ✓ |
 | CalDAV sync | — | ✓ | ✓ | ✓ |
-| Task approvals | — | — | ✓ | ✓ |
-| Embedded web apps | — | — | ✓ | ✓ |
-| Telephony (SIP) | — | — | ✓ | ✓ |
+| Task approvals | ✓ | ✓ | ✓ | ✓ |
+| Embedded web apps | ✓ | ✓ | ✓ | ✓ |
+| Telephony (SIP) | ✓ | ✓ | ✓ | ✓ |
 | White-label | — | — | — | ✓ |
 | Support | — | support | priority | — |
 | Price | free | on request (**it@gptunnel.ai**) | on request (**it@gptunnel.ai**) | free for non-commercial use (BSL 1.1, “Powered by GPTunneL”); commercial licence on request |

@@ -34,11 +34,6 @@ type Limits struct {
 	// allowed, like "0 = no limit" elsewhere. CalDAV is per user, so it works if any of the
 	// user's workspaces allows it (Service.AllowsCalDAV).
 	CalDAVDisabled bool
-	// TelephonyDisabled: SIP telephony (ADR-0046) is Business only (owner, 30.09); zero = allowed.
-	TelephonyDisabled bool
-	// WebAppsDisabled: embedded web apps of the workspace (ADR-0050) and ApprovalsDisabled: task
-	// approvals (ADR-0049) are Business and above (owner, 30.09); zero = allowed.
-	WebAppsDisabled, ApprovalsDisabled bool
 }
 
 // Built-in defaults; PLAN_FREE_LIMITS / PLAN_TEAM_LIMITS / PLAN_BUSINESS_LIMITS override them key by key.
@@ -50,16 +45,13 @@ var (
 		RoomMembers: 5, Members: 50, AudioMaxKbps: 16,
 		StreamMaxPreset: v1.ScreenSharePreset_SCREEN_SHARE_PRESET_H720, StreamMaxFPS: 15,
 		CameraMaxPreset: v1.ScreenSharePreset_SCREEN_SHARE_PRESET_H720, CameraMaxFPS: 15,
-		StreamsPerRoom: 1, CamerasPerRoom: 3, StorageMB: 5 << 10, StickerPacks: 1, Stickers: 200, Bots: 1, Boards: 3, CalDAVDisabled: true, TelephonyDisabled: true,
-		WebAppsDisabled: true, ApprovalsDisabled: true,
+		StreamsPerRoom: 1, CamerasPerRoom: 3, StorageMB: 5 << 10, StickerPacks: 1, Stickers: 200, Bots: 1, Boards: 3, CalDAVDisabled: true,
 	}
 	// DefaultTeam (owner, 30.09): 15 in a room, 100 workspace members, 300 GiB of files, 5 bots, 30 boards;
 	// voice and video not limited by the plan.
-	DefaultTeam = Limits{RoomMembers: 15, Members: 100, Bots: 5, Boards: 30, StorageMB: 300 << 10, StreamsPerRoom: 2, CamerasPerRoom: 10,
-		TelephonyDisabled: true, WebAppsDisabled: true, ApprovalsDisabled: true}
+	DefaultTeam = Limits{RoomMembers: 15, Members: 100, Bots: 5, Boards: 30, StorageMB: 300 << 10, StreamsPerRoom: 2, CamerasPerRoom: 10}
 	// DefaultBusiness (owner, 30.09) is the cloud tier stored as PLAN_ENTERPRISE: 50 in a room,
-	// 500 members, 20 bots, 50 boards (the hard cap), 5 streams and 25 cameras per room, 1 TiB of files, telephony, web apps and
-	// approvals; voice and video quality unlimited.
+	// 500 members, 20 bots, 50 boards (the hard cap), 5 streams and 25 cameras per room, 1 TiB of files; voice and video quality unlimited.
 	DefaultBusiness = Limits{RoomMembers: 50, Members: 500, Bots: 20, Boards: 50, StorageMB: 1 << 20, StreamsPerRoom: 5, CamerasPerRoom: 25}
 )
 
@@ -116,9 +108,6 @@ type limitsJSON struct {
 	AudioMaxKbps    *uint32 `json:"audio_tier_max_kbps,omitempty"`
 	Boards          *uint32 `json:"boards,omitempty"`
 	CalDAVDisabled  *bool   `json:"caldav_disabled,omitempty"`
-	TelephonyOff    *bool   `json:"telephony_disabled,omitempty"`
-	WebAppsOff      *bool   `json:"web_apps_disabled,omitempty"`
-	ApprovalsOff    *bool   `json:"approvals_disabled,omitempty"`
 }
 
 // ParseLimits applies a JSON object over base: keys present replace the base value, absent
@@ -160,15 +149,6 @@ func ParseLimits(raw string, base Limits) (Limits, error) {
 	if j.CalDAVDisabled != nil {
 		l.CalDAVDisabled = *j.CalDAVDisabled
 	}
-	if j.TelephonyOff != nil {
-		l.TelephonyDisabled = *j.TelephonyOff
-	}
-	if j.WebAppsOff != nil {
-		l.WebAppsDisabled = *j.WebAppsOff
-	}
-	if j.ApprovalsOff != nil {
-		l.ApprovalsDisabled = *j.ApprovalsOff
-	}
 	for _, p := range []struct {
 		dst  *v1.ScreenSharePreset
 		v    *string
@@ -198,8 +178,7 @@ func (l Limits) MarshalJSON() ([]byte, error) {
 		RoomMembers: &l.RoomMembers, StreamMaxPreset: &sp, StreamMaxFPS: &l.StreamMaxFPS,
 		CameraMaxPreset: &cp, CameraMaxFPS: &l.CameraMaxFPS, StreamsPerRoom: &l.StreamsPerRoom, CamerasPerRoom: &l.CamerasPerRoom,
 		StorageMB: &l.StorageMB, Members: &l.Members, StickerPacks: &l.StickerPacks, Stickers: &l.Stickers, Bots: &l.Bots,
-		AudioMaxKbps: &l.AudioMaxKbps, Boards: &l.Boards, CalDAVDisabled: &l.CalDAVDisabled, TelephonyOff: &l.TelephonyDisabled,
-		WebAppsOff: &l.WebAppsDisabled, ApprovalsOff: &l.ApprovalsDisabled,
+		AudioMaxKbps: &l.AudioMaxKbps, Boards: &l.Boards, CalDAVDisabled: &l.CalDAVDisabled,
 	})
 	return bytes.TrimSpace(buf.Bytes()), err
 }
@@ -240,8 +219,7 @@ func (l Limits) Proto() *v1.PlanLimits {
 		RoomMembers: l.RoomMembers, StreamMaxPreset: l.StreamMaxPreset, StreamMaxFps: l.StreamMaxFPS,
 		CameraMaxPreset: l.CameraMaxPreset, CameraMaxFps: l.CameraMaxFPS, StreamsPerRoom: l.StreamsPerRoom, CamerasPerRoom: l.CamerasPerRoom,
 		StorageMb: l.StorageMB, Members: l.Members, StickerPacks: l.StickerPacks, Stickers: l.Stickers, Bots: l.Bots,
-		AudioTierMaxKbps: l.AudioMaxKbps, Boards: l.Boards, CaldavDisabled: l.CalDAVDisabled, TelephonyDisabled: l.TelephonyDisabled,
-		WebAppsDisabled: l.WebAppsDisabled, ApprovalsDisabled: l.ApprovalsDisabled,
+		AudioTierMaxKbps: l.AudioMaxKbps, Boards: l.Boards, CaldavDisabled: l.CalDAVDisabled,
 	}
 }
 
@@ -251,8 +229,7 @@ func FromProto(p *v1.PlanLimits) Limits {
 		RoomMembers: p.GetRoomMembers(), StreamMaxPreset: p.GetStreamMaxPreset(), StreamMaxFPS: p.GetStreamMaxFps(),
 		CameraMaxPreset: p.GetCameraMaxPreset(), CameraMaxFPS: p.GetCameraMaxFps(), StreamsPerRoom: p.GetStreamsPerRoom(), CamerasPerRoom: p.GetCamerasPerRoom(),
 		StorageMB: p.GetStorageMb(), Members: p.GetMembers(), StickerPacks: p.GetStickerPacks(), Stickers: p.GetStickers(), Bots: p.GetBots(),
-		AudioMaxKbps: p.GetAudioTierMaxKbps(), Boards: p.GetBoards(), CalDAVDisabled: p.GetCaldavDisabled(), TelephonyDisabled: p.GetTelephonyDisabled(),
-		WebAppsDisabled: p.GetWebAppsDisabled(), ApprovalsDisabled: p.GetApprovalsDisabled(),
+		AudioMaxKbps: p.GetAudioTierMaxKbps(), Boards: p.GetBoards(), CalDAVDisabled: p.GetCaldavDisabled(),
 	}
 }
 
