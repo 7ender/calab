@@ -11,6 +11,11 @@ export const SCREENS = {
   task: { width: 510, height: 870 },
   notes: { width: 1370, height: 560 },
   guest: { width: 600, height: 460 },
+  sipdial: { width: 1110, height: 300 },
+  siproom: { width: 1440, height: 500 },
+  sipsettings: { width: 940, height: 660 },
+  siplog: { width: 940, height: 660 },
+  webapps: { width: 1440, height: 870 },
 } as const;
 
 export type ScreenName = keyof typeof SCREENS;

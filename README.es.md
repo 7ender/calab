@@ -148,21 +148,25 @@ Comprobaciones: `make test` (Go + TS), `make test-integration`, pruebas visuales
 
 ## Planes
 
-| | Free | Team | Enterprise | Self-hosted |
+| | Free | Team | Business | Enterprise |
 |---|---|---|---|---|
-| Sala de voz | hasta 5 personas | hasta 50 personas | sin límite | sin límite |
-| Miembros del espacio | hasta 50 | sin límite | sin límite | sin límite |
+| Sala de voz | hasta 5 personas | hasta 15 personas | hasta 100 personas | sin límite |
+| Miembros del espacio | hasta 50 | hasta 100 | hasta 500 | sin límite |
 | Calidad de audio | hasta «Normal» | cualquiera, hasta «Excelente» | cualquiera | cualquiera |
-| Pantalla compartida y cámara | hasta 720p / 15 fps, 1 por sala | sin límites de calidad | sin límites de calidad | sin límites de calidad |
-| Archivos | 5 GB por espacio | hasta 1 TB por espacio | sin límite | sin límite |
-| Bots | 1 | 20 | sin límite | sin límite |
+| Pantalla compartida y cámara | hasta 720p / 15 fps | sin límites de calidad | sin límites de calidad | sin límites de calidad |
+| Pantallas compartidas a la vez | 1 | 5 | 10 | sin límite |
+| Cámaras a la vez | 3 | 10 | 30 | sin límite |
+| Archivos | 5 GB por espacio | 300 GB por espacio | 1 TB por espacio | sin límite |
+| Bots | 1 | 5 | 20 | sin límite |
 | Paquetes de stickers | 1 | sin límite | sin límite | sin límite |
-| Tableros de tareas | 3 | sin límite | sin límite | sin límite |
-| Calendario y CalDAV | ✓ | ✓ | ✓ | ✓ |
+| Tableros de tareas | 3 | 30 | 50 | sin límite |
+| Calendario | ✓ | ✓ | ✓ | ✓ |
+| CalDAV | — | ✓ | ✓ | ✓ |
+| On-prem (servidor propio) | — | — | — | ✓ |
 | Soporte | — | soporte | prioritario | — |
 | Precio | gratis | a consultar (**it@gptunnel.ai**) | a consultar (**it@gptunnel.ai**) | gratis para uso no comercial (BSL 1.1, «Powered by GPTunneL»); licencia comercial a consultar |
 
-Free, Team y Enterprise son planes en la nube de un espacio ([ADR-0024](docs/adr/0024-plans-and-limits.md)); Enterprise es la nube sin límites, como tu propio servidor. Detalles: [calab.ru/es/#pricing](https://calab.ru/es/#pricing) y [COMMERCIAL-LICENSE.md](COMMERCIAL-LICENSE.md).
+Free, Team y Business son planes en la nube de un espacio ([ADR-0024](docs/adr/0024-plans-and-limits.md)); Enterprise es Calab en tu propio servidor (on-prem), sin límites. Detalles: [calab.ru/es/#pricing](https://calab.ru/es/#pricing) y [COMMERCIAL-LICENSE.md](COMMERCIAL-LICENSE.md).
 
 ## Licencia
 

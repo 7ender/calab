@@ -4,7 +4,7 @@ import { APP_URL } from '@/lib/site';
 import { Button, Container, Frame, Screen } from './ui';
 
 /**
- * Landing v3 hero: a «new in 1.1» pill, a one-line promise, the lead, two actions, then the product
+ * Landing v3 hero: a «what is new» pill, a one-line promise, the lead, two actions, then the product
  * itself — the whole window during a planning meeting (stream on the stage, cameras, rooms), in the
  * page's language. The screenshot is the LCP element: 1x ≈ 80 KB, fetched with high priority.
  */
@@ -13,7 +13,7 @@ export function Hero({ t, locale }: { t: Dict['hero']; locale: Locale }) {
     <section id="top" aria-labelledby="hero-title" className="hero-bg overflow-hidden pt-12 pb-16 sm:pt-20 sm:pb-24">
       <Container className="text-center">
         <a
-          href="#boards"
+          href="#sip"
           className="inline-flex max-w-full items-center gap-2 rounded-full border border-line bg-card px-4 py-1.5 text-[14px] leading-5 font-medium text-fg hover:border-accent motion-safe:transition-colors"
         >
           <span aria-hidden="true" className="size-2 shrink-0 rounded-full bg-accent" />

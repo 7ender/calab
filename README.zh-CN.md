@@ -148,21 +148,25 @@ pnpm -F @calaba/desktop dev                       # Electron
 
 ## 价格
 
-| | Free | Team | Enterprise | Self-hosted |
+| | Free | Team | Business | Enterprise |
 |---|---|---|---|---|
-| 语音房间 | 最多 5 人 | 最多 50 人 | 不限 | 不限 |
-| 工作区成员 | 最多 50 人 | 不限 | 不限 | 不限 |
+| 语音房间 | 最多 5 人 | 最多 15 人 | 最多 100 人 | 不限 |
+| 工作区成员 | 最多 50 人 | 最多 100 人 | 最多 500 人 | 不限 |
 | 音质 | 最高“普通” | 任意，最高“极佳” | 任意 | 任意 |
-| 屏幕共享与摄像头 | 最高 720p / 15 fps，每个房间 1 路 | 画质不限 | 画质不限 | 画质不限 |
-| 文件 | 每个工作区 5 GB | 每个工作区最多 1 TB | 不限 | 不限 |
-| 机器人 | 1 | 20 | 不限 | 不限 |
+| 屏幕共享与摄像头 | 最高 720p / 15 fps | 画质不限 | 画质不限 | 画质不限 |
+| 同时屏幕共享 | 1 | 5 | 10 | 不限 |
+| 同时开启的摄像头 | 3 | 10 | 30 | 不限 |
+| 文件 | 每个工作区 5 GB | 每个工作区 300 GB | 每个工作区 1 TB | 不限 |
+| 机器人 | 1 | 5 | 20 | 不限 |
 | 贴纸包 | 1 | 不限 | 不限 | 不限 |
-| 任务看板 | 3 | 不限 | 不限 | 不限 |
-| 日历与 CalDAV | ✓ | ✓ | ✓ | ✓ |
+| 任务看板 | 3 | 30 | 50 | 不限 |
+| 日历 | ✓ | ✓ | ✓ | ✓ |
+| CalDAV | — | ✓ | ✓ | ✓ |
+| On-prem（自有服务器） | — | — | — | ✓ |
 | 支持 | — | 支持 | 优先支持 | — |
 | 价格 | 免费 | 按需询价（**it@gptunnel.ai**） | 按需询价（**it@gptunnel.ai**） | 非商业用途免费（BSL 1.1，保留“Powered by GPTunneL”）；商业许可按需询价 |
 
-Free、Team 和 Enterprise 是工作区的云端方案（[ADR-0024](docs/adr/0024-plans-and-limits.md)）；Enterprise 是不限量的云端方案，与自有服务器相同。详情见 [calab.ru/zh/#pricing](https://calab.ru/zh/#pricing) 和 [COMMERCIAL-LICENSE.md](COMMERCIAL-LICENSE.md)。
+Free、Team 和 Business 是工作区的云端方案（[ADR-0024](docs/adr/0024-plans-and-limits.md)）；Enterprise 是部署在自有服务器上的 Calab（on-prem），没有任何限制。详情见 [calab.ru/zh/#pricing](https://calab.ru/zh/#pricing) 和 [COMMERCIAL-LICENSE.md](COMMERCIAL-LICENSE.md)。
 
 ## 许可证
 

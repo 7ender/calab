@@ -4,7 +4,7 @@ import type { Dict } from '@/i18n';
 import { APP_URL, CONTACT_EMAIL, repoFile } from '@/lib/site';
 import { Button, Section, SectionHeading } from './ui';
 
-const PLAN_IDS = ['free', 'team', 'enterprise', 'selfHosted'] as const;
+const PLAN_IDS = ['free', 'team', 'business', 'enterprise'] as const;
 type PlanId = (typeof PLAN_IDS)[number];
 type RowId = keyof Dict['pricing']['table']['rows'];
 const ROW_IDS = Object.keys({
@@ -13,12 +13,14 @@ const ROW_IDS = Object.keys({
   audio: 0,
   video: 0,
   streams: 0,
+  cameras: 0,
   files: 0,
   bots: 0,
   stickers: 0,
   boards: 0,
   calendar: 0,
   caldav: 0,
+  onprem: 0,
   support: 0,
   price: 0,
 } satisfies Record<RowId, 0>) as RowId[];
@@ -41,12 +43,12 @@ const CTA: Record<PlanId, (t: Dict['pricing']) => ReactNode> = {
       {t.cta.contact}
     </Button>
   ),
-  enterprise: (t) => (
-    <Button href={mailto('Enterprise')} variant="secondary" className="w-full">
+  business: (t) => (
+    <Button href={mailto('Business')} variant="secondary" className="w-full">
       {t.cta.contact}
     </Button>
   ),
-  selfHosted: (t) => (
+  enterprise: (t) => (
     <Button href={repoFile('COMMERCIAL-LICENSE.md')} variant="secondary" className="w-full">
       {t.cta.license}
     </Button>
@@ -68,7 +70,7 @@ function Cell({ value, t }: { value: string; t: Dict['pricing']['table'] }) {
 }
 
 /**
- * Plans (README «Тарифы», ADR-0024): four plan cards (Free is where to start) and one comparison
+ * Plans (README «Тарифы», ADR-0024; Free · Team · Business · Enterprise = own server): four plan cards (Free is where to start) and one comparison
  * table from md up; on phones the table would need a sideways scroll, so each card carries its own
  * values in a native <details> instead (no JS).
  */

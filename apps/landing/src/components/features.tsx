@@ -1,5 +1,6 @@
 import {
   ArrowRight,
+  AppWindow,
   AudioLines,
   Bot,
   CalendarCheck,
@@ -15,6 +16,8 @@ import {
   Server,
   ShieldCheck,
   Globe,
+  Headphones,
+  Phone,
   type LucideIcon,
 } from 'lucide-react';
 import type { ReactNode } from 'react';
@@ -22,6 +25,7 @@ import type { Dict, Locale } from '@/i18n';
 import { localePath } from '@/i18n/locales';
 import { fmt } from '@/lib/rich';
 import type { ScreenName } from '@/lib/screens';
+import { BotCode } from './bot-code';
 import { Container, Frame, Screen, cx } from './ui';
 
 type T = Dict['features'];
@@ -85,6 +89,43 @@ function Card({ icon: Icon, title, text }: { icon: LucideIcon; title: string; te
   );
 }
 
+/** Room audio quality levels (docs/02 «Битрейт»): the bar is the Opus band of the level, 4…20 kHz. */
+const BAND_KHZ = [4, 8, 12, 20] as const;
+
+function QualityLadder({ t }: { t: T['sound'] }) {
+  return (
+    <div className="rounded-[20px] border border-line bg-card p-6 sm:p-8">
+      <h3 className="text-[17px] leading-6 font-semibold">{t.tiersTitle}</h3>
+      <p className="mt-1 text-[14px] leading-5 text-fg-2">{t.bandHint}</p>
+      <ol className="mt-6 flex flex-col gap-5">
+        {t.tiers.map((tier, i) => (
+          <li key={tier.name}>
+            <div className="flex items-baseline justify-between gap-3">
+              <span className="text-[17px] leading-6 font-semibold">{tier.name}</span>
+              <span className="text-[15px] leading-6 text-fg-2 tabular-nums">{tier.kbps}</span>
+            </div>
+            <div className="mt-2 h-2.5 overflow-hidden rounded-full bg-accent-tint" role="img" aria-label={`${t.band}: ${tier.band}`}>
+              <div className={cx('h-full rounded-full', i === 3 ? 'bg-accent-strong' : 'bg-accent')} style={{ width: `${(BAND_KHZ[i] ?? 20) * 5}%` }} />
+            </div>
+            <p className="mt-1.5 text-[14px] leading-5 text-fg-2">
+              {t.band}: {tier.band}
+            </p>
+          </li>
+        ))}
+      </ol>
+    </div>
+  );
+}
+
+const figure = (name: ScreenName, locale: Locale, alt: string, caption: string, sizes: string) => (
+  <figure className="min-w-0">
+    <Frame>
+      <Screen name={name} locale={locale} alt={alt} sizes={sizes} />
+    </Frame>
+    <figcaption className="mt-3 text-center text-[15px] leading-6 text-fg-2">{caption}</figcaption>
+  </figure>
+);
+
 /**
  * Landing v3 feature sections (docs/09 #139), in the order of the brief: voice and video, chat,
  * calendar, boards, notes, guests, bots, self-hosted. Every screenshot is the app in the page's
@@ -103,6 +144,39 @@ export function Features({ t, locale }: { t: T; locale: Locale }) {
         }
         shot={shot('call', locale, t.voice.alt)}
       />
+
+      <Split
+        id="sound"
+        alt
+        flip
+        text={
+          <>
+            <Intro id="sound-title" icon={Headphones} {...t.sound} />
+            <Points items={t.sound.points} className="mt-7" />
+          </>
+        }
+        shot={<QualityLadder t={t.sound} />}
+      />
+
+      <section id="sip" aria-labelledby="sip-title" className="py-20 sm:py-28">
+        <Container>
+          <div className="grid items-center gap-10 lg:grid-cols-12 lg:gap-14">
+            <div className="min-w-0 lg:col-span-5">
+              <Intro id="sip-title" icon={Phone} {...t.sip} />
+              <Points items={t.sip.points} className="mt-7" />
+              <p className="mt-5 text-[14px] leading-5 text-fg-2">{t.sip.note}</p>
+            </div>
+            <div className="min-w-0 lg:col-span-7">
+              {figure('sipdial', locale, t.sip.dialAlt, t.sip.dialTitle, '(min-width: 1232px) 660px, (min-width: 1024px) 55vw, calc(100vw - 32px)')}
+            </div>
+          </div>
+          <div className="mt-10">{figure('siproom', locale, t.sip.roomAlt, t.sip.roomTitle, '(min-width: 1232px) 1152px, calc(100vw - 32px)')}</div>
+          <div className="mt-10 grid gap-6 md:grid-cols-2">
+            {figure('sipsettings', locale, t.sip.settingsAlt, t.sip.settingsTitle, '(min-width: 1232px) 564px, (min-width: 768px) 48vw, calc(100vw - 32px)')}
+            {figure('siplog', locale, t.sip.logAlt, t.sip.logTitle, '(min-width: 1232px) 564px, (min-width: 768px) 48vw, calc(100vw - 32px)')}
+          </div>
+        </Container>
+      </section>
 
       <Split
         id="chat"
@@ -184,7 +258,20 @@ export function Features({ t, locale }: { t: T; locale: Locale }) {
       />
 
       <Split
+        id="webapps"
+        flip
+        text={
+          <>
+            <Intro id="webapps-title" icon={AppWindow} {...t.webapps} />
+            <Points items={t.webapps.points} className="mt-7" />
+          </>
+        }
+        shot={shot('webapps', locale, t.webapps.alt)}
+      />
+
+      <Split
         id="bots"
+        alt
         text={
           <>
             <Intro id="bots-title" icon={Bot} {...t.bots} />
@@ -201,30 +288,16 @@ export function Features({ t, locale }: { t: T; locale: Locale }) {
               <span aria-hidden="true" className="size-3 rounded-full bg-[#ff5f57]" />
               <span aria-hidden="true" className="size-3 rounded-full bg-[#febc2e]" />
               <span aria-hidden="true" className="size-3 rounded-full bg-[#28c840]" />
-              <span className="ml-2 font-mono text-[13px] text-[#a1a1a8]">echo.ts</span>
+              <span className="ml-2 font-mono text-[13px] text-[#a1a1a8]">standup.ts</span>
             </div>
-            {/* From examples/bots/echo (the SDK's real calls, as on the /bots page). Code stays English. */}
-            <pre className="overflow-x-auto px-5 py-5 font-mono text-[13px] leading-6 text-[#e8e8ed] sm:text-[14px]">
-              <code>
-                <span className="text-[#ff7ab2]">import</span> {'{ Bot } '}
-                <span className="text-[#ff7ab2]">from</span> <span className="text-[#fc6a5d]">{"'@calaba/bot-sdk'"}</span>;{'\n\n'}
-                <span className="text-[#ff7ab2]">const</span> bot = <span className="text-[#ff7ab2]">new</span> Bot(process.env.BOT_TOKEN, {'{'}
-                {'\n  '}server: <span className="text-[#fc6a5d]">{"'https://app.calab.ru'"}</span>,{'\n'}
-                {'}'});{'\n'}
-                <span className="text-[#ff7ab2]">await</span> bot.commands([{'{ '}name: <span className="text-[#fc6a5d]">{"'echo'"}</span>, description: <span className="text-[#fc6a5d]">{"'Repeat the text'"}</span>
-                {' }'}]);{'\n\n'}
-                <span className="text-[#7f8c98]">{'// every message from someone else'}</span>
-                {'\n'}bot.on(<span className="text-[#fc6a5d]">{"'message'"}</span>, (m) =&gt; bot.reply(m, m.content));{'\n'}
-                <span className="text-[#7f8c98]">{'// "/echo hi" → "hi"'}</span>
-                {'\n'}bot.on(<span className="text-[#fc6a5d]">{"'command'"}</span>, (c) =&gt; bot.reply(c, c.args));{'\n\n'}
-                <span className="text-[#ff7ab2]">await</span> bot.start();
-              </code>
+            <pre className="overflow-x-auto px-5 py-5 font-mono text-[13px] leading-6 text-[#e8e8ed] sm:text-[14px]" lang="en">
+              <BotCode />
             </pre>
           </Frame>
         }
       />
 
-      <section id="self-hosted" aria-labelledby="self-hosted-title" className="surface-alt bg-bg-alt py-20 sm:py-28">
+      <section id="self-hosted" aria-labelledby="self-hosted-title" className="py-20 sm:py-28">
         <Container>
           <Intro id="self-hosted-title" icon={Server} center {...t.selfhost} />
           <ol className="mt-12 grid gap-4 md:grid-cols-3 md:gap-6">

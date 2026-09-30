@@ -1,31 +1,21 @@
-import { AudioLines, MessagesSquare, SquareSlash, Webhook, type LucideIcon } from 'lucide-react';
+import { AudioLines, CalendarClock, CircleDot, ListChecks, MessagesSquare, SquareSlash, UsersRound, Webhook, type LucideIcon } from 'lucide-react';
 import type { Dict } from '@/i18n';
 import { rich } from '@/lib/rich';
 import { BOT_EXAMPLES_URL, BOT_SDK_URL } from '@/lib/site';
+import { BotCode } from './bot-code';
 import { Button, Container, Section, SectionHeading } from './ui';
 
 type CardId = keyof Dict['bots']['cards'];
 
 const cards: { id: CardId; icon: LucideIcon }[] = [
   { id: 'chat', icon: MessagesSquare },
+  { id: 'tasks', icon: ListChecks },
   { id: 'voice', icon: AudioLines },
+  { id: 'calendar', icon: CalendarClock },
+  { id: 'people', icon: UsersRound },
+  { id: 'recording', icon: CircleDot },
   { id: 'commands', icon: SquareSlash },
   { id: 'webhook', icon: Webhook },
-];
-
-// The echo bot of examples/bots/echo, shortened. Code stays English in every locale.
-const CODE: { text: string; comment?: boolean }[][] = [
-  [{ text: "import { Bot } from '@calaba/bot-sdk';" }],
-  [],
-  [{ text: "const bot = new Bot(process.env.BOT_TOKEN, { server: 'https://app.calab.ru' });" }],
-  [{ text: "await bot.commands([{ name: 'echo', description: 'Repeat the text' }]);" }],
-  [],
-  [{ text: '// every message from someone else', comment: true }],
-  [{ text: 'bot.on(\'message\', (m) => bot.reply(m, m.content));' }],
-  [{ text: '// "/echo hi" → "hi"', comment: true }],
-  [{ text: "bot.on('command', (c) => bot.reply(c, c.args || 'Usage: /echo <text>'));" }],
-  [],
-  [{ text: 'await bot.start();' }],
 ];
 
 /** The /<locale>/bots/ page (ADR-0031 §8): what bots can do, a code sample, links to the docs on GitHub. */
@@ -74,17 +64,7 @@ export function BotsPage({ t, docsUrl }: { t: Dict['bots']; docsUrl: string }) {
         <SectionHeading id="bots-code-title" eyebrow="@calaba/bot-sdk" title={t.codeTitle} />
         <figure className="mx-auto mt-10 max-w-[820px] sm:mt-12">
           <pre className="overflow-x-auto rounded-[16px] border border-line bg-code px-5 py-4 font-mono text-[13px] leading-6 sm:text-[14px]" lang="en">
-            <code>
-              {CODE.map((line, i) => (
-                <span key={i} className="block min-h-6">
-                  {line.map((part, j) => (
-                    <span key={j} className={part.comment ? 'text-fg-2' : undefined}>
-                      {part.text}
-                    </span>
-                  ))}
-                </span>
-              ))}
-            </code>
+            <BotCode />
           </pre>
           <figcaption className="mt-4 text-center text-[15px] leading-6 text-pretty text-fg-2">
             {rich(t.codeCaption, {
