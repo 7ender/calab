@@ -228,7 +228,7 @@ func (h *Handlers) listPins(w http.ResponseWriter, r *http.Request) error {
 	if err != nil {
 		return err
 	}
-	acc, err := rooms.Access(r, roomID)
+	acc, err := rooms.ReadAccess(r, roomID) // archived temporary rooms too (ADR-0044)
 	if err != nil {
 		return err
 	}

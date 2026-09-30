@@ -107,6 +107,7 @@ var botRoutes = map[string]botAccess{
 	"DELETE /api/workspaces/{id}/bans/{userId}":            botAllow,
 	"POST /api/workspaces/{id}/rooms":                      botAllow,
 	"GET /api/workspaces/{id}/rooms":                       botAllow,
+	"POST /api/workspaces/{id}/rooms/temp":                 botAllow, // ADR-0044: CREATE_TEMP_ROOMS; members-only link, no meeting
 	"GET /api/rooms/{id}":                                  botAllow,
 	"PATCH /api/rooms/{id}":                                botAllow,
 	"DELETE /api/rooms/{id}":                               botAllow,

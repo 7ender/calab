@@ -533,6 +533,9 @@ func Room(r sqlc.Room, defaults *v1.RoomMediaSettings, overrides []sqlc.RoomPerm
 		VoiceStatus:         deref(r.VoiceStatus),
 		AllowRecording:      r.AllowRecording,
 		GuestApproval:       r.GuestApproval,
+		ExpiresAt:           tsp(r.ExpiresAt),
+		CreatedBy:           idp(r.CreatedBy),
+		ArchivedAt:          tsp(r.ArchivedAt),
 	}
 }
 
