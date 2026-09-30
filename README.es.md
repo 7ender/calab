@@ -40,6 +40,7 @@ Está pensado para equipos de hasta 20–30 personas en voz a la vez y hasta 3 p
 
 - **Salas de voz**: un clic para entrar; quién habla se ve en la lista de salas; estado de la sala, temporizador y límite de participantes.
 - **Sonido limpio**: cancelación de eco AEC3 y supresión de ruido RNNoise (sin servicios externos), Opus con DTX; activación por voz o **pulsar para hablar** con cualquier tecla, también en segundo plano.
+- **Modo músico**: interruptor personal que desactiva la cancelación de eco, la supresión de ruido y la ganancia automática y pasa Opus a un perfil musical (128 kbps mono / 192 kbps estéreo, FEC, sin DTX): toca un instrumento o canta en directo sin que el procesado se coma el sonido. Requiere auriculares; los demás ven un icono de guitarra junto a tu nombre. Plan Team y superiores.
 - **Pantalla compartida** en AV1 o H.264 por hardware con simulcast: cada espectador recibe la calidad que permite su conexión; los espectadores señalan y dibujan encima.
 - **Cámara** con fondo desenfocado o una imagen (fondos integrados y del espacio).
 - **Llamadas uno a uno** en mensajes directos, con tono de llamada, cámara y pantalla compartida.

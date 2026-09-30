@@ -17,7 +17,7 @@ Calab is a team messenger where voice comes first. You join a room and hear your
 
 - Voice rooms are always open: one click to join; who is talking is visible right in the room list; rooms show a status, a timer and a member limit.
 - Voice activation or push-to-talk on any key, including in the background (global hotkeys in the desktop app).
-- Echo cancellation (AEC3) and optional RNNoise noise suppression, both running in the client with no external services. Opus with DTX. Remote audio is played through a plain audio element, which is what keeps echo cancellation working.
+- Echo cancellation (AEC3) and optional RNNoise noise suppression, both running in the client with no external services. Opus with DTX. A musician mode turns all processing off for live instruments and singing (Team and above). Remote audio is played through a plain audio element, which is what keeps echo cancellation working.
 - Screen sharing in AV1 or hardware H.264 with simulcast: each viewer receives the quality their connection allows. Viewers can point and draw on top of the stream. Any window can be shared. Screen-share sound is sent unprocessed, and the other participants' voices stay out of the stream (macOS 14.2+, Windows 11).
 - Camera with background blur or a picture (built-in and workspace backgrounds).
 - One-on-one calls in direct messages, with ringing, camera and screen sharing.
@@ -41,6 +41,7 @@ Each room sets its own audio quality level (Opus, mono):
 - While the microphone is silent a voice uses about 0.1 kbps (DTX). Typical traffic: voice 16–64 kbps per speaker; a static screen share 20–300 kbps, capped at 2 Mbps for 1080p.
 - RNNoise is optional; while it is off, Chromium's built-in suppression works.
 - The Free plan is limited to the "Normal" level; Team and above can use any level.
+- Musician mode: a personal toggle for playing an instrument or singing live. It turns off echo cancellation, noise suppression and auto gain for the microphone and sends audio in the Opus music profile: 128 kbps mono or 192 kbps stereo, with forward error correction and without DTX. Headphones are required (the app warns about it), because without echo cancellation loudspeaker sound returns to other participants. Others see a guitar icon next to your name. Available on Team, Business and Enterprise; on Free the option is visible with a lock.
 
 ## Chat
 
@@ -151,6 +152,7 @@ Free, Team and Business are cloud plans of a workspace; Enterprise is Calab on y
 | Task boards | 3 | 30 | 50 | unlimited |
 | Simultaneous screen shares per room | 1 | 2 | 5 | unlimited |
 | Simultaneous cameras per room | 3 | 10 | 25 | unlimited |
+| Musician mode | no (locked) | yes | yes | yes |
 | CalDAV | no | yes | yes | yes |
 | On-prem (your own server) | no | no | no | yes |
 | Support | none | yes | priority | yes |
@@ -187,4 +189,4 @@ it@gptunnel.ai for licensing, plans, support and security reports. Calab is deve
 
 ## Кратко по-русски
 
-Calab — голосовой (voice-first) мессенджер для команды, который ставится на ваш сервер. Голосовые комнаты, видео и показ экрана, запись встреч с расшифровкой и резюме, чат как в Telegram, личные сообщения и звонки один на один, календарь (приглашения .ics, «Подобрать время», CalDAV), доски задач (канбан, список, таймлайн, согласование задач), заметки, гости с подтверждением входа, временные комнаты, звонки на городские и мобильные номера через SIP (нужен свой SIP-провайдер), веб-приложения пространства в левой панели, боты с API v2, SDK и вебхуками, роли по функциям и закрытые разделы. Приложения для macOS, Windows, Linux и веб-версия. Нагрузка: 0,05 % процессора без звонка и около 7 % в голосе на MacBook Air M4 (замеры и метод — docs/14-energy.md; сравнения голоса с Discord нет). Сквозного шифрования пока нет. Лицензия BSL 1.1, через четыре года версия переходит на Apache 2.0. Тарифы: Free, Team, Business (облако) и Enterprise (свой сервер): человек в голосовой комнате 5 / 15 / 50 / без ограничений, участников 50 / 100 / 500 / без ограничений, файлы 5 ГБ / 300 ГБ / 1 ТБ / без ограничений, боты 1 / 5 / 20, доски 3 / 30 / 50, одновременных стримов в комнате 1 / 2 / 5, камер 3 / 10 / 25, CalDAV со второго тарифа, поддержка: Team — есть, Business — приоритетная, Enterprise — есть. В планах (пока нет): голосовой ИИ-ассистент (уже тестируется), IVR и внутренние номера, Wiki, Диск. Сайт: https://calab.ru/ru/, контакт: it@gptunnel.ai.
+Calab — голосовой (voice-first) мессенджер для команды, который ставится на ваш сервер. Голосовые комнаты, видео и показ экрана, запись встреч с расшифровкой и резюме, чат как в Telegram, личные сообщения и звонки один на один, календарь (приглашения .ics, «Подобрать время», CalDAV), доски задач (канбан, список, таймлайн, согласование задач), заметки, гости с подтверждением входа, временные комнаты, звонки на городские и мобильные номера через SIP (нужен свой SIP-провайдер), веб-приложения пространства в левой панели, боты с API v2, SDK и вебхуками, роли по функциям и закрытые разделы. Приложения для macOS, Windows, Linux и веб-версия. Нагрузка: 0,05 % процессора без звонка и около 7 % в голосе на MacBook Air M4 (замеры и метод — docs/14-energy.md; сравнения голоса с Discord нет). Сквозного шифрования пока нет. Лицензия BSL 1.1, через четыре года версия переходит на Apache 2.0. Тарифы: Free, Team, Business (облако) и Enterprise (свой сервер): человек в голосовой комнате 5 / 15 / 50 / без ограничений, участников 50 / 100 / 500 / без ограничений, файлы 5 ГБ / 300 ГБ / 1 ТБ / без ограничений, боты 1 / 5 / 20, доски 3 / 30 / 50, одновременных стримов в комнате 1 / 2 / 5, камер 3 / 10 / 25, CalDAV и режим музыканта (звук без обработки, Opus 128/192 кбит/с, значок гитары) со второго тарифа, поддержка: Team — есть, Business — приоритетная, Enterprise — есть. В планах (пока нет): голосовой ИИ-ассистент (уже тестируется), IVR и внутренние номера, Wiki, Диск. Сайт: https://calab.ru/ru/, контакт: it@gptunnel.ai.

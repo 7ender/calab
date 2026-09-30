@@ -16,6 +16,7 @@ import {
   Server,
   ShieldCheck,
   Globe,
+  Guitar,
   Headphones,
   Phone,
   type LucideIcon,
@@ -153,6 +154,14 @@ export function Features({ t, locale }: { t: T; locale: Locale }) {
           <>
             <Intro id="sound-title" icon={Headphones} {...t.sound} />
             <Points items={t.sound.points} className="mt-7" />
+            <div id="musician" className="mt-8 rounded-[20px] border border-line bg-card p-6">
+              <p className="flex items-center gap-2 text-[14px] leading-5 font-semibold text-accent-text">
+                <Guitar aria-hidden="true" className="size-5" strokeWidth={1.75} />
+                {t.sound.musician.eyebrow}
+              </p>
+              <h3 className="mt-2 text-[17px] leading-6 font-semibold">{t.sound.musician.title}</h3>
+              <p className="mt-2 text-[15px] leading-6 text-pretty text-fg-2">{t.sound.musician.text}</p>
+            </div>
           </>
         }
         shot={<QualityLadder t={t.sound} />}

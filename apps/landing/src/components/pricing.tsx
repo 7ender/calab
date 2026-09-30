@@ -1,4 +1,4 @@
-import { ChevronDown } from 'lucide-react';
+import { ChevronDown, Lock } from 'lucide-react';
 import type { ReactNode } from 'react';
 import type { Dict } from '@/i18n';
 import { APP_URL, CONTACT_EMAIL, repoFile } from '@/lib/site';
@@ -19,6 +19,7 @@ const ROW_IDS = Object.keys({
   stickers: 0,
   boards: 0,
   calendar: 0,
+  musician: 0,
   caldav: 0,
   onprem: 0,
   support: 0,
@@ -57,6 +58,14 @@ const CTA: Record<PlanId, (t: Dict['pricing']) => ReactNode> = {
 
 /** A table value: '∞', '—' and '✓' are symbols for the eye and words for a screen reader. */
 function Cell({ value, t }: { value: string; t: Dict['pricing']['table'] }) {
+  if (value === '✗') {
+    return (
+      <>
+        <Lock aria-hidden="true" className="size-4 text-fg-2" strokeWidth={1.75} />
+        <span className="sr-only">{t.locked}</span>
+      </>
+    );
+  }
   const spoken = { '∞': t.unlimited, '—': t.no, '✓': t.yes }[value];
   if (!spoken) return <>{value}</>;
   return (

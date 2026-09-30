@@ -40,6 +40,7 @@ It is built for teams of up to 20–30 people in voice at once and up to 3 scree
 
 - **Voice rooms** — one click to join; who is talking is visible right in the room list; room status, timer and member limit.
 - **Clean sound** — AEC3 echo cancellation and RNNoise noise suppression (no external services), Opus with DTX; voice activation or **push-to-talk** on any key, even in the background.
+- **Musician mode** — a personal toggle that turns off echo cancellation, noise suppression and auto gain and switches Opus to a music profile (128 kbps mono / 192 kbps stereo, FEC, no DTX): play an instrument or sing live without the processing eating the sound. Headphones required; others see a guitar icon next to your name. Team and above.
 - **Screen sharing** in AV1 or hardware H.264 with simulcast — each viewer gets the quality their connection allows; viewers can point and draw on top of the stream.
 - **Camera** with background blur or a picture (built-in and workspace backgrounds).
 - **One-on-one calls** in direct messages, with ringing, camera and screen sharing.
