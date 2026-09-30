@@ -459,9 +459,7 @@ func (s *Service) Maintain(ctx context.Context) {
 		if rec.StoppedAt != nil {
 			// Stop requested but the egress has not ended: ask again every minute.
 			if now.Sub(*rec.StoppedAt) > time.Minute && rec.EgressID != nil && s.eg != nil {
-				if _, err := s.eg.StopEgress(ctx, *rec.EgressID); err != nil && !rtc.IsEgressGone(err) {
-					slog.WarnContext(ctx, "recording: repeat stop", "egress", *rec.EgressID, "err", err)
-				}
+				s.stopEgress(ctx, *rec.EgressID, rec.StopReason, "maintain: repeat stop", "recording", rec.ID, "stopped_at", *rec.StoppedAt)
 			}
 			continue
 		}
@@ -562,7 +560,7 @@ func (s *Service) Reconcile(ctx context.Context) error {
 		}
 	}
 	for id, e := range running {
-		_, rid, ok := voice.ParseRoomName(e.RoomName)
+		wid, rid, ok := voice.ParseRoomName(e.RoomName)
 		if !ok {
 			continue // not a Calaba room
 		}
@@ -575,12 +573,35 @@ func (s *Service) Reconcile(ctx context.Context) error {
 		case busyRooms[rid] && db.IsNotFound(err):
 			continue // a start in this room may not have stored its egress id yet
 		}
-		slog.WarnContext(ctx, "recording: stopping an orphaned egress", "egress", id, "room", e.RoomName)
-		if _, err := s.eg.StopEgress(ctx, id); err != nil && !rtc.IsEgressGone(err) {
-			slog.WarnContext(ctx, "recording: stop orphaned egress", "egress", id, "err", err)
+		if !s.ownsWorkspace(ctx, wid) {
+			// Another Calab installation shares this LiveKit (same API key): its egresses look
+			// like orphans here — never stop them (prod 1.2.0: every recording died at the
+			// other instance's first reconcile, docs/12).
+			continue
 		}
+		s.stopEgress(ctx, id, "orphan", "reconcile", "room", e.RoomName)
 	}
 	return nil
+}
+
+// ownsWorkspace reports whether the workspace of a LiveKit room is in this installation's
+// database. Unknown on a database error: treated as not ours (the stop waits for the next
+// round).
+func (s *Service) ownsWorkspace(ctx context.Context, wid uuid.UUID) bool {
+	_, err := s.db.Q.GetWorkspace(ctx, wid)
+	if err != nil && !db.IsNotFound(err) {
+		slog.WarnContext(ctx, "recording: look up the workspace of an egress", "workspace", wid, "err", err)
+	}
+	return err == nil
+}
+
+// stopEgress is the only way the service stops an egress: every stop is logged with its
+// reason and caller, so an unexpected end of a recording can always be traced.
+func (s *Service) stopEgress(ctx context.Context, egressID, reason, caller string, attrs ...any) {
+	slog.InfoContext(ctx, "recording: stop egress", append([]any{"egress", egressID, "reason", reason, "caller", caller}, attrs...)...)
+	if _, err := s.eg.StopEgress(ctx, egressID); err != nil && !rtc.IsEgressGone(err) {
+		slog.WarnContext(ctx, "recording: stop egress failed", "egress", egressID, "caller", caller, "err", err)
+	}
 }
 
 func (s *Service) finishWithout(ctx context.Context, rec sqlc.RoomRecording, reason string) {

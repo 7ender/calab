@@ -452,16 +452,12 @@ func (s *Service) start(w http.ResponseWriter, r *http.Request) error {
 	upd, err := s.db.Q.MarkRecordingStarted(context.WithoutCancel(ctx), sqlc.MarkRecordingStartedParams{ID: rec.ID, EgressID: &info.EgressID})
 	if err != nil {
 		// The egress runs but the row is lost: stop it (reconcile would do it too).
-		if _, serr := s.eg.StopEgress(context.WithoutCancel(ctx), info.EgressID); serr != nil && !rtc.IsEgressGone(serr) {
-			slog.WarnContext(ctx, "recording: stop egress after a failed start", "egress", info.EgressID, "err", serr)
-		}
+		s.stopEgress(context.WithoutCancel(ctx), info.EgressID, "start_not_stored", "start", "recording", rec.ID, "err", err)
 		return err
 	}
 	if upd.StoppedAt != nil {
 		// Stopped while the egress was starting (the stop had no egress id to send yet).
-		if _, err := s.eg.StopEgress(context.WithoutCancel(ctx), info.EgressID); err != nil && !rtc.IsEgressGone(err) {
-			slog.WarnContext(ctx, "recording: stop egress (retried by the worker)", "egress", info.EgressID, "err", err)
-		}
+		s.stopEgress(context.WithoutCancel(ctx), info.EgressID, upd.StopReason, "start: stopped while starting", "recording", upd.ID)
 	}
 	slog.InfoContext(ctx, "recording started", "recording", upd.ID, "room", room.ID, "egress", info.EgressID, "by", me)
 	pb := pbconv.RoomRecording(upd)
@@ -506,9 +502,7 @@ func (s *Service) requestStop(ctx context.Context, rec sqlc.RoomRecording, reaso
 		return rec, err
 	}
 	if upd.EgressID != nil && s.eg != nil {
-		if _, err := s.eg.StopEgress(ctx, *upd.EgressID); err != nil && !rtc.IsEgressGone(err) {
-			slog.WarnContext(ctx, "recording: stop egress (retried by the worker)", "egress", *upd.EgressID, "err", err)
-		}
+		s.stopEgress(ctx, *upd.EgressID, reason, "requestStop", "recording", upd.ID) // retried by the worker on failure
 	}
 	slog.InfoContext(ctx, "recording stopped", "recording", upd.ID, "reason", reason)
 	s.publish(ctx, pbconv.RoomRecording(upd))
