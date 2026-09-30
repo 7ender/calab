@@ -16,7 +16,7 @@ export const enShell: DictShape<typeof ruShell> = {
   'shell.back': 'Back',
   'shell.search': 'Search',
   'shell.inbox': 'Mentions',
-  'shell.inboxEmpty': 'No new mentions',
+  'shell.inboxEmpty': 'No unread mentions',
   'shell.inboxHint': 'Messages that mention you will show up here.',
   'shell.inboxCount': { one: '{n} mention', other: '{n} mentions' },
   'shell.inboxMarkRead': 'Mark as read',

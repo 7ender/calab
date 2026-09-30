@@ -14,7 +14,7 @@ export const ruShell = {
   'shell.back': 'Назад',
   'shell.search': 'Поиск',
   'shell.inbox': 'Упоминания',
-  'shell.inboxEmpty': 'Новых упоминаний нет',
+  'shell.inboxEmpty': 'Нет непрочитанных упоминаний',
   'shell.inboxHint': 'Здесь появятся сообщения, где вас упомянули.',
   'shell.inboxCount': { one: '{n} с упоминанием', few: '{n} с упоминанием', many: '{n} с упоминанием', other: '{n} с упоминанием' },
   'shell.inboxMarkRead': 'Отметить прочитанными',
