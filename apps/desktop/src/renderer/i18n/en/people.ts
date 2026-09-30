@@ -23,6 +23,9 @@ export const enPeople: DictShape<typeof ruPeople> = {
   'people.profile.name': 'Profile name',
   'people.profile.status': 'Status',
   'people.profile.lastSeen': 'Last seen {when}',
+  // client version line (docs/09 #143)
+  'people.client.title': 'App',
+  'people.client.last': 'Last known version',
   // local time line (docs/09 #48)
   'people.tz.title': 'Local time',
   'people.tz.hours': '{h} h',

@@ -23,6 +23,9 @@ export const zhPeople: DictShape<typeof enPeople> = {
   'people.profile.name': '资料名称',
   'people.profile.status': '状态',
   'people.profile.lastSeen': '最后在线：{when}',
+  // client version line (docs/09 #143)
+  'people.client.title': '应用',
+  'people.client.last': '最后已知版本',
   // local time line (docs/09 #48)
   'people.tz.title': '当地时间',
   'people.tz.hours': '{h} 小时',

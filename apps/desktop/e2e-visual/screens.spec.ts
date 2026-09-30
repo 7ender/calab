@@ -1005,6 +1005,8 @@ test('profile-dialog', async ({ open, win, mock, shot }) => {
   await expect(dialog).toBeVisible();
   // docs/09 #108: the 20 px badge right after the name, no text line.
   await expect(dialog.locator('h2 ~ img[data-member-badge][title="Acme"]')).toBeVisible();
+  // docs/09 #143: the app of the member's latest session under the local time.
+  await expect(dialog.getByTestId('client-version')).toHaveText('Calab 1.1.0 · macOS');
   await badgesLoaded(win);
   const note = dialog.getByTestId('profile-note');
   await expect(note).toBeEditable();

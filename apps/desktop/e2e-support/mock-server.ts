@@ -1431,7 +1431,9 @@ class MockImpl {
   private presenceOut(userId: string): ReturnType<typeof create<typeof PresenceSchema>> {
     const p = this.state.presences.get(userId);
     if (!p || p.status === PresenceStatus.INVISIBLE || p.status === PresenceStatus.OFFLINE || p.status === PresenceStatus.UNSPECIFIED) {
-      return create(PresenceSchema, { userId, status: PresenceStatus.OFFLINE });
+      // Offline keeps the last known app (docs/09 #143); invisible hides it, like the server.
+      const last = p?.status === PresenceStatus.OFFLINE ? { clientVersion: p.clientVersion, clientPlatform: p.clientPlatform } : {};
+      return create(PresenceSchema, { userId, status: PresenceStatus.OFFLINE, ...last });
     }
     // ADR-0034: «На звонке» while in an ACTIVE call (only with a visible status).
     if (this.liveCall(userId)?.state === CallState.ACTIVE) {

@@ -21,6 +21,9 @@ export const ruPeople = {
   'people.profile.name': 'Имя профиля',
   'people.profile.status': 'Статус',
   'people.profile.lastSeen': 'Был(а) в сети {when}',
+  // client version line (docs/09 #143)
+  'people.client.title': 'Приложение',
+  'people.client.last': 'Последняя известная версия',
   // local time line (docs/09 #48)
   'people.tz.title': 'Местное время',
   'people.tz.hours': '{h} ч',
