@@ -484,8 +484,9 @@ func (s *Service) join(w http.ResponseWriter, r *http.Request) error {
 		return nil
 	}
 
-	// (c) no account.
-	if !row.RoomInvite.AllowGuests {
+	// (c) no account. A members-only link (ADR-0043) never makes a guest account, whatever
+	// allow_guests holds.
+	if !row.RoomInvite.AllowGuests || row.RoomInvite.MembersOnly {
 		return httpx.Unauthenticated("sign in to use this link")
 	}
 	if auth.IsWeb(r) && !httpx.SameOrigin(r, s.origins) {

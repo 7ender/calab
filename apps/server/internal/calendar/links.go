@@ -74,7 +74,7 @@ func linkBits(ctx context.Context, q *sqlc.Queries, b *bundle) (perm.Bits, error
 	if err != nil {
 		return 0, err
 	}
-	if !acc.Bits.Has(perm.InviteGuests) {
+	if acc.Role == perm.RoleGuest || !acc.Bits.Has(perm.InviteGuests) { // guests never invite
 		return 0, nil
 	}
 	bits := guestBits

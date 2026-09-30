@@ -100,7 +100,7 @@ function isGuestOnly(roles: readonly RoleBits[] | undefined): boolean {
   return roles.some((r) => r.builtin === WorkspaceRole.GUEST) && !roles.some(member);
 }
 
-const voiceRank =(r: WorkspaceRole | undefined): number => (r === WorkspaceRole.OWNER ? 3 : r === WorkspaceRole.ADMIN ? 2 : 1);
+const voiceRank = (r: WorkspaceRole | undefined): number => (r === WorkspaceRole.OWNER ? 3 : r === WorkspaceRole.ADMIN ? 2 : 1);
 
 /**
  * Voice moderation hierarchy (server rtc.outranks): mute, disconnect, stop a stream / camera of
