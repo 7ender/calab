@@ -1,12 +1,13 @@
 import type { PermissionBits, Room } from '@calaba/protocol';
 import { ArrowDown, Hash, NotebookText, Volume2 } from 'lucide-react';
-import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
+import { Component, useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { Virtuoso, type VirtuosoHandle } from 'react-virtuoso';
 import { MessageKind, RoomType } from '@calaba/protocol';
 import { Spinner, Tip, cx } from '../../components/ui';
 import { plural, t } from '../../i18n';
 import { fmt, toDate } from '../../lib/format';
-import { ensureLoaded, loadNewer, loadOlder, loadPresent, markRead } from '../../services/chat';
+import { ensureLoaded, loadNewer, loadOlder, loadPresent, markRead, reloadRoom, STALE_LOAD_MS } from '../../services/chat';
+import { log } from '../../lib/log';
 import { EMPTY_ROOM_MESSAGES, useMessages, type ChatMessage } from '../../stores/messages';
 import { useRooms } from '../../stores/rooms';
 import { useSession } from '../../stores/session';
@@ -41,23 +42,61 @@ export function MessageList({
   // The expanded stream stage of my voice room covers the feed: the welcome shrinks to a row under it.
   const underStage = useVoice((s) => s.roomId === room.id && s.stage === 'expanded' && s.streams.some((x) => x.trackSid === s.watching));
   const state = useMessages((s) => s.rooms[room.id] ?? EMPTY_ROOM_MESSAGES);
-  if (!state.loaded) {
-    return (
-      <div className="grid min-h-0 flex-1 place-items-center bg-feed">
-        {state.error ? (
-          <button type="button" className="text-danger-text hover:underline" onClick={() => void loadOlder(room.id)}>
-            {state.error} · {t('common.retry')}
-          </button>
-        ) : (
-          <Spinner />
-        )}
-      </div>
-    );
-  }
+  if (!state.loaded) return <FirstLoad roomId={room.id} error={state.error} />;
   if (state.items.length === 0 && !state.hasMoreBefore && !state.hasMoreAfter) {
     return <EmptyRoom workspaceId={workspaceId} room={room} perms={perms} underStage={underStage} />;
   }
   return <Feed workspaceId={workspaceId} room={room} perms={perms} newMarker={newMarker} />;
+}
+
+/**
+ * The room's first load: a spinner, and «Не удалось загрузить сообщения · Повторить» on an error
+ * or once the load has been pending STALE_LOAD_MS (docs/09 #146 — never a spinner forever). One
+ * timer while this is shown, nothing after.
+ */
+function FirstLoad({ roomId, error }: { roomId: string; error: string | null }): ReactNode {
+  const [attempt, setAttempt] = useState(0);
+  // The attempt (room + retry count) whose load outlived STALE_LOAD_MS.
+  const key = `${roomId}:${attempt}`;
+  const [slowKey, setSlowKey] = useState('');
+  useEffect(() => {
+    const id = window.setTimeout(() => setSlowKey(key), STALE_LOAD_MS);
+    return () => window.clearTimeout(id);
+  }, [key]);
+  const slow = slowKey === key;
+  const retry = (): void => {
+    setAttempt((n) => n + 1);
+    void reloadRoom(roomId);
+  };
+  return (
+    <div className="grid min-h-0 flex-1 place-items-center bg-feed">
+      {error || slow ? (
+        <button type="button" className="text-danger-text hover:underline" onClick={retry} data-testid="chat-load-failed">
+          {error || t('err.ctx.loadMessages')} · {t('common.retry')}
+        </button>
+      ) : (
+        <Spinner />
+      )}
+    </div>
+  );
+}
+
+/**
+ * One message row that throws while rendering shows a placeholder instead of taking the whole
+ * feed (and, without a boundary, the whole window) down with it.
+ */
+class RowBoundary extends Component<{ id: string; children: ReactNode }, { failed: boolean }> {
+  override state = { failed: false };
+  static getDerivedStateFromError(): { failed: boolean } {
+    return { failed: true };
+  }
+  override componentDidCatch(e: unknown): void {
+    log.error('message row render failed', this.props.id, e);
+  }
+  override render(): ReactNode {
+    if (!this.state.failed) return this.props.children;
+    return <div className="px-4 py-1 text-caption italic text-muted" data-message-id={this.props.id}>{t('chat.rowFailed')}</div>;
+  }
 }
 
 /** The virtualised feed; mounted once the first window is loaded (so the initial position is known). */
@@ -274,18 +313,22 @@ function Feed({ workspaceId, room, perms, newMarker }: { workspaceId: string; ro
         }}
         itemContent={(index, c: ChatMessage) => {
           const meta = metas[index - firstIndex] ?? FALLBACK_META;
-          if (c.msg.kind === MessageKind.SYSTEM)
-            return <SystemRow c={c} meta={meta} workspaceId={workspaceId} perms={perms} highlighted={highlight === c.key} />;
           return (
-            <MessageRow
-              c={c}
-              meta={meta}
-              own={c.msg.authorId === me}
-              workspaceId={workspaceId}
-              roomId={roomId}
-              perms={perms}
-              highlighted={highlight === c.key}
-            />
+            <RowBoundary id={c.key}>
+              {c.msg.kind === MessageKind.SYSTEM ? (
+                <SystemRow c={c} meta={meta} workspaceId={workspaceId} perms={perms} highlighted={highlight === c.key} />
+              ) : (
+                <MessageRow
+                  c={c}
+                  meta={meta}
+                  own={c.msg.authorId === me}
+                  workspaceId={workspaceId}
+                  roomId={roomId}
+                  perms={perms}
+                  highlighted={highlight === c.key}
+                />
+              )}
+            </RowBoundary>
           );
         }}
       />

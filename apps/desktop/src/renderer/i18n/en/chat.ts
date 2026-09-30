@@ -19,6 +19,7 @@ export const enChat: DictShape<typeof ruChat> = {
   'chat.reactionLabel': 'Reaction {emoji}: {count}',
   'chat.replyOpen': 'Show original message',
   'chat.messageGone': 'Message deleted or unavailable',
+  'chat.rowFailed': 'This message couldn’t be displayed',
   'chat.historyStart': 'Start of room history',
   // plural keys: one object of Intl.PluralRules forms (one/other for English), picked by plural()
   'chat.unreadBanner': { one: '{n} new message since {time}', other: '{n} new messages since {time}' },
