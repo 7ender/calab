@@ -679,6 +679,13 @@ export interface MockServer {
    * Returns the absolute /r/<code> URL; GET /api/event-rsvp then carries it as guest_url.
    */
   eventGuestLink(eventId: string, email: string): string;
+  /**
+   * QA fixture (docs/09 #146 screen): the next GET of `roomId`'s messages answers 500 (the chat's
+   * «Не удалось загрузить сообщения · Повторить» state), then behaves normally again. Call it more
+   * than once to bank several failures — openRoom's unread-window path (services/chat.ts) makes up
+   * to two silent requests before the one that surfaces to the UI.
+   */
+  failMessagesOnce(roomId: string): void;
   /** Task boards (ADR-0042, mock-boards.ts): the live domain (tasks, boards, activity). */
   readonly boards: BoardsMock;
   /** A task change by another user (e.g. a rename during a call): TASK_UPDATE to the board's viewers. */
@@ -748,6 +755,7 @@ export async function startMockServer(opts: MockServerOptions = {}): Promise<Moc
       return impl.boards;
     },
     updateTaskAs: (actor, taskId, patch) => impl.updateTaskAs(actor, taskId, patch),
+    failMessagesOnce: (roomId) => impl.failMessages.set(roomId, (impl.failMessages.get(roomId) ?? 0) + 1),
   };
 }
 
@@ -1056,6 +1064,8 @@ class MockImpl {
   readonly calExternal = new Map<string, ExternalSpan[]>();
   readonly calDav = new Map<string, CalDavRec>();
   readonly calDavRemote = new Map<string, Span[]>();
+  /** QA fixture (docs/09 #146 screen): room id → banked messages-GET failures left. */
+  readonly failMessages = new Map<string, number>();
 
   constructor(opts: MockServerOptions) {
     this.state = buildState(opts.scenario ?? 'data');
@@ -3858,6 +3868,12 @@ class MockImpl {
     // ---------------- messages
     this.route('GET', '/api/rooms/:id/messages', (c) => {
       const room = this.roomOrArchivedFor(c.params[0] ?? '', this.uid(c));
+      const failLeft = this.failMessages.get(room.id) ?? 0;
+      if (failLeft > 0) {
+        if (failLeft > 1) this.failMessages.set(room.id, failLeft - 1);
+        else this.failMessages.delete(room.id);
+        throw new HttpError(500, ErrorCode.INTERNAL, 'mock: forced messages load failure');
+      }
       if (c.url.searchParams.has('q')) {
         this.search(c, [room.id]);
         return;
