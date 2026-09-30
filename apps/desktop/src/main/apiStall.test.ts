@@ -82,6 +82,38 @@ describe('StallDetector (docs/09 #146)', () => {
     expect(d.timedOut(d.started())).toBeNull();
   });
 
+  it('an upload still sending its body is not a stuck request', () => {
+    const { d, at } = detector();
+    at(0);
+    const upload = d.started();
+    const a = d.started();
+    at(19_000);
+    d.progress(upload); // a chunk just went out
+    at(20_000);
+    expect(d.timedOut(a)).toBeNull();
+    d.answered(upload);
+  });
+
+  it('a slow-by-design request (SIP test) waiting long is no evidence', () => {
+    const { d, at } = detector();
+    at(0);
+    const sip = d.started(true);
+    const a = d.started();
+    at(20_000);
+    expect(d.timedOut(a)).toBeNull();
+    d.answered(sip);
+  });
+
+  it('a wake does not reset while a transfer is moving bytes', () => {
+    const { d, at } = detector();
+    at(0);
+    d.progress();
+    at(1_000);
+    expect(d.woke('unlock-screen')).toBeNull();
+    at(1_000 + DEFAULT_STALL_POLICY.stuckMs);
+    expect(d.woke('resume')).toBe('power resume');
+  });
+
   it('answered requests are forgotten (no growth while idle)', () => {
     const { d } = detector();
     for (let i = 0; i < 1000; i++) d.answered(d.started());

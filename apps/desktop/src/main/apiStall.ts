@@ -37,9 +37,12 @@ export type WakeEvent = 'resume' | 'unlock-screen' | 'online';
 export class StallDetector {
   private readonly policy: StallPolicy;
   private readonly now: () => number;
-  /** Request id → when it started; only requests still waiting for their response headers. */
+  /** Request id → when it started or last sent a request-body chunk; only requests still waiting
+   * for their response headers and not slow by design (see started). */
   private readonly waiting = new Map<number, number>();
   private recent: number[] = [];
+  /** Last chunk moved by any request or response (an upload / download in progress). */
+  private lastProgress = Number.NEGATIVE_INFINITY;
   private lastReset = Number.NEGATIVE_INFINITY;
   private seq = 0;
 
@@ -48,11 +51,24 @@ export class StallDetector {
     this.policy = { ...DEFAULT_STALL_POLICY, ...policy };
   }
 
-  /** A request is sent; returns its id for the calls below. */
-  started(): number {
+  /**
+   * A request is sent; returns its id for the calls below. `patient`: the server answers it only
+   * after a long wait by design (the SIP test) — its long wait is no evidence against the others.
+   */
+  started(patient = false): number {
     const id = ++this.seq;
-    this.waiting.set(id, this.now());
+    if (!patient) this.waiting.set(id, this.now());
     return id;
+  }
+
+  /**
+   * A body chunk moved (request upload or response download). A request still sending its body
+   * is not stuck; and while bytes move, a wake does not close the connections under them.
+   */
+  progress(id?: number): void {
+    const t = this.now();
+    this.lastProgress = t;
+    if (id !== undefined && this.waiting.has(id)) this.waiting.set(id, t);
   }
 
   /** Its response headers arrived, or it ended any other way than a timeout. */
@@ -84,10 +100,15 @@ export class StallDetector {
     return this.fire(t, reason);
   }
 
-  /** Sleep / screen unlock / network back: the pooled connections are suspect. */
+  /**
+   * Sleep / screen unlock / network back: the pooled connections are suspect — unless a transfer
+   * has just moved bytes (a lock without sleep: an upload / download in progress is not killed;
+   * a really dead connection is then caught by the timeouts).
+   */
   woke(ev: WakeEvent): string | null {
     const t = this.now();
     if (t - this.lastReset < this.policy.wakeCooldownMs) return null;
+    if (t - this.lastProgress < this.policy.stuckMs) return null;
     return this.fire(t, ev === 'online' ? 'network online' : `power ${ev}`);
   }
 

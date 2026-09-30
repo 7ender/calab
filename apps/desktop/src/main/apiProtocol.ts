@@ -238,7 +238,15 @@ export function handleApiScheme(): void {
     // cancels (only the body stream's cancel() is called — handled by releaseController).
     const bodySignal = AbortSignal.any([idleController.signal, req.signal]);
     const fetchSignal = AbortSignal.any([idleController.signal, headersController.signal, releaseController.signal, req.signal]);
-    const stallId = stall.started();
+    const stallId = stall.started(deadline.headers > HEADERS_TIMEOUT_MS);
+    const onRequestChunk = (): void => {
+      armIdle();
+      stall.progress(stallId); // an upload still sending is not a stuck request
+    };
+    const onResponseChunk = (): void => {
+      armIdle();
+      stall.progress();
+    };
     let streaming = false;
 
     try {
@@ -248,7 +256,7 @@ export function handleApiScheme(): void {
       // did nothing, so the replay is safe. Big bodies (uploads) stream and are never replayed.
       const read = idempotent
         ? null
-        : await readBodyUpTo(req.body ? watchBody(req.body as ReadableStream<Uint8Array>, bodySignal, { onChunk: armIdle }) : null);
+        : await readBodyUpTo(req.body ? watchBody(req.body as ReadableStream<Uint8Array>, bodySignal, { onChunk: onRequestChunk }) : null);
       const streamed = read?.kind === 'stream';
       const body = read ? (read.kind === 'bytes' ? read.bytes : read.stream) : null;
       const replayable = !read || read.kind === 'bytes';
@@ -278,7 +286,7 @@ export function handleApiScheme(): void {
         // idle timer stays armed: a stream the renderer stops reading without cancelling it is
         // aborted after IDLE_TIMEOUT_MS, which releases its HTTP/2 stream (header comment).
         const watched = watchBody(res.body, bodySignal, {
-          onChunk: armIdle,
+          onChunk: onResponseChunk,
           onCancel: (reason) => releaseController.abort(reason ?? new DOMException('response dropped', 'AbortError')),
           onEnd: disarmAll,
         });
