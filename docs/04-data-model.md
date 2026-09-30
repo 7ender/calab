@@ -280,7 +280,7 @@ roomAdmin           = MUTE_MEMBERS (позволяет серверные mute/r
 ## Тарифы и лимиты пространств (ADR-0024)
 
 - `workspace_plans(workspace_id PK, plan free|team|enterprise|custom, limits jsonb, valid_until, note, updated_by, updated_at)`; нет записи → `free`. `limits` хранится только у `custom` (как записано, 0 = без лимита); `free` / `team` / `enterprise` берут лимиты из env `PLAN_FREE_LIMITS` / `PLAN_TEAM_LIMITS` / `PLAN_BUSINESS_LIMITS` (JSON поверх встроенных дефолтов, ключи ниже). Значение `PLAN_ENTERPRISE` в БД и протоколе — облачный тариф **Business** (владелец, 30.09; в интерфейсе везде «Business»); «Enterprise» теперь значит свой сервер без лимитов (self-hosted). Истёкший `valid_until` → лимиты `free`, запись остаётся (`Workspace.plan.expired = true`). Каждое изменение через admin API пишется в `workspace_plan_log` (кто, план, лимиты в силе на момент изменения, срок, заметка).
-- Ключи (в скобках — Free, владелец 28.09): `room_members` (5), `members` (50: участники без гостей, боты считаются), `audio_tier_max_kbps` (16 = «Нормальное»; 0 | 8 | 16 | 32 | 64), `stream_max_preset` (`h720`), `stream_max_fps` (15), `camera_max_preset` (`h720`), `camera_max_fps` (15), `streams_per_room` (1), `storage_mb` (5120 = 5 ГБ), `sticker_packs` (1) и `stickers` (200 на пространство, ADR-0030), `bots` (1: ботов-участников пространства, ADR-0031), `boards` (3: досок задач, живых и в архиве, ADR-0042; жёсткий предел — 50). Флаг-«выключено» (ноль = есть): `caldav_disabled` (Free); `cameras_per_room` — потолок для `camera_limit` комнаты/пространства (эффективное = min).
+- Ключи (в скобках — Free, владелец 28.09): `room_members` (5), `members` (50: участники без гостей, боты считаются), `audio_tier_max_kbps` (16 = «Нормальное»; 0 | 8 | 16 | 32 | 64), `stream_max_preset` (`h720`), `stream_max_fps` (15), `camera_max_preset` (`h720`), `camera_max_fps` (15), `streams_per_room` (1), `storage_mb` (5120 = 5 ГБ), `sticker_packs` (1) и `stickers` (200 на пространство, ADR-0030), `bots` (1: ботов-участников пространства, ADR-0031), `boards` (3: досок задач, живых и в архиве, ADR-0042; жёсткий предел — 50). Флаги-«выключено» (ноль = есть): `caldav_disabled` (Free), `musician_disabled` (Free; режим музыканта, ADR-0052); `cameras_per_room` — потолок для `camera_limit` комнаты/пространства (эффективное = min).
 
   | | Free | Team | Business (`PLAN_ENTERPRISE`) | Enterprise (свой сервер) |
   |---|---|---|---|---|
@@ -295,6 +295,7 @@ roomAdmin           = MUTE_MEMBERS (позволяет серверные mute/r
   | Стикерпаки | 1 (200 стикеров) | ∞ | ∞ | ∞ |
   | Доски задач | 3 | 30 | 50 | ∞ (≤ 50) |
   | CalDAV | — | есть | есть | есть |
+  | Режим музыканта (ADR-0052) | — | есть | есть | есть |
   | Согласование задач (ADR-0049) | — | — | есть | есть |
   | Веб-приложения в рейле (ADR-0050) | — | — | есть | есть |
   | Телефония SIP (ADR-0046) | — | — | есть | есть |
@@ -302,7 +303,7 @@ roomAdmin           = MUTE_MEMBERS (позволяет серверные mute/r
   | Поддержка | — | поддержка | приоритетная | — |
 
   Self-hosted (Enterprise) — лимиты задаёт оператор своего сервера (`PLAN_FREE_LIMITS` / `PLAN_TEAM_LIMITS` / `PLAN_BUSINESS_LIMITS`: ключ `0` / `false` снимает лимит, например `{"caldav_disabled":false}` для Free; план пространства — через суперадмина). Индивидуальный (`custom`) берёт только записанные ключи: отсутствующие флаги = функция включена.
-- Функции по тарифу: `409 CONFLICT`, `reason = PLAN_LIMIT`, `used = limit = 0` и сообщение с названием функции (`plans.FeatureError`). Функция по тарифу пока одна — CalDAV, по человеку, см. ADR-0024 «Уточнение (30.09)».
+- Функции по тарифу: `409 CONFLICT`, `reason = PLAN_LIMIT`, `used = limit = 0` и сообщение с названием функции (`plans.FeatureError`). Функции по тарифу — CalDAV (по человеку, см. ADR-0024 «Уточнение (30.09)») и режим музыканта (по пространству голосовой комнаты, в звонке один на один — по любому пространству человека; ADR-0052).
 - Сервер (`internal/plans`, кэш 30 с, сброс при изменении на всех инстансах через Redis `plans:changed`) применяет лимиты **для всех, включая владельца** (это не биты прав):
   - вход в голосовую комнату (`/join`, webhook `participant_joined`, перемещение): мест `min(user_limit, room_members)`, pending-устройства и гости считаются; упор в лимит плана → `409 ROOM_FULL`, `reason = PLAN_LIMIT`, `used`/`limit`. `user_limit` комнаты по-прежнему не действует на `MOVE_MEMBERS`, лимит плана — действует;
   - стрим: пресет ≤ `min(max_stream_preset комнаты, stream_max_preset)`, стримов ≤ `min(max_streams, streams_per_room)` (и при выдаче слота, и в webhook), fps ≤ `stream_max_fps`; камера: пресет/fps ≤ `camera_max_*` (ответ `/camera/request`);

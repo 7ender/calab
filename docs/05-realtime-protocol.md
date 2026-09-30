@@ -175,6 +175,7 @@ Payload'ы — protobuf-сообщения в `proto/calaba/v1/gateway.proto`; G
 
 - Webhooks LiveKit (`participant_joined/left`, `track_published/unpublished`, `room_finished`) → `POST /api/rtc/webhook` (подпись проверяется) → обновление `voice_states` сессии (`<user_id>:<session_id>` из identity) в Redis → агрегация по пользователю → `VOICE_STATE_UPDATE`.
 - Клиент дополнительно оптимистично шлёт своё состояние (mute/deafen) через REST `PATCH /api/voice/self`, чтобы UI у всех обновлялся без задержки webhook. Состояние микрофона также берётся из webhook `track_published/unpublished` (mic) — вебхуков mute/unmute у LiveKit нет.
+- **Режим музыканта** (ADR-0052): `VoiceState.musician` — устройство пользователя в этой комнате шлёт микрофон без эхо-/шумоподавления и AGC (агрегат — «хоть одно устройство»). Ставит его только сам клиент: `PATCH /api/voice/self {musician}` (как mute/deafen; переход устройства в другую комнату флаг сохраняет, новое подключение — без флага, клиент досылает при сверке `VOICE_STATE_UPDATE`). Включить можно, только если режим есть в тарифе пространства голосовой комнаты (`PlanLimits.musician_disabled`, Free — нет; звонок один на один — любое пространство пользователя), иначе `409 PLAN_LIMIT`; выключение принимается всегда. Смена флага — `VOICE_STATE_UPDATE`.
 - Webhook-события дедуплицируются по `id` (LiveKit ретраит доставку). Устройство отозванной сессии, успевшее подключиться, отключается при `participant_joined`.
 - Изменение прав/роли/членства/отзыв сессии → сервер обновляет grant участника (`UpdateParticipant`) или отключает его (`RemoveParticipant`); удаление комнаты → `DeleteRoom`.
 - Reconcile: раз в 30 с сервер сверяет `ListParticipants` с Redis (пропущенные webhook'и).
@@ -426,7 +427,7 @@ POST   /api/rooms/{id}/voice/leave     204   (своя сессия: снять 
 POST   /api/rooms/{id}/stream/request  RequestStreamRequest → RequestStreamResponse { preset }   (STREAM; 409 — лимит или не в комнате)
 POST   /api/rooms/{id}/camera/request  204   (VIDEO + CONNECT; 409 — camera_limit достигнут, камеры выключены (0) или не в комнате)
 POST   /api/rooms/{id}/camera/stop     204   (своя камера: снять резерв и grant)
-PATCH  /api/voice/self                 UpdateVoiceSelfRequest → 204        (409 — устройство не в голосе)
+PATCH  /api/voice/self                 UpdateVoiceSelfRequest → 204        (409 — устройство не в голосе; 409 PLAN_LIMIT — musician без режима в тарифе)
 POST   /api/rooms/{id}/voice/{userId}/mute         204   (MUTE_MEMBERS на уровне workspace: серверный mute → server_muted, до unmute)
 POST   /api/rooms/{id}/voice/{userId}/unmute       204   (MUTE_MEMBERS на уровне workspace: снять server_muted; участник может быть уже не в комнате)
 POST   /api/rooms/{id}/voice/{userId}/disconnect   204   (MUTE_MEMBERS: RemoveParticipant)
