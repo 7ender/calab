@@ -77,4 +77,6 @@ message MoveMemberRequest {
 message UpdateVoiceSelfRequest {
   optional bool muted = 1;
   optional bool deafened = 2;
+  // Musician mode of this device (ADR-0052, VoiceState.musician).
+  optional bool musician = 3;
 }

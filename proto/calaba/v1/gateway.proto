@@ -282,6 +282,10 @@ message VoiceState {
   // yet: every device of the user in the room is still connecting. participant_joined clears
   // it; without a connection within 15 s the state is removed (VOICE_STATE_UPDATE, empty room).
   bool pending = 10;
+  // Musician mode (ADR-0052): a device of the user in this room sends its microphone without
+  // echo cancellation, noise suppression and gain control, in a music Opus profile. Shown so
+  // others know why they hear raw sound. Set through PATCH /api/voice/self.
+  bool musician = 11;
 }
 
 message Presence {

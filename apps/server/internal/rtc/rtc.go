@@ -263,7 +263,7 @@ func (s *Service) join(w http.ResponseWriter, r *http.Request) error {
 // (with the occupancy check when adm is active) and publishes the new state. A device already
 // recorded in the room is left as it is: pending reports whether it still waits for its
 // LiveKit connection, joinedAt identifies that wait (expectConnect). A device recorded in
-// another room (switching rooms) moves here and keeps its mute / deafen.
+// another room (switching rooms) moves here and keeps its mute / deafen / musician mode.
 func (s *Service) recordPending(ctx context.Context, room wsRoom, uid, sid uuid.UUID, adm admission) (pending bool, joinedAt int64, err error) {
 	var c voice.Change
 	err = s.voice.WithLock(ctx, room.WorkspaceID, func() error {
@@ -280,7 +280,7 @@ func (s *Service) recordPending(ctx context.Context, room wsRoom, uid, sid uuid.
 			}
 			n := voice.SessionState{RoomID: room.ID, Pending: true, JoinedAt: time.Now().UnixMilli()}
 			if cur != nil {
-				n.Muted, n.Deafened = cur.Muted, cur.Deafened
+				n.Muted, n.Deafened, n.Musician = cur.Muted, cur.Deafened, cur.Musician
 			}
 			pending, joinedAt = true, n.JoinedAt
 			return &n
@@ -507,6 +507,9 @@ func (s *Service) voiceSelf(w http.ResponseWriter, r *http.Request) error {
 		}
 		if req.Deafened != nil {
 			n.Deafened = req.GetDeafened()
+		}
+		if req.Musician != nil {
+			n.Musician = req.GetMusician()
 		}
 		return &n
 	})

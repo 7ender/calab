@@ -812,6 +812,18 @@ func TestRTC(t *testing.T) {
 	deaf := true
 	bob.must(204, "PATCH", "/api/voice/self", &v1.UpdateVoiceSelfRequest{Deafened: &deaf}, nil)
 	g.wait("deafened", func(e *v1.DispatchEvent) bool { return e.GetVoiceStateUpdate().GetState().GetDeafened() })
+	// Musician mode (ADR-0052): set and cleared through the same PATCH, deafen kept.
+	music, noMusic := true, false
+	bob.must(204, "PATCH", "/api/voice/self", &v1.UpdateVoiceSelfRequest{Musician: &music}, nil)
+	g.wait("musician", func(e *v1.DispatchEvent) bool {
+		s := e.GetVoiceStateUpdate().GetState()
+		return s.GetUserId() == bob.id && s.GetMusician() && s.GetDeafened()
+	})
+	bob.must(204, "PATCH", "/api/voice/self", &v1.UpdateVoiceSelfRequest{Musician: &noMusic}, nil)
+	g.wait("musician off", func(e *v1.DispatchEvent) bool {
+		s := e.GetVoiceStateUpdate().GetState()
+		return s.GetUserId() == bob.id && !s.GetMusician() && s.GetDeafened()
+	})
 
 	// Stream limit: max_streams=1 → the second screen share is muted by the server.
 	one := uint32(1)
