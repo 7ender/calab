@@ -29,6 +29,7 @@ import { loadRoomCommands } from '../../services/bots';
 import { useBots } from '../../stores/bots';
 import { previewPartsOf } from './mentionText';
 import { enterInsertsNewline, trimMessage } from './composerText';
+import { shouldFocusOnAttach } from './attachFocus';
 import { PreviewRuns } from './PreviewRuns';
 import { roomLabel } from './roomLabel';
 import { menuBox, menuItem } from './MessageMenu';
@@ -75,6 +76,10 @@ export function Composer({
   const cameraInput = useRef<HTMLInputElement>(null);
   const mobile = useMobile();
   const pendingCaret = useRef<number | null>(null);
+  // docs/09 #149: a file staged from outside the field (drag-and-drop above all) leaves it
+  // unfocused — Enter then does nothing until a click. `files` only grows on staging, never on
+  // the box being cleared by a send, so this never re-steals focus at the wrong moment.
+  const filesCount = useRef(files.length);
   const replyTo = useUi((s) => s.replyTo[room.id]);
   const setReply = useUi((s) => s.setReply);
   const editing = useUi((s) => s.editing);
@@ -224,6 +229,12 @@ export function Composer({
   useEffect(() => {
     if (replyTo || autoFocusAllowed()) ref.current?.focus();
   }, [replyTo]);
+  // Staging a file (drop, paste, the paperclip, the camera) always focuses the field, on phones
+  // too — like «Ответить» above, it is the user's own request to keep writing (docs/09 #149).
+  useEffect(() => {
+    if (shouldFocusOnAttach(filesCount.current, files.length)) ref.current?.focus();
+    filesCount.current = files.length;
+  }, [files.length]);
 
   useLayoutEffect(() => {
     const el = ref.current;
