@@ -21,7 +21,7 @@ import {
  * server re-checks every rule.
  */
 
-const { ADMINISTRATOR, MANAGE_ROLES, MANAGE_WORKSPACE } = PERMISSION_BITS;
+const { ADMINISTRATOR, MANAGE_MEMBERS, MANAGE_ROLES, MANAGE_WORKSPACE } = PERMISSION_BITS;
 
 /** Highest position first (the order of READY `roles[]` and of every list). */
 export function sortRoles<R extends Pick<Role, 'position' | 'id'>>(roles: readonly R[]): R[] {
@@ -119,21 +119,94 @@ export const GUEST_BITS: PermissionBits =
   PERMISSION_BITS.STREAM |
   PERMISSION_BITS.VIDEO;
 
-export type PermGroupId = 'general' | 'invites' | 'rooms' | 'voice' | 'telephony' | 'moderation';
+export type PermGroupId =
+  | 'workspace'
+  | 'members'
+  | 'invites'
+  | 'rooms'
+  | 'voice'
+  | 'moderation'
+  | 'calendar'
+  | 'boards'
+  | 'recordings'
+  | 'telephony'
+  | 'integrations'
+  | 'journals';
 
 /**
- * The role card's matrix (ADR-0026 §5): Общие / Приглашения (ADR-0043) / Комнаты / Голос / Телефония (ADR-0046) / Модерация.
- * ADMINISTRATOR is never grantable.
+ * The role card's matrix by function (ADR-0048 §3, «Контракт для клиента»): Пространство ·
+ * Участники · Приглашения (ADR-0043) · Комнаты · Голос · Модерация · Календарь · Доски · Записи ·
+ * Телефония (ADR-0046: PLACE_CALLS, nobody by default) · Интеграции и боты ·
+ * Журналы. ADMINISTRATOR is never grantable and is not listed.
  */
 export const ROLE_PERM_GROUPS: ReadonlyArray<{ id: PermGroupId; perms: readonly PermissionName[] }> = [
-  { id: 'general', perms: ['MANAGE_WORKSPACE', 'MANAGE_ROLES', 'MANAGE_ROOM', 'MANAGE_NICKNAMES', 'MANAGE_STICKERS'] },
+  { id: 'workspace', perms: ['MANAGE_WORKSPACE', 'MANAGE_ROLES', 'MANAGE_STICKERS'] },
+  { id: 'members', perms: ['MANAGE_MEMBERS', 'MANAGE_NICKNAMES'] },
   { id: 'invites', perms: ['INVITE_MEMBERS', 'INVITE_GUESTS'] },
-  { id: 'rooms', perms: ['VIEW_ROOM', 'SEND_MESSAGES', 'ATTACH_FILES', 'MENTION_EVERYONE', 'CREATE_TEMP_ROOMS'] },
-  { id: 'voice', perms: ['CONNECT', 'SPEAK', 'STREAM', 'VIDEO'] },
+  { id: 'rooms', perms: ['VIEW_ROOM', 'MANAGE_ROOM', 'CREATE_TEMP_ROOMS', 'SEND_MESSAGES', 'ATTACH_FILES', 'MENTION_EVERYONE'] },
+  { id: 'voice', perms: ['CONNECT', 'SPEAK', 'VIDEO', 'STREAM'] },
+  { id: 'moderation', perms: ['MANAGE_MESSAGES', 'MUTE_MEMBERS', 'MOVE_MEMBERS'] },
+  { id: 'calendar', perms: ['MANAGE_EVENTS'] },
+  { id: 'boards', perms: ['CREATE_BOARDS', 'VIEW_BOARD', 'CREATE_TASKS', 'EDIT_TASKS', 'MANAGE_BOARD'] },
+  { id: 'recordings', perms: ['MANAGE_RECORDINGS'] },
   // ADR-0046: nobody by default (calls cost money); never a guest.
   { id: 'telephony', perms: ['PLACE_CALLS'] },
-  { id: 'moderation', perms: ['MANAGE_MESSAGES', 'MUTE_MEMBERS', 'MOVE_MEMBERS'] },
+  { id: 'integrations', perms: ['MANAGE_BOTS', 'MANAGE_INTEGRATIONS'] },
+  { id: 'journals', perms: ['VIEW_JOURNALS'] },
 ];
+
+/** Who holds a bit by default (the second half of each bit's hint): guests too, members, or admins only. */
+export type PermDefault = 'guests' | 'members' | 'admins';
+
+export function permDefault(name: PermissionName): PermDefault {
+  const bit = PERMISSION_BITS[name];
+  if (ROLE_DEFAULTS[WorkspaceRole.GUEST] & bit) return 'guests';
+  if (ROLE_DEFAULTS[WorkspaceRole.MEMBER] & bit) return 'members';
+  return 'admins';
+}
+
+// ---------------------------------------------------------------- role templates
+
+export type RoleTemplateId = 'empty' | 'moderator' | 'manager' | 'observer';
+
+/**
+ * Templates of a new role (ADR-0048 «Контракт для клиента»), on top of the member role that already
+ * has the basic rights: Модератор = 14472, Менеджер отдела = 1656750080, Наблюдатель = 131089
+ * (viewing only; to take SEND_MESSAGES / SPEAK away the role is denied them in a room — roles are
+ * OR-ed, the server changes nothing; the create form says so).
+ */
+export const ROLE_TEMPLATES: ReadonlyArray<{ id: RoleTemplateId; bits: PermissionBits }> = [
+  { id: 'empty', bits: 0n },
+  {
+    id: 'moderator',
+    bits:
+      PERMISSION_BITS.MANAGE_MESSAGES |
+      PERMISSION_BITS.MUTE_MEMBERS |
+      PERMISSION_BITS.MOVE_MEMBERS |
+      PERMISSION_BITS.MANAGE_NICKNAMES |
+      PERMISSION_BITS.MENTION_EVERYONE,
+  },
+  {
+    id: 'manager',
+    bits:
+      PERMISSION_BITS.CREATE_BOARDS |
+      PERMISSION_BITS.CREATE_TEMP_ROOMS |
+      PERMISSION_BITS.INVITE_GUESTS |
+      PERMISSION_BITS.MANAGE_EVENTS |
+      PERMISSION_BITS.VIEW_JOURNALS,
+  },
+  { id: 'observer', bits: PERMISSION_BITS.VIEW_ROOM | PERMISSION_BITS.CONNECT | PERMISSION_BITS.VIEW_BOARD },
+];
+
+/** A template's bits limited to those I may grant (`editable`, lib/roles editableBits). */
+export function templateBits(id: RoleTemplateId, editable: PermissionBits): PermissionBits {
+  return (ROLE_TEMPLATES.find((x) => x.id === id)?.bits ?? 0n) & editable;
+}
+
+/** Bits of the template I cannot grant (the form says they stay unchecked). */
+export function templateClipped(id: RoleTemplateId, editable: PermissionBits): PermissionBits {
+  return (ROLE_TEMPLATES.find((x) => x.id === id)?.bits ?? 0n) & ~editable;
+}
 
 export const isFullRole = (r: Pick<Role, 'builtin'>): boolean => r.builtin === WorkspaceRole.OWNER || r.builtin === WorkspaceRole.ADMIN;
 export const isCustomRole = (r: Pick<Role, 'builtin'>): boolean => r.builtin === WorkspaceRole.UNSPECIFIED;
@@ -162,6 +235,9 @@ export function roleActor(myRoles: readonly Role[]): RoleActor {
 }
 
 export const canManageRoles = (a: RoleActor): boolean => (a.perms & MANAGE_ROLES) !== 0n;
+
+/** Giving / taking roles (ADR-0048): MANAGE_MEMBERS or MANAGE_ROLES — the server accepts either. */
+export const canAssignRoles = (a: RoleActor): boolean => (a.perms & (MANAGE_ROLES | MANAGE_MEMBERS)) !== 0n;
 
 /** Create: MANAGE_ROLES and a top role above the new one's place (position 2). */
 export const canCreateRole = (a: RoleActor): boolean => canManageRoles(a) && (a.owner || a.top > 2);
@@ -192,10 +268,10 @@ export function editableBits(a: RoleActor, r: Pick<Role, 'position' | 'builtin'>
  * May I give / take `role` to / from a member whose most senior role sits at `targetTop`
  * (docs/04 «Назначение»)? MEMBER / GUEST follow the member itself, OWNER never; ADMIN — the
  * owner only; others: below my top role, within my own permissions (non-admin), and the target
- * below me (or myself).
+ * below me (or myself). The right itself: MANAGE_MEMBERS or MANAGE_ROLES (ADR-0048).
  */
 export function canAssignRole(a: RoleActor, role: Pick<Role, 'position' | 'builtin' | 'permissions'>, targetTop: number, self: boolean): boolean {
-  if (!canManageRoles(a)) return false;
+  if (!canAssignRoles(a)) return false;
   if (role.builtin === WorkspaceRole.MEMBER || role.builtin === WorkspaceRole.GUEST || role.builtin === WorkspaceRole.OWNER) return false;
   if (role.builtin === WorkspaceRole.ADMIN) return a.owner && !self;
   if (!a.owner && role.position >= a.top) return false;

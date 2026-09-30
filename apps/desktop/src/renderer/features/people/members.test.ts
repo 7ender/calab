@@ -233,14 +233,19 @@ describe('memberActions', () => {
   });
 
   it('kick / ban / role select follow the ADR-0026 hierarchy (workspaces.outranks)', () => {
-    const mgr = create(RoleSchema, { id: 'r-mgr', name: 'Managers', position: 3, permissions: PERMISSION_BITS.MANAGE_WORKSPACE });
+    const mgr = create(RoleSchema, { id: 'r-mgr', name: 'Managers', position: 3, permissions: PERMISSION_BITS.MANAGE_MEMBERS });
     const senior = create(RoleSchema, { id: 'r-senior', name: 'Senior', position: 4, permissions: 0n });
     const junior = create(RoleSchema, { id: 'r-junior', name: 'Junior', position: 2, permissions: 0n });
     const roles = [...legacyRoles('w'), senior, mgr, junior];
     const asMgr = { roles, myRole: WorkspaceRole.MEMBER, myRoleIds: ['member', 'r-mgr'] };
     const withRoles = (ids: string[]) => create(WorkspaceMemberSchema, { ...member('t', 'T', WorkspaceRole.MEMBER), roleIds: ['member', ...ids] });
-    // A custom role with MANAGE_WORKSPACE (a custom role's included — not only admins).
+    // A custom role with MANAGE_MEMBERS (ADR-0048; a custom role's included — not only admins).
     expect(memberActions(base({ ...asMgr, target: withRoles([]) }))).toMatchObject({ kick: true, ban: true });
+    // MANAGE_WORKSPACE alone no longer kicks, bans or promotes (ADR-0048: no implication).
+    const ws = create(RoleSchema, { id: 'r-ws', name: 'Settings', position: 3, permissions: PERMISSION_BITS.MANAGE_WORKSPACE });
+    const asWs = { roles: [...legacyRoles('w'), ws], myRole: WorkspaceRole.MEMBER, myRoleIds: ['member', 'r-ws'] };
+    expect(memberActions(base({ ...asWs, target: withRoles([]) }))).toMatchObject({ kick: false, ban: false });
+    expect(memberActions(base({ ...asWs, target: member('t', 'G', WorkspaceRole.GUEST, '', true) }))).toMatchObject({ removeGuest: false, promote: false });
     expect(memberActions(base({ ...asMgr, target: withRoles(['r-junior']) }))).toMatchObject({ kick: true, ban: true });
     // Target at or above my top role: no.
     expect(memberActions(base({ ...asMgr, target: withRoles(['r-mgr']) }))).toMatchObject({ kick: false, ban: false });
@@ -252,7 +257,7 @@ describe('memberActions', () => {
     expect(memberActions(base({ ...asMgr, target: member('t', 'A', WorkspaceRole.ADMIN) })).kick).toBe(false);
   });
 
-  it('canRemoveMember: never oneself, the owner, or without MANAGE_WORKSPACE', () => {
+  it('canRemoveMember: never oneself, the owner, or without MANAGE_MEMBERS', () => {
     const all = legacyRoles('w');
     const r = (role: WorkspaceRole) => rolesOfMember(all, { role, roleIds: [] });
     expect(canRemoveMember(r(WorkspaceRole.OWNER), r(WorkspaceRole.ADMIN), { role: WorkspaceRole.ADMIN }, false)).toBe(true);

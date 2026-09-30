@@ -111,14 +111,17 @@ export function recordingAudio(card: Pick<RecordingCard, 'audioUntil' | 'deleted
   return files.find((f) => mediaKind(f) === 'audio' || f.mime === 'audio/mp4') ?? null;
 }
 
-/** «Удалить запись» (#50): who started it, the owner or MANAGE_MESSAGES; not while it records. */
+/**
+ * «Удалить запись» (#50): who started it, the owner, MANAGE_MESSAGES in the room or workspace
+ * MANAGE_RECORDINGS (ADR-0048; the card is in a room I see); not while it records.
+ */
 export function mayDeleteRecording(
   card: Pick<RecordingCard, 'status' | 'startedBy' | 'deletedAt'>,
   me: string,
-  opts: { owner: boolean; manageMessages: boolean },
+  opts: { owner: boolean; manageMessages: boolean; manageRecordings?: boolean },
 ): boolean {
   if (card.deletedAt || card.status === RecordingStatus.RECORDING) return false;
-  return (!!me && card.startedBy === me) || opts.owner || opts.manageMessages;
+  return (!!me && card.startedBy === me) || opts.owner || opts.manageMessages || !!opts.manageRecordings;
 }
 
 // ---------------------------------------------------------------- transcript

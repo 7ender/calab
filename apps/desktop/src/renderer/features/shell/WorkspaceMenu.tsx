@@ -7,7 +7,7 @@ import { cx } from '../../components/ui';
 import { t } from '../../i18n';
 import { api } from '../../lib/api/endpoints';
 import { errorText } from '../../lib/api/errors';
-import { mayInviteMembers, mayManageWorkspace } from '../../lib/permissions';
+import { mayInviteMembers, mayOpenWorkspaceSettings } from '../../lib/permissions';
 import { setWorkspaceNotifications, setWorkspaceTaskLevel } from '../../services/mentions';
 import { useBoards } from '../../stores/boards';
 import { useRooms, workspaceNotify, workspaceTaskLevel } from '../../stores/rooms';
@@ -21,7 +21,7 @@ import { menuBox, menuItem, menuLabel, menuSeparator } from './menu';
 /**
  * The workspace menu (docs/09 #140): the workspace name with «⌄» — on the left of the window title
  * bar (desktop, where «‹ ›» were), at the top of the phone's drawer and in the phone's top bar. «Пригласить» and
- * «Настройки пространства» (MANAGE_WORKSPACE), «Участники», «Уведомления» ▸, «Скрывать без
+ * «Настройки пространства» (any settings right, ADR-0048), «Участники», «Уведомления» ▸, «Скрывать без
  * уведомлений», «Покинуть» (disabled for the owner, with the reason). Creating rooms and
  * categories lives in the room column's «+». Selectors: the name and the role only (the entry
  * changes on every voice state).
@@ -61,9 +61,9 @@ function WorkspaceMenuItems({ workspaceId, name, owner }: { workspaceId: string;
   const hideMuted = useUi((s) => s.hideMuted);
   const setHideMuted = useUi((s) => s.setHideMuted);
   const me = useSession((s) => s.me?.user?.id ?? '');
-  // Settings: MANAGE_WORKSPACE; invites: INVITE_MEMBERS (ADR-0043) — the server's checks, a custom role's included.
+  // Settings: any tab beyond «Участники» (ADR-0048 split the admin rights); invites: INVITE_MEMBERS (ADR-0043).
   const roles = useMemberRoles(workspaceId, me);
-  const admin = mayManageWorkspace(roles);
+  const admin = mayOpenWorkspaceSettings(roles);
   const inviter = mayInviteMembers(roles);
 
   const leave = async (): Promise<void> => {

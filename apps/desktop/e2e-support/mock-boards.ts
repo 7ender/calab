@@ -58,7 +58,8 @@ export const EDIT_TASKS = BigInt(Permission.EDIT_TASKS);
 export const MANAGE_BOARD = BigInt(Permission.MANAGE_BOARD);
 export const BOARD_BITS = VIEW_BOARD | CREATE_TASKS | EDIT_TASKS | MANAGE_BOARD;
 const ADMINISTRATOR = BigInt(Permission.ADMINISTRATOR);
-const MANAGE_WORKSPACE = BigInt(Permission.MANAGE_WORKSPACE);
+// ADR-0048: creating boards is its own bit.
+const CREATE_BOARDS = BigInt(Permission.CREATE_BOARDS);
 const VIEW_ROOM = BigInt(Permission.VIEW_ROOM);
 const SEND_MESSAGES = BigInt(Permission.SEND_MESSAGES);
 const ATTACH_FILES = BigInt(Permission.ATTACH_FILES);
@@ -321,7 +322,10 @@ export class BoardsMock {
       perms |= r.permissions;
       if (r.builtin === WorkspaceRole.MEMBER) perms |= MEMBER_BOARD_BITS;
     }
-    if (perms & ADMINISTRATOR || this.host.ownerOf(b.workspaceId) === userId) return BOARD_BITS;
+    // ADR-0048: a restricted board — the owner has everything, ADMINISTRATOR gives nothing, VIEW_BOARD
+    // only from an allow override (b.isPrivate is set too, so the check below needs one).
+    if (this.host.ownerOf(b.workspaceId) === userId) return BOARD_BITS;
+    if (perms & ADMINISTRATOR && !b.restricted) return BOARD_BITS;
     let bits = perms & BOARD_BITS;
     let viaOverride = false;
     const byId = new Map(roles.map((r) => [r.id, r]));
@@ -498,12 +502,13 @@ export class BoardsMock {
       .map((r) => this.boardOut(r, userId, { personal: true }));
   }
 
-  private mayManageWorkspace(wsId: string, userId: string): boolean {
+  /** CREATE_BOARDS of the workspace (ADR-0048; ADMINISTRATOR = all); guests never. */
+  private mayCreateBoards(wsId: string, userId: string): boolean {
     const m = this.host.member(wsId, userId);
-    if (!m) return false;
+    if (!m || m.role === WorkspaceRole.GUEST) return false;
     if (this.host.ownerOf(wsId) === userId) return true;
     const perms = this.host.rolesOf(m).reduce((a, r) => a | r.permissions, 0n);
-    return !!(perms & (ADMINISTRATOR | MANAGE_WORKSPACE));
+    return !!(perms & (ADMINISTRATOR | CREATE_BOARDS));
   }
 
   createBoard(
@@ -513,7 +518,7 @@ export class BoardsMock {
   ): BoardRec {
     const m = this.host.member(wsId, userId);
     if (!m) throw notFound('workspace not found');
-    if (!this.mayManageWorkspace(wsId, userId)) throw forbidden('MANAGE_WORKSPACE required');
+    if (!this.mayCreateBoards(wsId, userId)) throw forbidden('CREATE_BOARDS required');
     const name = req.name.trim();
     if (!name || chars(name) > 60) throw invalid('name', 'name must be 1..60 characters');
     const live = [...this.boards.values()].filter((r) => r.board.workspaceId === wsId);
@@ -558,7 +563,17 @@ export class BoardsMock {
   updateBoard(
     id: string,
     userId: string,
-    req: { name?: string | undefined; key?: string | undefined; emoji?: string | undefined; description?: string | undefined; isPrivate?: boolean | undefined; autoArchiveDays?: number | undefined; defaultViewId?: string | undefined; iconFileId?: string | undefined },
+    req: {
+      name?: string | undefined;
+      key?: string | undefined;
+      emoji?: string | undefined;
+      description?: string | undefined;
+      isPrivate?: boolean | undefined;
+      autoArchiveDays?: number | undefined;
+      defaultViewId?: string | undefined;
+      iconFileId?: string | undefined;
+      restricted?: boolean | undefined;
+    },
   ): Board {
     const rec = this.boardFor(id, userId);
     this.need(rec, userId, MANAGE_BOARD);
@@ -581,10 +596,24 @@ export class BoardsMock {
     if (req.description !== undefined) b.description = req.description.slice(0, 2000);
     if (req.autoArchiveDays !== undefined) b.autoArchiveDays = Math.min(3650, req.autoArchiveDays);
     if (req.defaultViewId !== undefined) b.defaultViewId = req.defaultViewId;
+    // ADR-0048: a restricted board stays private until `restricted` is lifted (422 isPrivate).
+    if (req.isPrivate === false && b.restricted && req.restricted !== false) throw invalid('isPrivate', 'lift restricted first');
+    if (req.restricted === false) b.restricted = false;
     if (req.isPrivate !== undefined && req.isPrivate !== b.isPrivate) {
       b.isPrivate = req.isPrivate;
       b.permissionOverrides = b.permissionOverrides.filter((o) => !(o.targetType === PermissionTargetType.ROLE && o.targetId === 'member' && o.deny === VIEW_BOARD && o.allow === 0n));
       if (req.isPrivate) b.permissionOverrides.push(create(RoomPermissionOverrideSchema, { targetType: PermissionTargetType.ROLE, targetId: 'member', allow: 0n, deny: VIEW_BOARD }));
+    }
+    // ADR-0048: private boards only (422 restricted); the caller (unless the owner) keeps access
+    // with a personal allow VIEW_BOARD | MANAGE_BOARD.
+    if (req.restricted === true && !b.restricted) {
+      if (!b.isPrivate) throw invalid('restricted', 'only private boards can be restricted');
+      if (this.host.ownerOf(b.workspaceId) !== userId) {
+        const mine = b.permissionOverrides.find((o) => o.targetType === PermissionTargetType.USER && o.targetId === userId);
+        if (mine) mine.allow |= VIEW_BOARD | MANAGE_BOARD;
+        else b.permissionOverrides.push(create(RoomPermissionOverrideSchema, { targetType: PermissionTargetType.USER, targetId: userId, allow: VIEW_BOARD | MANAGE_BOARD, deny: 0n }));
+      }
+      b.restricted = true;
     }
     this.emitBoard(rec, 'boardUpdate', seen);
     return this.boardOut(rec, userId, { personal: true });
@@ -640,7 +669,12 @@ export class BoardsMock {
     const rec = this.boardFor(id, userId);
     const p = this.need(rec, userId, MANAGE_BOARD);
     if (overrides.length > 100) throw invalid('overrides', 'at most 100 targets');
-    const admin = this.mayManageWorkspace(rec.board.workspaceId, userId);
+    // «Not wider than your own bits» for everyone on a restricted board but the owner (ADR-0048);
+    // elsewhere admins (ADMINISTRATOR) grant anything.
+    const wsId = rec.board.workspaceId;
+    const m = this.host.member(wsId, userId);
+    const raw = m ? this.host.rolesOf(m).reduce((a, r) => a | r.permissions, 0n) : 0n;
+    const admin = this.host.ownerOf(wsId) === userId || (!rec.board.restricted && !!(raw & ADMINISTRATOR));
     for (const o of overrides) {
       if ((o.allow | o.deny) & ~BOARD_BITS) throw invalid('overrides', 'only board bits');
       if (!admin && (o.allow | o.deny) & ~p) throw forbidden('cannot grant bits you lack');

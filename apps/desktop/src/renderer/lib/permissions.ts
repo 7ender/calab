@@ -46,12 +46,124 @@ export function mayArrangeRooms(roles: readonly RoleBits[] | undefined): boolean
 }
 
 /**
- * Workspace management (settings, media defaults, invites, bans, GPTunneL, a room's
- * allow_recording): workspace-level MANAGE_WORKSPACE of my roles — the server's check. A custom
- * role with MANAGE_WORKSPACE gets it too, not only the built-in owner / admins.
+ * Workspace management — what ADR-0048 left under MANAGE_WORKSPACE: settings («Общие», «Звук»),
+ * appearance, camera backgrounds, plan, guest policy, danger zone. Workspace-level MANAGE_WORKSPACE
+ * of my roles — the server's check; a custom role with it too, not only the built-in owner / admins.
  */
 export function mayManageWorkspace(roles: readonly RoleBits[] | undefined): boolean {
   return can(workspacePerms(roles), 'MANAGE_WORKSPACE');
+}
+
+/**
+ * The ADR-0048 function bits (split off MANAGE_WORKSPACE; no implication from it — migration 00052
+ * gave them to its roles): workspace level, guests never (the server's requireBit).
+ */
+function wsBit(roles: readonly RoleBits[] | undefined, bit: PermissionName): boolean {
+  return !isGuestOnly(roles) && can(workspacePerms(roles), bit);
+}
+
+/** «Создать доску» (ADR-0048): CREATE_BOARDS. */
+export const mayCreateBoards = (roles: readonly RoleBits[] | undefined): boolean => wsBit(roles, 'CREATE_BOARDS');
+
+/** Kick, ban / unban, «Забаненные», the badge library, guest → member (ADR-0048): MANAGE_MEMBERS. */
+export const mayManageMembers = (roles: readonly RoleBits[] | undefined): boolean => wsBit(roles, 'MANAGE_MEMBERS');
+
+/** «Боты» — create, edit, delete, tokens, add to a workspace, avatar (ADR-0048): MANAGE_BOTS. */
+export const mayManageBots = (roles: readonly RoleBits[] | undefined): boolean => wsBit(roles, 'MANAGE_BOTS');
+
+/** GPTunneL pairing, SIP settings, future integrations (ADR-0048): MANAGE_INTEGRATIONS. */
+export const mayManageIntegrations = (roles: readonly RoleBits[] | undefined): boolean => wsBit(roles, 'MANAGE_INTEGRATIONS');
+
+/** The call journal and a board's activity export (ADR-0048): VIEW_JOURNALS (only what I see). */
+export const mayViewJournals = (roles: readonly RoleBits[] | undefined): boolean => wsBit(roles, 'VIEW_JOURNALS');
+
+/** Others' meetings (ADR-0048): MANAGE_EVENTS — without a room, or in a room I see. */
+export const mayManageEvents = (roles: readonly RoleBits[] | undefined): boolean => wsBit(roles, 'MANAGE_EVENTS');
+
+/** Recordings of any visible room (ADR-0048): MANAGE_RECORDINGS. */
+export const mayManageRecordings = (roles: readonly RoleBits[] | undefined): boolean => wsBit(roles, 'MANAGE_RECORDINGS');
+
+/** Giving / taking a member's roles (ADR-0048): MANAGE_MEMBERS or MANAGE_ROLES (hierarchy: lib/roles). */
+export function mayAssignRoles(roles: readonly RoleBits[] | undefined): boolean {
+  return wsBit(roles, 'MANAGE_MEMBERS') || wsBit(roles, 'MANAGE_ROLES');
+}
+
+/**
+ * The tabs of «Настройки пространства» by right (ADR-0048; the server's checks). «Участники» and
+ * «Тариф» are for everyone, «Приглашения» — mayInviteMembers, «Опасная зона» — the owner.
+ */
+export interface SettingsAccess {
+  /** «Общие», «Звук», «Фоны камеры»: MANAGE_WORKSPACE. */
+  workspace: boolean;
+  roles: boolean;
+  stickers: boolean;
+  /** «Забаненные», «Бейджи», kick / ban in «Участники»: MANAGE_MEMBERS. */
+  members: boolean;
+  bots: boolean;
+  /** GPTunneL pairing, «Телефония»: MANAGE_INTEGRATIONS. */
+  integrations: boolean;
+  invites: boolean;
+}
+
+export function settingsAccess(roles: readonly RoleBits[] | undefined): SettingsAccess {
+  const ws = workspacePerms(roles);
+  return {
+    workspace: mayManageWorkspace(roles),
+    roles: can(ws, 'MANAGE_ROLES'),
+    stickers: can(ws, 'MANAGE_STICKERS'),
+    members: mayManageMembers(roles),
+    bots: mayManageBots(roles),
+    integrations: mayManageIntegrations(roles),
+    invites: mayInviteMembers(roles),
+  };
+}
+
+/**
+ * «Настройки пространства» in the workspace / rail menus: any tab beyond «Участники» (which has
+ * its own item) — not only MANAGE_WORKSPACE since ADR-0048 split the admin rights.
+ */
+export function mayOpenWorkspaceSettings(roles: readonly RoleBits[] | undefined): boolean {
+  const a = settingsAccess(roles);
+  return a.workspace || a.roles || a.stickers || a.members || a.bots || a.integrations;
+}
+
+/**
+ * «Разрешить запись встреч» of a voice room (ADR-0048): MANAGE_ROOM in the room (PATCH needs it)
+ * and workspace MANAGE_RECORDINGS; guests never.
+ */
+export function mayAllowRecording(roles: readonly RoleBits[] | undefined, userId: string, room: Room | undefined): boolean {
+  return mayManageRoom(roles, userId, room) && mayManageRecordings(roles);
+}
+
+/**
+ * Access level of a private room / board (ADR-0048 §2, «По списку, без администраторов»): whoever
+ * manages the object (`manage`: MANAGE_ROOM / MANAGE_BOARD there) switches it; the owner may always
+ * lift it. Turning it on needs the object to be private (the server: 422 restricted).
+ */
+export function mayChangeRestricted(manage: boolean, owner: boolean, restricted: boolean): boolean {
+  return manage || (owner && restricted);
+}
+
+/** The three access levels of a room / board (ADR-0048 «Третий уровень доступа»). */
+export type AccessLevel = 'all' | 'list' | 'restricted';
+
+export function accessLevelOf(o: { isPrivate: boolean; restricted: boolean }): AccessLevel {
+  return o.restricted ? 'restricted' : o.isPrivate ? 'list' : 'all';
+}
+
+/**
+ * PATCH bodies that move an object from one level to another, in order: `restricted` needs a
+ * private object (422 restricted) and a restricted one cannot go public (422 isPrivate), so
+ * «all → restricted» makes it private first and «restricted → all» lifts `restricted` first.
+ */
+export function accessSteps(from: AccessLevel, to: AccessLevel): Array<{ isPrivate?: boolean; restricted?: boolean }> {
+  if (from === to) return [];
+  const steps: Array<{ isPrivate?: boolean; restricted?: boolean }> = [];
+  if (from === 'restricted') steps.push({ restricted: false });
+  if (from === 'all') steps.push({ isPrivate: true });
+  if (to === 'all') steps.push({ isPrivate: false });
+  if (to === 'restricted') steps.push({ restricted: true });
+  return steps;
 }
 
 /**

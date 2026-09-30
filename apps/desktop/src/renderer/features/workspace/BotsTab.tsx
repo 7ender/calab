@@ -22,7 +22,7 @@ import { BotBadge } from '../people/MemberBits';
 import { menuBox, menuItem, menuSeparator } from '../shell/menu';
 
 /*
- * Workspace settings → «Боты» (ADR-0031 §7, docs/08 «Боты»), MANAGE_WORKSPACE: create a bot (its
+ * Workspace settings → «Боты» (ADR-0031 §7, docs/08 «Боты»), MANAGE_BOTS (ADR-0048): create a bot (its
  * token shown once), add a bot of another workspace by @username, the list with the webhook
  * state and per-bot «Перевыпустить токен» / «Отозвать токен» / «Удалить» (at home) or «Убрать из
  * пространства» (a bot added from elsewhere). The plan's bot limit is explained, not enforced.

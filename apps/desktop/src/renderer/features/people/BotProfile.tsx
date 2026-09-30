@@ -6,7 +6,7 @@ import { AvatarButtons } from '../../components/AvatarPicker';
 import { Button, cx } from '../../components/ui';
 import { t } from '../../i18n';
 import { api } from '../../lib/api/endpoints';
-import { mayManageWorkspace } from '../../lib/permissions';
+import { mayManageBots } from '../../lib/permissions';
 import { botAvatarChanged, loadBlockedBots, loadBotCard, loadWorkspaceBots, setBotBlocked } from '../../services/bots';
 import { reportPlanError } from '../../services/plan';
 import { useBots } from '../../stores/bots';
@@ -79,7 +79,7 @@ function useAddTargets(botUserId: string): Array<{ id: string; name: string }> {
   return useMemo(
     () =>
       Object.values(byId)
-        .filter((e) => !e.members[botUserId] && mayManageWorkspace(rolesOf(e, me)))
+        .filter((e) => !e.members[botUserId] && mayManageBots(rolesOf(e, me)))
         .map((e) => ({ id: e.ws.id, name: e.ws.name }))
         .sort((a, b) => a.name.localeCompare(b.name)),
     [byId, botUserId, me],
@@ -142,16 +142,16 @@ export function BotActions({ botUserId, size = 'md' }: { botUserId: string; size
 
 /**
  * «Загрузить аватар» / «Убрать аватар» for whoever manages the bot (docs/09 #87): its owner or
- * MANAGE_WORKSPACE of its home workspace. The home workspace comes from the managers' bot list
+ * MANAGE_BOTS (ADR-0048) of its home workspace. The home workspace comes from the managers' bot list
  * (the public card hides it), fetched once when I manage the workspace the profile is open in.
  */
 export function BotAvatarControls({ workspaceId, botUserId }: { workspaceId: string; botUserId: string }): ReactNode {
   const me = useSession((s) => s.me?.user?.id ?? '');
-  const manageHere = useWorkspaces((s) => mayManageWorkspace(rolesOf(s.byId[workspaceId], me)));
+  const manageHere = useWorkspaces((s) => mayManageBots(rolesOf(s.byId[workspaceId], me)));
   const listed = useBots((s) => workspaceId in s.byWorkspace);
   const home = useBots((s) => s.cards[botUserId]?.workspaceId ?? '');
   const owner = useBots((s) => s.cards[botUserId]?.ownerUserId ?? '');
-  const manageHome = useWorkspaces((s) => (home ? mayManageWorkspace(rolesOf(s.byId[home], me)) : false));
+  const manageHome = useWorkspaces((s) => (home ? mayManageBots(rolesOf(s.byId[home], me)) : false));
   const avatar = useWorkspaces((s) => s.users[botUserId]?.avatarFileId ?? '');
   useEffect(() => {
     if (manageHere && !listed) void loadWorkspaceBots(workspaceId);

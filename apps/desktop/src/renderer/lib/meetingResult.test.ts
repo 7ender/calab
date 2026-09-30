@@ -69,6 +69,8 @@ describe('card', () => {
     expect(mayDeleteRecording(done, 'carol', none)).toBe(false);
     expect(mayDeleteRecording(done, 'carol', { owner: true, manageMessages: false })).toBe(true);
     expect(mayDeleteRecording(done, 'carol', { owner: false, manageMessages: true })).toBe(true);
+    // ADR-0048: MANAGE_RECORDINGS of the workspace.
+    expect(mayDeleteRecording(done, 'carol', { owner: false, manageMessages: false, manageRecordings: true })).toBe(true);
     expect(mayDeleteRecording(create(RecordingCardSchema, { status: RecordingStatus.RECORDING, startedBy: 'bob' }), 'bob', none)).toBe(false);
     expect(mayDeleteRecording(create(RecordingCardSchema, { status: RecordingStatus.FAILED, startedBy: 'bob', deletedAt: timestampFromMs(1) }), 'bob', none)).toBe(false);
     expect(mayDeleteRecording(create(RecordingCardSchema, { status: RecordingStatus.DONE, startedBy: '' }), '', none)).toBe(false);
