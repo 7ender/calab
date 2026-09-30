@@ -15,6 +15,7 @@ import { useVoice } from '../../stores/voice';
 import { toast } from '../../stores/toasts';
 import { useChatView } from './chatView';
 import { buildMetas, type RowMeta } from './grouping';
+import { createLastRowPin } from './lastRowPin';
 import { DatePill, MessageRow, SystemRow } from './MessageBubble';
 import { useMiniPlayerShown } from './MediaPlayer';
 import { EmptyRoom } from './RoomPanels';
@@ -114,6 +115,9 @@ function Feed({ workspaceId, room, perms, newMarker }: { workspaceId: string; ro
   const virtuoso = useRef<VirtuosoHandle>(null);
   // False until Virtuoso reports it: opening at the first unread must not mark the room read.
   const [atBottom, setAtBottom] = useState(false);
+  // docs/09 #149: a reaction added to the last row (mine or incoming) grows it in place — no new
+  // item, so followOutput below never sees it. Pinned to one instance so re-renders don't lose it.
+  const [lastRowPin] = useState(() => createLastRowPin());
 
   // Grouping, memoised per message (unchanged rows keep their meta object → no re-render).
   const [cache] = useState(() => new Map<string, RowMeta>());
@@ -218,9 +222,36 @@ function Feed({ workspaceId, room, perms, newMarker }: { workspaceId: string; ro
     },
     [items, me, state.hasMoreAfter],
   );
+  const onAtBottomStateChange = useCallback(
+    (v: boolean) => {
+      lastRowPin.setAtBottom(v);
+      setAtBottom(v);
+    },
+    [lastRowPin],
+  );
 
   // Floating date: the day of the topmost visible row, hidden while that day's own pill is in view.
   const scroller = useRef<HTMLElement | null>(null);
+
+  // docs/09 #149: observe only the last row's own element — not the whole feed — so a reaction
+  // pill growing it can re-pin the bottom without any per-render cost on the other rows.
+  const lastKey = items[items.length - 1]?.key;
+  useEffect(() => {
+    const root = scroller.current;
+    if (!root || !lastKey || typeof ResizeObserver === 'undefined') return;
+    const el = root.querySelector<HTMLElement>(`[data-message-id="${CSS.escape(lastKey)}"]`);
+    if (!el) return;
+    lastRowPin.reset(el.getBoundingClientRect().height);
+    const ro = new ResizeObserver((entries) => {
+      const h = entries[0]?.contentRect.height;
+      if (h !== undefined && lastRowPin.measure(h)) {
+        virtuoso.current?.scrollToIndex({ index: 'LAST', align: 'end', behavior: 'auto' });
+      }
+    });
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, [lastKey, lastRowPin]);
+
   const [sticky, setSticky] = useState<string | null>(null);
   const frame = useRef(0);
   // Telegram: the floating date shows while scrolling and fades out 1 s after it stops; the
@@ -294,7 +325,7 @@ function Feed({ workspaceId, room, perms, newMarker }: { workspaceId: string; ro
         startReached={startReached}
         endReached={endReached}
         followOutput={followOutput}
-        atBottomStateChange={setAtBottom}
+        atBottomStateChange={onAtBottomStateChange}
         atBottomThreshold={48}
         scrollerRef={(r) => {
           scroller.current = r instanceof HTMLElement ? r : null;
