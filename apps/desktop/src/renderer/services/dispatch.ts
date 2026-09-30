@@ -31,6 +31,7 @@ import { onCallRing, onCallState, onReadyCall } from './call';
 import { resumeVoiceAfterReady } from './resumeVoice';
 import { checkWebVersion } from './webVersion';
 import { applySnapshotRecordings, dropRecordings, onRoomRecording, resetRecordings } from './recording';
+import { applySnapshotSipCalls, dropSipCalls, onSipCallUpdate, resetSipCalls } from './sip';
 import { t } from '../i18n';
 import { dropStaleWorkspaceBackground } from './cameraBackground';
 import { applySnapshotSounds, useSounds } from '../stores/sounds';
@@ -91,6 +92,7 @@ export function removeRoom(workspaceId: string, roomId: string): void {
   useWorkspaces.getState().clearRoomVoice(workspaceId, roomId);
   useMessages.getState().unload(roomId);
   dropRecordings((r) => r === roomId);
+  dropSipCalls((r) => r === roomId);
   useInbox.getState().removeRooms((id) => id !== roomId);
   if (inVoice) void voice.leave();
 }
@@ -162,6 +164,8 @@ export function applyDispatch(ev: DispatchEvent): void {
       void resyncPins();
       // Recordings (ADR-0025): the server's state replaces ours (REC, «Остановить запись»).
       resetRecordings(r.workspaces);
+      // Telephony (ADR-0046): the rooms' live phone lines.
+      resetSipCalls(r.workspaces);
       useSession.getState().set({ me: r.me ?? null, planContact: r.planContact, ready: true });
       if (r.me?.settings) applyUserSettings(r.me.settings);
       syncTimeZone(r.me);
@@ -198,6 +202,7 @@ export function applyDispatch(ev: DispatchEvent): void {
       applySnapshotExtras(snap);
       applySnapshotSounds(snap);
       applySnapshotRecordings(snap);
+      applySnapshotSipCalls(snap);
       applySnapshotEvents(snap);
       applySnapshotBoards(snap);
       ensureActiveWorkspace();
@@ -234,6 +239,7 @@ export function applyDispatch(ev: DispatchEvent): void {
       useRooms.getState().removeWorkspace(id);
       useSounds.getState().dropWorkspace(id);
       dropRecordings((_room, rec) => rec.workspaceId === id);
+      dropSipCalls((_room, c) => c.workspaceId === id);
       dropWorkspaceEvents(id);
       dropWorkspaceBoards(id);
       if (useVoice.getState().workspaceId === id) void voice.leave();
@@ -406,6 +412,10 @@ export function applyDispatch(ev: DispatchEvent): void {
       return;
     case 'roomRecording':
       onRoomRecording(e.value);
+      return;
+    // Telephony (ADR-0046): a room's phone line placed / changed status.
+    case 'sipCallUpdate':
+      onSipCallUpdate(e.value.call);
       return;
     case 'roomNotificationUpdate':
       if (e.value.settings) useRooms.getState().setNotify(e.value.settings);

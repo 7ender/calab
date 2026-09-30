@@ -23,7 +23,7 @@ const warn = vi.fn();
 vi.mock('./logging', () => ({ log: { warn, info: vi.fn(), error: vi.fn() } }));
 
 // Imported after the mocks above (docs/12 "net.fetch has no timeout").
-const { handleApiScheme, HEADERS_TIMEOUT_MS, IDLE_TIMEOUT_MS } = await import('./apiProtocol');
+const { handleApiScheme, deadlinesFor, HEADERS_TIMEOUT_MS, IDLE_TIMEOUT_MS, SLOW_REQUEST_MS } = await import('./apiProtocol');
 
 function apiRequest(path: string, init?: RequestInit): Request {
   return new Request(`calaba-api://api${path}`, init);
@@ -83,5 +83,14 @@ describe('handleApiScheme deadlines', () => {
     expect(res?.status).toBe(200);
     expect(await res?.json()).toEqual({ ok: true });
     expect(warn).not.toHaveBeenCalled();
+  });
+});
+
+describe('deadlines', () => {
+  it('the SIP connection test (a real call, ~25 s) waits longer; everything else keeps the defaults', () => {
+    expect(deadlinesFor('/api/workspaces/w1/sip/test')).toEqual({ headers: SLOW_REQUEST_MS, idle: SLOW_REQUEST_MS });
+    expect(SLOW_REQUEST_MS).toBeGreaterThan(25_000);
+    expect(deadlinesFor('/api/workspaces/w1/sip')).toEqual({ headers: HEADERS_TIMEOUT_MS, idle: IDLE_TIMEOUT_MS });
+    expect(deadlinesFor('/api/workspaces/w1/sip/test/x')).toEqual({ headers: HEADERS_TIMEOUT_MS, idle: IDLE_TIMEOUT_MS });
   });
 });

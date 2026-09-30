@@ -65,6 +65,7 @@ const GROUP_LABEL: Record<PermGroupId, MessageKey> = {
   invites: 'roles.group.invites',
   rooms: 'roles.group.rooms',
   voice: 'roles.group.voice',
+  telephony: 'roles.group.telephony',
   moderation: 'roles.group.moderation',
 };
 

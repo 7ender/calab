@@ -106,6 +106,19 @@ export const HEADERS_TIMEOUT_MS = 20_000;
  * doc comment above) that is still making progress is never cut off by a fixed deadline. */
 export const IDLE_TIMEOUT_MS = 30_000;
 
+/**
+ * Requests the server answers only after a long wait by design: the SIP connection test (ADR-0046,
+ * `POST /api/workspaces/{id}/sip/test`) places a real call and replies within ~25 s. Both
+ * deadlines stretch to this for them (the fixed 20 s headers deadline would cut every slow test).
+ */
+export const SLOW_REQUEST_MS = 45_000;
+const SLOW_PATHS = [/^\/api\/workspaces\/[^/]+\/sip\/test$/];
+
+/** The headers / idle deadline of a request to `pathname`. */
+export function deadlinesFor(pathname: string): { headers: number; idle: number } {
+  return SLOW_PATHS.some((re) => re.test(pathname)) ? { headers: SLOW_REQUEST_MS, idle: SLOW_REQUEST_MS } : { headers: HEADERS_TIMEOUT_MS, idle: IDLE_TIMEOUT_MS };
+}
+
 function timeoutError(message: string): DOMException {
   return new DOMException(message, 'TimeoutError');
 }
@@ -158,6 +171,7 @@ export function handleApiScheme(): void {
     if (!base) return withCors(Response.json({ code: 'ERROR_CODE_UNAVAILABLE', message: 'server URL not set' }, { status: 503 }), origin);
     const target = `${base}${url.pathname}${url.search}`;
     const idempotent = req.method === 'GET' || req.method === 'HEAD';
+    const deadline = deadlinesFor(url.pathname);
 
     const idleController = new AbortController();
     const headersController = new AbortController();
@@ -165,7 +179,7 @@ export function handleApiScheme(): void {
     let headersTimer: ReturnType<typeof setTimeout> | undefined;
     const armIdle = (): void => {
       clearTimeout(idleTimer);
-      idleTimer = setTimeout(() => idleController.abort(timeoutError('idle timeout')), IDLE_TIMEOUT_MS);
+      idleTimer = setTimeout(() => idleController.abort(timeoutError('idle timeout')), deadline.idle);
     };
     const disarmHeaders = (): void => {
       clearTimeout(headersTimer);
@@ -195,7 +209,7 @@ export function handleApiScheme(): void {
 
       // Only the plain (buffered-body) path gets the fixed connect+headers deadline; a streamed
       // upload is already covered end to end by the idle timer above.
-      if (!streamed) headersTimer = setTimeout(() => headersController.abort(timeoutError('connect/headers timeout')), HEADERS_TIMEOUT_MS);
+      if (!streamed) headersTimer = setTimeout(() => headersController.abort(timeoutError('connect/headers timeout')), deadline.headers);
 
       let res = await forward(req, target, await getAccessToken(), body, fetchSignal);
       if (res.status === 401 && replayable) {

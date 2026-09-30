@@ -22,6 +22,7 @@ import { ruSounds } from './sounds';
 import { ruBots } from './bots';
 import { ruGuests } from './guests';
 import { ruTemp } from './temp';
+import { ruSip } from './sip';
 
 /** Russian UI strings. Keys are flat, dotted; `{param}` placeholders. Area files are merged in. */
 export const ru = {
@@ -35,6 +36,7 @@ export const ru = {
   ...ruBots,
   ...ruGuests,
   ...ruTemp,
+  ...ruSip,
   ...ruDm,
   ...ruNotes,
   ...ruCall,

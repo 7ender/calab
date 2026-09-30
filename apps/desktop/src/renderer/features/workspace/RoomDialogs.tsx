@@ -370,6 +370,7 @@ export const PERM_HINT: Partial<Record<PermissionName, MessageKey>> = {
   INVITE_MEMBERS: 'perm.hint.INVITE_MEMBERS',
   INVITE_GUESTS: 'perm.hint.INVITE_GUESTS',
   CREATE_TEMP_ROOMS: 'perm.hint.CREATE_TEMP_ROOMS',
+  PLACE_CALLS: 'perm.hint.PLACE_CALLS',
 };
 
 function targetKey(o: Pick<OverrideDraft, 'targetType' | 'targetId'>): string {
@@ -411,7 +412,7 @@ export function TriToggle({ value, onChange, label }: { value: Tri; onChange: (v
 }
 
 /** Voice-only permissions: a text room doesn't list them (UX review). */
-const VOICE_ONLY: ReadonlySet<PermissionName> = new Set(['CONNECT', 'SPEAK', 'STREAM', 'VIDEO', 'MUTE_MEMBERS', 'MOVE_MEMBERS']);
+const VOICE_ONLY: ReadonlySet<PermissionName> = new Set(['CONNECT', 'SPEAK', 'STREAM', 'VIDEO', 'MUTE_MEMBERS', 'MOVE_MEMBERS', 'PLACE_CALLS']);
 
 function PermissionsTab({ roomId }: { roomId: string }): ReactNode {
   const room = useRooms((s) => s.byId[roomId]);

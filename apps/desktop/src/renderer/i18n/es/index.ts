@@ -23,6 +23,7 @@ import { esSounds } from './sounds';
 import { esBots } from './bots';
 import { esGuests } from './guests';
 import { esTemp } from './temp';
+import { esSip } from './sip';
 
 /** Spanish UI strings (ADR-0022): same keys and placeholders as `ru`/`en`; glossary docs/i18n-glossary.md. */
 export const es: Dict = {
@@ -36,6 +37,7 @@ export const es: Dict = {
   ...esBots,
   ...esGuests,
   ...esTemp,
+  ...esSip,
   ...esDm,
   ...esNotes,
   ...esCall,
