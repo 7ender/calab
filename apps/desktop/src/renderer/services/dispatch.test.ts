@@ -25,6 +25,9 @@ import {
   WorkspaceSchema,
   WorkspaceUpdateSchema,
   WorkspaceSnapshotSchema,
+  SipCallSchema,
+  SipCallStatus,
+  SipCallUpdateSchema,
   type DispatchEvent,
 } from '@calaba/protocol';
 import { timestampFromMs } from '@bufbuild/protobuf/wkt';
@@ -65,6 +68,8 @@ const { getTimeFormat } = await import('../lib/format');
 const { useSession } = await import('../stores/session');
 const { rolesOf } = await import('../stores/workspaces');
 const { mayInviteGuestsIn, mayInviteMembers, mayInviteToRoom } = await import('../lib/permissions');
+const { useSipCalls } = await import('../stores/sipCalls');
+const { ENDED_LINGER_MS, mayHangUp, statusKey } = await import('../lib/sip');
 
 const WS = 'ws-1';
 const id = (n: number): string => `0190a0b0-0000-7000-8000-${String(n).padStart(12, '0')}`;
@@ -347,5 +352,37 @@ describe('dispatch: my roles and their permissions apply live (ADR-0026, ADR-004
     const host = create(RoleSchema, { id: 'host', workspaceId: WS, position: 3, permissions: PERMISSION_BITS.INVITE_GUESTS | PERMISSION_BITS.INVITE_MEMBERS });
     expect(mayInviteMembers([guestRole, host])).toBe(false);
     expect(mayInviteMembers([...roles.slice(2), host])).toBe(true);
+  });
+});
+
+describe('SIP_CALL_UPDATE of someone else\'s call (ADR-0046)', () => {
+  const CALLER = id(41);
+  const sipEvent = (status: SipCallStatus, reason = ''): DispatchEvent =>
+    create(DispatchEventSchema, {
+      event: {
+        case: 'sipCallUpdate',
+        value: create(SipCallUpdateSchema, {
+          call: create(SipCallSchema, { id: 'c1', workspaceId: WS, roomId: 'v1', number: '+79161234567', startedBy: CALLER, status, reason, participantIdentity: 'sip:c1' }),
+        }),
+      },
+    });
+  afterEach(() => vi.useRealTimers());
+
+  it('shows the line from DIALING on (before any answer) and drops it for everyone after a busy', () => {
+    vi.useFakeTimers();
+    useSipCalls.getState().set({});
+    applyDispatch(sipEvent(SipCallStatus.DIALING));
+    const line = useSipCalls.getState().byRoom['v1'];
+    expect(line?.status).toBe(SipCallStatus.DIALING);
+    expect(line?.number).toBe('+79161234567');
+    expect(statusKey(line?.status ?? SipCallStatus.UNSPECIFIED)).toBe('sip.status.dialing');
+    // «Завершить» while it rings: a MUTE_MEMBERS holder yes, a plain member no.
+    expect(mayHangUp({ me: 'mod', startedBy: CALLER, muteMembers: true, live: true })).toBe(true);
+    expect(mayHangUp({ me: 'member', startedBy: CALLER, muteMembers: false, live: true })).toBe(false);
+
+    applyDispatch(sipEvent(SipCallStatus.FAILED, 'busy'));
+    expect(useSipCalls.getState().byRoom['v1']?.status).toBe(SipCallStatus.FAILED);
+    vi.advanceTimersByTime(ENDED_LINGER_MS);
+    expect(useSipCalls.getState().byRoom['v1']).toBeUndefined();
   });
 });

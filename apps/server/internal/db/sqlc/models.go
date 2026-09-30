@@ -35,6 +35,7 @@ type Board struct {
 	CreatedBy       *uuid.UUID
 	CreatedAt       time.Time
 	ArchivedAt      *time.Time
+	Restricted      bool
 }
 
 type BoardLabel struct {
@@ -496,6 +497,42 @@ type Session struct {
 	RevokedReason        *string
 }
 
+type SipAccount struct {
+	WorkspaceID     uuid.UUID
+	Provider        string
+	Host            string
+	Transport       string
+	Username        string
+	AuthUsername    string
+	Port            int32
+	PasswordEnc     []byte
+	CallerID        string
+	OutboundPrefix  string
+	AllowedPrefixes []string
+	TrunkID         string
+	Enabled         bool
+	LastError       string
+	UpdatedAt       time.Time
+	UpdatedBy       *uuid.UUID
+}
+
+type SipCall struct {
+	ID                  uuid.UUID
+	WorkspaceID         uuid.UUID
+	RoomID              *uuid.UUID
+	Number              string
+	Direction           string
+	StartedBy           *uuid.UUID
+	ParticipantIdentity string
+	SipCallID           string
+	Status              string
+	Reason              string
+	EndedBy             *uuid.UUID
+	StartedAt           time.Time
+	AnsweredAt          *time.Time
+	EndedAt             *time.Time
+}
+
 type Sticker struct {
 	ID        uuid.UUID
 	PackID    uuid.UUID
@@ -522,27 +559,28 @@ type StickerPack struct {
 }
 
 type Task struct {
-	ID          uuid.UUID
-	BoardID     uuid.UUID
-	Number      int32
-	Title       string
-	Description string
-	StatusID    uuid.UUID
-	Priority    int16
-	CreatedBy   *uuid.UUID
-	Estimate    *int16
-	StartOn     pgtype.Date
-	DueOn       pgtype.Date
-	ParentID    *uuid.UUID
-	MilestoneID *uuid.UUID
-	Position    float64
-	RoomID      uuid.UUID
-	CreatedAt   time.Time
-	UpdatedAt   time.Time
-	StartedAt   *time.Time
-	CompletedAt *time.Time
-	CompletedBy *uuid.UUID
-	ArchivedAt  *time.Time
+	ID               uuid.UUID
+	BoardID          uuid.UUID
+	Number           int32
+	Title            string
+	Description      string
+	StatusID         uuid.UUID
+	Priority         int16
+	CreatedBy        *uuid.UUID
+	Estimate         *int16
+	StartOn          pgtype.Date
+	DueOn            pgtype.Date
+	ParentID         *uuid.UUID
+	MilestoneID      *uuid.UUID
+	Position         float64
+	RoomID           uuid.UUID
+	CreatedAt        time.Time
+	UpdatedAt        time.Time
+	StartedAt        *time.Time
+	CompletedAt      *time.Time
+	CompletedBy      *uuid.UUID
+	ArchivedAt       *time.Time
+	ApprovalRequired int16
 }
 
 type TaskActivity struct {
@@ -554,6 +592,19 @@ type TaskActivity struct {
 	Before    []byte
 	After     []byte
 	CreatedAt time.Time
+}
+
+type TaskApprover struct {
+	TaskID      uuid.UUID
+	UserID      uuid.UUID
+	State       string
+	Comment     string
+	DecidedAt   *time.Time
+	AddedBy     *uuid.UUID
+	AddedAt     time.Time
+	RequestedAt time.Time
+	Reminders   int16
+	RemindedAt  *time.Time
 }
 
 type TaskAssignee struct {
@@ -658,6 +709,7 @@ type Workspace struct {
 	SuspendedReason         string
 	SuspendedBy             *uuid.UUID
 	TimeFormat              string
+	SipEnabled              bool
 }
 
 type WorkspaceAdminLog struct {
@@ -667,6 +719,18 @@ type WorkspaceAdminLog struct {
 	Action      string
 	Reason      string
 	CreatedAt   time.Time
+}
+
+type WorkspaceApp struct {
+	ID          uuid.UUID
+	WorkspaceID uuid.UUID
+	Name        string
+	Url         string
+	IconFileID  *uuid.UUID
+	Position    float64
+	CreatedBy   *uuid.UUID
+	CreatedAt   time.Time
+	UpdatedAt   time.Time
 }
 
 type WorkspaceBackground struct {

@@ -147,7 +147,7 @@ export type Bot = Message<"calaba.v1.Bot"> & {
   /**
    * The first characters of the current token's secret, to tell tokens apart; empty = the
    * token was revoked (the bot cannot sign in until a new one is issued). Like webhook: for
-   * the bot, its owner and MANAGE_WORKSPACE members of its home workspace only.
+   * the bot, its owner and MANAGE_BOTS members of its home workspace only.
    *
    * @generated from field: string token_prefix = 7;
    */
@@ -164,7 +164,7 @@ export type Bot = Message<"calaba.v1.Bot"> & {
   revokedAt?: Timestamp | undefined;
 
   /**
-   * Set for the bot itself, its owner and MANAGE_WORKSPACE members of its home workspace.
+   * Set for the bot itself, its owner and MANAGE_BOTS members of its home workspace.
    *
    * @generated from field: calaba.v1.BotWebhook webhook = 10;
    */
@@ -179,7 +179,7 @@ export const BotSchema: GenMessage<Bot> = /*@__PURE__*/
   messageDesc(file_calaba_v1_bot, 2);
 
 /**
- * POST /api/workspaces/{id}/bots (the owner or MANAGE_WORKSPACE; plan limit `bots`, 409
+ * POST /api/workspaces/{id}/bots (MANAGE_BOTS, ADR-0048; plan limit `bots`, 409
  * CONFLICT reason PLAN_LIMIT) → 201. The bot joins the workspace with the member role. The
  * token is returned only here and by POST …/bots/{botId}/token.
  *
@@ -238,7 +238,7 @@ export const CreateBotResponseSchema: GenMessage<CreateBotResponse> = /*@__PURE_
   messageDesc(file_calaba_v1_bot, 4);
 
 /**
- * GET /api/workspaces/{id}/bots (MANAGE_WORKSPACE): bots that are members of the workspace.
+ * GET /api/workspaces/{id}/bots (MANAGE_BOTS): bots that are members of the workspace.
  *
  * @generated from message calaba.v1.ListBotsResponse
  */
@@ -258,7 +258,7 @@ export const ListBotsResponseSchema: GenMessage<ListBotsResponse> = /*@__PURE__*
 
 /**
  * POST /api/workspaces/{id}/bots/{botId}/token — a new token (home workspace: the bot's
- * owner or MANAGE_WORKSPACE); the previous one stops working at once. DELETE of the same
+ * owner or MANAGE_BOTS); the previous one stops working at once. DELETE of the same
  * path revokes the token without a new one (204).
  *
  * @generated from message calaba.v1.ReissueBotTokenResponse
@@ -285,7 +285,7 @@ export const ReissueBotTokenResponseSchema: GenMessage<ReissueBotTokenResponse> 
 /**
  * POST /api/workspaces/{id}/bots/{botId}/avatar — sets the bot's avatar from the multipart
  * field "file" (an image ≤ 5 MB, like POST /api/me/avatar: 422 VALIDATION otherwise); DELETE
- * of the same path removes it. Home workspace only: the bot's owner or MANAGE_WORKSPACE
+ * of the same path removes it. Home workspace only: the bot's owner or MANAGE_BOTS
  * (403 elsewhere, 404 when the bot is not a member of {id}). Members see USER_UPDATE, the
  * managers BOT_UPDATE (docs/09 #87).
  *
@@ -306,7 +306,7 @@ export const SetBotAvatarResponseSchema: GenMessage<SetBotAvatarResponse> = /*@_
   messageDesc(file_calaba_v1_bot, 7);
 
 /**
- * POST /api/workspaces/{id}/bots/add (MANAGE_WORKSPACE of that workspace): adds an existing
+ * POST /api/workspaces/{id}/bots/add (MANAGE_BOTS of that workspace): adds an existing
  * bot by id or username (member role). 409 CONFLICT: already a member or plan limit.
  *
  * @generated from message calaba.v1.AddBotRequest
@@ -545,7 +545,7 @@ export const ListBlockedBotsResponseSchema: GenMessage<ListBlockedBotsResponse> 
 
 /**
  * BOT_CREATE / BOT_UPDATE: a bot joined the workspace / changed (profile, commands, token,
- * webhook state). To MANAGE_WORKSPACE members and the bot's owner.
+ * webhook state). To MANAGE_BOTS members and the bot's owner.
  *
  * @generated from message calaba.v1.BotCreate
  */

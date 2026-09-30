@@ -56,6 +56,16 @@ apt install gettext-base rsync   # envsubst для deploy.sh, rsync для sync.
 mkdir -p /opt/calaba
 ```
 
+### Телефония SIP (ADR-0046)
+
+Выключена по умолчанию: без `SIP_ENABLED=1` контейнер `sip` не поднимается и порты не открыты.
+
+1. Файрвол — три правила из docs/03 «SIP» (5060 udp/tcp, 10000–10200/udp), сохранить `rules.v4`.
+2. `.env`: `SIP_ENABLED=1` → `infra/docker/deploy.sh` — рендерит `livekit/sip.yaml.tpl` в `SIP_CONFIG_BODY` (в нём пароль Valkey, на диск не пишется) и включает compose-профиль `sip` (`livekit/sip:v1.14.0`, совместим с `livekit-server v1.13.7`: тот же коммит `livekit/protocol`; обновлять парой).
+3. Проверка: `docker compose logs sip | grep 'service ready'`; `ss -lun | grep 5060`.
+4. Аккаунт провайдера — в приложении: Настройки пространства → «Телефония» (хост, транспорт, логин/пароль, Caller ID, разрешённые префиксы — для РФ `+7`), «Проверить подключение» звонит на Caller ID на 5 с (звонок платный, виден в журнале). Роли, которым можно звонить, получают `PLACE_CALLS`.
+5. Выключить: `SIP_ENABLED=0` + `deploy.sh` (контейнер удаляется), правила файрвола — убрать.
+
 ### Стенд: как он поднят (2026-09-25)
 
 - Код: `/opt/calaba` (копия рабочего дерева через `sync.sh`), секреты: `/opt/calaba/infra/docker/.env` (`chmod 600`, root; сгенерированы `openssl rand` по `.env.example`, `REGISTRATION_MODE=open`). `sync.sh` этот файл никогда не перезаписывает и не удаляет.
@@ -127,7 +137,7 @@ ACL SETUSER calab on >ПАРОЛЬ resetkeys resetchannels ~calab:* &calab:* db=
 - Маршруты Caddy на каждом `<домен>` (приложение живёт на самом домене, без префикса `app.`): `/metrics` → 404; `/api/*`, `/gateway`, `/healthz`, `/readyz` → `reverse_proxy 127.0.0.1:3000`; остальное — SPA-статика из `/srv/web` (`file_server`, `try_files {path} /index.html`).
 - Статика: на хосте `/opt/calaba/web` (bind mount `../../web:/srv/web:ro` в caddy). `sync.sh`: если локально есть `apps/desktop/dist-web/index.html` — `rsync --delete-after --delay-updates` в `/opt/calaba/web` (новые ассеты появляются раньше нового `index.html`, старые удаляются после); иначе при пустом каталоге кладёт заглушку `infra/docker/web-placeholder/index.html` («Calaba web — скоро»). Основной `rsync` репо каталог `/web/` не трогает. Caddy при обновлении статики не перезапускается.
 - Кэш: `/assets/*` (хэшированные файлы Vite) — `public, max-age=31536000, immutable` только если файл существует (отсутствующий ассет — 404 без долгого кэша, не `index.html`); всё остальное (`index.html`, SPA-маршруты) — `no-cache`.
-- Заголовки на статике: `Content-Security-Policy: default-src 'self'; script-src 'self' 'wasm-unsafe-eval'; connect-src 'self' wss://rtc.<каждый домен> https://rtc.<каждый домен>; img-src 'self' blob: data:; media-src 'self' blob:; worker-src 'self' blob:; style-src 'self' 'unsafe-inline'; frame-ancestors 'none'; base-uri 'self'; form-action 'self'` (`'wasm-unsafe-eval'` — RNNoise WASM в mic-worklet; список rtc-origin-ов собирает `entrypoint.sh` из всех доменов — клиент на `.ru` ходит в `rtc.<DOMAIN>`, т.к. API отдаёт основной `LIVEKIT_URL`; `https://rtc.*` — для `/rtc/validate` livekit-client), `Permissions-Policy: microphone=(self), display-capture=(self), speaker-selection=(self), autoplay=(self)` (Chrome пишет в консоль безвредное предупреждение `Unrecognized feature: 'speaker-selection'` — фича есть только в Firefox), `X-Content-Type-Options: nosniff`, `Referrer-Policy: same-origin`, `X-Frame-Options: DENY`, без `Server`. CSP подтверждена клиентом; прогон 2026-09-25 в Chromium и Firefox — нарушений нет.
+- Заголовки на статике: `Content-Security-Policy: default-src 'self'; script-src 'self' 'wasm-unsafe-eval'; connect-src 'self' wss://rtc.<каждый домен> https://rtc.<каждый домен>; img-src 'self' blob: data:; media-src 'self' blob:; worker-src 'self' blob:; style-src 'self' 'unsafe-inline'; frame-src https:; frame-ancestors 'none'; base-uri 'self'; form-action 'self'` (`'wasm-unsafe-eval'` — RNNoise WASM в mic-worklet; `frame-src` — iframe веб-приложения пространства, ADR-0050 §6; список rtc-origin-ов собирает `entrypoint.sh` из всех доменов — клиент на `.ru` ходит в `rtc.<DOMAIN>`, т.к. API отдаёт основной `LIVEKIT_URL`; `https://rtc.*` — для `/rtc/validate` livekit-client), `Permissions-Policy: microphone=(self), display-capture=(self), speaker-selection=(self), autoplay=(self)` (Chrome пишет в консоль безвредное предупреждение `Unrecognized feature: 'speaker-selection'` — фича есть только в Firefox), `X-Content-Type-Options: nosniff`, `Referrer-Policy: same-origin`, `X-Frame-Options: DENY`, без `Server`. CSP подтверждена клиентом; прогон 2026-09-25 в Chromium и Firefox — нарушений нет.
 - Сжатие: `encode zstd gzip` только на статике (ответы API, в т.ч. файлы с Range, не трогаются). JS ~1.3 MB → ~0.4 MB; mic-worklet (RNNoise WASM внутри) ~1.9 MB → ~1.7 MB.
 - `sync.sh` не публикует `*.map`.
 - API разрешает браузерные origin-ы из `PUBLIC_APP_URLS` (список через запятую) плюс `PUBLIC_APP_URL` и `PUBLIC_APP_URL_ALT` (cookie-refresh, CSRF-проверка, upgrade gateway). `DOMAIN_LEGACY` в этот список **не входит** — веб-клиент по legacy-именам работать не будет (десктоп — будет).

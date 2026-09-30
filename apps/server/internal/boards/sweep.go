@@ -19,8 +19,8 @@ const SweepInterval = time.Hour
 // sweepBatch bounds one pass (the next pass continues).
 const sweepBatch = 500
 
-// Run auto-archives every interval until ctx is done; with Redis only one instance sweeps per
-// interval (a lock key).
+// Run auto-archives and sends the approval reminders (ADR-0049 §5) every interval until ctx is
+// done; with Redis only one instance sweeps per interval (a lock key).
 func (s *Service) Run(ctx context.Context, r rueidis.Client, interval time.Duration) {
 	t := time.NewTicker(interval)
 	defer t.Stop()
@@ -31,6 +31,7 @@ func (s *Service) Run(ctx context.Context, r rueidis.Client, interval time.Durat
 			} else if n > 0 {
 				slog.InfoContext(ctx, "boards: tasks auto-archived", "count", n)
 			}
+			s.remindLogged(ctx)
 		}
 		select {
 		case <-ctx.Done():

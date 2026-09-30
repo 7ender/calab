@@ -22,6 +22,8 @@ import { ruSounds } from './sounds';
 import { ruBots } from './bots';
 import { ruGuests } from './guests';
 import { ruTemp } from './temp';
+import { ruSip } from './sip';
+import { ruWebApps } from './webapps';
 
 /** Russian UI strings. Keys are flat, dotted; `{param}` placeholders. Area files are merged in. */
 export const ru = {
@@ -35,6 +37,8 @@ export const ru = {
   ...ruBots,
   ...ruGuests,
   ...ruTemp,
+  ...ruSip,
+  ...ruWebApps,
   ...ruDm,
   ...ruNotes,
   ...ruCall,
@@ -223,9 +227,6 @@ export const ru = {
   'room.private': 'Приватная комната',
   'room.privateHint': 'Видят только администраторы и те, кому вы дадите доступ в правах',
   'room.accessCard': 'Доступ',
-  'room.restricted': 'Только по списку',
-  'room.restrictedHint': 'Администраторы тоже не видят комнату, если их нет в списке',
-  'room.restrictedOwner': 'Меняет только владелец пространства',
   'room.whoSees': 'Кто видит',
   'room.whoSeesOwner': 'владелец, всегда',
   'room.whoSeesEmpty': 'В списке пока никого',
@@ -277,9 +278,18 @@ export const ru = {
   'perm.INVITE_MEMBERS': 'Приглашать участников',
   'perm.INVITE_GUESTS': 'Приглашать гостей',
   'perm.CREATE_TEMP_ROOMS': 'Создавать временные комнаты',
+  'perm.PLACE_CALLS': 'Звонить на телефонные номера',
+  'perm.CREATE_BOARDS': 'Создавать доски',
+  'perm.MANAGE_MEMBERS': 'Управлять участниками',
+  'perm.MANAGE_BOTS': 'Управлять ботами',
+  'perm.MANAGE_INTEGRATIONS': 'Управлять интеграциями',
+  'perm.VIEW_JOURNALS': 'Смотреть журналы',
+  'perm.MANAGE_EVENTS': 'Управлять встречами',
+  'perm.MANAGE_RECORDINGS': 'Управлять записями',
   'perm.hint.INVITE_MEMBERS': 'Ссылки-приглашения и приглашения по почте в пространство; в комнате — ссылка только для участников пространства.',
   'perm.hint.INVITE_GUESTS': 'Гостевые ссылки комнат и решение, кого из ожидающих гостей впустить.',
   'perm.hint.CREATE_TEMP_ROOMS': 'Комнаты на час или несколько дней со ссылкой для гостей; закрываются сами, история остаётся в архиве.',
+  'perm.hint.PLACE_CALLS': 'Звонки на городские и мобильные номера из голосовой комнаты через SIP пространства. Звонки платные.',
   'perm.ADMINISTRATOR': 'Администратор',
   'perm.allow': 'разрешено',
   'perm.deny': 'запрещено',
@@ -687,5 +697,20 @@ export const ru = {
   'main.menuShortcuts': 'Горячие клавиши',
   'main.menuDocs': 'Документация',
   'main.menuReportIssue': 'Сообщить о проблеме',
+  'main.webAppAsk': 'Сайт {site} просит доступ: {what}',
+  'main.webAppAskDetail': 'Ответ запомнится для этого приложения пространства.',
+  'main.webAppAllow': 'Разрешить',
+  'main.webAppDeny': 'Запретить',
+  'main.webAppCamera': 'камера',
+  'main.webAppMicrophone': 'микрофон',
+  'main.webAppNotifications': 'уведомления',
+  'main.webAppGeolocation': 'местоположение',
+  'main.webAppClipboard': 'чтение буфера обмена',
+  'main.webAppBack': 'Назад',
+  'main.webAppForward': 'Вперёд',
+  'main.webAppReload': 'Перезагрузить',
+  'main.webAppOpenLink': 'Открыть ссылку в браузере',
+  'main.webAppCopyLink': 'Копировать адрес ссылки',
+  'main.webAppOpenPage': 'Открыть страницу в браузере',
 } as const;
 

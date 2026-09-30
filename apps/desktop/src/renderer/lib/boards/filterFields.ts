@@ -2,6 +2,7 @@ import { TaskField, TaskOp } from '@calaba/protocol';
 import {
   AlignLeft,
   Archive,
+  BadgeCheck,
   Bell,
   CalendarClock,
   CalendarPlus,
@@ -18,6 +19,7 @@ import {
   SignalHigh,
   Tag,
   Triangle,
+  UserCheck,
   UserPen,
   Users,
   type LucideIcon,
@@ -46,6 +48,8 @@ export type ValueKind =
   /** An instant (created / updated): sent as from / to. */
   | 'datetime'
   | 'bool'
+  /** Task approval state (ADR-0049): none / pending / approved / rejected. */
+  | 'approval'
   | 'text';
 
 export interface FieldDef {
@@ -86,6 +90,9 @@ export const FILTER_FIELDS: readonly FieldDef[] = [
   { field: TaskField.HAS_COMMENTS, label: 'boards.f.hasComments', icon: MessageSquare, kind: 'bool', ops: [IS], op: IS, multi: false },
   { field: TaskField.TEXT, label: 'boards.f.text', icon: AlignLeft, kind: 'text', ops: [CONTAINS], op: CONTAINS, multi: false },
   { field: TaskField.ARCHIVED, label: 'boards.f.archived', icon: Archive, kind: 'bool', ops: [IS], op: IS, multi: false, hidden: true },
+  // Approvals (ADR-0049): matched locally (filter.ts); «Ждут моего согласования» = APPROVER_PENDING IS me.
+  { field: TaskField.APPROVAL_STATE, label: 'boards.f.approvalState', icon: BadgeCheck, kind: 'approval', ops: [IS, IS_NOT], op: IS, multi: true },
+  { field: TaskField.APPROVER_PENDING, label: 'boards.f.approverPending', icon: UserCheck, kind: 'user', ops: [IS, IS_NOT, EMPTY, NOT_EMPTY], op: IS, multi: true },
 ];
 
 const BY_FIELD = new Map(FILTER_FIELDS.map((f) => [f.field, f]));
@@ -133,6 +140,14 @@ export function opNeedsValue(op: TaskOp): boolean {
 
 /** Relation values (server tokens). */
 export const RELATION_VALUES = ['blocks', 'blocked', 'relates', 'duplicates'] as const;
+
+/** APPROVAL_STATE values (server tokens) and their labels. */
+export const APPROVAL_VALUES: ReadonlyArray<{ value: string; label: MessageKey }> = [
+  { value: 'pending', label: 'boards.apv.pending' },
+  { value: 'approved', label: 'boards.apv.approved' },
+  { value: 'rejected', label: 'boards.apv.rejected' },
+  { value: 'none', label: 'boards.apv.none' },
+];
 
 /** Status type values (server tokens), in board order. */
 export const STATUS_TYPE_VALUES = ['backlog', 'unstarted', 'started', 'completed', 'cancelled'] as const;

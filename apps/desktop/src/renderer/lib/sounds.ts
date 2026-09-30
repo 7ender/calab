@@ -1,16 +1,35 @@
 import { prefs } from '../stores/prefs';
-// New-message cue (docs/09 P1 #13): pre-rendered by scripts/gen-sounds.mjs, bundled as an asset.
-import messageWavUrl from '../../../resources/sounds/message.wav?url';
-// One-to-one call ringing (ADR-0034): our own tones from tools/gen-call-sounds.mjs.
-import callIncomingUrl from '../../../resources/sounds/call-incoming.wav?url';
-import callOutgoingUrl from '../../../resources/sounds/call-outgoing.wav?url';
+// Every event cue and both call rings are bundled MP3s rendered by tools/gen-event-sounds.py
+// (owner-approved set, 1.3.1). MP3: plays in Electron and in every browser of the web client.
+import deafenUrl from '../../../resources/sounds/deafen.mp3?url';
+import disconnectUrl from '../../../resources/sounds/disconnect.mp3?url';
+import joinUrl from '../../../resources/sounds/join.mp3?url';
+import leaveUrl from '../../../resources/sounds/leave.mp3?url';
+import mentionUrl from '../../../resources/sounds/mention.mp3?url';
+import messageUrl from '../../../resources/sounds/message.mp3?url';
+import movedUrl from '../../../resources/sounds/moved.mp3?url';
+import muteUrl from '../../../resources/sounds/mute.mp3?url';
+import pttOffUrl from '../../../resources/sounds/ptt-off.mp3?url';
+import pttOnUrl from '../../../resources/sounds/ptt-on.mp3?url';
+import reconnectUrl from '../../../resources/sounds/reconnect.mp3?url';
+import recStartUrl from '../../../resources/sounds/rec-start.mp3?url';
+import recStopUrl from '../../../resources/sounds/rec-stop.mp3?url';
+import streamEndUrl from '../../../resources/sounds/stream-end.mp3?url';
+import streamStartUrl from '../../../resources/sounds/stream-start.mp3?url';
+import undeafenUrl from '../../../resources/sounds/undeafen.mp3?url';
+import unmuteUrl from '../../../resources/sounds/unmute.mp3?url';
+import watchStartUrl from '../../../resources/sounds/watch-start.mp3?url';
+import watchStopUrl from '../../../resources/sounds/watch-stop.mp3?url';
+// One-to-one call ringing (ADR-0034).
+import callIncomingUrl from '../../../resources/sounds/call-incoming.mp3?url';
+import callOutgoingUrl from '../../../resources/sounds/call-outgoing.mp3?url';
 
 /**
- * UI event sounds (docs/09 #29). Short (≤ 300 ms) tones synthesised once into WAV blobs (the new
- * message cue is a bundled WAV, FILE_SOUNDS) and
- * played through a plain <audio> element on the selected output device — never through
- * WebAudio, so AEC3 sees them as WebRTC-independent playback exactly like any other system
- * sound (docs/02, echo rule 1).
+ * UI event sounds (docs/09 #29). Bundled files (FILE_SOUNDS) played through a plain <audio>
+ * element on the selected output device — never through WebAudio, so AEC3 sees them as
+ * WebRTC-independent playback exactly like any other system sound (docs/02, echo rule 1).
+ * Each event also has a short (≤ 300 ms) synthesised stand-in (SOUNDS, rendered once into a WAV
+ * blob) for when its file cannot be loaded.
  */
 export const SOUND_EVENTS = [
   'join',
@@ -24,6 +43,9 @@ export const SOUND_EVENTS = [
   'mention',
   'message',
   'streamStart',
+  'streamEnd',
+  'watchStart',
+  'watchStop',
   'moved',
   'disconnect',
   'reconnect',
@@ -33,11 +55,28 @@ export const SOUND_EVENTS = [
 
 export type SoundName = (typeof SOUND_EVENTS)[number];
 
-/**
- * Events played from a bundled file rather than a synthesised tone (still a plain <audio>).
- * Their SOUNDS entry is only the fallback when the file cannot be loaded.
- */
-export const FILE_SOUNDS: Partial<Record<SoundName, string>> = { message: messageWavUrl };
+/** The bundled file of each event; its SOUNDS entry is only the fallback when the file cannot be loaded. */
+export const FILE_SOUNDS: Record<SoundName, string> = {
+  join: joinUrl,
+  leave: leaveUrl,
+  mute: muteUrl,
+  unmute: unmuteUrl,
+  deafen: deafenUrl,
+  undeafen: undeafenUrl,
+  pttOn: pttOnUrl,
+  pttOff: pttOffUrl,
+  mention: mentionUrl,
+  message: messageUrl,
+  streamStart: streamStartUrl,
+  streamEnd: streamEndUrl,
+  watchStart: watchStartUrl,
+  watchStop: watchStopUrl,
+  moved: movedUrl,
+  disconnect: disconnectUrl,
+  reconnect: reconnectUrl,
+  recStart: recStartUrl,
+  recStop: recStopUrl,
+};
 
 /** One partial of a sound: frequency (Hz), start and length (s), relative gain. */
 export interface Note {
@@ -87,6 +126,17 @@ export const SOUNDS: Record<SoundName, Note[]> = {
     { f: 659.25, at: 0.07, dur: 0.1 },
     { f: 783.99, at: 0.14, dur: 0.16 },
   ],
+  streamEnd: [
+    { f: 783.99, at: 0, dur: 0.1 },
+    { f: 659.25, at: 0.07, dur: 0.1 },
+    { f: 523.25, at: 0.14, dur: 0.16 },
+  ],
+  // Someone started / stopped watching my stream: a soft note up / down, quieter than the rest.
+  watchStart: [
+    { f: 659.25, at: 0, dur: 0.08, gain: 0.6 },
+    { f: 1318.51, at: 0.06, dur: 0.14, gain: 0.6 },
+  ],
+  watchStop: [{ f: 932.33, at: 0, dur: 0.16, gain: 0.5 }],
   moved: [
     { f: 698.46, at: 0, dur: 0.1 },
     { f: 698.46, at: 0.1, dur: 0.16, gain: 0.6 },
@@ -182,8 +232,11 @@ export function soundEnabled(name: SoundName): boolean {
 
 /** The same sound fired in a burst (e.g. several people moved in at once) plays once. */
 const MIN_GAP_MS = 150;
-/** Chat sounds in a busy room: at most one per interval (docs/09 P1 #13: a message ≤ 1 per 2 s). */
-export const GAP_MS: Partial<Record<SoundName, number>> = { message: 2000, mention: 1000 };
+/**
+ * Chat sounds in a busy room: at most one per interval (docs/09 P1 #13: a message ≤ 1 per 2 s);
+ * viewers of my stream coming and going (people clicking through streams): ≤ 1 per 1 s each.
+ */
+export const GAP_MS: Partial<Record<SoundName, number>> = { message: 2000, mention: 1000, watchStart: 1000, watchStop: 1000 };
 
 export interface SoundGate {
   /** Whether `name` may play at `now` (ms); a «yes» is recorded as a play. */
@@ -207,9 +260,9 @@ export function createGate(gaps: Partial<Record<SoundName, number>> = GAP_MS, mi
 
 const cache = new Map<SoundName, string>();
 const gate = createGate();
-/** After «moved», the new room's participants arrive as joins/leaves: not worth a sound each. */
+/** After «moved», the new room's participants and streams arrive as joins/leaves: not worth a sound each. */
 const SUPPRESS: Partial<Record<SoundName, { names: SoundName[]; ms: number }>> = {
-  moved: { names: ['join', 'leave'], ms: 1500 },
+  moved: { names: ['join', 'leave', 'streamStart', 'streamEnd'], ms: 1500 },
 };
 const suppressedUntil = new Map<SoundName, number>();
 
@@ -241,10 +294,10 @@ export function playSound(name: SoundName, opts: PlayOptions = {}): void {
   } else gate.mark(name, now);
   const p = prefs();
   const file = FILE_SOUNDS[name];
-  const el = new Audio(file ?? synthUrl(name));
+  const el = new Audio(file);
   el.volume = Math.max(0, Math.min(1, p.soundVolume * (opts.volume ?? 1)));
   // A bundled file that cannot be loaded falls back to its synthesised stand-in (once).
-  if (file) el.onerror = () => {
+  el.onerror = () => {
     el.onerror = null;
     el.src = synthUrl(name);
     play();

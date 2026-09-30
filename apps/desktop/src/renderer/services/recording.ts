@@ -3,7 +3,7 @@ import { confirmAction } from '../components/Confirm';
 import { t, type MessageKey } from '../i18n';
 import { ApiError } from '../lib/api/client';
 import { api } from '../lib/api/endpoints';
-import { mayManageWorkspace } from '../lib/permissions';
+import { mayManageIntegrations } from '../lib/permissions';
 import { retryRefusalKey, stopReasonKey, withEvent, withSnapshot, withoutRooms, type ActiveRecording, type RecordingMap, type RetryAction } from '../lib/recording';
 import { playSound } from '../lib/sounds';
 import { useRecordings } from '../stores/recordings';
@@ -99,9 +99,9 @@ export function startRecordingSync(): void {
 
 // ---------------------------------------------------------------- actions
 
-/** Pairing GPTunneL: MANAGE_WORKSPACE of my roles (a custom role's included), as the server checks. */
+/** Pairing GPTunneL: MANAGE_INTEGRATIONS of my roles (ADR-0048), as the server checks. */
 function canManage(workspaceId: string): boolean {
-  return mayManageWorkspace(rolesOf(useWorkspaces.getState().byId[workspaceId], myUserId()));
+  return mayManageIntegrations(rolesOf(useWorkspaces.getState().byId[workspaceId], myUserId()));
 }
 
 /** «Запись встречи» in the room menu: POST …/recording/start; the errors say what to do. */

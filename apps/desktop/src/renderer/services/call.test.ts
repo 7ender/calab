@@ -42,7 +42,7 @@ const openDm = vi.fn((_id: string) => undefined);
 vi.mock('./dms', () => ({ ensureDm: () => Promise.resolve('dm1'), openDm: (id: string) => openDm(id) }));
 vi.mock('../platform', () => ({ platform: { app: { attention: vi.fn() } } }));
 
-const { applyCallEvent, accept, hangup, onCallRing, onCallState, startCall, installCalls } = await import('./call');
+const { applyCallEvent, accept, hangup, onCallRing, onCallState, onReadyCall, resumeCall, startCall, installCalls } = await import('./call');
 const { useCall, setCall } = await import('../stores/call');
 const { useVoice } = await import('../stores/voice');
 const { useSession } = await import('../stores/session');
@@ -78,7 +78,7 @@ describe('call service', () => {
     expect(act).toHaveBeenCalledWith('c1', 'accept');
     expect(useCall.getState()).toMatchObject({ phase: 'active', since: 2000 });
     expect(stopRing).toHaveBeenCalled();
-    expect(join).toHaveBeenCalledWith('dm1', '', { call: true });
+    expect(join).toHaveBeenCalledWith('dm1', '', { call: true, resumed: false });
     // The peer hangs up: out of the voice session, nothing sent back.
     useVoice.setState({ roomId: 'dm1', workspaceId: '', call: true });
     onCallState(incoming(CallState.ENDED));
@@ -103,10 +103,19 @@ describe('call service', () => {
     expect(stopRing).toHaveBeenCalled();
   });
 
+  it('resumed after a restart for an update: READY.call is taken again with the «reconnect» cue', () => {
+    const call = outgoing(CallState.ACTIVE);
+    onReadyCall(call);
+    expect(join).not.toHaveBeenCalled();
+    expect(resumeCall(call)).toBe(true);
+    expect(useCall.getState().phase).toBe('active');
+    expect(join).toHaveBeenCalledWith('dm1', '', { call: true, resumed: true });
+  });
+
   it('leaving the call’s voice session hangs up', async () => {
     applyCallEvent({ kind: 'placed', call: outgoing(CallState.RINGING) });
     applyCallEvent({ kind: 'state', call: outgoing(CallState.ACTIVE) });
-    expect(join).toHaveBeenCalledWith('dm1', '', { call: true });
+    expect(join).toHaveBeenCalledWith('dm1', '', { call: true, resumed: false });
     useVoice.setState({ roomId: 'dm1', workspaceId: '', call: true });
     act.mockResolvedValueOnce({ call: outgoing(CallState.ENDED) });
     useVoice.setState({ roomId: null, workspaceId: null, call: false });

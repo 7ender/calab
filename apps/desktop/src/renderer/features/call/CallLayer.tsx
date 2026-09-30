@@ -143,6 +143,7 @@ function CallingStrip(): ReactNode {
     <div
       role="status"
       data-testid="call-strip"
+      data-app-occluder
       className="no-drag mat-toolbar fixed left-1/2 top-[calc(var(--titlebar-height)+8px)] z-[var(--z-toast)] flex h-9 max-w-[calc(100vw-32px)] -translate-x-1/2 items-center gap-1 rounded-full pl-1 pr-1 shadow-[var(--shadow-island)] mobile:top-[calc(var(--safe-top,0px)+8px)]"
     >
       <button

@@ -94,7 +94,7 @@ func (s *wsState) boardBits(boardID, userID uuid.UUID) perm.Bits {
 	if !ok || b == nil {
 		return 0
 	}
-	return perm.ComputeBoardIn(m, b.GetIsPrivate(), s.btargets[boardID])
+	return perm.ComputeBoardIn(m, b.GetIsPrivate(), b.GetRestricted(), s.btargets[boardID])
 }
 
 // taskRoomBits: a member's bits in a task's comment room (0 = not a task room of a live board).

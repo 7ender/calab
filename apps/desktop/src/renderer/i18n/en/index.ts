@@ -23,6 +23,8 @@ import { enSounds } from './sounds';
 import { enBots } from './bots';
 import { enGuests } from './guests';
 import { enTemp } from './temp';
+import { enSip } from './sip';
+import { enWebApps } from './webapps';
 
 /** English UI strings (ADR-0022): same keys and placeholders as `ru`; glossary docs/i18n-glossary.md. */
 export const en: Dict = {
@@ -36,6 +38,8 @@ export const en: Dict = {
   ...enBots,
   ...enGuests,
   ...enTemp,
+  ...enSip,
+  ...enWebApps,
   ...enDm,
   ...enNotes,
   ...enCall,
@@ -225,9 +229,6 @@ export const en: Dict = {
   'room.private': 'Private room',
   'room.privateHint': 'Visible only to admins and people you grant access in permissions',
   'room.accessCard': 'Access',
-  'room.restricted': 'Listed people only',
-  'room.restrictedHint': 'Admins don’t see the room either unless they’re on the list',
-  'room.restrictedOwner': 'Only the workspace owner can change this',
   'room.whoSees': 'Who can see it',
   'room.whoSeesOwner': 'owner, always',
   'room.whoSeesEmpty': 'No one on the list yet',
@@ -279,9 +280,18 @@ export const en: Dict = {
   'perm.INVITE_MEMBERS': 'Invite members',
   'perm.INVITE_GUESTS': 'Invite guests',
   'perm.CREATE_TEMP_ROOMS': 'Create temporary rooms',
+  'perm.PLACE_CALLS': 'Call phone numbers',
+  'perm.CREATE_BOARDS': 'Create boards',
+  'perm.MANAGE_MEMBERS': 'Manage members',
+  'perm.MANAGE_BOTS': 'Manage bots',
+  'perm.MANAGE_INTEGRATIONS': 'Manage integrations',
+  'perm.VIEW_JOURNALS': 'View journals',
+  'perm.MANAGE_EVENTS': 'Manage meetings',
+  'perm.MANAGE_RECORDINGS': 'Manage recordings',
   'perm.hint.INVITE_MEMBERS': 'Invite links and e-mail invitations to the workspace; in a room, a link for workspace members only.',
   'perm.hint.INVITE_GUESTS': 'Guest links of rooms and deciding which waiting guests to let in.',
   'perm.hint.CREATE_TEMP_ROOMS': 'Rooms for an hour or a few days with a guest link; they close by themselves, the history stays in the archive.',
+  'perm.hint.PLACE_CALLS': 'Call landline and mobile numbers from a voice room over the workspace SIP account. Calls cost money.',
   'perm.ADMINISTRATOR': 'Administrator',
   'perm.allow': 'allowed',
   'perm.deny': 'denied',
@@ -695,4 +705,19 @@ export const en: Dict = {
   'main.menuShortcuts': 'Keyboard shortcuts',
   'main.menuDocs': 'Documentation',
   'main.menuReportIssue': 'Report an issue',
+  'main.webAppAsk': '{site} asks for access: {what}',
+  'main.webAppAskDetail': 'The answer is remembered for this workspace app.',
+  'main.webAppAllow': 'Allow',
+  'main.webAppDeny': 'Deny',
+  'main.webAppCamera': 'camera',
+  'main.webAppMicrophone': 'microphone',
+  'main.webAppNotifications': 'notifications',
+  'main.webAppGeolocation': 'location',
+  'main.webAppClipboard': 'reading the clipboard',
+  'main.webAppBack': 'Back',
+  'main.webAppForward': 'Forward',
+  'main.webAppReload': 'Reload',
+  'main.webAppOpenLink': 'Open link in browser',
+  'main.webAppCopyLink': 'Copy link address',
+  'main.webAppOpenPage': 'Open page in browser',
 };

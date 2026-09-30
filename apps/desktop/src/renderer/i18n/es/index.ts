@@ -23,6 +23,8 @@ import { esSounds } from './sounds';
 import { esBots } from './bots';
 import { esGuests } from './guests';
 import { esTemp } from './temp';
+import { esSip } from './sip';
+import { esWebApps } from './webapps';
 
 /** Spanish UI strings (ADR-0022): same keys and placeholders as `ru`/`en`; glossary docs/i18n-glossary.md. */
 export const es: Dict = {
@@ -36,6 +38,8 @@ export const es: Dict = {
   ...esBots,
   ...esGuests,
   ...esTemp,
+  ...esSip,
+  ...esWebApps,
   ...esDm,
   ...esNotes,
   ...esCall,
@@ -225,9 +229,6 @@ export const es: Dict = {
   'room.private': 'Sala privada',
   'room.privateHint': 'Visible solo para administradores y quienes tú autorices en los permisos',
   'room.accessCard': 'Acceso',
-  'room.restricted': 'Solo personas de la lista',
-  'room.restrictedHint': 'Los administradores tampoco ven la sala si no están en la lista',
-  'room.restrictedOwner': 'Solo el propietario del espacio puede cambiarlo',
   'room.whoSees': 'Quién la ve',
   'room.whoSeesOwner': 'propietario, siempre',
   'room.whoSeesEmpty': 'Aún no hay nadie en la lista',
@@ -279,9 +280,18 @@ export const es: Dict = {
   'perm.INVITE_MEMBERS': 'Invitar miembros',
   'perm.INVITE_GUESTS': 'Invitar invitados',
   'perm.CREATE_TEMP_ROOMS': 'Crear salas temporales',
+  'perm.PLACE_CALLS': 'Llamar a números de teléfono',
+  'perm.CREATE_BOARDS': 'Crear tableros',
+  'perm.MANAGE_MEMBERS': 'Gestionar miembros',
+  'perm.MANAGE_BOTS': 'Gestionar bots',
+  'perm.MANAGE_INTEGRATIONS': 'Gestionar integraciones',
+  'perm.VIEW_JOURNALS': 'Ver registros',
+  'perm.MANAGE_EVENTS': 'Gestionar reuniones',
+  'perm.MANAGE_RECORDINGS': 'Gestionar grabaciones',
   'perm.hint.INVITE_MEMBERS': 'Enlaces de invitación e invitaciones por correo al espacio; en una sala, un enlace solo para miembros del espacio.',
   'perm.hint.INVITE_GUESTS': 'Enlaces de invitado de las salas y decidir a qué invitados en espera dejar pasar.',
   'perm.hint.CREATE_TEMP_ROOMS': 'Salas para una hora o unos días con enlace para invitados; se cierran solas y el historial queda en el archivo.',
+  'perm.hint.PLACE_CALLS': 'Llamadas a fijos y móviles desde una sala de voz con la cuenta SIP del espacio. Las llamadas tienen coste.',
   'perm.ADMINISTRATOR': 'Administrador',
   'perm.allow': 'permitido',
   'perm.deny': 'denegado',
@@ -695,4 +705,19 @@ export const es: Dict = {
   'main.menuShortcuts': 'Atajos de teclado',
   'main.menuDocs': 'Documentación',
   'main.menuReportIssue': 'Informar de un problema',
+  'main.webAppAsk': '{site} pide acceso: {what}',
+  'main.webAppAskDetail': 'La respuesta se recordará para esta app del espacio.',
+  'main.webAppAllow': 'Permitir',
+  'main.webAppDeny': 'Denegar',
+  'main.webAppCamera': 'cámara',
+  'main.webAppMicrophone': 'micrófono',
+  'main.webAppNotifications': 'notificaciones',
+  'main.webAppGeolocation': 'ubicación',
+  'main.webAppClipboard': 'leer el portapapeles',
+  'main.webAppBack': 'Atrás',
+  'main.webAppForward': 'Adelante',
+  'main.webAppReload': 'Recargar',
+  'main.webAppOpenLink': 'Abrir enlace en el navegador',
+  'main.webAppCopyLink': 'Copiar dirección del enlace',
+  'main.webAppOpenPage': 'Abrir página en el navegador',
 };

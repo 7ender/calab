@@ -145,8 +145,11 @@ type Workspace struct {
 	Plan *WorkspacePlan `protobuf:"bytes,12,opt,name=plan,proto3" json:"plan,omitempty"`
 	// Set while a superadmin has suspended the workspace (read-only: writes get 403
 	// WORKSPACE_SUSPENDED). Unset = active.
-	Suspension    *WorkspaceSuspension `protobuf:"bytes,13,opt,name=suspension,proto3" json:"suspension,omitempty"`
-	TimeFormat    TimeFormat           `protobuf:"varint,14,opt,name=time_format,json=timeFormat,proto3,enum=calaba.v1.TimeFormat" json:"time_format,omitempty"`
+	Suspension *WorkspaceSuspension `protobuf:"bytes,13,opt,name=suspension,proto3" json:"suspension,omitempty"`
+	TimeFormat TimeFormat           `protobuf:"varint,14,opt,name=time_format,json=timeFormat,proto3,enum=calaba.v1.TimeFormat" json:"time_format,omitempty"`
+	// Telephony is on (ADR-0046): SIP settings enabled and accepted by LiveKit. Members with
+	// PLACE_CALLS in a voice room they are in may call phone numbers from it.
+	SipEnabled    bool `protobuf:"varint,15,opt,name=sip_enabled,json=sipEnabled,proto3" json:"sip_enabled,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -279,6 +282,13 @@ func (x *Workspace) GetTimeFormat() TimeFormat {
 	return TimeFormat_TIME_FORMAT_UNSPECIFIED
 }
 
+func (x *Workspace) GetSipEnabled() bool {
+	if x != nil {
+		return x.SipEnabled
+	}
+	return false
+}
+
 type WorkspaceSuspension struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
 	At    *timestamppb.Timestamp `protobuf:"bytes,1,opt,name=at,proto3" json:"at,omitempty"`
@@ -332,7 +342,7 @@ func (x *WorkspaceSuspension) GetReason() string {
 	return ""
 }
 
-// A banned user (settings → «Banned»; MANAGE_WORKSPACE).
+// A banned user (settings → «Banned»; MANAGE_MEMBERS, ADR-0048).
 type WorkspaceBan struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	WorkspaceId   string                 `protobuf:"bytes,1,opt,name=workspace_id,json=workspaceId,proto3" json:"workspace_id,omitempty"`
@@ -1218,7 +1228,7 @@ func (x *JoinWorkspaceResponse) GetMember() *WorkspaceMember {
 	return nil
 }
 
-// POST /api/workspaces/{id}/invites (MANAGE_WORKSPACE)
+// POST /api/workspaces/{id}/invites (INVITE_MEMBERS, ADR-0043)
 type CreateInviteRequest struct {
 	state            protoimpl.MessageState `protogen:"open.v1"`
 	MaxUses          uint32                 `protobuf:"varint,1,opt,name=max_uses,json=maxUses,proto3" json:"max_uses,omitempty"`                              // 0 = unlimited
@@ -1315,7 +1325,7 @@ func (x *CreateInviteResponse) GetInvite() *Invite {
 	return nil
 }
 
-// GET /api/workspaces/{id}/invites (MANAGE_WORKSPACE)
+// GET /api/workspaces/{id}/invites (INVITE_MEMBERS)
 type ListInvitesResponse struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	Invites       []*Invite              `protobuf:"bytes,1,rep,name=invites,proto3" json:"invites,omitempty"`
@@ -1407,8 +1417,8 @@ func (x *ListMembersResponse) GetMembers() []*WorkspaceMember {
 
 // PATCH /api/workspaces/{id}/members/{user_id}.
 // role (legacy, kept for clients before ADR-0026; prefer PUT …/members/{user_id}/roles):
-// changes the built-in role only, custom roles are kept. MANAGE_WORKSPACE; only the owner may grant/revoke ADMIN; OWNER cannot be granted here.
-// nickname: the member themself or MANAGE_WORKSPACE.
+// changes the built-in role only, custom roles are kept. MANAGE_MEMBERS (ADR-0048); only the owner may grant/revoke ADMIN; OWNER cannot be granted here.
+// nickname: the member themself or MANAGE_NICKNAMES.
 type UpdateMemberRequest struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	Role          *WorkspaceRole         `protobuf:"varint,1,opt,name=role,proto3,enum=calaba.v1.WorkspaceRole,oneof" json:"role,omitempty"`
@@ -2538,7 +2548,7 @@ func (x *SetRoleOrderResponse) GetRoles() []*Role {
 	return nil
 }
 
-// PUT /api/workspaces/{id}/members/{user_id}/roles (MANAGE_ROLES): the member's complete
+// PUT /api/workspaces/{id}/members/{user_id}/roles (MANAGE_MEMBERS or MANAGE_ROLES, ADR-0048): the member's complete
 // role set. MEMBER / GUEST may be listed or omitted but not swapped (guest → member is
 // POST …/promote); OWNER cannot be granted or revoked; ADMIN only by the owner. Every added
 // or removed role must be below the caller's highest role and, for a non-admin, carry no
@@ -3202,11 +3212,487 @@ func (x *UpdateBackgroundResponse) GetBackground() *WorkspaceBackground {
 	return nil
 }
 
+// A site of the workspace. url: https://, or http:// only to a private host (localhost,
+// 127/8, 10/8, 172.16/12, 192.168/16, *.local, a single label without a dot), at most 2048
+// characters, no user:password@ (proto/testdata/app_urls.json has the vectors).
+type WorkspaceApp struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Id            string                 `protobuf:"bytes,1,opt,name=id,proto3" json:"id,omitempty"`
+	WorkspaceId   string                 `protobuf:"bytes,2,opt,name=workspace_id,json=workspaceId,proto3" json:"workspace_id,omitempty"`
+	Name          string                 `protobuf:"bytes,3,opt,name=name,proto3" json:"name,omitempty"` // 1..40 characters after trimming
+	Url           string                 `protobuf:"bytes,4,opt,name=url,proto3" json:"url,omitempty"`
+	IconFileId    string                 `protobuf:"bytes,5,opt,name=icon_file_id,json=iconFileId,proto3" json:"icon_file_id,omitempty"` // an image of the workspace; empty = the first letter of the name
+	IconUrl       string                 `protobuf:"bytes,6,opt,name=icon_url,json=iconUrl,proto3" json:"icon_url,omitempty"`            // /api/files/{icon_file_id} (Authorization header required); empty = none
+	Position      float64                `protobuf:"fixed64,7,opt,name=position,proto3" json:"position,omitempty"`                       // order in the rail, ascending (fractional)
+	CreatedBy     string                 `protobuf:"bytes,8,opt,name=created_by,json=createdBy,proto3" json:"created_by,omitempty"`      // user id; empty = account deleted
+	CreatedAt     *timestamppb.Timestamp `protobuf:"bytes,9,opt,name=created_at,json=createdAt,proto3" json:"created_at,omitempty"`
+	UpdatedAt     *timestamppb.Timestamp `protobuf:"bytes,10,opt,name=updated_at,json=updatedAt,proto3" json:"updated_at,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *WorkspaceApp) Reset() {
+	*x = WorkspaceApp{}
+	mi := &file_calaba_v1_workspace_proto_msgTypes[54]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *WorkspaceApp) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*WorkspaceApp) ProtoMessage() {}
+
+func (x *WorkspaceApp) ProtoReflect() protoreflect.Message {
+	mi := &file_calaba_v1_workspace_proto_msgTypes[54]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use WorkspaceApp.ProtoReflect.Descriptor instead.
+func (*WorkspaceApp) Descriptor() ([]byte, []int) {
+	return file_calaba_v1_workspace_proto_rawDescGZIP(), []int{54}
+}
+
+func (x *WorkspaceApp) GetId() string {
+	if x != nil {
+		return x.Id
+	}
+	return ""
+}
+
+func (x *WorkspaceApp) GetWorkspaceId() string {
+	if x != nil {
+		return x.WorkspaceId
+	}
+	return ""
+}
+
+func (x *WorkspaceApp) GetName() string {
+	if x != nil {
+		return x.Name
+	}
+	return ""
+}
+
+func (x *WorkspaceApp) GetUrl() string {
+	if x != nil {
+		return x.Url
+	}
+	return ""
+}
+
+func (x *WorkspaceApp) GetIconFileId() string {
+	if x != nil {
+		return x.IconFileId
+	}
+	return ""
+}
+
+func (x *WorkspaceApp) GetIconUrl() string {
+	if x != nil {
+		return x.IconUrl
+	}
+	return ""
+}
+
+func (x *WorkspaceApp) GetPosition() float64 {
+	if x != nil {
+		return x.Position
+	}
+	return 0
+}
+
+func (x *WorkspaceApp) GetCreatedBy() string {
+	if x != nil {
+		return x.CreatedBy
+	}
+	return ""
+}
+
+func (x *WorkspaceApp) GetCreatedAt() *timestamppb.Timestamp {
+	if x != nil {
+		return x.CreatedAt
+	}
+	return nil
+}
+
+func (x *WorkspaceApp) GetUpdatedAt() *timestamppb.Timestamp {
+	if x != nil {
+		return x.UpdatedAt
+	}
+	return nil
+}
+
+// GET /api/workspaces/{id}/apps → the workspace's apps by position.
+type ListWorkspaceAppsResponse struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Apps          []*WorkspaceApp        `protobuf:"bytes,1,rep,name=apps,proto3" json:"apps,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *ListWorkspaceAppsResponse) Reset() {
+	*x = ListWorkspaceAppsResponse{}
+	mi := &file_calaba_v1_workspace_proto_msgTypes[55]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ListWorkspaceAppsResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ListWorkspaceAppsResponse) ProtoMessage() {}
+
+func (x *ListWorkspaceAppsResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_calaba_v1_workspace_proto_msgTypes[55]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ListWorkspaceAppsResponse.ProtoReflect.Descriptor instead.
+func (*ListWorkspaceAppsResponse) Descriptor() ([]byte, []int) {
+	return file_calaba_v1_workspace_proto_rawDescGZIP(), []int{55}
+}
+
+func (x *ListWorkspaceAppsResponse) GetApps() []*WorkspaceApp {
+	if x != nil {
+		return x.Apps
+	}
+	return nil
+}
+
+// POST /api/workspaces/{id}/apps → 201. The app goes last. icon_file_id: an image the caller
+// uploaded to this workspace (POST /api/workspaces/{id}/files), else 422 on iconFileId; empty =
+// none. 422 on url for a URL the rule above refuses. 409 CONFLICT: 20 apps already.
+type CreateWorkspaceAppRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Name          string                 `protobuf:"bytes,1,opt,name=name,proto3" json:"name,omitempty"`
+	Url           string                 `protobuf:"bytes,2,opt,name=url,proto3" json:"url,omitempty"`
+	IconFileId    string                 `protobuf:"bytes,3,opt,name=icon_file_id,json=iconFileId,proto3" json:"icon_file_id,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *CreateWorkspaceAppRequest) Reset() {
+	*x = CreateWorkspaceAppRequest{}
+	mi := &file_calaba_v1_workspace_proto_msgTypes[56]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *CreateWorkspaceAppRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*CreateWorkspaceAppRequest) ProtoMessage() {}
+
+func (x *CreateWorkspaceAppRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_calaba_v1_workspace_proto_msgTypes[56]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use CreateWorkspaceAppRequest.ProtoReflect.Descriptor instead.
+func (*CreateWorkspaceAppRequest) Descriptor() ([]byte, []int) {
+	return file_calaba_v1_workspace_proto_rawDescGZIP(), []int{56}
+}
+
+func (x *CreateWorkspaceAppRequest) GetName() string {
+	if x != nil {
+		return x.Name
+	}
+	return ""
+}
+
+func (x *CreateWorkspaceAppRequest) GetUrl() string {
+	if x != nil {
+		return x.Url
+	}
+	return ""
+}
+
+func (x *CreateWorkspaceAppRequest) GetIconFileId() string {
+	if x != nil {
+		return x.IconFileId
+	}
+	return ""
+}
+
+type CreateWorkspaceAppResponse struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	App           *WorkspaceApp          `protobuf:"bytes,1,opt,name=app,proto3" json:"app,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *CreateWorkspaceAppResponse) Reset() {
+	*x = CreateWorkspaceAppResponse{}
+	mi := &file_calaba_v1_workspace_proto_msgTypes[57]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *CreateWorkspaceAppResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*CreateWorkspaceAppResponse) ProtoMessage() {}
+
+func (x *CreateWorkspaceAppResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_calaba_v1_workspace_proto_msgTypes[57]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use CreateWorkspaceAppResponse.ProtoReflect.Descriptor instead.
+func (*CreateWorkspaceAppResponse) Descriptor() ([]byte, []int) {
+	return file_calaba_v1_workspace_proto_rawDescGZIP(), []int{57}
+}
+
+func (x *CreateWorkspaceAppResponse) GetApp() *WorkspaceApp {
+	if x != nil {
+		return x.App
+	}
+	return nil
+}
+
+// PATCH /api/workspace-apps/{id}. Unset fields are left unchanged; icon_file_id "" clears.
+// DELETE /api/workspace-apps/{id} → 204, then WORKSPACE_APP_DELETE.
+type UpdateWorkspaceAppRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Name          *string                `protobuf:"bytes,1,opt,name=name,proto3,oneof" json:"name,omitempty"`
+	Url           *string                `protobuf:"bytes,2,opt,name=url,proto3,oneof" json:"url,omitempty"`
+	IconFileId    *string                `protobuf:"bytes,3,opt,name=icon_file_id,json=iconFileId,proto3,oneof" json:"icon_file_id,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *UpdateWorkspaceAppRequest) Reset() {
+	*x = UpdateWorkspaceAppRequest{}
+	mi := &file_calaba_v1_workspace_proto_msgTypes[58]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *UpdateWorkspaceAppRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*UpdateWorkspaceAppRequest) ProtoMessage() {}
+
+func (x *UpdateWorkspaceAppRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_calaba_v1_workspace_proto_msgTypes[58]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use UpdateWorkspaceAppRequest.ProtoReflect.Descriptor instead.
+func (*UpdateWorkspaceAppRequest) Descriptor() ([]byte, []int) {
+	return file_calaba_v1_workspace_proto_rawDescGZIP(), []int{58}
+}
+
+func (x *UpdateWorkspaceAppRequest) GetName() string {
+	if x != nil && x.Name != nil {
+		return *x.Name
+	}
+	return ""
+}
+
+func (x *UpdateWorkspaceAppRequest) GetUrl() string {
+	if x != nil && x.Url != nil {
+		return *x.Url
+	}
+	return ""
+}
+
+func (x *UpdateWorkspaceAppRequest) GetIconFileId() string {
+	if x != nil && x.IconFileId != nil {
+		return *x.IconFileId
+	}
+	return ""
+}
+
+type UpdateWorkspaceAppResponse struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	App           *WorkspaceApp          `protobuf:"bytes,1,opt,name=app,proto3" json:"app,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *UpdateWorkspaceAppResponse) Reset() {
+	*x = UpdateWorkspaceAppResponse{}
+	mi := &file_calaba_v1_workspace_proto_msgTypes[59]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *UpdateWorkspaceAppResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*UpdateWorkspaceAppResponse) ProtoMessage() {}
+
+func (x *UpdateWorkspaceAppResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_calaba_v1_workspace_proto_msgTypes[59]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use UpdateWorkspaceAppResponse.ProtoReflect.Descriptor instead.
+func (*UpdateWorkspaceAppResponse) Descriptor() ([]byte, []int) {
+	return file_calaba_v1_workspace_proto_rawDescGZIP(), []int{59}
+}
+
+func (x *UpdateWorkspaceAppResponse) GetApp() *WorkspaceApp {
+	if x != nil {
+		return x.App
+	}
+	return nil
+}
+
+// PUT /api/workspace-apps/{id}/position: move the app between two neighbours of the same
+// workspace (either may be empty: first / last; both empty = last). WORKSPACE_APP_UPSERT for
+// every app whose position changed.
+type SetWorkspaceAppPositionRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	AfterAppId    string                 `protobuf:"bytes,1,opt,name=after_app_id,json=afterAppId,proto3" json:"after_app_id,omitempty"`
+	BeforeAppId   string                 `protobuf:"bytes,2,opt,name=before_app_id,json=beforeAppId,proto3" json:"before_app_id,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *SetWorkspaceAppPositionRequest) Reset() {
+	*x = SetWorkspaceAppPositionRequest{}
+	mi := &file_calaba_v1_workspace_proto_msgTypes[60]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *SetWorkspaceAppPositionRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*SetWorkspaceAppPositionRequest) ProtoMessage() {}
+
+func (x *SetWorkspaceAppPositionRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_calaba_v1_workspace_proto_msgTypes[60]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use SetWorkspaceAppPositionRequest.ProtoReflect.Descriptor instead.
+func (*SetWorkspaceAppPositionRequest) Descriptor() ([]byte, []int) {
+	return file_calaba_v1_workspace_proto_rawDescGZIP(), []int{60}
+}
+
+func (x *SetWorkspaceAppPositionRequest) GetAfterAppId() string {
+	if x != nil {
+		return x.AfterAppId
+	}
+	return ""
+}
+
+func (x *SetWorkspaceAppPositionRequest) GetBeforeAppId() string {
+	if x != nil {
+		return x.BeforeAppId
+	}
+	return ""
+}
+
+type SetWorkspaceAppPositionResponse struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Apps          []*WorkspaceApp        `protobuf:"bytes,1,rep,name=apps,proto3" json:"apps,omitempty"` // all apps of the workspace, by position
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *SetWorkspaceAppPositionResponse) Reset() {
+	*x = SetWorkspaceAppPositionResponse{}
+	mi := &file_calaba_v1_workspace_proto_msgTypes[61]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *SetWorkspaceAppPositionResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*SetWorkspaceAppPositionResponse) ProtoMessage() {}
+
+func (x *SetWorkspaceAppPositionResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_calaba_v1_workspace_proto_msgTypes[61]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use SetWorkspaceAppPositionResponse.ProtoReflect.Descriptor instead.
+func (*SetWorkspaceAppPositionResponse) Descriptor() ([]byte, []int) {
+	return file_calaba_v1_workspace_proto_rawDescGZIP(), []int{61}
+}
+
+func (x *SetWorkspaceAppPositionResponse) GetApps() []*WorkspaceApp {
+	if x != nil {
+		return x.Apps
+	}
+	return nil
+}
+
 var File_calaba_v1_workspace_proto protoreflect.FileDescriptor
 
 const file_calaba_v1_workspace_proto_rawDesc = "" +
 	"\n" +
-	"\x19calaba/v1/workspace.proto\x12\tcalaba.v1\x1a\x1fgoogle/protobuf/timestamp.proto\x1a\x15calaba/v1/media.proto\x1a\x1bcalaba/v1/permissions.proto\x1a\x14calaba/v1/plan.proto\x1a\x14calaba/v1/user.proto\"\xf4\x04\n" +
+	"\x19calaba/v1/workspace.proto\x12\tcalaba.v1\x1a\x1fgoogle/protobuf/timestamp.proto\x1a\x15calaba/v1/media.proto\x1a\x1bcalaba/v1/permissions.proto\x1a\x14calaba/v1/plan.proto\x1a\x14calaba/v1/user.proto\"\x95\x05\n" +
 	"\tWorkspace\x12\x0e\n" +
 	"\x02id\x18\x01 \x01(\tR\x02id\x12\x12\n" +
 	"\x04slug\x18\x02 \x01(\tR\x04slug\x12\x12\n" +
@@ -3229,7 +3715,9 @@ const file_calaba_v1_workspace_proto_rawDesc = "" +
 	"suspension\x18\r \x01(\v2\x1e.calaba.v1.WorkspaceSuspensionR\n" +
 	"suspension\x126\n" +
 	"\vtime_format\x18\x0e \x01(\x0e2\x15.calaba.v1.TimeFormatR\n" +
-	"timeFormat\"Y\n" +
+	"timeFormat\x12\x1f\n" +
+	"\vsip_enabled\x18\x0f \x01(\bR\n" +
+	"sipEnabled\"Y\n" +
 	"\x13WorkspaceSuspension\x12*\n" +
 	"\x02at\x18\x01 \x01(\v2\x1a.google.protobuf.TimestampR\x02at\x12\x16\n" +
 	"\x06reason\x18\x02 \x01(\tR\x06reason\"\xdc\x01\n" +
@@ -3442,7 +3930,48 @@ const file_calaba_v1_workspace_proto_rawDesc = "" +
 	"\x18UpdateBackgroundResponse\x12>\n" +
 	"\n" +
 	"background\x18\x01 \x01(\v2\x1e.calaba.v1.WorkspaceBackgroundR\n" +
-	"background*|\n" +
+	"background\"\xd5\x02\n" +
+	"\fWorkspaceApp\x12\x0e\n" +
+	"\x02id\x18\x01 \x01(\tR\x02id\x12!\n" +
+	"\fworkspace_id\x18\x02 \x01(\tR\vworkspaceId\x12\x12\n" +
+	"\x04name\x18\x03 \x01(\tR\x04name\x12\x10\n" +
+	"\x03url\x18\x04 \x01(\tR\x03url\x12 \n" +
+	"\ficon_file_id\x18\x05 \x01(\tR\n" +
+	"iconFileId\x12\x19\n" +
+	"\bicon_url\x18\x06 \x01(\tR\aiconUrl\x12\x1a\n" +
+	"\bposition\x18\a \x01(\x01R\bposition\x12\x1d\n" +
+	"\n" +
+	"created_by\x18\b \x01(\tR\tcreatedBy\x129\n" +
+	"\n" +
+	"created_at\x18\t \x01(\v2\x1a.google.protobuf.TimestampR\tcreatedAt\x129\n" +
+	"\n" +
+	"updated_at\x18\n" +
+	" \x01(\v2\x1a.google.protobuf.TimestampR\tupdatedAt\"H\n" +
+	"\x19ListWorkspaceAppsResponse\x12+\n" +
+	"\x04apps\x18\x01 \x03(\v2\x17.calaba.v1.WorkspaceAppR\x04apps\"c\n" +
+	"\x19CreateWorkspaceAppRequest\x12\x12\n" +
+	"\x04name\x18\x01 \x01(\tR\x04name\x12\x10\n" +
+	"\x03url\x18\x02 \x01(\tR\x03url\x12 \n" +
+	"\ficon_file_id\x18\x03 \x01(\tR\n" +
+	"iconFileId\"G\n" +
+	"\x1aCreateWorkspaceAppResponse\x12)\n" +
+	"\x03app\x18\x01 \x01(\v2\x17.calaba.v1.WorkspaceAppR\x03app\"\x94\x01\n" +
+	"\x19UpdateWorkspaceAppRequest\x12\x17\n" +
+	"\x04name\x18\x01 \x01(\tH\x00R\x04name\x88\x01\x01\x12\x15\n" +
+	"\x03url\x18\x02 \x01(\tH\x01R\x03url\x88\x01\x01\x12%\n" +
+	"\ficon_file_id\x18\x03 \x01(\tH\x02R\n" +
+	"iconFileId\x88\x01\x01B\a\n" +
+	"\x05_nameB\x06\n" +
+	"\x04_urlB\x0f\n" +
+	"\r_icon_file_id\"G\n" +
+	"\x1aUpdateWorkspaceAppResponse\x12)\n" +
+	"\x03app\x18\x01 \x01(\v2\x17.calaba.v1.WorkspaceAppR\x03app\"f\n" +
+	"\x1eSetWorkspaceAppPositionRequest\x12 \n" +
+	"\fafter_app_id\x18\x01 \x01(\tR\n" +
+	"afterAppId\x12\"\n" +
+	"\rbefore_app_id\x18\x02 \x01(\tR\vbeforeAppId\"N\n" +
+	"\x1fSetWorkspaceAppPositionResponse\x12+\n" +
+	"\x04apps\x18\x01 \x03(\v2\x17.calaba.v1.WorkspaceAppR\x04apps*|\n" +
 	"\x13WorkspaceVisibility\x12$\n" +
 	" WORKSPACE_VISIBILITY_UNSPECIFIED\x10\x00\x12 \n" +
 	"\x1cWORKSPACE_VISIBILITY_PRIVATE\x10\x01\x12\x1d\n" +
@@ -3469,95 +3998,103 @@ func file_calaba_v1_workspace_proto_rawDescGZIP() []byte {
 }
 
 var file_calaba_v1_workspace_proto_enumTypes = make([]protoimpl.EnumInfo, 2)
-var file_calaba_v1_workspace_proto_msgTypes = make([]protoimpl.MessageInfo, 54)
+var file_calaba_v1_workspace_proto_msgTypes = make([]protoimpl.MessageInfo, 62)
 var file_calaba_v1_workspace_proto_goTypes = []any{
-	(WorkspaceVisibility)(0),           // 0: calaba.v1.WorkspaceVisibility
-	(TimeFormat)(0),                    // 1: calaba.v1.TimeFormat
-	(*Workspace)(nil),                  // 2: calaba.v1.Workspace
-	(*WorkspaceSuspension)(nil),        // 3: calaba.v1.WorkspaceSuspension
-	(*WorkspaceBan)(nil),               // 4: calaba.v1.WorkspaceBan
-	(*WorkspaceMember)(nil),            // 5: calaba.v1.WorkspaceMember
-	(*Badge)(nil),                      // 6: calaba.v1.Badge
-	(*WorkspaceBackground)(nil),        // 7: calaba.v1.WorkspaceBackground
-	(*Invite)(nil),                     // 8: calaba.v1.Invite
-	(*CreateWorkspaceRequest)(nil),     // 9: calaba.v1.CreateWorkspaceRequest
-	(*CreateWorkspaceResponse)(nil),    // 10: calaba.v1.CreateWorkspaceResponse
-	(*ListWorkspacesResponse)(nil),     // 11: calaba.v1.ListWorkspacesResponse
-	(*DiscoverWorkspacesResponse)(nil), // 12: calaba.v1.DiscoverWorkspacesResponse
-	(*GetWorkspaceResponse)(nil),       // 13: calaba.v1.GetWorkspaceResponse
-	(*UpdateWorkspaceRequest)(nil),     // 14: calaba.v1.UpdateWorkspaceRequest
-	(*UpdateWorkspaceResponse)(nil),    // 15: calaba.v1.UpdateWorkspaceResponse
-	(*JoinWorkspaceResponse)(nil),      // 16: calaba.v1.JoinWorkspaceResponse
-	(*CreateInviteRequest)(nil),        // 17: calaba.v1.CreateInviteRequest
-	(*CreateInviteResponse)(nil),       // 18: calaba.v1.CreateInviteResponse
-	(*ListInvitesResponse)(nil),        // 19: calaba.v1.ListInvitesResponse
-	(*ListMembersResponse)(nil),        // 20: calaba.v1.ListMembersResponse
-	(*UpdateMemberRequest)(nil),        // 21: calaba.v1.UpdateMemberRequest
-	(*UpdateMemberResponse)(nil),       // 22: calaba.v1.UpdateMemberResponse
-	(*GetInviteResponse)(nil),          // 23: calaba.v1.GetInviteResponse
-	(*InviteLookupRequest)(nil),        // 24: calaba.v1.InviteLookupRequest
-	(*InviteLookupResponse)(nil),       // 25: calaba.v1.InviteLookupResponse
-	(*AddMemberRequest)(nil),           // 26: calaba.v1.AddMemberRequest
-	(*AddMemberResponse)(nil),          // 27: calaba.v1.AddMemberResponse
-	(*EmailInvite)(nil),                // 28: calaba.v1.EmailInvite
-	(*CreateEmailInviteRequest)(nil),   // 29: calaba.v1.CreateEmailInviteRequest
-	(*CreateEmailInviteResponse)(nil),  // 30: calaba.v1.CreateEmailInviteResponse
-	(*ListEmailInvitesResponse)(nil),   // 31: calaba.v1.ListEmailInvitesResponse
-	(*CreateBanRequest)(nil),           // 32: calaba.v1.CreateBanRequest
-	(*CreateBanResponse)(nil),          // 33: calaba.v1.CreateBanResponse
-	(*ListBansResponse)(nil),           // 34: calaba.v1.ListBansResponse
-	(*ListRolesResponse)(nil),          // 35: calaba.v1.ListRolesResponse
-	(*CreateRoleRequest)(nil),          // 36: calaba.v1.CreateRoleRequest
-	(*CreateRoleResponse)(nil),         // 37: calaba.v1.CreateRoleResponse
-	(*UpdateRoleRequest)(nil),          // 38: calaba.v1.UpdateRoleRequest
-	(*UpdateRoleResponse)(nil),         // 39: calaba.v1.UpdateRoleResponse
-	(*SetRoleOrderRequest)(nil),        // 40: calaba.v1.SetRoleOrderRequest
-	(*SetRoleOrderResponse)(nil),       // 41: calaba.v1.SetRoleOrderResponse
-	(*SetMemberRolesRequest)(nil),      // 42: calaba.v1.SetMemberRolesRequest
-	(*SetMemberRolesResponse)(nil),     // 43: calaba.v1.SetMemberRolesResponse
-	(*ListBadgesResponse)(nil),         // 44: calaba.v1.ListBadgesResponse
-	(*CreateBadgeRequest)(nil),         // 45: calaba.v1.CreateBadgeRequest
-	(*CreateBadgeResponse)(nil),        // 46: calaba.v1.CreateBadgeResponse
-	(*UpdateBadgeRequest)(nil),         // 47: calaba.v1.UpdateBadgeRequest
-	(*UpdateBadgeResponse)(nil),        // 48: calaba.v1.UpdateBadgeResponse
-	(*SetMemberBadgeRequest)(nil),      // 49: calaba.v1.SetMemberBadgeRequest
-	(*SetMemberBadgeResponse)(nil),     // 50: calaba.v1.SetMemberBadgeResponse
-	(*ListBackgroundsResponse)(nil),    // 51: calaba.v1.ListBackgroundsResponse
-	(*CreateBackgroundRequest)(nil),    // 52: calaba.v1.CreateBackgroundRequest
-	(*CreateBackgroundResponse)(nil),   // 53: calaba.v1.CreateBackgroundResponse
-	(*UpdateBackgroundRequest)(nil),    // 54: calaba.v1.UpdateBackgroundRequest
-	(*UpdateBackgroundResponse)(nil),   // 55: calaba.v1.UpdateBackgroundResponse
-	(*timestamppb.Timestamp)(nil),      // 56: google.protobuf.Timestamp
-	(*RoomMediaSettings)(nil),          // 57: calaba.v1.RoomMediaSettings
-	(*WorkspacePlan)(nil),              // 58: calaba.v1.WorkspacePlan
-	(*User)(nil),                       // 59: calaba.v1.User
-	(WorkspaceRole)(0),                 // 60: calaba.v1.WorkspaceRole
-	(ScreenSharePreset)(0),             // 61: calaba.v1.ScreenSharePreset
-	(*Role)(nil),                       // 62: calaba.v1.Role
+	(WorkspaceVisibility)(0),                // 0: calaba.v1.WorkspaceVisibility
+	(TimeFormat)(0),                         // 1: calaba.v1.TimeFormat
+	(*Workspace)(nil),                       // 2: calaba.v1.Workspace
+	(*WorkspaceSuspension)(nil),             // 3: calaba.v1.WorkspaceSuspension
+	(*WorkspaceBan)(nil),                    // 4: calaba.v1.WorkspaceBan
+	(*WorkspaceMember)(nil),                 // 5: calaba.v1.WorkspaceMember
+	(*Badge)(nil),                           // 6: calaba.v1.Badge
+	(*WorkspaceBackground)(nil),             // 7: calaba.v1.WorkspaceBackground
+	(*Invite)(nil),                          // 8: calaba.v1.Invite
+	(*CreateWorkspaceRequest)(nil),          // 9: calaba.v1.CreateWorkspaceRequest
+	(*CreateWorkspaceResponse)(nil),         // 10: calaba.v1.CreateWorkspaceResponse
+	(*ListWorkspacesResponse)(nil),          // 11: calaba.v1.ListWorkspacesResponse
+	(*DiscoverWorkspacesResponse)(nil),      // 12: calaba.v1.DiscoverWorkspacesResponse
+	(*GetWorkspaceResponse)(nil),            // 13: calaba.v1.GetWorkspaceResponse
+	(*UpdateWorkspaceRequest)(nil),          // 14: calaba.v1.UpdateWorkspaceRequest
+	(*UpdateWorkspaceResponse)(nil),         // 15: calaba.v1.UpdateWorkspaceResponse
+	(*JoinWorkspaceResponse)(nil),           // 16: calaba.v1.JoinWorkspaceResponse
+	(*CreateInviteRequest)(nil),             // 17: calaba.v1.CreateInviteRequest
+	(*CreateInviteResponse)(nil),            // 18: calaba.v1.CreateInviteResponse
+	(*ListInvitesResponse)(nil),             // 19: calaba.v1.ListInvitesResponse
+	(*ListMembersResponse)(nil),             // 20: calaba.v1.ListMembersResponse
+	(*UpdateMemberRequest)(nil),             // 21: calaba.v1.UpdateMemberRequest
+	(*UpdateMemberResponse)(nil),            // 22: calaba.v1.UpdateMemberResponse
+	(*GetInviteResponse)(nil),               // 23: calaba.v1.GetInviteResponse
+	(*InviteLookupRequest)(nil),             // 24: calaba.v1.InviteLookupRequest
+	(*InviteLookupResponse)(nil),            // 25: calaba.v1.InviteLookupResponse
+	(*AddMemberRequest)(nil),                // 26: calaba.v1.AddMemberRequest
+	(*AddMemberResponse)(nil),               // 27: calaba.v1.AddMemberResponse
+	(*EmailInvite)(nil),                     // 28: calaba.v1.EmailInvite
+	(*CreateEmailInviteRequest)(nil),        // 29: calaba.v1.CreateEmailInviteRequest
+	(*CreateEmailInviteResponse)(nil),       // 30: calaba.v1.CreateEmailInviteResponse
+	(*ListEmailInvitesResponse)(nil),        // 31: calaba.v1.ListEmailInvitesResponse
+	(*CreateBanRequest)(nil),                // 32: calaba.v1.CreateBanRequest
+	(*CreateBanResponse)(nil),               // 33: calaba.v1.CreateBanResponse
+	(*ListBansResponse)(nil),                // 34: calaba.v1.ListBansResponse
+	(*ListRolesResponse)(nil),               // 35: calaba.v1.ListRolesResponse
+	(*CreateRoleRequest)(nil),               // 36: calaba.v1.CreateRoleRequest
+	(*CreateRoleResponse)(nil),              // 37: calaba.v1.CreateRoleResponse
+	(*UpdateRoleRequest)(nil),               // 38: calaba.v1.UpdateRoleRequest
+	(*UpdateRoleResponse)(nil),              // 39: calaba.v1.UpdateRoleResponse
+	(*SetRoleOrderRequest)(nil),             // 40: calaba.v1.SetRoleOrderRequest
+	(*SetRoleOrderResponse)(nil),            // 41: calaba.v1.SetRoleOrderResponse
+	(*SetMemberRolesRequest)(nil),           // 42: calaba.v1.SetMemberRolesRequest
+	(*SetMemberRolesResponse)(nil),          // 43: calaba.v1.SetMemberRolesResponse
+	(*ListBadgesResponse)(nil),              // 44: calaba.v1.ListBadgesResponse
+	(*CreateBadgeRequest)(nil),              // 45: calaba.v1.CreateBadgeRequest
+	(*CreateBadgeResponse)(nil),             // 46: calaba.v1.CreateBadgeResponse
+	(*UpdateBadgeRequest)(nil),              // 47: calaba.v1.UpdateBadgeRequest
+	(*UpdateBadgeResponse)(nil),             // 48: calaba.v1.UpdateBadgeResponse
+	(*SetMemberBadgeRequest)(nil),           // 49: calaba.v1.SetMemberBadgeRequest
+	(*SetMemberBadgeResponse)(nil),          // 50: calaba.v1.SetMemberBadgeResponse
+	(*ListBackgroundsResponse)(nil),         // 51: calaba.v1.ListBackgroundsResponse
+	(*CreateBackgroundRequest)(nil),         // 52: calaba.v1.CreateBackgroundRequest
+	(*CreateBackgroundResponse)(nil),        // 53: calaba.v1.CreateBackgroundResponse
+	(*UpdateBackgroundRequest)(nil),         // 54: calaba.v1.UpdateBackgroundRequest
+	(*UpdateBackgroundResponse)(nil),        // 55: calaba.v1.UpdateBackgroundResponse
+	(*WorkspaceApp)(nil),                    // 56: calaba.v1.WorkspaceApp
+	(*ListWorkspaceAppsResponse)(nil),       // 57: calaba.v1.ListWorkspaceAppsResponse
+	(*CreateWorkspaceAppRequest)(nil),       // 58: calaba.v1.CreateWorkspaceAppRequest
+	(*CreateWorkspaceAppResponse)(nil),      // 59: calaba.v1.CreateWorkspaceAppResponse
+	(*UpdateWorkspaceAppRequest)(nil),       // 60: calaba.v1.UpdateWorkspaceAppRequest
+	(*UpdateWorkspaceAppResponse)(nil),      // 61: calaba.v1.UpdateWorkspaceAppResponse
+	(*SetWorkspaceAppPositionRequest)(nil),  // 62: calaba.v1.SetWorkspaceAppPositionRequest
+	(*SetWorkspaceAppPositionResponse)(nil), // 63: calaba.v1.SetWorkspaceAppPositionResponse
+	(*timestamppb.Timestamp)(nil),           // 64: google.protobuf.Timestamp
+	(*RoomMediaSettings)(nil),               // 65: calaba.v1.RoomMediaSettings
+	(*WorkspacePlan)(nil),                   // 66: calaba.v1.WorkspacePlan
+	(*User)(nil),                            // 67: calaba.v1.User
+	(WorkspaceRole)(0),                      // 68: calaba.v1.WorkspaceRole
+	(ScreenSharePreset)(0),                  // 69: calaba.v1.ScreenSharePreset
+	(*Role)(nil),                            // 70: calaba.v1.Role
 }
 var file_calaba_v1_workspace_proto_depIdxs = []int32{
 	0,  // 0: calaba.v1.Workspace.visibility:type_name -> calaba.v1.WorkspaceVisibility
-	56, // 1: calaba.v1.Workspace.created_at:type_name -> google.protobuf.Timestamp
-	57, // 2: calaba.v1.Workspace.media_defaults:type_name -> calaba.v1.RoomMediaSettings
-	58, // 3: calaba.v1.Workspace.plan:type_name -> calaba.v1.WorkspacePlan
+	64, // 1: calaba.v1.Workspace.created_at:type_name -> google.protobuf.Timestamp
+	65, // 2: calaba.v1.Workspace.media_defaults:type_name -> calaba.v1.RoomMediaSettings
+	66, // 3: calaba.v1.Workspace.plan:type_name -> calaba.v1.WorkspacePlan
 	3,  // 4: calaba.v1.Workspace.suspension:type_name -> calaba.v1.WorkspaceSuspension
 	1,  // 5: calaba.v1.Workspace.time_format:type_name -> calaba.v1.TimeFormat
-	56, // 6: calaba.v1.WorkspaceSuspension.at:type_name -> google.protobuf.Timestamp
-	59, // 7: calaba.v1.WorkspaceBan.user:type_name -> calaba.v1.User
-	56, // 8: calaba.v1.WorkspaceBan.created_at:type_name -> google.protobuf.Timestamp
-	59, // 9: calaba.v1.WorkspaceMember.user:type_name -> calaba.v1.User
-	60, // 10: calaba.v1.WorkspaceMember.role:type_name -> calaba.v1.WorkspaceRole
-	56, // 11: calaba.v1.WorkspaceMember.joined_at:type_name -> google.protobuf.Timestamp
-	56, // 12: calaba.v1.Invite.expires_at:type_name -> google.protobuf.Timestamp
-	56, // 13: calaba.v1.Invite.created_at:type_name -> google.protobuf.Timestamp
+	64, // 6: calaba.v1.WorkspaceSuspension.at:type_name -> google.protobuf.Timestamp
+	67, // 7: calaba.v1.WorkspaceBan.user:type_name -> calaba.v1.User
+	64, // 8: calaba.v1.WorkspaceBan.created_at:type_name -> google.protobuf.Timestamp
+	67, // 9: calaba.v1.WorkspaceMember.user:type_name -> calaba.v1.User
+	68, // 10: calaba.v1.WorkspaceMember.role:type_name -> calaba.v1.WorkspaceRole
+	64, // 11: calaba.v1.WorkspaceMember.joined_at:type_name -> google.protobuf.Timestamp
+	64, // 12: calaba.v1.Invite.expires_at:type_name -> google.protobuf.Timestamp
+	64, // 13: calaba.v1.Invite.created_at:type_name -> google.protobuf.Timestamp
 	0,  // 14: calaba.v1.CreateWorkspaceRequest.visibility:type_name -> calaba.v1.WorkspaceVisibility
 	2,  // 15: calaba.v1.CreateWorkspaceResponse.workspace:type_name -> calaba.v1.Workspace
 	2,  // 16: calaba.v1.ListWorkspacesResponse.workspaces:type_name -> calaba.v1.Workspace
 	2,  // 17: calaba.v1.DiscoverWorkspacesResponse.workspaces:type_name -> calaba.v1.Workspace
 	2,  // 18: calaba.v1.GetWorkspaceResponse.workspace:type_name -> calaba.v1.Workspace
-	60, // 19: calaba.v1.GetWorkspaceResponse.role:type_name -> calaba.v1.WorkspaceRole
+	68, // 19: calaba.v1.GetWorkspaceResponse.role:type_name -> calaba.v1.WorkspaceRole
 	0,  // 20: calaba.v1.UpdateWorkspaceRequest.visibility:type_name -> calaba.v1.WorkspaceVisibility
-	61, // 21: calaba.v1.UpdateWorkspaceRequest.default_max_stream_preset:type_name -> calaba.v1.ScreenSharePreset
+	69, // 21: calaba.v1.UpdateWorkspaceRequest.default_max_stream_preset:type_name -> calaba.v1.ScreenSharePreset
 	1,  // 22: calaba.v1.UpdateWorkspaceRequest.time_format:type_name -> calaba.v1.TimeFormat
 	2,  // 23: calaba.v1.UpdateWorkspaceResponse.workspace:type_name -> calaba.v1.Workspace
 	2,  // 24: calaba.v1.JoinWorkspaceResponse.workspace:type_name -> calaba.v1.Workspace
@@ -3565,25 +4102,25 @@ var file_calaba_v1_workspace_proto_depIdxs = []int32{
 	8,  // 26: calaba.v1.CreateInviteResponse.invite:type_name -> calaba.v1.Invite
 	8,  // 27: calaba.v1.ListInvitesResponse.invites:type_name -> calaba.v1.Invite
 	5,  // 28: calaba.v1.ListMembersResponse.members:type_name -> calaba.v1.WorkspaceMember
-	60, // 29: calaba.v1.UpdateMemberRequest.role:type_name -> calaba.v1.WorkspaceRole
+	68, // 29: calaba.v1.UpdateMemberRequest.role:type_name -> calaba.v1.WorkspaceRole
 	5,  // 30: calaba.v1.UpdateMemberResponse.member:type_name -> calaba.v1.WorkspaceMember
 	2,  // 31: calaba.v1.GetInviteResponse.workspace:type_name -> calaba.v1.Workspace
-	56, // 32: calaba.v1.GetInviteResponse.expires_at:type_name -> google.protobuf.Timestamp
-	59, // 33: calaba.v1.InviteLookupResponse.user:type_name -> calaba.v1.User
+	64, // 32: calaba.v1.GetInviteResponse.expires_at:type_name -> google.protobuf.Timestamp
+	67, // 33: calaba.v1.InviteLookupResponse.user:type_name -> calaba.v1.User
 	5,  // 34: calaba.v1.AddMemberResponse.member:type_name -> calaba.v1.WorkspaceMember
-	60, // 35: calaba.v1.EmailInvite.role:type_name -> calaba.v1.WorkspaceRole
-	56, // 36: calaba.v1.EmailInvite.created_at:type_name -> google.protobuf.Timestamp
-	56, // 37: calaba.v1.EmailInvite.expires_at:type_name -> google.protobuf.Timestamp
-	56, // 38: calaba.v1.EmailInvite.last_sent_at:type_name -> google.protobuf.Timestamp
-	60, // 39: calaba.v1.CreateEmailInviteRequest.role:type_name -> calaba.v1.WorkspaceRole
+	68, // 35: calaba.v1.EmailInvite.role:type_name -> calaba.v1.WorkspaceRole
+	64, // 36: calaba.v1.EmailInvite.created_at:type_name -> google.protobuf.Timestamp
+	64, // 37: calaba.v1.EmailInvite.expires_at:type_name -> google.protobuf.Timestamp
+	64, // 38: calaba.v1.EmailInvite.last_sent_at:type_name -> google.protobuf.Timestamp
+	68, // 39: calaba.v1.CreateEmailInviteRequest.role:type_name -> calaba.v1.WorkspaceRole
 	28, // 40: calaba.v1.CreateEmailInviteResponse.invite:type_name -> calaba.v1.EmailInvite
 	28, // 41: calaba.v1.ListEmailInvitesResponse.invites:type_name -> calaba.v1.EmailInvite
 	4,  // 42: calaba.v1.CreateBanResponse.ban:type_name -> calaba.v1.WorkspaceBan
 	4,  // 43: calaba.v1.ListBansResponse.bans:type_name -> calaba.v1.WorkspaceBan
-	62, // 44: calaba.v1.ListRolesResponse.roles:type_name -> calaba.v1.Role
-	62, // 45: calaba.v1.CreateRoleResponse.role:type_name -> calaba.v1.Role
-	62, // 46: calaba.v1.UpdateRoleResponse.role:type_name -> calaba.v1.Role
-	62, // 47: calaba.v1.SetRoleOrderResponse.roles:type_name -> calaba.v1.Role
+	70, // 44: calaba.v1.ListRolesResponse.roles:type_name -> calaba.v1.Role
+	70, // 45: calaba.v1.CreateRoleResponse.role:type_name -> calaba.v1.Role
+	70, // 46: calaba.v1.UpdateRoleResponse.role:type_name -> calaba.v1.Role
+	70, // 47: calaba.v1.SetRoleOrderResponse.roles:type_name -> calaba.v1.Role
 	5,  // 48: calaba.v1.SetMemberRolesResponse.member:type_name -> calaba.v1.WorkspaceMember
 	6,  // 49: calaba.v1.ListBadgesResponse.badges:type_name -> calaba.v1.Badge
 	6,  // 50: calaba.v1.CreateBadgeResponse.badge:type_name -> calaba.v1.Badge
@@ -3592,11 +4129,17 @@ var file_calaba_v1_workspace_proto_depIdxs = []int32{
 	7,  // 53: calaba.v1.ListBackgroundsResponse.backgrounds:type_name -> calaba.v1.WorkspaceBackground
 	7,  // 54: calaba.v1.CreateBackgroundResponse.background:type_name -> calaba.v1.WorkspaceBackground
 	7,  // 55: calaba.v1.UpdateBackgroundResponse.background:type_name -> calaba.v1.WorkspaceBackground
-	56, // [56:56] is the sub-list for method output_type
-	56, // [56:56] is the sub-list for method input_type
-	56, // [56:56] is the sub-list for extension type_name
-	56, // [56:56] is the sub-list for extension extendee
-	0,  // [0:56] is the sub-list for field type_name
+	64, // 56: calaba.v1.WorkspaceApp.created_at:type_name -> google.protobuf.Timestamp
+	64, // 57: calaba.v1.WorkspaceApp.updated_at:type_name -> google.protobuf.Timestamp
+	56, // 58: calaba.v1.ListWorkspaceAppsResponse.apps:type_name -> calaba.v1.WorkspaceApp
+	56, // 59: calaba.v1.CreateWorkspaceAppResponse.app:type_name -> calaba.v1.WorkspaceApp
+	56, // 60: calaba.v1.UpdateWorkspaceAppResponse.app:type_name -> calaba.v1.WorkspaceApp
+	56, // 61: calaba.v1.SetWorkspaceAppPositionResponse.apps:type_name -> calaba.v1.WorkspaceApp
+	62, // [62:62] is the sub-list for method output_type
+	62, // [62:62] is the sub-list for method input_type
+	62, // [62:62] is the sub-list for extension type_name
+	62, // [62:62] is the sub-list for extension extendee
+	0,  // [0:62] is the sub-list for field type_name
 }
 
 func init() { file_calaba_v1_workspace_proto_init() }
@@ -3614,13 +4157,14 @@ func file_calaba_v1_workspace_proto_init() {
 	file_calaba_v1_workspace_proto_msgTypes[36].OneofWrappers = []any{}
 	file_calaba_v1_workspace_proto_msgTypes[45].OneofWrappers = []any{}
 	file_calaba_v1_workspace_proto_msgTypes[52].OneofWrappers = []any{}
+	file_calaba_v1_workspace_proto_msgTypes[58].OneofWrappers = []any{}
 	type x struct{}
 	out := protoimpl.TypeBuilder{
 		File: protoimpl.DescBuilder{
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_calaba_v1_workspace_proto_rawDesc), len(file_calaba_v1_workspace_proto_rawDesc)),
 			NumEnums:      2,
-			NumMessages:   54,
+			NumMessages:   62,
 			NumExtensions: 0,
 			NumServices:   0,
 		},

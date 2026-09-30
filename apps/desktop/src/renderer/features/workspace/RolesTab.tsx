@@ -9,19 +9,21 @@ import {
   useSensors,
   type DragEndEvent,
 } from '@dnd-kit/core';
-import { PERMISSION_BITS, WorkspaceRole, type Role, type WorkspaceMember } from '@calaba/protocol';
-import { AtSign, ChevronLeft, ChevronRight, Crown, GripVertical, Plus, ShieldCheck, Trash2, UserRound, X } from 'lucide-react';
-import { useId, useMemo, useState, type ReactNode } from 'react';
+import { PERMISSION_BITS, WorkspaceRole, type PermissionBits, type PermissionName, type Role, type WorkspaceMember } from '@calaba/protocol';
+import { AtSign, Check, ChevronDown, ChevronLeft, ChevronRight, Crown, GripVertical, Plus, ShieldCheck, Trash2, UserRound, X } from 'lucide-react';
+import { memo, useId, useMemo, useState, type ReactNode } from 'react';
 import { Avatar } from '../../components/Avatar';
 import { confirmAction } from '../../components/Confirm';
-import { Badge, Button, Card, Empty, IconButton, Input, Row, Toggle, cx } from '../../components/ui';
+import { Badge, Button, Card, Empty, IconButton, Input, Row, Segmented, Toggle, cx } from '../../components/ui';
 import { plural, t, type MessageKey } from '../../i18n';
 import { errorText } from '../../lib/api/errors';
 import { api } from '../../lib/api/endpoints';
+import { previewRoles, rolePreview, visibleBoards, visibleRooms, type PreviewItemId } from '../../lib/rolePreview';
 import {
   ROLE_NAME_MAX,
   ROLE_PALETTE,
   ROLE_PERM_GROUPS,
+  ROLE_TEMPLATES,
   canAssignRole,
   canCreateRole,
   canDeleteRole,
@@ -32,18 +34,25 @@ import {
   isFullRole,
   GUEST_BITS,
   parseRoleColor,
+  permDefault,
   reorderCustom,
   roleActor,
   roleColorCss,
   roleCounts,
   roleNameError,
   rolesOfMember,
+  templateBits,
+  templateClipped,
   topRole,
   uniqueRoleName,
+  type PermDefault,
   type PermGroupId,
   type RoleActor,
   type RoleNameError,
+  type RoleTemplateId,
 } from '../../lib/roles';
+import { useBoards } from '../../stores/boards';
+import { useRooms } from '../../stores/rooms';
 import { useSession } from '../../stores/session';
 import { useMemberRoles, useWorkspaces } from '../../stores/workspaces';
 import { roleName } from '../people/MemberBits';
@@ -54,19 +63,69 @@ import { toggleMemberRole } from '../people/actions';
 import { nameOf } from '../people/members';
 
 /*
- * Workspace settings → «Роли» (ADR-0026, docs/08 «Роли»): the list (colour, member count,
- * built-ins marked, custom roles dragged into order) and a role card (name, colour, «Упоминаемая»,
- * the permission matrix, members with the role, delete). Changes apply at once (System Settings
- * style); the server re-checks every rule, a refusal (403 / 422) shows inline.
+ * Workspace settings → «Роли» (ADR-0026, ADR-0048 §3, docs/08 «Роли»): the list (colour, member
+ * count, built-ins marked, custom roles dragged into order), the new-role form (name, colour,
+ * «Шаблон», the bits, the preview — nothing is saved until «Создать») and a role card (name, colour,
+ * «Упоминаемая», the permission matrix by function, «Что увидит участник…», members with the role,
+ * delete). Card changes apply at once (System Settings style); the server re-checks every rule, a
+ * refusal (403 / 422) shows inline.
  */
 
 const GROUP_LABEL: Record<PermGroupId, MessageKey> = {
-  general: 'roles.group.general',
+  workspace: 'roles.group.workspace',
+  members: 'roles.group.members',
   invites: 'roles.group.invites',
   rooms: 'roles.group.rooms',
   voice: 'roles.group.voice',
+  telephony: 'roles.group.telephony',
   moderation: 'roles.group.moderation',
+  calendar: 'roles.group.calendar',
+  boards: 'roles.group.boards',
+  recordings: 'roles.group.recordings',
+  integrations: 'roles.group.integrations',
+  journals: 'roles.group.journals',
 };
+
+const DEFAULT_LABEL: Record<PermDefault, MessageKey> = {
+  guests: 'perm.default.guests',
+  members: 'perm.default.members',
+  admins: 'perm.default.admins',
+};
+
+const TEMPLATE_LABEL: Record<RoleTemplateId, MessageKey> = {
+  empty: 'roles.tpl.empty',
+  moderator: 'roles.tpl.moderator',
+  manager: 'roles.tpl.manager',
+  observer: 'roles.tpl.observer',
+};
+
+const PREVIEW_LABEL: Record<PreviewItemId, MessageKey> = {
+  rooms: 'roles.preview.rooms',
+  voice: 'roles.preview.voice',
+  tempRooms: 'roles.preview.tempRooms',
+  calendar: 'roles.preview.calendar',
+  events: 'roles.preview.events',
+  boards: 'roles.preview.boards',
+  createBoards: 'roles.preview.createBoards',
+  tabWorkspace: 'roles.preview.tabWorkspace',
+  tabMembers: 'roles.preview.tabMembers',
+  tabInvites: 'roles.preview.tabInvites',
+  tabRoles: 'roles.preview.tabRoles',
+  tabStickers: 'roles.preview.tabStickers',
+  tabBots: 'roles.preview.tabBots',
+  tabIntegrations: 'roles.preview.tabIntegrations',
+  tabJournals: 'roles.preview.tabJournals',
+  tabRecordings: 'roles.preview.tabRecordings',
+};
+
+const NO_ROLES: readonly Role[] = [];
+
+/** «что даёт · кому по умолчанию» of a bit (ADR-0048 §3). */
+function permHint(p: PermissionName): string {
+  const what = PERM_HINT[p];
+  const who = t(DEFAULT_LABEL[permDefault(p)]);
+  return what ? `${t(what)} · ${who}` : who;
+}
 
 const NAME_ERROR: Record<Exclude<RoleNameError, null>, MessageKey> = {
   empty: 'roles.err.empty',
@@ -85,10 +144,24 @@ function useActor(workspaceId: string): RoleActor {
 
 export function RolesTab({ workspaceId }: { workspaceId: string }): ReactNode {
   const [open, setOpen] = useState<string | null>(null);
+  const [creating, setCreating] = useState(false);
   const role = useWorkspaces((s) => (open ? s.byId[workspaceId]?.roles.find((r) => r.id === open) : undefined));
+  if (creating) {
+    return (
+      <RoleDraft
+        workspaceId={workspaceId}
+        onCancel={() => setCreating(false)}
+        onCreated={(id) => {
+          setCreating(false);
+          setOpen(id);
+        }}
+      />
+    );
+  }
+  const list = <RoleList workspaceId={workspaceId} onOpen={setOpen} onCreate={() => setCreating(true)} />;
   // A role deleted meanwhile (here or elsewhere) → back to the list.
-  if (open && !role) return <RoleList workspaceId={workspaceId} onOpen={setOpen} />;
-  return role ? <RoleCard workspaceId={workspaceId} role={role} onBack={() => setOpen(null)} /> : <RoleList workspaceId={workspaceId} onOpen={setOpen} />;
+  if (open && !role) return list;
+  return role ? <RoleCard workspaceId={workspaceId} role={role} onBack={() => setOpen(null)} /> : list;
 }
 
 /** The glyph before a role name: crown / shield for owner / admin, @ member, guest icon, a colour dot for a custom role. */
@@ -110,31 +183,14 @@ function RoleIcon({ role, size = 'md' }: { role: Role; size?: 'md' | 'lg' }): Re
   );
 }
 
-function RoleList({ workspaceId, onOpen }: { workspaceId: string; onOpen: (id: string) => void }): ReactNode {
+function RoleList({ workspaceId, onOpen, onCreate }: { workspaceId: string; onOpen: (id: string) => void; onCreate: () => void }): ReactNode {
   const roles = useWorkspaces((s) => s.byId[workspaceId]?.roles);
   const members = useWorkspaces((s) => s.byId[workspaceId]?.members);
   const actor = useActor(workspaceId);
   const [error, setError] = useState<string | null>(null);
-  const [busy, setBusy] = useState(false);
   const sensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 4 } }), useSensor(KeyboardSensor));
   const counts = useMemo(() => roleCounts(roles ?? [], Object.values(members ?? {})), [roles, members]);
   if (!roles) return null;
-
-  const create = async (): Promise<void> => {
-    setBusy(true);
-    setError(null);
-    try {
-      const r = await api.roles.create(workspaceId, { name: uniqueRoleName(t('roles.newName'), roles), color: ROLE_PALETTE[0] ?? 0, permissions: 0n, mentionable: false });
-      if (r.role) {
-        useWorkspaces.getState().upsertRole(r.role);
-        onOpen(r.role.id);
-      }
-    } catch (e) {
-      setError(err(e));
-    } finally {
-      setBusy(false);
-    }
-  };
 
   const onEnd = (e: DragEndEvent): void => {
     const over = e.over?.id;
@@ -160,7 +216,7 @@ function RoleList({ workspaceId, onOpen }: { workspaceId: string; onOpen: (id: s
       <div className="flex items-start gap-3">
         <p className="min-w-0 flex-1 text-caption text-muted">{t('roles.hint')}</p>
         {canCreateRole(actor) ? (
-          <Button busy={busy} onClick={() => void create()} data-testid="role-create">
+          <Button onClick={onCreate} data-testid="role-create">
             <Plus className="size-4" aria-hidden /> {t('roles.create')}
           </Button>
         ) : null}
@@ -301,7 +357,17 @@ function RoleCard({ workspaceId, role, onBack }: { workspaceId: string; role: Ro
           </p>
         </Card>
       ) : (
-        <PermissionMatrix role={role} editable={bits} onChange={(p) => void patch({ permissions: p })} />
+        <>
+          <PermissionMatrix
+            idPrefix={role.id}
+            bits={role.permissions}
+            editable={bits}
+            guest={role.builtin === WorkspaceRole.GUEST}
+            lockedHint={editable}
+            onChange={(p) => void patch({ permissions: p })}
+          />
+          <RolePreview workspaceId={workspaceId} roleId={role.id} position={role.position} builtin={role.builtin} bits={role.permissions} />
+        </>
       )}
 
       <RoleMembers workspaceId={workspaceId} role={role} actor={actor} onError={setError} />
@@ -408,9 +474,27 @@ function ColorPicker({ value, disabled, onChange }: { value: number; disabled: b
   );
 }
 
-/** Общие / Комнаты / Голос / Модерация: a checkbox per permission; the guest role lists only the guest bits. */
-function PermissionMatrix({ role, editable, onChange }: { role: Role; editable: bigint; onChange: (p: bigint) => void }): ReactNode {
-  const guest = role.builtin === WorkspaceRole.GUEST;
+/**
+ * The bits by function (lib/roles ROLE_PERM_GROUPS): a checkbox per permission with «что даёт ·
+ * кому по умолчанию»; the guest role lists only the guest bits. A bit I may not grant is disabled
+ * (with the reason as its tooltip when the role itself is mine to edit).
+ */
+function PermissionMatrix({
+  idPrefix,
+  bits,
+  editable,
+  guest,
+  lockedHint,
+  onChange,
+}: {
+  idPrefix: string;
+  bits: PermissionBits;
+  editable: PermissionBits;
+  guest: boolean;
+  /** The role is editable by me: a disabled bit explains itself. */
+  lockedHint: boolean;
+  onChange: (p: PermissionBits) => void;
+}): ReactNode {
   return (
     <>
       {guest ? <p className="-mb-2 px-1 text-caption text-muted">{t('roles.guestNote')}</p> : null}
@@ -421,18 +505,19 @@ function PermissionMatrix({ role, editable, onChange }: { role: Role; editable: 
           <Card key={g.id} title={t(GROUP_LABEL[g.id])}>
             {perms.map((p) => {
               const bit = PERMISSION_BITS[p];
-              const on = (role.permissions & bit) !== 0n;
+              const on = (bits & bit) !== 0n;
               const can = (editable & bit) !== 0n;
-              const id = `perm-${role.id}-${p}`;
+              const id = `perm-${idPrefix}-${p}`;
               return (
-                <Row key={p} label={t(PERM_LABEL[p])} hint={PERM_HINT[p] ? t(PERM_HINT[p]) : undefined} htmlFor={id}>
+                <Row key={p} label={t(PERM_LABEL[p])} hint={permHint(p)} htmlFor={id}>
                   <input
                     id={id}
                     type="checkbox"
                     checked={on}
                     disabled={!can}
+                    title={!can && lockedHint ? t('roles.bitLocked') : undefined}
                     data-testid={`role-perm-${p}`}
-                    onChange={(e) => onChange(e.target.checked ? role.permissions | bit : role.permissions & ~bit)}
+                    onChange={(e) => onChange(e.target.checked ? bits | bit : bits & ~bit)}
                     className="size-[18px] cursor-pointer rounded-[4px] accent-[var(--color-accent-strong)] disabled:cursor-default disabled:opacity-50"
                   />
                 </Row>
@@ -441,6 +526,182 @@ function PermissionMatrix({ role, editable, onChange }: { role: Role; editable: 
           </Card>
         );
       })}
+    </>
+  );
+}
+
+/**
+ * «Что увидит участник с этой ролью» (ADR-0048 §3): a collapsible card under the bits, a check /
+ * cross list computed with computePermissions (lib/rolePreview) — live as bits change. Primitive
+ * props; the room / board counts are primitive selectors, so store traffic re-renders it only when
+ * a count moves.
+ */
+const RolePreview = memo(function RolePreview({
+  workspaceId,
+  roleId,
+  position,
+  builtin,
+  bits,
+}: {
+  workspaceId: string;
+  roleId: string;
+  position: number;
+  builtin: WorkspaceRole;
+  bits: PermissionBits;
+}): ReactNode {
+  const all = useWorkspaces((s) => s.byId[workspaceId]?.roles);
+  const [open, setOpen] = useState(true);
+  const bodyId = useId();
+  const roles = useMemo(() => (all ? previewRoles(all, { id: roleId, position, builtin }, bits) : null), [all, roleId, position, builtin, bits]);
+  const guest = builtin === WorkspaceRole.GUEST;
+  const rooms = useRooms((s) => (roles && open ? visibleRooms(s.byId, workspaceId, roles) : '0/0'));
+  const boards = useBoards((s) => (roles && open ? visibleBoards(s.boards, workspaceId, roles, guest) : '0/0'));
+  const items = useMemo(() => (roles ? rolePreview(roles, guest, { rooms, boards }) : []), [roles, guest, rooms, boards]);
+  if (!roles) return null;
+  const count = (id: PreviewItemId): string | null => {
+    const c = id === 'rooms' ? rooms : id === 'boards' ? boards : null;
+    if (!c || c.endsWith('/0')) return null;
+    const [n = '0', total = '0'] = c.split('/');
+    return t('roles.preview.of', { n, total });
+  };
+  const row = (it: (typeof items)[number]): ReactNode => (
+    <li key={it.id} className="flex min-h-8 items-center gap-2 px-3 py-1" data-testid={`role-preview-${it.id}`} data-on={it.on ? '1' : '0'}>
+      {it.on ? (
+        <Check className="size-4 shrink-0 text-ok" aria-label={t('roles.preview.yes')} />
+      ) : (
+        <X className="size-4 shrink-0 text-faint" aria-label={t('roles.preview.no')} />
+      )}
+      <span className={cx('min-w-0 flex-1 truncate text-body', !it.on && 'text-muted')}>{t(PREVIEW_LABEL[it.id])}</span>
+      {count(it.id) ? <span className="shrink-0 text-caption tabular-nums text-muted">{count(it.id)}</span> : null}
+    </li>
+  );
+  return (
+    <section className="flex flex-col gap-1.5" data-testid="role-preview">
+      <button
+        type="button"
+        aria-expanded={open}
+        aria-controls={bodyId}
+        onClick={() => setOpen((v) => !v)}
+        className="flex items-center gap-1 self-start rounded-[6px] px-1 text-caption font-semibold text-muted hover:text-fg"
+      >
+        <ChevronDown className={cx('size-3.5 transition-transform duration-[var(--motion-fast)]', !open && '-rotate-90')} aria-hidden />
+        {t('roles.preview.title')}
+      </button>
+      {open ? (
+        <div id={bodyId} className="overflow-hidden rounded-[var(--radius-card)] bg-[var(--color-card)] py-1">
+          <p className="px-3 pb-1 pt-1.5 text-caption text-faint">{t('roles.preview.hint')}</p>
+          <ul>{items.filter((i) => !i.settings).map(row)}</ul>
+          <p className="px-3 pb-0.5 pt-2 text-caption font-medium text-muted">{t('roles.preview.settings')}</p>
+          <ul>{items.filter((i) => i.settings).map(row)}</ul>
+        </div>
+      ) : null}
+    </section>
+  );
+});
+
+/**
+ * «Создать роль» (ADR-0048 §3): a draft — name, colour, «Шаблон» (Пусто · Модератор · Менеджер
+ * отдела · Наблюдатель pre-check bits), the bits and the preview; nothing reaches the server until
+ * «Создать» (then the role card opens). The new role goes to the bottom of the custom ones
+ * (position 2): the bits I may grant are those of a role there.
+ */
+function RoleDraft({ workspaceId, onCancel, onCreated }: { workspaceId: string; onCancel: () => void; onCreated: (id: string) => void }): ReactNode {
+  const actor = useActor(workspaceId);
+  const roles = useWorkspaces((s) => s.byId[workspaceId]?.roles ?? NO_ROLES);
+  const [name, setName] = useState(() => uniqueRoleName(t('roles.newName'), roles));
+  const [color, setColor] = useState(ROLE_PALETTE[0] ?? 0);
+  const [tpl, setTpl] = useState<RoleTemplateId>('empty');
+  const [bits, setBits] = useState<PermissionBits>(0n);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const errId = useId();
+  const editable = useMemo(() => editableBits(actor, { position: 2, builtin: WorkspaceRole.UNSPECIFIED }), [actor]);
+  const problem = roleNameError(name, roles);
+  const clipped = templateClipped(tpl, editable) !== 0n;
+
+  const apply = (id: RoleTemplateId): void => {
+    setTpl(id);
+    setBits(templateBits(id, editable));
+  };
+  const submit = async (): Promise<void> => {
+    if (problem || busy) return;
+    setBusy(true);
+    setError(null);
+    try {
+      const r = await api.roles.create(workspaceId, { name: name.trim(), color, permissions: bits, mentionable: false });
+      if (r.role) {
+        useWorkspaces.getState().upsertRole(r.role);
+        onCreated(r.role.id);
+      }
+    } catch (e) {
+      setError(err(e));
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <>
+      <div className="flex min-w-0 items-center gap-2">
+        <Button variant="secondary" size="sm" onClick={onCancel} data-testid="role-back">
+          <ChevronLeft className="size-4" aria-hidden /> {t('roles.tab')}
+        </Button>
+        <h3 className="min-w-0 truncate text-headline font-semibold" data-testid="role-title">
+          {t('roles.create')}
+        </h3>
+      </div>
+      {error ? (
+        <p role="alert" className="-mt-2 text-caption text-danger-text" data-testid="role-error">
+          {error}
+        </p>
+      ) : null}
+      <Card title={t('roles.card.basics')}>
+        <Row label={t('roles.name')}>
+          <div className="flex w-60 flex-col items-end gap-1">
+            <Input
+              aria-label={t('roles.name')}
+              value={name}
+              autoFocus
+              maxLength={ROLE_NAME_MAX * 2}
+              aria-invalid={problem ? true : undefined}
+              aria-describedby={problem ? errId : undefined}
+              data-testid="role-name"
+              onChange={(e) => setName(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter') void submit();
+              }}
+            />
+            {problem ? (
+              <span id={errId} className="text-caption text-danger-text">
+                {t(NAME_ERROR[problem], { n: ROLE_NAME_MAX })}
+              </span>
+            ) : null}
+          </div>
+        </Row>
+        <div className="flex flex-col gap-2 px-3 py-2.5" data-settings-row>
+          <span className="text-body" data-settings-label>
+            {t('roles.color')}
+          </span>
+          <ColorPicker value={color} disabled={false} onChange={setColor} />
+        </div>
+      </Card>
+      <Card title={t('roles.tpl.label')} footer={t('roles.tpl.hint')}>
+        <div className="flex flex-col gap-2 px-3 py-2.5" data-testid="role-template">
+          <Segmented label={t('roles.tpl.label')} value={tpl} onChange={apply} options={ROLE_TEMPLATES.map((x) => ({ value: x.id, label: t(TEMPLATE_LABEL[x.id]) }))} />
+          {tpl === 'observer' ? <p className="text-caption text-muted">{t('roles.tpl.observerNote')}</p> : null}
+          {clipped ? <p className="text-caption text-muted" data-testid="role-template-clipped">{t('roles.tpl.clipped')}</p> : null}
+        </div>
+      </Card>
+      <PermissionMatrix idPrefix="new" bits={bits} editable={editable} guest={false} lockedHint onChange={setBits} />
+      <RolePreview workspaceId={workspaceId} roleId="" position={2} builtin={WorkspaceRole.UNSPECIFIED} bits={bits} />
+      <div className="flex justify-end gap-2">
+        <Button variant="secondary" onClick={onCancel}>
+          {t('common.cancel')}
+        </Button>
+        <Button busy={busy} disabled={!!problem} onClick={() => void submit()} data-testid="role-create-submit">
+          {t('common.create')}
+        </Button>
+      </div>
     </>
   );
 }

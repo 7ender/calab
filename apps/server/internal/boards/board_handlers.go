@@ -226,8 +226,8 @@ func (s *Service) createBoard(w http.ResponseWriter, r *http.Request) error {
 	if err != nil {
 		return err
 	}
-	if !m.Workspace().Has(perm.ManageWorkspace) {
-		return httpx.Forbidden("MANAGE_WORKSPACE required")
+	if !m.Workspace().Has(perm.CreateBoards) { // ADR-0048 (guests are refused by member)
+		return httpx.Forbidden("CREATE_BOARDS required")
 	}
 	if err := moderation.CheckSuspended(r.Context(), s.db.Q, wsID); err != nil {
 		return err
@@ -330,7 +330,7 @@ func (s *Service) updateBoard(w http.ResponseWriter, r *http.Request) error {
 	if err := httpx.Decode(w, r, &req); err != nil {
 		return err
 	}
-	p := sqlc.UpdateBoardParams{ID: id, IsPrivate: req.IsPrivate}
+	p := sqlc.UpdateBoardParams{ID: id, IsPrivate: req.IsPrivate, Restricted: req.Restricted}
 	if req.Name != nil {
 		n, err := validText("name", req.GetName(), 1, MaxBoardName)
 		if err != nil {
@@ -391,6 +391,9 @@ func (s *Service) updateBoard(w http.ResponseWriter, r *http.Request) error {
 		if err != nil {
 			return err
 		}
+		if err := s.restrict(r, q, cur, req.IsPrivate, req.Restricted, acc); err != nil {
+			return err
+		}
 		if req.Key != nil {
 			k := strings.ToUpper(strings.TrimSpace(req.GetKey()))
 			if k != cur.Key {
@@ -416,6 +419,32 @@ func (s *Service) updateBoard(w http.ResponseWriter, r *http.Request) error {
 		return err
 	}
 	return s.respondBoard(w, r, id, acc, http.StatusOK)
+}
+
+// restrict checks a change of is_private / restricted (ADR-0048: a closed board stays private)
+// and, when the board gets closed, gives the caller a personal VIEW_BOARD | MANAGE_BOARD so they
+// keep it (the owner sees it anyway; the creator has had every board bit since creation).
+// MANAGE_BOARD on the board is checked by the caller (manageBoard): the owner always has it.
+func (s *Service) restrict(r *http.Request, q *sqlc.Queries, cur sqlc.Board, private, restricted *bool, acc perm.BoardAccess) error {
+	nextPrivate, nextRestricted := cur.IsPrivate, cur.Restricted
+	if private != nil {
+		nextPrivate = *private
+	}
+	if restricted != nil {
+		nextRestricted = *restricted
+	}
+	switch {
+	case restricted != nil && *restricted && !nextPrivate:
+		return httpx.Validation("restricted", "only private boards can be closed")
+	case nextRestricted && !nextPrivate:
+		return httpx.Validation("isPrivate", "a closed board stays private")
+	}
+	if !nextRestricted || cur.Restricted || acc.Role == perm.RoleOwner {
+		return nil
+	}
+	return q.GrantBoardUserOverride(r.Context(), sqlc.GrantBoardUserOverrideParams{
+		BoardID: cur.ID, UserID: uid(r).String(), Allow: int64(perm.ViewBoard | perm.ManageBoard),
+	})
 }
 
 // deleteBoard: DELETE /api/boards/{id} archives; ?purge=1 deletes the board with its tasks,
@@ -599,7 +628,7 @@ func validateOverrides(ctx context.Context, q *sqlc.Queries, actor perm.BoardAcc
 	for _, e := range existing {
 		prev[e.TargetType+":"+e.TargetID] = perm.Bits(uint64(e.Allow)) //nolint:gosec // bit mask
 	}
-	admin := actor.Member.Workspace().Has(perm.Administrator)
+	admin := actor.Bits.Has(perm.Administrator) // not on a closed board (ADR-0048), except the owner
 	roleRows, err := q.ListWorkspaceRoles(ctx, actor.WorkspaceID)
 	if err != nil {
 		return nil, err
@@ -876,6 +905,25 @@ func (s *Service) deleteStatus(w http.ResponseWriter, r *http.Request) error {
 		}
 		if from.IsDefault {
 			return httpx.Conflict("the default status cannot be deleted; make another one the default first")
+		}
+		// Moving the tasks forward is a status change like any other (ADR-0049 §2): refused
+		// while one of them waits for approval — pick another move_to.
+		if Forward(*from, *dst) {
+			// Row locks: a vote / approvers change (which lock the task) cannot slip in
+			// between this check and the move.
+			rows, err := queryTasks(r.Context(), tx, "WHERE t.status_id = $1 ORDER BY t.id FOR UPDATE OF t", sid)
+			if err != nil {
+				return err
+			}
+			tls, err := tallies(r.Context(), q, rows)
+			if err != nil {
+				return err
+			}
+			for _, x := range rows {
+				if err := checkApprovalGate(tls[x.ID], *from, *dst); err != nil {
+					return err
+				}
+			}
 		}
 		if moved, err = q.MoveStatusTasks(r.Context(), sqlc.MoveStatusTasksParams{FromID: sid, ToID: to}); err != nil {
 			return err

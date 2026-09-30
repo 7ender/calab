@@ -46,6 +46,28 @@ services:
       - "7882:7882/udp"
     depends_on: [valkey]
 
+  # Телефония (ADR-0046), только по запросу: `docker compose -f infra/docker/compose.dev.yml
+  # --profile sip up -d sip`. В сетевом пространстве LiveKit; без провайдера звонки падают сразу,
+  # но API транков и CreateSIPParticipant работают по-настоящему.
+  sip:
+    image: livekit/sip:v1.14.0@sha256:1487f39ca985f64879cc74b045e1ddc22f7afdb02e8a4739d92d749b9c3c3ad2
+    profiles: [sip]
+    network_mode: "service:livekit"
+    environment:
+      LIVEKIT_API_KEY: devkey
+      LIVEKIT_API_SECRET: secret
+      SIP_CONFIG_BODY: |
+        ws_url: ws://127.0.0.1:7880
+        redis:
+          address: valkey:6379
+          db: 1
+        sip_port: 5060
+        rtp_port: 10000-10200
+        hide_inbound_port: true
+        logging:
+          level: debug
+    depends_on: [livekit, valkey]
+
   # Запись встреч (ADR-0025). В сетевом пространстве LiveKit: node_ip 127.0.0.1 из livekit.dev.yaml
   # для egress — это сам LiveKit. Файлы — в apps/server/data/recordings (RECORDINGS_PATH API
   # на хосте по умолчанию), внутри контейнера /out.

@@ -60,6 +60,8 @@ var blocked = map[string]scope{
 	"POST /api/rooms/{id}/sounds/play":                 scopeRoom,
 	"POST /api/rooms/{id}/voice/{userId}/allow-camera": scopeRoom,
 	"POST /api/rooms/{id}/recording/start":             scopeRoom,
+	"POST /api/rooms/{id}/calls":                       scopeRoom, // telephony (ADR-0046)
+	"POST /api/workspaces/{id}/sip/test":               scopeWorkspace,
 	"POST /api/rooms/{id}/recordings/{rid}/recheck":    scopeRoom,
 	"POST /api/rooms/{id}/recordings/{rid}/reupload":   scopeRoom,
 	// invitations and joining

@@ -436,6 +436,9 @@ func (h *Hub) buildReady(ctx context.Context, s *Session, uid uuid.UUID) (*v1.Re
 			return nil, err
 		}
 		h.fillLive(ctx, w.ID, snap)
+		if u.IsBot {
+			snap.Apps = nil // web apps are for people (ADR-0050)
+		}
 		ready.Workspaces = append(ready.Workspaces, snap)
 	}
 	// Guest admission (ADR-0040): the recipient's own knocks, and the knocks they decide.

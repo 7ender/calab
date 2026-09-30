@@ -1,5 +1,5 @@
 import { Compass, Plus, Volume2 } from 'lucide-react';
-import { useMemo, useRef, type ReactNode } from 'react';
+import { Fragment, useMemo, useRef, type ReactNode } from 'react';
 import { Logo } from '../../components/Logo';
 import { MediaImg } from '../../components/MediaImg';
 import { Tip, cx } from '../../components/ui';
@@ -14,6 +14,8 @@ import { useVoice } from '../../stores/voice';
 import { RailContextMenu } from './RailContextMenu';
 import { useHomeDrop } from '../notes/HomeDrop';
 import { useWorkspaces } from '../../stores/workspaces';
+import { useOpenApp } from '../../stores/webApps';
+import { WorkspaceAppsColumn } from '../webapps/AppRail';
 
 /** 48 px tile: squircle radius 16 → 12 on hover/active (Discord-like morph, 160 ms). */
 const tile =
@@ -42,7 +44,11 @@ export function WorkspaceRail(): ReactNode {
         <HomeItem />
         <div className="my-0.5 h-0.5 w-8 shrink-0 rounded-full bg-line" aria-hidden />
         {order.map((id) => (
-          <RailItem key={id} id={id} />
+          <Fragment key={id}>
+            <RailItem id={id} />
+            {/* Web apps of the active workspace (ADR-0050 §3), right under its icon. */}
+            <WorkspaceAppsColumn wsId={id} />
+          </Fragment>
         ))}
         {order.length ? <div className="my-0.5 h-0.5 w-8 shrink-0 rounded-full bg-line" aria-hidden /> : null}
         <RailAction label={t('ws.create')} onClick={() => open({ kind: 'create-workspace' })}>
@@ -61,6 +67,8 @@ function RailItem({ id }: { id: string }): ReactNode {
   const isActive = useUi((s) => s.activeWorkspaceId === id);
   const setWs = useUi((s) => s.setWorkspace);
   const inVoice = useVoice((s) => s.workspaceId === id && s.roomId !== null);
+  // One of its web apps is open (ADR-0050): the app's icon carries the full pill.
+  const appOpen = useOpenApp(isActive ? id : null) !== null;
   const byId = useRooms((s) => s.byId);
   const readState = useRooms((s) => s.readState);
   const lastMessage = useRooms((s) => s.lastMessage);
@@ -88,7 +96,7 @@ function RailItem({ id }: { id: string }): ReactNode {
         aria-hidden
         className={cx(
           'absolute left-0 top-1/2 w-1 -translate-y-1/2 rounded-r-full bg-fg transition-[height,opacity] duration-[var(--motion)] ease-out',
-          isActive ? 'h-10' : unread ? 'h-2 group-hover:h-5' : 'h-0 opacity-0 group-hover:h-5 group-hover:opacity-100',
+          isActive && !appOpen ? 'h-10' : isActive ? 'h-5' : unread ? 'h-2 group-hover:h-5' : 'h-0 opacity-0 group-hover:h-5 group-hover:opacity-100',
         )}
       />
       <RailContextMenu workspaceId={id} tip={w.name}>

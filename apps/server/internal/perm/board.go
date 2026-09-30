@@ -7,18 +7,33 @@ type BoardScope struct {
 	Private bool
 	// Guest: the member's highest built-in role is guest — guests never see boards.
 	Guest bool
+	// Restricted: boards.restricted (ADR-0048, only on a private board) — ADMINISTRATOR gives
+	// no bypass; the owner (Owner) gets everything.
+	Restricted bool
+	// Owner: the user is the workspace owner (holder of the built-in owner role).
+	Owner bool
 }
 
-// ComputeBoard is the board form of the one permission rule (ADR-0042): the order of
+// BoardScopeOf returns the scope of member m on a board.
+func BoardScopeOf(m Member, private, restricted bool) BoardScope {
+	return BoardScope{Private: private || restricted, Guest: m.Role == RoleGuest, Restricted: restricted, Owner: m.Role == RoleOwner}
+}
+
+// ComputeBoard is the board form of the one permission rule (ADR-0042, ADR-0048): the order of
 // ComputeOrdered (ADMINISTRATOR → everything, each role's override lowest position first, then
 // the user's), but the overrides touch only BoardOnly bits, a private board first drops the
-// roles' VIEW_BOARD, and without VIEW_BOARD there is nothing. Guests get nothing. Mirror of
-// computePermissions({board}) in packages/protocol.
+// roles' VIEW_BOARD, and without VIEW_BOARD there is nothing. Guests get nothing. On a
+// restricted board the owner gets everything and ADMINISTRATOR is dropped (like a restricted
+// room). Mirror of computePermissions({board}) in packages/protocol.
 func ComputeBoard(raw Bits, sc BoardScope, roleOvs []Override, userOv *Override) Bits {
-	if sc.Guest {
+	switch {
+	case sc.Guest:
 		return 0
-	}
-	if raw&Administrator != 0 {
+	case sc.Restricted && sc.Owner:
+		return All
+	case sc.Restricted:
+		raw &^= Administrator | ViewBoard
+	case raw&Administrator != 0:
 		return All
 	}
 	p := raw
@@ -39,8 +54,9 @@ func ComputeBoard(raw Bits, sc BoardScope, roleOvs []Override, userOv *Override)
 	return p
 }
 
-// ComputeBoardIn computes a member's board permissions from the board's override list.
-func ComputeBoardIn(m Member, private bool, overrides []OverrideTarget) Bits {
+// ComputeBoardIn computes a member's board permissions from the board's override list;
+// restricted is boards.restricted (ADR-0048).
+func ComputeBoardIn(m Member, private, restricted bool, overrides []OverrideTarget) Bits {
 	var userOv *Override
 	var buf [8]Override
 	roleOvs := buf[:0]
@@ -58,7 +74,7 @@ func ComputeBoardIn(m Member, private bool, overrides []OverrideTarget) Bits {
 			break
 		}
 	}
-	return ComputeBoard(m.Raw(), BoardScope{Private: private, Guest: m.Role == RoleGuest}, roleOvs, userOv)
+	return ComputeBoard(m.Raw(), BoardScopeOf(m, private, restricted), roleOvs, userOv)
 }
 
 // ComputeBoardRoles is ComputeBoard from the member's roles (any order) and the board's role

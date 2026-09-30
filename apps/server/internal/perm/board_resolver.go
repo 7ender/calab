@@ -21,6 +21,7 @@ type BoardAccess struct {
 	Member      Member
 	Bits        Bits // 0 = the board is hidden from the user
 	Private     bool
+	Restricted  bool // boards.restricted (ADR-0048)
 	Archived    bool
 	Suspended   bool
 }
@@ -48,8 +49,8 @@ func (r *Resolver) Board(ctx context.Context, boardID, userID uuid.UUID) (BoardA
 			}
 			acc = BoardAccess{
 				WorkspaceID: row.WorkspaceID, Role: m.Role, Member: m,
-				Bits:    ComputeBoard(m.Raw(), BoardScope{Private: row.IsPrivate, Guest: m.Role == RoleGuest}, ovs, override(row.UserAllow, row.UserDeny)),
-				Private: row.IsPrivate, Archived: row.Archived, Suspended: row.Suspended,
+				Bits:    ComputeBoard(m.Raw(), BoardScopeOf(m, row.IsPrivate, row.Restricted), ovs, override(row.UserAllow, row.UserDeny)),
+				Private: row.IsPrivate, Restricted: row.Restricted, Archived: row.Archived, Suspended: row.Suspended,
 			}
 		}
 		r.mu.Lock()

@@ -505,22 +505,16 @@ func (h *Handlers) update(w http.ResponseWriter, r *http.Request) error {
 		p.UserLimit = &v
 	}
 	if req.AllowRecording != nil {
-		// Recording consent is the workspace's call (ADR-0025): owner / admins only.
-		if !acc.Member.Workspace().Has(perm.ManageWorkspace) {
-			return httpx.Forbidden("MANAGE_WORKSPACE required to change allow_recording")
+		// Recording consent is the workspace's call (ADR-0025): MANAGE_RECORDINGS (ADR-0048).
+		if !acc.Member.Workspace().Has(perm.ManageRecordings) || acc.Role == perm.RoleGuest {
+			return httpx.Forbidden("MANAGE_RECORDINGS required to change allow_recording")
 		}
 		p.AllowRecording = req.AllowRecording
 	}
 	if req.Restricted != nil {
-		// «Только по списку» is the owner's call (ADR-0029): workspaces.owner_id, not a bit —
-		// admins hold ADMINISTRATOR and are exactly who the flag hides the room from.
-		ws, err := h.db.Q.GetWorkspace(r.Context(), acc.WorkspaceID)
-		if err != nil {
-			return err
-		}
-		if ws.OwnerID != auth.MustFromContext(r.Context()).UserID {
-			return httpx.Forbidden("only the workspace owner may change restricted").WithDetails(ReasonOwnerOnly, 0, 0)
-		}
+		// A closed room (ADR-0048, was owner-only in ADR-0029): MANAGE_ROOM in the room (h.manage;
+		// the creator of a temporary room too). In a closed room only the owner and those let in
+		// by an override have it, so the owner can always open it again.
 		p.Restricted = req.Restricted
 	}
 	if req.GuestApproval != nil && !acc.Bits.Has(perm.ManageRoom) && !acc.Bits.Has(perm.InviteGuests) {
@@ -583,6 +577,16 @@ func (h *Handlers) update(w http.ResponseWriter, r *http.Request) error {
 			restrictedChanged = cur.Restricted != restricted || cur.IsPrivate != private
 			if err := h.applyTempPatch(r.Context(), q, cur, tp); err != nil {
 				return err
+			}
+			if restricted && !cur.Restricted && acc.Role != perm.RoleOwner {
+				// Whoever closes the room keeps it (ADR-0048): a personal VIEW_ROOM, plus MANAGE_ROOM
+				// when they had it — the creator of a temporary room manages it as its creator, and
+				// closing must not hand them MANAGE_ROOM (make_permanent, wider overrides).
+				if err := q.GrantUserOverride(r.Context(), sqlc.GrantUserOverrideParams{
+					RoomID: roomID, UserID: auth.MustFromContext(r.Context()).UserID.String(), Allow: int64(perm.ViewRoom | acc.Bits&perm.ManageRoom), //nolint:gosec // bit mask
+				}); err != nil {
+					return err
+				}
 			}
 		}
 		room, err := q.UpdateRoom(r.Context(), p)
@@ -729,7 +733,7 @@ func validateOverrides(ctx context.Context, q *sqlc.Queries, wsID uuid.UUID, act
 		seen[tt+":"+target] = true
 		allow, deny := perm.Bits(o.GetAllow()), perm.Bits(o.GetDeny())
 		if (allow|deny)&^perm.RoomOnly != 0 {
-			return nil, httpx.Validation(field, "ADMINISTRATOR, MANAGE_WORKSPACE, MANAGE_NICKNAMES, MANAGE_ROLES and MANAGE_STICKERS cannot be set per room")
+			return nil, httpx.Validation(field, "workspace-level and board permissions cannot be set per room")
 		}
 		if allow&deny != 0 {
 			return nil, httpx.Validation(field, "a bit cannot be both allowed and denied")

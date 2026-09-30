@@ -215,12 +215,12 @@ func (s *Service) getIntegration(w http.ResponseWriter, r *http.Request) error {
 var pairCode = regexp.MustCompile(`^[A-Z0-9]{8}$`)
 
 func (s *Service) pairIntegration(w http.ResponseWriter, r *http.Request) error {
-	wsID, bits, _, err := workspaceAccess(r)
+	wsID, bits, role, err := workspaceAccess(r)
 	if err != nil {
 		return err
 	}
-	if !bits.Has(perm.ManageWorkspace) {
-		return httpx.Forbidden("MANAGE_WORKSPACE required")
+	if !bits.Has(perm.ManageIntegrations) || role == perm.RoleGuest { // ADR-0048
+		return httpx.Forbidden("MANAGE_INTEGRATIONS required")
 	}
 	var req v1.PairGptunnelRequest
 	if err := httpx.Decode(w, r, &req); err != nil {
@@ -300,12 +300,12 @@ func (s *Service) revokeRemote(ctx context.Context, token string) {
 }
 
 func (s *Service) unpairIntegration(w http.ResponseWriter, r *http.Request) error {
-	wsID, bits, _, err := workspaceAccess(r)
+	wsID, bits, role, err := workspaceAccess(r)
 	if err != nil {
 		return err
 	}
-	if !bits.Has(perm.ManageWorkspace) {
-		return httpx.Forbidden("MANAGE_WORKSPACE required")
+	if !bits.Has(perm.ManageIntegrations) || role == perm.RoleGuest { // ADR-0048
+		return httpx.Forbidden("MANAGE_INTEGRATIONS required")
 	}
 	token, _, err := s.deviceToken(r.Context(), wsID)
 	if err != nil {
@@ -452,16 +452,12 @@ func (s *Service) start(w http.ResponseWriter, r *http.Request) error {
 	upd, err := s.db.Q.MarkRecordingStarted(context.WithoutCancel(ctx), sqlc.MarkRecordingStartedParams{ID: rec.ID, EgressID: &info.EgressID})
 	if err != nil {
 		// The egress runs but the row is lost: stop it (reconcile would do it too).
-		if _, serr := s.eg.StopEgress(context.WithoutCancel(ctx), info.EgressID); serr != nil && !rtc.IsEgressGone(serr) {
-			slog.WarnContext(ctx, "recording: stop egress after a failed start", "egress", info.EgressID, "err", serr)
-		}
+		s.stopEgress(context.WithoutCancel(ctx), info.EgressID, "start_not_stored", "start", "recording", rec.ID, "err", err)
 		return err
 	}
 	if upd.StoppedAt != nil {
 		// Stopped while the egress was starting (the stop had no egress id to send yet).
-		if _, err := s.eg.StopEgress(context.WithoutCancel(ctx), info.EgressID); err != nil && !rtc.IsEgressGone(err) {
-			slog.WarnContext(ctx, "recording: stop egress (retried by the worker)", "egress", info.EgressID, "err", err)
-		}
+		s.stopEgress(context.WithoutCancel(ctx), info.EgressID, upd.StopReason, "start: stopped while starting", "recording", upd.ID)
 	}
 	slog.InfoContext(ctx, "recording started", "recording", upd.ID, "room", room.ID, "egress", info.EgressID, "by", me)
 	pb := pbconv.RoomRecording(upd)
@@ -506,9 +502,7 @@ func (s *Service) requestStop(ctx context.Context, rec sqlc.RoomRecording, reaso
 		return rec, err
 	}
 	if upd.EgressID != nil && s.eg != nil {
-		if _, err := s.eg.StopEgress(ctx, *upd.EgressID); err != nil && !rtc.IsEgressGone(err) {
-			slog.WarnContext(ctx, "recording: stop egress (retried by the worker)", "egress", *upd.EgressID, "err", err)
-		}
+		s.stopEgress(ctx, *upd.EgressID, reason, "requestStop", "recording", upd.ID) // retried by the worker on failure
 	}
 	slog.InfoContext(ctx, "recording stopped", "recording", upd.ID, "reason", reason)
 	s.publish(ctx, pbconv.RoomRecording(upd))

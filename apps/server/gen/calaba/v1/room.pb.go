@@ -358,11 +358,12 @@ type Room struct {
 	// Set by PATCH /api/rooms/{id}/voice-status, cleared when the room empties (ROOM_UPDATE).
 	VoiceStatus string `protobuf:"bytes,17,opt,name=voice_status,json=voiceStatus,proto3" json:"voice_status,omitempty"`
 	// Voice rooms: members may record the meeting (ADR-0025). Default true; changed with
-	// PATCH /api/rooms/{id} allow_recording, which needs MANAGE_WORKSPACE.
+	// PATCH /api/rooms/{id} allow_recording, which needs MANAGE_RECORDINGS (ADR-0048).
 	AllowRecording bool `protobuf:"varint,18,opt,name=allow_recording,json=allowRecording,proto3" json:"allow_recording,omitempty"`
-	// Private rooms only (ADR-0029): «Только по списку». ADMINISTRATOR gives no bypass here:
-	// admins see the room only through an allow VIEW_ROOM override (by role or personally),
-	// the workspace owner always does. Changed with PATCH /api/rooms/{id} restricted.
+	// Private rooms only (ADR-0029, ADR-0048): closed even to administrators. ADMINISTRATOR gives
+	// no bypass and VIEW_ROOM comes only from an allow override on the room (by role or
+	// personally); the workspace owner always sees it. Changed with PATCH /api/rooms/{id}
+	// restricted. Strangers get 404 for the room everywhere.
 	Restricted bool `protobuf:"varint,19,opt,name=restricted,proto3" json:"restricted,omitempty"`
 	// Guests arriving by a link of the room wait for a decision (ADR-0040); a link may
 	// override it (RoomInvite.require_approval). Changed with PATCH /api/rooms/{id}.
@@ -1599,11 +1600,12 @@ type UpdateRoomRequest struct {
 	MediaOverride *RoomMediaOverride     `protobuf:"bytes,4,opt,name=media_override,json=mediaOverride,proto3,oneof" json:"media_override,omitempty"`
 	CategoryId    *string                `protobuf:"bytes,5,opt,name=category_id,json=categoryId,proto3,oneof" json:"category_id,omitempty"` // "" = remove from category
 	UserLimit     *uint32                `protobuf:"varint,6,opt,name=user_limit,json=userLimit,proto3,oneof" json:"user_limit,omitempty"`   // 0 = unlimited
-	// Voice rooms: allow meeting recording (ADR-0025). Needs MANAGE_WORKSPACE besides
+	// Voice rooms: allow meeting recording (ADR-0025). Needs MANAGE_RECORDINGS (ADR-0048) besides
 	// MANAGE_ROOM; switching it off stops a running recording.
 	AllowRecording *bool `protobuf:"varint,7,opt,name=allow_recording,json=allowRecording,proto3,oneof" json:"allow_recording,omitempty"`
-	// Private rooms only (ADR-0029). Only the workspace owner (Workspace.owner_id) may change
-	// it: anyone else gets 403 FORBIDDEN with reason OWNER_ONLY.
+	// Private rooms only (ADR-0029, 422 on a public one). MANAGE_ROOM in the room (ADR-0048; the
+	// creator of a temporary room too); the owner may always lift it. Switching it on gives the
+	// caller (unless the owner) a personal allow VIEW_ROOM | MANAGE_ROOM so they keep access.
 	Restricted    *bool `protobuf:"varint,8,opt,name=restricted,proto3,oneof" json:"restricted,omitempty"`
 	GuestApproval *bool `protobuf:"varint,9,opt,name=guest_approval,json=guestApproval,proto3,oneof" json:"guest_approval,omitempty"` // ADR-0040
 	// Temporary rooms only (ADR-0044; 422 on a permanent room). A new end: in the future and at

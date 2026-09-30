@@ -68,11 +68,12 @@ message Room {
   // Set by PATCH /api/rooms/{id}/voice-status, cleared when the room empties (ROOM_UPDATE).
   string voice_status = 17;
   // Voice rooms: members may record the meeting (ADR-0025). Default true; changed with
-  // PATCH /api/rooms/{id} allow_recording, which needs MANAGE_WORKSPACE.
+  // PATCH /api/rooms/{id} allow_recording, which needs MANAGE_RECORDINGS (ADR-0048).
   bool allow_recording = 18;
-  // Private rooms only (ADR-0029): «Только по списку». ADMINISTRATOR gives no bypass here:
-  // admins see the room only through an allow VIEW_ROOM override (by role or personally),
-  // the workspace owner always does. Changed with PATCH /api/rooms/{id} restricted.
+  // Private rooms only (ADR-0029, ADR-0048): closed even to administrators. ADMINISTRATOR gives
+  // no bypass and VIEW_ROOM comes only from an allow override on the room (by role or
+  // personally); the workspace owner always sees it. Changed with PATCH /api/rooms/{id}
+  // restricted. Strangers get 404 for the room everywhere.
   bool restricted = 19;
   // Guests arriving by a link of the room wait for a decision (ADR-0040); a link may
   // override it (RoomInvite.require_approval). Changed with PATCH /api/rooms/{id}.
@@ -247,11 +248,12 @@ message UpdateRoomRequest {
   optional RoomMediaOverride media_override = 4;
   optional string category_id = 5; // "" = remove from category
   optional uint32 user_limit = 6;  // 0 = unlimited
-  // Voice rooms: allow meeting recording (ADR-0025). Needs MANAGE_WORKSPACE besides
+  // Voice rooms: allow meeting recording (ADR-0025). Needs MANAGE_RECORDINGS (ADR-0048) besides
   // MANAGE_ROOM; switching it off stops a running recording.
   optional bool allow_recording = 7;
-  // Private rooms only (ADR-0029). Only the workspace owner (Workspace.owner_id) may change
-  // it: anyone else gets 403 FORBIDDEN with reason OWNER_ONLY.
+  // Private rooms only (ADR-0029, 422 on a public one). MANAGE_ROOM in the room (ADR-0048; the
+  // creator of a temporary room too); the owner may always lift it. Switching it on gives the
+  // caller (unless the owner) a personal allow VIEW_ROOM | MANAGE_ROOM so they keep access.
   optional bool restricted = 8;
   optional bool guest_approval = 9; // ADR-0040
   // Temporary rooms only (ADR-0044; 422 on a permanent room). A new end: in the future and at

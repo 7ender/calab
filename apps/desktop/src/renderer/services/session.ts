@@ -26,6 +26,7 @@ import { resetDmCaches } from './dms';
 import { startMessageRetention } from './retention';
 import { startAppBadge } from './badge';
 import { startRecordingSync } from './recording';
+import { startSipSync } from './sip';
 import { installMenu } from './menu';
 import { reconnectGateway, resetGatewaySubscriptions, startGateway, stopGateway, wakeGateway } from './gateway';
 import { handleDeepLink, takePendingInvite } from './links';
@@ -94,6 +95,7 @@ export async function bootstrap(): Promise<void> {
   startMessageRetention();
   startAppBadge();
   startRecordingSync();
+  startSipSync();
   installMenu();
 
   // Web /join/<code>, /r/<code>: the «open in the app / continue in the browser» card (docs/09 #53)

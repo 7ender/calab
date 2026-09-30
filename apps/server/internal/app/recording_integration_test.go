@@ -16,6 +16,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/google/uuid"
 	lkauth "github.com/livekit/protocol/auth"
 	"github.com/livekit/protocol/livekit"
 	"github.com/twitchtv/twirp"
@@ -614,4 +615,74 @@ func TestRecordingAutoStop(t *testing.T) {
 		return r.GetRecordingId() == recID && r.GetState() == v1.RoomRecordingState_ROOM_RECORDING_STATE_STOPPED && r.GetStopReason() == "empty"
 	})
 	endWithoutFile(recID)
+}
+
+// TestRecordingSurvivesForeignInstance: another Calab installation sharing this LiveKit (same
+// API key, own database) must not make the reconcile stop egresses: prod 1.2.0 stopped every
+// recording 4-16 s after its start (docs/12). A running recording survives 40 s of worker
+// rounds with its egress active and the caller in the room; an egress in a room of a workspace
+// this installation does not know is left alone, while a real orphan of ours is still stopped.
+func TestRecordingSurvivesForeignInstance(t *testing.T) {
+	liveKitUp(t)
+	o, bob, ws, room := setupTeam(t)
+	rid := room.GetId()
+	pairWorkspace(t, o, ws.GetId())
+	inCall(t, bob, ws, rid)
+	ctx := context.Background()
+
+	var start v1.StartRecordingResponse
+	bob.must(200, "POST", "/api/rooms/"+rid+"/recording/start", nil, &start)
+	recID := start.GetRecording().GetRecordingId()
+	ours := lastEgress(t, rid)
+	addEgress := func(roomName string) string {
+		egFake.mu.Lock()
+		defer egFake.mu.Unlock()
+		egFake.seq++
+		id := fmt.Sprintf("EG_x_%d_%d", time.Now().UnixNano(), egFake.seq)
+		egFake.items[id] = &livekit.EgressInfo{EgressId: id, RoomName: roomName, Status: livekit.EgressStatus_EGRESS_ACTIVE, StartedAt: time.Now().UnixNano()}
+		return id
+	}
+	egFake.mu.Lock()
+	egFake.items[ours].Status = livekit.EgressStatus_EGRESS_ACTIVE
+	egFake.mu.Unlock()
+	foreign := addEgress("ws_" + uuid.NewString() + "_room_" + uuid.NewString())
+	orphan := addEgress("ws_" + ws.GetId() + "_room_" + uuid.NewString())
+	defer func() {
+		egFake.mu.Lock()
+		for _, id := range []string{foreign, orphan, ours} {
+			egFake.items[id].Status = livekit.EgressStatus_EGRESS_COMPLETE
+		}
+		egFake.mu.Unlock()
+	}()
+
+	// 40 s into the recording: several worker rounds (the app's worker runs every 300 ms in
+	// these tests) plus explicit ones.
+	if _, err := testDB.Pool.Exec(ctx, `UPDATE room_recordings SET started_at = now() - interval '40 seconds' WHERE id = $1`, recID); err != nil {
+		t.Fatal(err)
+	}
+	for deadline := time.Now().Add(1500 * time.Millisecond); time.Now().Before(deadline); {
+		testApp.Recording.Maintain(ctx)
+		time.Sleep(100 * time.Millisecond)
+	}
+	if egFake.stopped(ours) {
+		t.Fatal("the running recording's egress was stopped")
+	}
+	if egFake.stopped(foreign) {
+		t.Fatal("an egress of another installation was stopped")
+	}
+	if !egFake.stopped(orphan) {
+		t.Fatal("an orphaned egress of this installation was not stopped")
+	}
+	var status string
+	var stoppedAt *time.Time
+	if err := testDB.Pool.QueryRow(ctx, `SELECT status, stopped_at FROM room_recordings WHERE id = $1`, recID).Scan(&status, &stoppedAt); err != nil {
+		t.Fatal(err)
+	}
+	if status != "recording" || stoppedAt != nil {
+		t.Fatalf("recording after 40 s: %s stopped_at=%v", status, stoppedAt)
+	}
+	bob.must(200, "POST", "/api/rooms/"+rid+"/recording/stop", nil, nil)
+	if !egFake.stopped(ours) {
+		t.Fatal("the stop did not reach the egress")
+	}
 }

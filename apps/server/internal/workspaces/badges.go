@@ -113,9 +113,9 @@ func (h *Handlers) listBadges(w http.ResponseWriter, r *http.Request) error {
 	return nil
 }
 
-// createBadge: POST /api/workspaces/{id}/badges (MANAGE_WORKSPACE).
+// createBadge: POST /api/workspaces/{id}/badges (MANAGE_MEMBERS, ADR-0048).
 func (h *Handlers) createBadge(w http.ResponseWriter, r *http.Request) error {
-	wsID, _, err := requireManage(r)
+	wsID, _, err := requireMembers(r)
 	if err != nil {
 		return err
 	}
@@ -154,9 +154,9 @@ func (h *Handlers) createBadge(w http.ResponseWriter, r *http.Request) error {
 	return nil
 }
 
-// updateBadge: PATCH /api/workspaces/{id}/badges/{badgeId} (MANAGE_WORKSPACE).
+// updateBadge: PATCH /api/workspaces/{id}/badges/{badgeId} (MANAGE_MEMBERS, ADR-0048).
 func (h *Handlers) updateBadge(w http.ResponseWriter, r *http.Request) error {
-	wsID, _, err := requireManage(r)
+	wsID, _, err := requireMembers(r)
 	if err != nil {
 		return err
 	}
@@ -196,10 +196,10 @@ func (h *Handlers) updateBadge(w http.ResponseWriter, r *http.Request) error {
 	return nil
 }
 
-// deleteBadge: DELETE /api/workspaces/{id}/badges/{badgeId} (MANAGE_WORKSPACE): its members
+// deleteBadge: DELETE /api/workspaces/{id}/badges/{badgeId} (MANAGE_MEMBERS, ADR-0048): its members
 // lose it (WORKSPACE_MEMBER_UPDATE each), then BADGE_DELETE.
 func (h *Handlers) deleteBadge(w http.ResponseWriter, r *http.Request) error {
-	wsID, _, err := requireManage(r)
+	wsID, _, err := requireMembers(r)
 	if err != nil {
 		return err
 	}

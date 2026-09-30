@@ -54,7 +54,7 @@ function usePicker(onFile: (f: File) => void): { open: () => void; input: ReactN
 }
 
 /**
- * «Настройки пространства → Бейджи» (docs/09 #82, docs/08 «Бейдж»; MANAGE_WORKSPACE): the library
+ * «Настройки пространства → Бейджи» (docs/09 #82, docs/08 «Бейдж»; MANAGE_MEMBERS, ADR-0048): the library
  * of small square pictures shown next to members' names — add (name + picture, square preview),
  * rename in place, replace the picture, delete («Снять у N участников»). Assigning is in the
  * member's profile.

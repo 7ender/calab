@@ -122,7 +122,7 @@ func TestPermissionMatrixREST(t *testing.T) {
 		{"room overrides, unchanged (MANAGE_ROOM in the room)", only(403, "owner", "admin", "roomMgr", "roomOv"), func(u *user) int {
 			return u.do("PUT", "/api/rooms/"+rid+"/permissions", &v1.SetRoomPermissionsRequest{Overrides: ovs}, nil)
 		}},
-		{"room allow_recording (MANAGE_ROOM + MANAGE_WORKSPACE)", func() map[string]int {
+		{"room allow_recording (MANAGE_ROOM + MANAGE_RECORDINGS)", func() map[string]int {
 			m := only(403, "owner", "admin")
 			m["guest"] = 404 // the voice room is invisible to the guest
 			return m
@@ -150,7 +150,8 @@ func TestPermissionMatrixREST(t *testing.T) {
 			n := "Team"
 			return u.do("PATCH", "/api/workspaces/"+wid, &v1.UpdateWorkspaceRequest{Name: &n}, nil)
 		}},
-		{"list bans (MANAGE_WORKSPACE)", only(403, "owner", "admin", "wsMgr"), func(u *user) int {
+		// ADR-0048: members are MANAGE_MEMBERS now; MANAGE_WORKSPACE alone no longer reaches them.
+		{"list bans (MANAGE_MEMBERS)", only(403, "owner", "admin"), func(u *user) int {
 			return u.do("GET", "/api/workspaces/"+wid+"/bans", nil, nil)
 		}},
 		{"nickname of another member (MANAGE_NICKNAMES)", only(403, "owner", "admin", "nick"), func(u *user) int {
@@ -181,7 +182,7 @@ func TestPermissionMatrixREST(t *testing.T) {
 		{"delete another's message (MANAGE_MESSAGES)", only(403, "owner", "admin", "msgMgr", "roomOv"), func(u *user) int {
 			return u.do("DELETE", "/api/messages/"+sendRetry(t, tgt, rid, "delete me").GetId(), nil, nil)
 		}},
-		{"kick a member (MANAGE_WORKSPACE)", only(403, "owner", "admin", "wsMgr"), func(u *user) int {
+		{"kick a member (MANAGE_MEMBERS)", only(403, "owner", "admin"), func(u *user) int {
 			return u.do("DELETE", "/api/workspaces/"+wid+"/members/"+register(t, code).id, nil, nil)
 		}},
 	}
@@ -196,7 +197,7 @@ func TestPermissionMatrixREST(t *testing.T) {
 	}
 }
 
-// Hierarchy (ADR-0026, workspaces.outranks / rtc.outranks): MANAGE_WORKSPACE on a custom role
+// Hierarchy (ADR-0026, workspaces.outranks / rtc.outranks): MANAGE_MEMBERS on a custom role
 // does not reach up; voice moderation stops at admins for everyone but the owner.
 func TestPermissionMatrixHierarchy(t *testing.T) {
 	o := owner(t)
@@ -208,7 +209,7 @@ func TestPermissionMatrixHierarchy(t *testing.T) {
 	for _, a := range []*user{admin, admin2} {
 		o.must(200, "PATCH", "/api/workspaces/"+wid+"/members/"+a.id, &v1.UpdateMemberRequest{Role: &adminRole}, nil)
 	}
-	mgr := newRole(t, o, wid, "mgr", perm.ManageWorkspace)
+	mgr := newRole(t, o, wid, "mgr", perm.ManageMembers)
 	senior := newRole(t, o, wid, "senior", 0)
 	o.must(200, "PUT", "/api/workspaces/"+wid+"/roles/order", &v1.SetRoleOrderRequest{RoleIds: []string{senior.GetId(), mgr.GetId()}}, nil)
 	m, top, plain := register(t, code), register(t, code), register(t, code)
@@ -229,12 +230,12 @@ func TestPermissionMatrixHierarchy(t *testing.T) {
 		got  int
 		want int
 	}{
-		{"custom MANAGE_WORKSPACE kicks a member with a higher custom role", kick(m, top.id), 403},
-		{"custom MANAGE_WORKSPACE bans a member with a higher custom role", ban(m, top.id), 403},
-		{"custom MANAGE_WORKSPACE kicks an admin", kick(m, admin.id), 403},
+		{"custom MANAGE_MEMBERS kicks a member with a higher custom role", kick(m, top.id), 403},
+		{"custom MANAGE_MEMBERS bans a member with a higher custom role", ban(m, top.id), 403},
+		{"custom MANAGE_MEMBERS kicks an admin", kick(m, admin.id), 403},
 		{"admin kicks an admin", kick(admin, admin2.id), 403},
 		{"admin bans the owner", ban(admin, o.id), 403},
-		{"custom MANAGE_WORKSPACE kicks a plain member", kick(m, plain.id), 204},
+		{"custom MANAGE_MEMBERS kicks a plain member", kick(m, plain.id), 204},
 		{"admin kicks the senior member", kick(admin, top.id), 204},
 	} {
 		if c.got != c.want {

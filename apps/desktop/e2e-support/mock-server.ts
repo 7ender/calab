@@ -41,12 +41,14 @@ import {
   MyTasksResponseSchema,
   SearchTasksResponseSchema,
   SetAssigneesRequestSchema,
+  SetTaskApproversRequestSchema,
   SetBoardPermissionsRequestSchema,
   SetBoardPositionRequestSchema,
   SetTaskRelationRequestSchema,
   SetTaskSubscriptionRequestSchema,
   TaskActivityPageSchema,
   TaskFilterSchema,
+  TaskApprovalRequestSchema,
   TaskResponseSchema,
   TaskSchema,
   UpdateBoardLabelRequestSchema,
@@ -141,6 +143,18 @@ import {
   BirthdaySchema,
   RecordingStatus,
   RoomRecordingSchema,
+  GetSipSettingsResponseSchema,
+  ListSipCallsResponseSchema,
+  PlaceSipCallRequestSchema,
+  PutSipSettingsRequestSchema,
+  PutSipSettingsResponseSchema,
+  SipCallDirection,
+  SipCallResponseSchema,
+  SipCallSchema,
+  SipCallStatus,
+  SipSettingsSchema,
+  TestSipResponseSchema,
+  type SipCall,
   RoomRecordingState,
   StartRecordingResponseSchema,
   StopRecordingResponseSchema,
@@ -149,6 +163,8 @@ import {
   type GptunnelIntegration,
   type RecordingCard,
   type RoomRecording,
+  type SipSettings,
+  SipTransport,
   ApiErrorSchema,
   AuthTokensSchema,
   CreateCategoryRequestSchema,
@@ -319,6 +335,7 @@ import {
   computePermissions,
   has,
   workspacePermissions,
+  type PermissionName,
   CreateRoleRequestSchema,
   CreateRoleResponseSchema,
   ListRolesResponseSchema,
@@ -398,6 +415,7 @@ import {
   SCENARIOS,
 } from './fixtures';
 import { MARKETING_UNFURLS } from './fixtures-marketing';
+import { MOCK_SIP_RATE_NUMBER, MOCK_SIP_REFUSED_HOST, MOCK_SIP_UNREACHABLE_HOST, defaultSipSettings, isLiveSipStatus, normalizeCallee, numberAllowed, sipSettingsError } from './mock-sip';
 import {
   ACTIVE_BEFORE_MS,
   DEFAULT_WORK_HOURS,
@@ -555,6 +573,18 @@ export interface MockServer {
   playSound(roomId: string, userId: string, soundId: string): void;
   /** ADR-0025: connects the workspace to GPTunneL as if an admin paired it (`null` = disconnect). */
   setGptunnel(workspaceId: string, pairedBy: string | null): void;
+  /**
+   * ADR-0046: the workspace's SIP account as if an admin saved it (LiveKit accepted the trunk) →
+   * WORKSPACE_UPDATE with `sip_enabled`; `null` = never saved (telephony off).
+   */
+  setSip(workspaceId: string, patch: { enabled?: boolean; host?: string; callerId?: string; allowedPrefixes?: string[]; lastError?: string; hasPassword?: boolean } | null): void;
+  /**
+   * ADR-0046: `byUserId` placed a call from `roomId` (no permission checks) → SIP_CALL_UPDATE to the
+   * room's viewers; `status` default DIALING, `answeredAgoMs` sets answered_at for ACTIVE. Its id.
+   */
+  placeSipCall(roomId: string, byUserId: string, number: string, status?: SipCallStatus, answeredAgoMs?: number): string;
+  /** ADR-0046: moves a call (RINGING / ACTIVE / ENDED / FAILED with `reason`) → SIP_CALL_UPDATE. */
+  setSipCallStatus(callId: string, status: SipCallStatus, reason?: string): void;
   /**
    * A recording card in the room chat (SYSTEM message, MESSAGE_CREATE) in the given state; the
    * status never advances by itself (unlike a stop through the API).
@@ -720,6 +750,9 @@ export async function startMockServer(opts: MockServerOptions = {}): Promise<Moc
     setEmailState: (u, st) => impl.setEmailState(u, st),
     setRecording: (roomId, rec) => impl.setRecording(roomId, rec),
     setGptunnel: (ws, by) => impl.setGptunnel(ws, by),
+    setSip: (ws, patch) => impl.setSip(ws, patch),
+    placeSipCall: (roomId, by, number, status, ago) => impl.placeSipCall(roomId, by, number, status, ago),
+    setSipCallStatus: (id, status, reason) => impl.setSipCallStatus(id, status, reason),
     injectRecordingCard: (a) => impl.injectRecordingCard(a),
     updateRecordingCard: (id, patch) => impl.updateRecordingCard(id, patch),
     setBirthday: (u, b, card) => impl.setBirthday(u, b, card),
@@ -1390,6 +1423,11 @@ class MockImpl {
     if (!isAdminRole(m.role)) throw forbidden('MANAGE_WORKSPACE required');
   }
 
+  /** ADR-0048: a workspace-level bit of the member's roles (ADMINISTRATOR = all); guests never. */
+  private requireWsBit(m: MemberRec, bit: PermissionName): void {
+    if (m.role === WorkspaceRole.GUEST || !has(workspacePermissions(this.memberRoles(m)), PERMISSION_BITS[bit])) throw forbidden(`${bit} required`);
+  }
+
   // ------------------------------------------------ roles (ADR-0026)
 
   /** The workspace's roles, highest first; the four built-ins are created on first use. */
@@ -1529,6 +1567,7 @@ class MockImpl {
         .filter((c) => c.workspaceId === wsId)
         .sort((a, b) => a.position - b.position || a.id.localeCompare(b.id)),
       recordings: [...this.state.recordings.values()].filter((r) => r.workspaceId === wsId && rooms.some((x) => x.id === r.roomId)),
+      sipCalls: [...this.state.sipCalls.values()].filter((c) => c.workspaceId === wsId && isLiveSipStatus(c.status) && rooms.some((x) => x.id === c.roomId)),
       roles: this.rolesOfWs(wsId),
       badges: this.badgesOf(wsId),
       backgrounds: this.backgroundsOf(wsId),
@@ -2692,6 +2731,7 @@ class MockImpl {
 
     this.emailRoutes();
     this.recordingRoutes();
+    this.sipRoutes();
 
     // ---------------- version (public; the web compares its bundle, docs/09 #125)
     this.route('GET', '/api/version', (c) => {
@@ -3080,7 +3120,7 @@ class MockImpl {
       const b = parseBody(c, UpdateMemberRequestSchema);
       const before = target.role;
       if (b.role !== undefined && b.role !== target.role) {
-        this.requireAdmin(caller);
+        this.requireWsBit(caller, 'MANAGE_MEMBERS');
         if (b.role === WorkspaceRole.OWNER || b.role === WorkspaceRole.UNSPECIFIED) throw invalid('role', 'role cannot be granted');
         if (target.role === WorkspaceRole.OWNER) throw forbidden('cannot change the owner role');
         if ((b.role === WorkspaceRole.ADMIN || target.role === WorkspaceRole.ADMIN) && caller.role !== WorkspaceRole.OWNER) {
@@ -3118,7 +3158,7 @@ class MockImpl {
       if (!target) throw notFound('member not found');
       if (target.role === WorkspaceRole.OWNER) throw conflict('the owner cannot leave; transfer or delete the workspace');
       if (targetId !== me) {
-        this.requireAdmin(caller);
+        this.requireWsBit(caller, 'MANAGE_MEMBERS');
         if (target.role === WorkspaceRole.ADMIN && caller.role !== WorkspaceRole.OWNER) throw forbidden('only the owner removes admins');
       }
       if (s().voiceStates.get(targetId)?.workspaceId === ws.id) this.setVoice(targetId, '', {});
@@ -3128,16 +3168,16 @@ class MockImpl {
       noContent(c.res);
     });
 
-    // ---------------- bans (docs/09 #32): MANAGE_WORKSPACE, the rules of a kick
+    // ---------------- bans (docs/09 #32): MANAGE_MEMBERS (ADR-0048), the rules of a kick
     this.route('GET', '/api/workspaces/:id/bans', (c) => {
       const { ws, m: caller } = this.workspaceFor(c.params[0] ?? '', this.uid(c));
-      this.requireAdmin(caller);
+      this.requireWsBit(caller, 'MANAGE_MEMBERS');
       sendMsg(c.res, 200, ListBansResponseSchema, { bans: s().bans.get(ws.id) ?? [] });
     });
     this.route('POST', '/api/workspaces/:id/bans', (c) => {
       const me = this.uid(c);
       const { ws, m: caller } = this.workspaceFor(c.params[0] ?? '', me);
-      this.requireAdmin(caller);
+      this.requireWsBit(caller, 'MANAGE_MEMBERS');
       const b = parseBody(c, CreateBanRequestSchema);
       const u = s().users.get(b.userId);
       if (!u) throw notFound('user not found');
@@ -3165,7 +3205,7 @@ class MockImpl {
     });
     this.route('DELETE', '/api/workspaces/:id/bans/:userId', (c) => {
       const { ws, m: caller } = this.workspaceFor(c.params[0] ?? '', this.uid(c));
-      this.requireAdmin(caller);
+      this.requireWsBit(caller, 'MANAGE_MEMBERS');
       const list = s().bans.get(ws.id) ?? [];
       const userId = c.params[1] ?? '';
       if (!list.some((x) => x.user?.id === userId)) throw notFound('ban not found');
@@ -3176,7 +3216,7 @@ class MockImpl {
 
     this.route('POST', '/api/workspaces/:id/members/:userId/promote', (c) => {
       const { ws, m: caller } = this.workspaceFor(c.params[0] ?? '', this.uid(c));
-      this.requireAdmin(caller);
+      this.requireWsBit(caller, 'MANAGE_MEMBERS');
       const target = this.member(ws.id, c.params[1] ?? '');
       if (target?.role !== WorkspaceRole.GUEST) throw notFound('guest not found');
       target.role = WorkspaceRole.MEMBER;
@@ -3336,7 +3376,7 @@ class MockImpl {
     };
     const badgeManager = (c: Ctx): Workspace => {
       const { ws, m } = this.workspaceFor(c.params[0] ?? '', this.uid(c));
-      if (!isAdminRole(m.role)) throw forbidden('MANAGE_WORKSPACE required');
+      this.requireWsBit(m, 'MANAGE_MEMBERS'); // ADR-0048
       return ws;
     };
     this.route('POST', '/api/workspaces/:id/badges', (c) => {
@@ -3795,6 +3835,7 @@ class MockImpl {
       }
       if (b.isPrivate !== undefined) {
         if (!room.expiresAt) throw invalid('isPrivate', 'only temporary rooms');
+        if (!b.isPrivate && room.restricted && b.restricted !== false) throw invalid('isPrivate', 'lift restricted first');
         room.isPrivate = b.isPrivate;
         const rest = room.permissionOverrides.filter((o) => !(o.targetType === PermissionTargetType.ROLE && o.targetId === 'member'));
         room.permissionOverrides = b.isPrivate
@@ -3819,15 +3860,20 @@ class MockImpl {
         if (b.categoryId && s().categories.get(b.categoryId)?.workspaceId !== room.workspaceId) throw invalid('categoryId', 'unknown category');
         room.categoryId = b.categoryId;
       }
-      // ADR-0025: MANAGE_WORKSPACE besides MANAGE_ROOM; switching it off stops a running recording.
+      // ADR-0025, ADR-0048: MANAGE_RECORDINGS besides MANAGE_ROOM; switching it off stops a running recording.
       if (b.allowRecording !== undefined) {
-        this.requireAdmin(this.workspaceFor(room.workspaceId, me).m);
+        this.requireWsBit(this.workspaceFor(room.workspaceId, me).m, 'MANAGE_RECORDINGS');
         room.allowRecording = b.allowRecording;
       }
-      // ADR-0029: the workspace owner only (owner_id, not a bit); private rooms only.
+      // ADR-0048: MANAGE_ROOM in the room (requireManage above; the owner always); private rooms only.
+      // Switching it on gives the caller (unless the owner) a personal allow VIEW_ROOM | MANAGE_ROOM.
       if (b.restricted !== undefined) {
-        if (s().workspaces.get(room.workspaceId)?.ownerId !== me) throw forbidden('only the workspace owner may change restricted');
         if (b.restricted && !room.isPrivate) throw invalid('restricted', 'only private rooms can be restricted');
+        if (b.restricted && !room.restricted && s().workspaces.get(room.workspaceId)?.ownerId !== me) {
+          const mine = room.permissionOverrides.find((o) => o.targetType === PermissionTargetType.USER && o.targetId === me);
+          if (mine) mine.allow |= VIEW_ROOM | MANAGE_ROOM;
+          else room.permissionOverrides.push(create(RoomPermissionOverrideSchema, { targetType: PermissionTargetType.USER, targetId: me, allow: VIEW_ROOM | MANAGE_ROOM, deny: 0n }));
+        }
         room.restricted = b.restricted;
       }
       if (b.guestApproval !== undefined) room.guestApproval = b.guestApproval; // ADR-0040
@@ -4388,7 +4434,7 @@ class MockImpl {
       const me = this.uid(c);
       const wsId = c.params[0] ?? '';
       const { m } = this.workspaceFor(wsId, me);
-      this.requireAdmin(m);
+      this.requireWsBit(m, 'MANAGE_BOTS'); // ADR-0048
       return { wsId, me };
     };
     const botIn = (wsId: string, botId: string): BotRec => {
@@ -5320,6 +5366,214 @@ class MockImpl {
     return { wsId: ws.id, m, me };
   }
 
+  // ------------------------------------------------ telephony (ADR-0046, mock-sip.ts)
+
+  private sipSettingsOf(wsId: string): SipSettings {
+    return this.state.sipSettings.get(wsId) ?? defaultSipSettings();
+  }
+
+  /** Workspace.sip_enabled follows the account (enabled + trunk saved) → WORKSPACE_UPDATE. */
+  private syncSipEnabled(wsId: string): void {
+    const ws = this.state.workspaces.get(wsId);
+    if (!ws) return;
+    const s = this.state.sipSettings.get(wsId);
+    const on = !!s && s.enabled && s.trunkSaved;
+    if (ws.sipEnabled === on) return;
+    ws.sipEnabled = on;
+    this.toWorkspace(ws.id, { event: { case: 'workspaceUpdate', value: { workspace: ws } } });
+    // Telephony off lays down the live lines of the workspace (reason «disabled»).
+    if (!on) for (const c of this.state.sipCalls.values()) if (c.workspaceId === wsId && isLiveSipStatus(c.status)) this.setSipCallStatus(c.id, SipCallStatus.ENDED, 'disabled');
+  }
+
+  setSip(workspaceId: string, patch: { enabled?: boolean; host?: string; callerId?: string; allowedPrefixes?: string[]; lastError?: string; hasPassword?: boolean } | null): void {
+    if (!this.state.workspaces.get(workspaceId)) throw notFound('workspace not found');
+    if (!patch) {
+      this.state.sipSettings.delete(workspaceId);
+      this.state.sipPasswords.delete(workspaceId);
+    } else {
+      const enabled = patch.enabled ?? true;
+      this.state.sipSettings.set(
+        workspaceId,
+        create(SipSettingsSchema, {
+          ...this.sipSettingsOf(workspaceId),
+          enabled,
+          provider: 'Zadarma',
+          host: patch.host ?? 'sip.zadarma.com',
+          username: '100200',
+          hasPassword: patch.hasPassword ?? true,
+          callerId: patch.callerId ?? '+74951234567',
+          outboundPrefix: '+',
+          allowedPrefixes: patch.allowedPrefixes ?? ['+7'],
+          lastError: patch.lastError ?? '',
+          trunkSaved: enabled,
+          updatedAt: tick(this.state),
+        }),
+      );
+    }
+    this.syncSipEnabled(workspaceId);
+  }
+
+  private announceSipCall(c: SipCall): void {
+    if (c.roomId) this.toWorkspace(c.workspaceId, { event: { case: 'sipCallUpdate', value: { call: c } } }, c.roomId);
+  }
+
+  placeSipCall(roomId: string, byUserId: string, number: string, status = SipCallStatus.DIALING, answeredAgoMs?: number): string {
+    const room = this.state.rooms.get(roomId);
+    if (!room) throw notFound('room not found');
+    const id = nextId(this.state, 'file');
+    const c = create(SipCallSchema, {
+      id,
+      workspaceId: room.workspaceId,
+      roomId,
+      number: normalizeCallee(number) ?? number,
+      direction: SipCallDirection.OUT,
+      startedBy: byUserId,
+      status,
+      startedAt: timestampFromMs(Date.now() - (answeredAgoMs ?? 0) - 5000),
+      participantIdentity: `sip:${id}`,
+      ...(status === SipCallStatus.ACTIVE ? { answeredAt: timestampFromMs(Date.now() - (answeredAgoMs ?? 0)) } : {}),
+    });
+    this.state.sipCalls.set(id, c);
+    this.announceSipCall(c);
+    return id;
+  }
+
+  setSipCallStatus(callId: string, status: SipCallStatus, reason = ''): void {
+    const c = this.state.sipCalls.get(callId);
+    if (!c) throw notFound('call not found');
+    c.status = status;
+    if (status === SipCallStatus.ACTIVE && !c.answeredAt) c.answeredAt = timestampFromMs(Date.now());
+    if (!isLiveSipStatus(status)) {
+      c.reason = reason || (status === SipCallStatus.FAILED ? 'no_answer' : 'remote');
+      c.endedAt = timestampFromMs(Date.now());
+    }
+    this.announceSipCall(c);
+  }
+
+  private sipAdmin(c: Ctx): { wsId: string; me: string } {
+    const me = this.uid(c);
+    const { ws, m } = this.workspaceFor(c.params[0] ?? '', me);
+    this.requireAdmin(m);
+    return { wsId: ws.id, me };
+  }
+
+  private sipRoutes(): void {
+    this.route('GET', '/api/workspaces/:id/sip', (c) => {
+      const { wsId } = this.sipAdmin(c);
+      sendMsg(c.res, 200, GetSipSettingsResponseSchema, { settings: this.sipSettingsOf(wsId) });
+    });
+
+    this.route('PUT', '/api/workspaces/:id/sip', (c) => {
+      const { wsId, me } = this.sipAdmin(c);
+      const b = parseBody(c, PutSipSettingsRequestSchema);
+      const err = sipSettingsError(b);
+      if (err) throw invalid(err.field, err.message);
+      const cur = this.sipSettingsOf(wsId);
+      if (b.enabled && b.host === MOCK_SIP_REFUSED_HOST) {
+        const msg = 'twirp error unknown: sip trunk: address rejected';
+        this.state.sipSettings.set(wsId, create(SipSettingsSchema, { ...cur, lastError: msg }));
+        throw new HttpError(502, ErrorCode.SIP_PROVIDER_ERROR, msg);
+      }
+      if (b.password !== undefined) {
+        if (b.password) this.state.sipPasswords.set(wsId, b.password);
+        else this.state.sipPasswords.delete(wsId);
+      }
+      this.state.sipSettings.set(
+        wsId,
+        create(SipSettingsSchema, {
+          enabled: b.enabled,
+          provider: b.provider,
+          host: b.host,
+          transport: b.transport || SipTransport.UDP,
+          username: b.username,
+          authUsername: b.authUsername,
+          port: b.port || 5060,
+          hasPassword: this.state.sipPasswords.has(wsId) || (b.password === undefined && cur.hasPassword),
+          callerId: b.callerId ? (normalizeCallee(b.callerId) ?? b.callerId) : '',
+          outboundPrefix: b.outboundPrefix,
+          allowedPrefixes: b.allowedPrefixes,
+          lastError: '',
+          updatedAt: tick(this.state),
+          updatedBy: me,
+          trunkSaved: b.enabled,
+        }),
+      );
+      this.syncSipEnabled(wsId);
+      sendMsg(c.res, 200, PutSipSettingsResponseSchema, { settings: this.sipSettingsOf(wsId) });
+    });
+
+    this.route('POST', '/api/workspaces/:id/sip/test', (c) => {
+      const { wsId, me } = this.sipAdmin(c);
+      const s = this.sipSettingsOf(wsId);
+      if (!s.enabled || !s.trunkSaved) throw new HttpError(409, ErrorCode.SIP_DISABLED, 'telephony is off');
+      const ok = s.host !== MOCK_SIP_UNREACHABLE_HOST;
+      const id = nextId(this.state, 'file');
+      const now = Date.now();
+      this.state.sipCalls.set(
+        id,
+        create(SipCallSchema, {
+          id,
+          workspaceId: wsId,
+          number: s.callerId,
+          direction: SipCallDirection.OUT,
+          startedBy: me,
+          status: ok ? SipCallStatus.ENDED : SipCallStatus.FAILED,
+          reason: ok ? 'hangup' : 'unavailable',
+          startedAt: timestampFromMs(now - 8000),
+          ...(ok ? { answeredAt: timestampFromMs(now - 5000) } : {}),
+          endedAt: timestampFromMs(now),
+          participantIdentity: `sip:${id}`,
+        }),
+      );
+      const message = ok ? 'answered' : 'no answer from the provider';
+      this.state.sipSettings.set(wsId, create(SipSettingsSchema, { ...s, lastError: ok ? '' : message }));
+      sendMsg(c.res, 200, TestSipResponseSchema, { ok, message, sipStatus: 0 });
+    });
+
+    this.route('GET', '/api/workspaces/:id/calls', (c) => {
+      const { wsId } = this.sipAdmin(c);
+      const all = [...this.state.sipCalls.values()].filter((x) => x.workspaceId === wsId).reverse();
+      const cursor = Number(c.url.searchParams.get('cursor') || '0');
+      const page = all.slice(cursor, cursor + 100);
+      const next = cursor + 100 < all.length ? String(cursor + 100) : '';
+      sendMsg(c.res, 200, ListSipCallsResponseSchema, { calls: page, nextCursor: next });
+    });
+
+    this.route('POST', '/api/rooms/:id/calls', (c) => {
+      const me = this.uid(c);
+      const room = this.roomFor(c.params[0] ?? '', me);
+      if (room.type === RoomType.DM || room.type === RoomType.NOTES) throw notFound('room not found');
+      const m = this.member(room.workspaceId, me);
+      if (!m || m.role === WorkspaceRole.GUEST) throw forbidden('guests cannot place calls');
+      this.requireRoomPerm(room, me, PERMISSION_BITS.PLACE_CALLS | CONNECT);
+      if (room.type !== RoomType.VOICE) throw invalid('id', 'not a voice room');
+      const number = normalizeCallee(parseBody(c, PlaceSipCallRequestSchema).number);
+      if (!number) throw invalid('number', 'not a phone number');
+      const s = this.sipSettingsOf(room.workspaceId);
+      if (!s.enabled || !s.trunkSaved) throw new HttpError(409, ErrorCode.SIP_DISABLED, 'telephony is off');
+      if (this.state.voiceStates.get(me)?.roomId !== room.id) throw conflict('join the call first');
+      if ([...this.state.sipCalls.values()].some((x) => x.roomId === room.id && isLiveSipStatus(x.status))) throw new HttpError(409, ErrorCode.SIP_CALL_ACTIVE, 'a call is already active in this room');
+      if (!numberAllowed(number, s.allowedPrefixes)) throw new HttpError(422, ErrorCode.SIP_NUMBER_NOT_ALLOWED, 'the number is not in the allowed prefixes', 'number');
+      if (number === MOCK_SIP_RATE_NUMBER) throw new HttpError(429, ErrorCode.SIP_RATE_LIMITED, 'too many calls', '', {}, { 'Retry-After': '600' });
+      const id = this.placeSipCall(room.id, me, number);
+      sendMsg(c.res, 201, SipCallResponseSchema, { call: this.state.sipCalls.get(id) });
+    });
+
+    this.route('DELETE', '/api/rooms/:id/calls/:cid', (c) => {
+      const me = this.uid(c);
+      const room = this.roomFor(c.params[0] ?? '', me);
+      const call = this.state.sipCalls.get(c.params[1] ?? '');
+      if (!call || call.roomId !== room.id) throw notFound('call not found');
+      const moderator = has(this.perms(room, me), MUTE_MEMBERS);
+      if (call.startedBy !== me && !moderator) throw forbidden('not your call');
+      if (!isLiveSipStatus(call.status)) throw conflict('the call has ended');
+      const answered = call.status === SipCallStatus.ACTIVE;
+      call.endedBy = me;
+      this.setSipCallStatus(call.id, SipCallStatus.ENDED, !answered ? 'cancelled' : call.startedBy === me ? 'hangup' : 'hangup_moderator');
+      sendMsg(c.res, 200, SipCallResponseSchema, { call });
+    });
+  }
+
   // ------------------------------------------------ meeting recording (ADR-0025)
 
   private announceRecording(rec: RoomRecording): void {
@@ -5648,7 +5902,7 @@ class MockImpl {
     this.route('POST', '/api/workspaces/:id/integrations/gptunnel', (c) => {
       const me = this.uid(c);
       const { ws, m } = this.workspaceFor(c.params[0] ?? '', me);
-      this.requireAdmin(m);
+      this.requireWsBit(m, 'MANAGE_INTEGRATIONS'); // ADR-0048
       const code = parseBody(c, PairGptunnelRequestSchema).code.trim().toUpperCase().replace(/[-\s]/g, '');
       if (!/^[A-Z0-9]{8}$/.test(code)) throw invalid('code', 'the code has 8 letters and digits, e.g. ABCD-EFGH');
       const norm = (x: string): string => x.replace(/-/g, '');
@@ -5661,7 +5915,7 @@ class MockImpl {
 
     this.route('DELETE', '/api/workspaces/:id/integrations/gptunnel', (c) => {
       const { ws, m } = this.workspaceFor(c.params[0] ?? '', this.uid(c));
-      this.requireAdmin(m);
+      this.requireWsBit(m, 'MANAGE_INTEGRATIONS'); // ADR-0048
       this.setGptunnel(ws.id, null);
       noContent(c.res);
     });
@@ -6336,7 +6590,9 @@ class MockImpl {
     const room = ev.roomId ? this.state.rooms.get(ev.roomId) : undefined;
     const inv = !bot && involves(ev, userId);
     if (!inv && !(room && this.canView(room, userId))) return null;
-    const canEdit = !bot && (ev.organizerId === userId || (room ? has(this.perms(room, userId), MANAGE_ROOM) : isAdminRole(m.role)));
+    // ADR-0048: MANAGE_EVENTS — a meeting without a room, or in a room the caller sees.
+    const manageEvents = has(workspacePermissions(this.memberRoles(m)), PERMISSION_BITS.MANAGE_EVENTS);
+    const canEdit = !bot && (ev.organizerId === userId || (room ? has(this.perms(room, userId), MANAGE_ROOM) || (manageEvents && this.canView(room, userId)) : manageEvents));
     return { view: bot ? 'none' : inv || canEdit ? 'full' : 'masked', canEdit };
   }
 
@@ -6567,7 +6823,14 @@ class MockImpl {
       try {
         await h(c, me);
       } catch (e) {
-        if (e instanceof BoardError) throw new HttpError(e.status, e.code, e.message, e.field, e.reason ? { reason: e.reason } : {});
+        if (e instanceof BoardError) {
+          const extra = {
+            ...(e.reason ? { reason: e.reason } : {}),
+            ...(e.counts.used !== undefined ? { used: BigInt(e.counts.used) } : {}),
+            ...(e.counts.limit !== undefined ? { limit: BigInt(e.counts.limit) } : {}),
+          };
+          throw new HttpError(e.status, e.code, e.message, e.field, extra);
+        }
         throw e;
       }
     });
@@ -6716,6 +6979,15 @@ class MockImpl {
     this.boardRoute('PUT', '/api/tasks/:id/assignees', (c, me) => {
       const r = parseBody(c, SetAssigneesRequestSchema);
       sendMsg(c.res, 200, TaskResponseSchema, taskRes(b().setAssignees(c.params[0] ?? '', me, r.assignees).task.id, me));
+    });
+    // ADR-0049: approvers + quorum, and my vote.
+    this.boardRoute('PUT', '/api/tasks/:id/approvers', (c, me) => {
+      const r = parseBody(c, SetTaskApproversRequestSchema);
+      sendMsg(c.res, 200, TaskResponseSchema, taskRes(b().setApprovers(c.params[0] ?? '', me, r.userIds, r.required).task.id, me));
+    });
+    this.boardRoute('POST', '/api/tasks/:id/approval', (c, me) => {
+      const r = parseBody(c, TaskApprovalRequestSchema);
+      sendMsg(c.res, 200, TaskResponseSchema, taskRes(b().vote(c.params[0] ?? '', me, r.decision, r.comment).task.id, me));
     });
     this.boardRoute('PUT', '/api/tasks/:id/relations', (c, me) => {
       const r = parseBody(c, SetTaskRelationRequestSchema);

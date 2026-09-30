@@ -1,6 +1,6 @@
 # ADR-0048. Ролевая модель v2: права по функциям и закрытые разделы
 
-Статус: принято (2026-09-30), к релизу **1.3.0**. Владелец, 30.09: «надо прям ролевую модель улучшить —
+Статус: принято (2026-09-30), к релизу **1.3.0**; сервер и контракт реализованы 30.09 (миграция 00052), отклонения и «Контракт для клиента» — в конце. Владелец, 30.09: «надо прям ролевую модель улучшить —
 больше контроля над доступами хочу, возможно прятать от админов доски, давай различные права более
 тонко по функциям приложения». Развивает ADR-0008 (биты), ADR-0026 (несколько ролей), ADR-0043
 (раздельные права без импликации от `MANAGE_*`).
@@ -82,3 +82,110 @@ INVITE_GUESTS, MANAGE_EVENTS, VIEW_JOURNALS), «Наблюдатель» (тол
 - Отклонено: убрать `ADMINISTRATOR` вовсе (ломает все существующие пространства); «закрыть от
   владельца» (владелец отвечает за данные); отдельная сущность «отдел/команда» с правами (Slack-
   подобные группы) — возможно позже поверх ролей, не вместо.
+
+## Реализация сервера (30.09) и отклонения
+
+- **Бит 31 в proto.** `Permission` — int32 enum: `PERMISSION_MANAGE_RECORDINGS = -2147483648` (0x80000000), в TS
+  `BigInt.asUintN(32, …)`, в Go — `perm.ManageRecordings = 1 << 31` (enum в Go не используется). Битов от `1 << 32`
+  enum не вместит — следующий бит понадобится объявить иначе (docs/12).
+- **Закрытая комната:** правило ADR-0029 ужесточено как в §2 — в `restricted` снимается и `VIEW_ROOM` ролей, не только
+  `ADMINISTRATOR`. Закрытая комната, где у `member` сняли `deny VIEW_ROOM` (ADR-0029 §8), больше не открыта участникам.
+  Флаг меняет `MANAGE_ROOM` в комнате (было — только владелец, `OWNER_ONLY` остаётся лишь у `restrictedGuard`).
+- **Не отбирать у себя:** создатель доски и так держит все биты доски лично; при включении `restricted` тот, кто
+  включает (не владелец), получает личное `allow VIEW_* | MANAGE_*` (`GrantUserOverride` / `GrantBoardUserOverride`,
+  без снятия его `deny`). Отдельного override «создателю комнаты» при создании нет — постоянные комнаты создаёт
+  `MANAGE_ROOM` ws, закрыть её он может только сам, и тогда получает override.
+- **Назначение ролей** — `MANAGE_MEMBERS` **или** `MANAGE_ROLES`: держатели `MANAGE_ROLES` назначали роли по ADR-0026, миграция
+  им `MANAGE_MEMBERS` не выдаёт (он даёт и баны), поэтому оба бита принимаются; иерархия и «не шире своих битов» — как было.
+- **Подтверждение заявок гостей** (ADR-0040) осталось за `INVITE_GUESTS` комнаты (ADR-0043): это решение о комнате, не о
+  составе пространства; других «заявок» в пространство нет.
+- **Записи:** удалить может запустивший, владелец, `MANAGE_MESSAGES` комнаты (как было) или `MANAGE_RECORDINGS` —
+  всегда в комнате, которую видно. `allow_recording` — `MANAGE_ROOM` + `MANAGE_RECORDINGS` (было `MANAGE_WORKSPACE`).
+- **Журналы:** журнал звонков — `VIEW_JOURNALS` (звонки невидимых комнат пропускаются); журнал/CSV доски —
+  `MANAGE_BOARD` / `EDIT_TASKS` на доске или `VIEW_JOURNALS` ws. Отдельного «аудита пространства» пока нет.
+- **`MANAGE_EVENTS`:** чужие встречи — без комнаты или в видимой комнате; «встреч на всю комнату» и «напоминаний всем»
+  пока нет — появятся под этим битом.
+- **`BOARD_PERMISSIONS_UPDATE` не заведён:** `BOARD_UPDATE` уже несёт `Board.permission_overrides` и `Board.restricted`,
+  шлюз по нему пересчитывает `VIEW_BOARD` каждому (`BOARD_CREATE` / `BOARD_DELETE`); второе событие дублировало бы его.
+- **Страж ролей** (`restrictedGuard`, ADR-0029) распространён на закрытые доски: не-владелец, не видящий закрытую доску,
+  не может выдать/снять/переставить роль так, чтобы её кто-то увидел (`403 OWNER_ONLY`).
+- Переопределения досок на закрытой доске: «не шире своих битов» для всех, кроме владельца (админ-обход снят, как в
+  комнатах).
+- Тесты: `internal/app` `TestRolesV2`, `TestRolesV2ClosedBoard`, `TestRolesV2ClosedRoom`, `TestRestrictedFlagManageRoom`;
+  `internal/db` `TestRolesV2Migration`; векторы `v2:` / `closed room:` / `closed board:` в `proto/testdata/permissions.json`.
+
+## Следующие биты (предложение, не реализовано)
+
+Бит 31 — последний, который вмещает int32-enum `Permission`. Маски на проводе и в БД уже 64-битные
+(`uint64` в сообщениях, `bigint` в `workspace_roles.permissions` / `*_permissions.allow|deny`, `perm.Bits uint64`,
+`bigint` в TS), тесно только самому enum. Предложение для битов ≥ 32:
+- новый enum `PermissionBit` с **позицией** бита (`PERMISSION_BIT_<NAME> = 32…63`), а не маской; `Permission`
+  замораживается на битах 0–31 (значения не меняются — `buf breaking` чист). Маска = `1 << PermissionBit`; в TS
+  `1n << BigInt(PermissionBit.X)`, в Go `perm.Bits(1) << v1.PermissionBit_X`. Старые биты можно продублировать в
+  `PermissionBit` (0–31) для единообразия, клиенты читают любой из двух;
+- `perm.All` и `ALL_PERMISSIONS` считаются из максимальной позиции, а не `ManageRecordings<<1 - 1`; векторы
+  `proto/testdata` получают кейс с битом ≥ 32 (Go и TS, без потери точности в JSON — маски строкой);
+- отклонено: второе поле маски (`permissions_hi`) — удваивает все сообщения с масками и проверки «не шире своих
+  битов»; нужен только при переходе за 64 бита, чего не ожидается.
+
+## Контракт для клиента
+
+**Биты** (`PERMISSION_BITS` в `@calaba/protocol`): `CREATE_BOARDS`, `MANAGE_MEMBERS`, `MANAGE_BOTS`,
+`MANAGE_INTEGRATIONS`, `VIEW_JOURNALS`, `MANAGE_EVENTS`, `MANAGE_RECORDINGS`; `ROLES_V2_PERMISSIONS`,
+`WORKSPACE_ONLY_PERMISSIONS` (в редакторе переопределений комнаты/доски их не показывать). `ALL_PERMISSIONS` теперь
+`0xFFFFFFFF`. Гостевой роли их не предлагать.
+
+**Где что проверять в UI** (было `mayManageWorkspace`): баны, исключить, встроенная роль, «гость → участник», библиотека
+бейджей — `MANAGE_MEMBERS`; назначить роль — `MANAGE_MEMBERS || MANAGE_ROLES`; «Создать доску» — `CREATE_BOARDS`;
+вкладка «Боты» — `MANAGE_BOTS`; телефония (настройки) и GPTunneL — `MANAGE_INTEGRATIONS`; журнал звонков и журнал/CSV
+доски — `VIEW_JOURNALS` (доска — ещё `MANAGE_BOARD`/`EDIT_TASKS`); правка чужой встречи — `event.can_edit` (сервер
+считает `MANAGE_EVENTS`); `RecordingCard` (`allow_recording`) — `MANAGE_ROOM` room + `MANAGE_RECORDINGS` ws; удалить
+запись — плюс `MANAGE_RECORDINGS`. `MANAGE_WORKSPACE` — настройки, оформление, фоны, тариф, политика гостей, опасная зона.
+
+**Порядок групп редактора ролей** и биты в них:
+1. Пространство — `MANAGE_WORKSPACE`, `MANAGE_ROLES`, `MANAGE_STICKERS`
+2. Участники — `MANAGE_MEMBERS`, `MANAGE_NICKNAMES`
+3. Приглашения — `INVITE_MEMBERS`, `INVITE_GUESTS`
+4. Комнаты — `VIEW_ROOM`, `MANAGE_ROOM`, `CREATE_TEMP_ROOMS`, `SEND_MESSAGES`, `ATTACH_FILES`, `MENTION_EVERYONE`
+5. Голос — `CONNECT`, `SPEAK`
+6. Модерация — `MANAGE_MESSAGES`, `MUTE_MEMBERS`, `MOVE_MEMBERS`
+7. Календарь — `MANAGE_EVENTS`
+8. Доски — `CREATE_BOARDS`, `VIEW_BOARD`, `CREATE_TASKS`, `EDIT_TASKS`, `MANAGE_BOARD`
+9. Записи — `MANAGE_RECORDINGS`, `STREAM`, `VIDEO`
+10. Телефония — `PLACE_CALLS`
+11. Интеграции и боты — `MANAGE_BOTS`, `MANAGE_INTEGRATIONS`
+12. Журналы — `VIEW_JOURNALS`
+
+`ADMINISTRATOR` — отдельно сверху, как сейчас (выдать нельзя). Подписи `perm.<BIT>` уже есть в 4 локалях (серверный
+агент добавил); подсказки `perm.hint.<BIT>` — клиенту. Подсказки (что даёт / кому по умолчанию):
+
+| Бит | Подсказка | По умолчанию |
+|---|---|---|
+| `CREATE_BOARDS` | Создавать доски задач; своей доской создатель управляет сам. | админы; ролям с «Управлять пространством» — после обновления |
+| `MANAGE_MEMBERS` | Исключать и банить участников, бейджи, делать гостя участником, назначать роли ниже своей. | админы |
+| `MANAGE_BOTS` | Создавать, настраивать и удалять ботов пространства, выпускать их токены. | админы |
+| `MANAGE_INTEGRATIONS` | Настройки телефонии (SIP), подключение GPTunneL и других интеграций. | админы |
+| `VIEW_JOURNALS` | Журнал звонков и журнал досок с выгрузкой в CSV — только по тому, что видно. | админы |
+| `MANAGE_EVENTS` | Менять и отменять чужие встречи календаря. | админы |
+| `MANAGE_RECORDINGS` | Разрешать запись в комнатах и удалять записи встреч любой видимой комнаты. | админы |
+
+**Шаблоны при создании роли** (битовые наборы, поверх роли «Участник», у которой уже есть базовые права):
+- «Модератор» — `MANAGE_MESSAGES | MUTE_MEMBERS | MOVE_MEMBERS | MANAGE_NICKNAMES | MENTION_EVERYONE` (= 14472).
+- «Менеджер отдела» — `CREATE_BOARDS | CREATE_TEMP_ROOMS | INVITE_GUESTS | MANAGE_EVENTS | VIEW_JOURNALS` (= 1656750080).
+- «Наблюдатель» — `VIEW_ROOM | CONNECT | VIEW_BOARD` (= 131089); чтобы роль действительно была «без SEND», клиент
+  предлагает вместе с ней снять `SEND_MESSAGES`/`SPEAK` переопределениями или не давать базовую роль «Участник»
+  (сервер тут ничего не меняет: права — OR ролей).
+
+**Третий уровень доступа** (приватная комната и доска): переключатель «Все участники / По списку / По списку, без
+администраторов» = `is_private=false` / `is_private=true, restricted=false` / `is_private=true, restricted=true`.
+Запросы: `PATCH /api/rooms/{id} {restricted}` и `PATCH /api/boards/{id} {restricted}` (`UpdateBoardRequest.restricted`
+= 9); `Room.restricted` (19), `Board.restricted` (24). Кто может — `MANAGE_ROOM` / `MANAGE_BOARD` на объекте
+(владелец — всегда). Ошибки: `422 restricted` — объект не приватный; `422 isPrivate` — сделать публичным закрытый
+нельзя, сначала снять `restricted`. После включения ответ несёт переопределения с новым личным `allow` включившего.
+Пояснение под третьим уровнем: «Администраторы пространства не видят раздел; владелец видит всегда». Пересчёт прав на
+клиенте: `computeMemberRoomPermissions(roles, me, overrides, restricted)` (как раньше) и
+`computeMemberBoardPermissions(roles, me, overrides, isPrivate, guest, restricted)`; владелец узнаётся по встроенной
+роли. Объекты, пропавшие из видимости, приходят `ROOM_DELETE` / `BOARD_DELETE`.
+
+**Предпросмотр «Что увидит участник с этой ролью»** — тем же `computePermissions` на данных стора (роль + `member`),
+закрытые разделы — только если на них есть переопределение этой роли.

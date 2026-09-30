@@ -200,7 +200,8 @@ func run(m *testing.M) int {
 		Mail:            testMail,
 		Egress:          rtc.NewEgress(egressURL, cfg.LiveKitAPIKey, cfg.LiveKitAPISecret),
 		BotWebhooks:     botWebhookOptions,
-		CalDAV:          calDAVOptions})
+		CalDAV:          calDAVOptions,
+		SIP:             sipFake})
 	a.Recording.Tick, a.Recording.PollMin = 100*time.Millisecond, 50*time.Millisecond
 	a.Recording.ResultBackoff = []time.Duration{50 * time.Millisecond, 50 * time.Millisecond}
 	a.Mail.Poll = 200 * time.Millisecond

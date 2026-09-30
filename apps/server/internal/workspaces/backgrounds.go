@@ -20,7 +20,7 @@ import (
 )
 
 // Camera backgrounds of a workspace (ADR-0035, addendum 2026-09-29): pictures an admin adds for
-// everyone's camera preview. The model follows the badges (badges.go): MANAGE_WORKSPACE, the
+// everyone's camera preview. The model follows the badges (badges.go) but with MANAGE_WORKSPACE (appearance, ADR-0048), the
 // picture from the caller's own upload; the server makes the 1280×720 WebP itself.
 const (
 	MaxBackgrounds       = 20

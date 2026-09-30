@@ -103,7 +103,8 @@ func (h *Hub) routeCalendar(st *wsState, sessions []*Session, view func(rid, uid
 			v = pbconv.EmailsFull
 		case rid != uuid.Nil && st.bits(rid, s.user).Has(perm.ManageRoom):
 			v = pbconv.EmailsFull
-		case rid == uuid.Nil && st.members[s.user].Workspace().Has(perm.ManageWorkspace):
+		case (rid == uuid.Nil || sees) && st.members[s.user].Workspace().Has(perm.ManageEvents):
+			// calendar.viewer.canEdit (ADR-0048): MANAGE_EVENTS where the room is visible.
 			v = pbconv.EmailsFull
 		}
 		s.dispatchEnc(id, enc(v))

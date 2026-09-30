@@ -55,4 +55,16 @@ describe('roomMenuGroups', () => {
   it('a temporary room of someone else: the voice room items only', () => {
     expect(roomMenuGroups({ ...base, canOrder: true, temp: true })).toEqual([['record'], ['markRead', 'notify']]);
   });
+
+  it('«Позвонить на номер»: voice, allowed, not a guest — after the recording, before the settings', () => {
+    expect(roomMenuGroups({ ...base, dial: true })[0]).toEqual(['record', 'dial']);
+    expect(roomMenuGroups({ ...base, dial: true, admin: true, canManage: true, mobile: true })[0]).toEqual(['openChat', 'invite', 'record', 'dial', 'settings']);
+    expect(roomMenuGroups({ ...base, dial: false })[0]).toEqual(['record']);
+    expect(roomMenuGroups(base)[0]).toEqual(['record']);
+  });
+
+  it('«Позвонить на номер»: never in a text room or for a guest', () => {
+    expect(roomMenuGroups({ ...base, voice: false, dial: true })).toEqual([['markRead', 'notify']]);
+    expect(roomMenuGroups({ ...base, guest: true, dial: true })).toEqual([['markRead', 'notify']]);
+  });
 });

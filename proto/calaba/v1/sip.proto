@@ -1,0 +1,187 @@
+syntax = "proto3";
+package calaba.v1;
+
+import "google/protobuf/timestamp.proto";
+
+// Telephony: outbound calls to phone numbers from a voice room over SIP (ADR-0046). The
+// workspace's SIP provider account becomes a LiveKit SIPOutboundTrunk; a call puts the phone
+// line into the room's LiveKit room as one more participant (identity "sip:<call id>", name =
+// the number), so everyone in the call hears and speaks to the callee like to a person.
+//
+// Who: PLACE_CALLS (ADR-0046, nobody by default) with VIEW_ROOM and CONNECT in the room, never
+// guests, and only while the caller is in that room's call. Workspace.sip_enabled says whether
+// telephony is on (the client shows the «call a number» button when it is set and the caller
+// has PLACE_CALLS in the room). Settings and the connection test need MANAGE_INTEGRATIONS, the
+// journal VIEW_JOURNALS (ADR-0048); they are for people only (bots: 403 BOT_NOT_ALLOWED); bots
+// may place and end calls like people.
+
+enum SipTransport {
+  SIP_TRANSPORT_UNSPECIFIED = 0; // in PUT: UDP
+  SIP_TRANSPORT_UDP = 1;
+  SIP_TRANSPORT_TCP = 2;
+  SIP_TRANSPORT_TLS = 3;
+}
+
+// DIALING → RINGING → ACTIVE → ENDED; DIALING | RINGING → FAILED | ENDED. RINGING may be skipped
+// (LiveKit reports the provider's 180 only when the line joins the room). ENDED and FAILED are
+// final.
+enum SipCallStatus {
+  SIP_CALL_STATUS_UNSPECIFIED = 0;
+  SIP_CALL_STATUS_DIALING = 1; // the INVITE is on its way to the provider
+  SIP_CALL_STATUS_RINGING = 2; // the callee's phone rings
+  SIP_CALL_STATUS_ACTIVE = 3;  // answered: the callee is in the room (answered_at set)
+  SIP_CALL_STATUS_ENDED = 4;   // hung up after or before the answer (reason says who / why)
+  SIP_CALL_STATUS_FAILED = 5;  // never answered (reason says why)
+}
+
+enum SipCallDirection {
+  SIP_CALL_DIRECTION_UNSPECIFIED = 0;
+  SIP_CALL_DIRECTION_OUT = 1;
+  SIP_CALL_DIRECTION_IN = 2; // reserved for inbound calls (1.4+); never produced yet
+}
+
+// The workspace's SIP provider account (one per workspace). GET never returns the password.
+message SipSettings {
+  // Telephony switched on by an admin. Calls work when this is set and LiveKit accepted the
+  // trunk (Workspace.sip_enabled = enabled && trunk saved).
+  bool enabled = 1;
+  string provider = 2;   // free label, e.g. «Zadarma»; ≤ 64 characters
+  string host = 3;       // provider SIP server: host name or IP address, no «sip:» and no port (see port)
+  SipTransport transport = 4;
+  string username = 5;   // SIP login (may be empty: IP-authenticated trunks)
+  bool has_password = 6; // a password is stored (it is never sent back)
+  string caller_id = 7;  // the number the calls come from, E.164 (+74951234567)
+  // Dial prefix put before the callee's digits: the number is dialed as outbound_prefix +
+  // E.164 digits without «+» (e.g. prefix «+» dials +7…, «8» dials 87…, empty dials 7…).
+  string outbound_prefix = 8;
+  // Numbers that may be called, as E.164 prefixes («+7», «+7495»); empty = any number.
+  repeated string allowed_prefixes = 9;
+  // The last error of LiveKit (saving) or of the provider (connection test); empty = none.
+  string last_error = 10;
+  google.protobuf.Timestamp updated_at = 11; // unset = never saved
+  string updated_by = 12;                    // user id; empty = unknown / account gone
+  bool trunk_saved = 13;                     // LiveKit holds the trunk (calls possible when enabled)
+  // SIP authentication user when it differs from username (the From user); empty = username.
+  string auth_username = 14;
+  uint32 port = 15; // SIP signalling port of host, 1..65535 (5060 when never set)
+}
+
+// GET /api/workspaces/{id}/sip (MANAGE_INTEGRATIONS, people) → 200 GetSipSettingsResponse; a
+// workspace that never saved settings gets the defaults (enabled false, transport UDP).
+message GetSipSettingsResponse {
+  SipSettings settings = 1;
+}
+
+// PUT /api/workspaces/{id}/sip (MANAGE_INTEGRATIONS, people) → 200 PutSipSettingsResponse with the
+// saved settings; WORKSPACE_UPDATE carries the new Workspace.sip_enabled. The whole object is
+// replaced, except the password: unset keeps the stored one, "" removes it, a value replaces it.
+// enabled = true needs host and caller_id. With enabled = true the LiveKit trunk is created or
+// replaced; with false it is deleted (calls stop being possible). Errors: 422 VALIDATION (field
+// = the lowerCamelCase name; host must be a public address), 502 SIP_PROVIDER_ERROR when
+// LiveKit refuses the trunk (nothing is saved but last_error; the message is LiveKit's text),
+// 503 when LiveKit is unreachable.
+message PutSipSettingsRequest {
+  bool enabled = 1;
+  string provider = 2;
+  string host = 3;
+  SipTransport transport = 4;
+  string username = 5;
+  optional string password = 6; // ≤ 256 bytes
+  string caller_id = 7;          // normalised like a callee number (8 495… → +7495…)
+  string outbound_prefix = 8;    // an optional «+» followed by up to 8 digits; may be empty
+  repeated string allowed_prefixes = 9; // ≤ 50, each «+» and 1..15 digits
+  // Same characters as username; empty = authenticate as username.
+  string auth_username = 10;
+  // 0 = 5060, else 1..65535. A «host:port» in host is still accepted: its port is used when
+  // this is 0, and must equal this otherwise (422 field port).
+  uint32 port = 11;
+}
+
+message PutSipSettingsResponse {
+  SipSettings settings = 1;
+}
+
+// POST /api/workspaces/{id}/sip/test (MANAGE_INTEGRATIONS, people; 5 per hour per workspace,
+// else 429 SIP_RATE_LIMITED) → 200 TestSipResponse. LiveKit has no registration / OPTIONS
+// probe, so the server calls the workspace's own caller_id for at most 5 s from a service
+// LiveKit room (a real, billable call; it appears in the journal with an empty room_id) and
+// hangs up. ok = the provider took the call: answered, or refused with a SIP answer that proves
+// authentication and routing work (408, 480, 486, 487, 600, 603, 607, 608). No answer at all
+// within ~25 s (an unreachable host, a wrong transport) is ok = false. Failure is also
+// stored as SipSettings.last_error; success clears it. 409 SIP_DISABLED when telephony is off.
+// The request may take up to ~25 s.
+message TestSipResponse {
+  bool ok = 1;
+  // Human-readable outcome with the SIP status when there is one, e.g. «answered»,
+  // «486 Busy Here», «401 Unauthorized».
+  string message = 2;
+  uint32 sip_status = 3; // SIP response code, 0 = none (answered, or no SIP answer at all)
+}
+
+// A phone call (journal row and live state).
+message SipCall {
+  string id = 1;
+  string workspace_id = 2;
+  string room_id = 3; // empty: a connection test, or the room was deleted
+  string number = 4;  // E.164 (+79161234567)
+  SipCallDirection direction = 5;
+  string started_by = 6; // user id of the caller (a person or a bot); empty = account gone
+  SipCallStatus status = 7;
+  // ENDED: "hangup" (DELETE by the caller), "hangup_moderator" (DELETE by someone with
+  // MUTE_MEMBERS), "remote" (the line left the room: the callee hung up, or the call hit the
+  // 2 h cap), "empty" (everybody left the room's call), "room_closed" (the LiveKit room ended),
+  // "cancelled" (DELETE before the answer), "lost" (the line vanished without an event).
+  // FAILED: "busy", "no_answer", "declined", "invalid_number", "provider_auth" (the provider
+  // refused our credentials), "unavailable" (LiveKit SIP is not running or unreachable),
+  // "error" (anything else; the journal row keeps the SIP code in the text: "error 503").
+  // Empty while not final.
+  string reason = 8;
+  google.protobuf.Timestamp started_at = 9;
+  google.protobuf.Timestamp answered_at = 10; // unset until ACTIVE
+  google.protobuf.Timestamp ended_at = 11;    // unset until ENDED / FAILED
+  // The LiveKit participant identity of the line: "sip:<id>". Clients match it against the
+  // room's LiveKit participants to draw the phone tile.
+  string participant_identity = 12;
+  string ended_by = 13; // who hung up with DELETE; empty otherwise
+}
+
+// POST /api/rooms/{id}/calls (PLACE_CALLS + VIEW_ROOM + CONNECT in the room, not a guest; a
+// voice room of a workspace, not archived; the caller has a device in this room's call) →
+// 201 SipCallResponse with status DIALING; SIP_CALL_UPDATE goes to everyone who sees the room
+// on every status change. Errors: 404 no room / DM; 403 no PLACE_CALLS, a guest; 422
+// VALIDATION (field "number": not a phone number) or «not a voice room»; 409 SIP_DISABLED;
+// 409 CONFLICT «join the call first» (the caller is not in this room's call); 409
+// SIP_CALL_ACTIVE; 422 SIP_NUMBER_NOT_ALLOWED; 429 SIP_RATE_LIMITED (20 calls per hour per
+// workspace); 403 WORKSPACE_SUSPENDED. The line rings for up to 45 s; a call lasts 2 h at most.
+message PlaceSipCallRequest {
+  // The number to call: E.164 («+7 916 123-45-67»), or a Russian national number starting
+  // with 8 or 7 (11 digits) — spaces, dashes, dots and brackets are ignored.
+  string number = 1;
+}
+
+message SipCallResponse {
+  SipCall call = 1;
+}
+
+// DELETE /api/rooms/{id}/calls/{cid} (the caller, or MUTE_MEMBERS in the room; bots too) →
+// 200 SipCallResponse with the call ENDED (reason "hangup" / "hangup_moderator", or
+// "cancelled" before the answer); the line is removed from the room. 404 unknown call or not
+// in this room; 403 someone else's call without MUTE_MEMBERS; 409 CONFLICT the call already
+// ended (the response body is then an ApiError).
+//
+// GET /api/workspaces/{id}/calls?from=<RFC 3339>&to=<RFC 3339>&cursor=<next_cursor>
+// (VIEW_JOURNALS, people) → 200 ListSipCallsResponse: the workspace's calls, newest first,
+// 100 per page, started_at in [from, to) when given. Connection tests are included; calls of
+// rooms the caller cannot see (a closed room without an override) are left out, so a page may
+// hold fewer than 100 (next_cursor still set while more rows follow).
+message ListSipCallsResponse {
+  repeated SipCall calls = 1;
+  string next_cursor = 2; // empty = no more
+}
+
+// SIP_CALL_UPDATE: a phone call of a room was placed or changed status. To everyone who can
+// view the room (guests too: they hear the line). Active calls are also in
+// WorkspaceSnapshot.sip_calls (READY / WORKSPACE_CREATE).
+message SipCallUpdate {
+  SipCall call = 1;
+}

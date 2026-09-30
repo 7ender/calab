@@ -246,6 +246,8 @@ class VoiceEngine {
   private callMode = false;
   /** The seat of the last failed user join: a CSP report arriving after its teardown re-seats it as 'blocked'. */
   private failedSeat: { roomId: string; workspaceId: string; at: number } | null = null;
+  /** The current user join brings me back after a window reload / update restart: its cue is «reconnect», not «join». */
+  private resumedJoin = false;
   /** The connect() attempt in flight (the latest one; a superseded attempt never clears it). */
   private attempt: ConnectAttempt | null = null;
   /** Watchdog retries spent on the current intent (docs/09 #131): one fresh Room + token, then out with a toast. */
@@ -360,9 +362,10 @@ class VoiceEngine {
   /**
    * User intent: connect to a voice room (switches rooms; cancels a pending rejoin). `call`: the
    * voice session of a one-to-one call (ADR-0034) — a DM room, `workspaceId` '' — with the mic on
-   * voice activation only.
+   * voice activation only. `resumed`: back into the seat left by a reload / update restart
+   * (services/resumeVoice.ts) — the «reconnect» cue instead of «join».
    */
-  async join(roomId: string, workspaceId: string, opts: { call?: boolean } = {}): Promise<void> {
+  async join(roomId: string, workspaceId: string, opts: { call?: boolean; resumed?: boolean } = {}): Promise<void> {
     // A suspended workspace has no calls (docs/09 #32): say so instead of a 403 toast.
     if (useWorkspaces.getState().byId[workspaceId]?.ws.suspension) {
       toast.info(t('suspended.voice'));
@@ -373,6 +376,7 @@ class VoiceEngine {
     this.failedSeat = null;
     this.takenOverRoom = null;
     this.stuckRetries = 0;
+    this.resumedJoin = opts.resumed === true;
     setLink({ attempts: 0, lastError: null, blockedHost: null });
     // Optimistic join (docs/05): I am in the room's list from the click on, also while the old
     // call is still being torn down; connect() takes over with phase 'connecting'.
@@ -569,7 +573,9 @@ class VoiceEngine {
       this.pushSelfState();
       this.refreshStreams();
       this.refreshCameras();
-      playSound('join');
+      // Back in after a lost connection (the rejoin cycle) or a reload: «reconnect», else «join».
+      playSound(quiet || this.resumedJoin ? 'reconnect' : 'join');
+      this.resumedJoin = false;
       this.syncTray();
     } catch (err) {
       if (seq !== this.joinSeq) return;
@@ -1101,7 +1107,7 @@ class VoiceEngine {
     this.stopStats();
     this.resetEcho();
     // Bounded (docs/09 #131): unpublishing over a dead link must not hold up the next connect.
-    if (!(await settleWithin(this.stopStream(), STOP_STREAM_WAIT_MS))) log.warn(`voice: stopping the stream took over ${STOP_STREAM_WAIT_MS} ms, going on`);
+    if (!(await settleWithin(this.stopStream(false), STOP_STREAM_WAIT_MS))) log.warn(`voice: stopping the stream took over ${STOP_STREAM_WAIT_MS} ms, going on`);
     const room = this.room;
     const micTrack = this.micTrack;
     this.room = null;
@@ -1142,7 +1148,8 @@ class VoiceEngine {
       lossPct: null,
       stats: null,
     });
-    if (sound && room) playSound('leave');
+    // My own leave / hang-up: the heavier «disconnect» cue (others leaving play «leave»).
+    if (sound && room) playSound('disconnect');
     this.syncTray();
   }
 
@@ -1212,7 +1219,9 @@ class VoiceEngine {
         this.refreshStreams();
         this.refreshCameras();
       })
-      .on(RoomEvent.TrackUnpublished, () => {
+      .on(RoomEvent.TrackUnpublished, (pub, p) => {
+        // A participant leaving unpublishes after LiveKit dropped them from the room: «leave» covers it.
+        if (pub.source === Track.Source.ScreenShare && room.remoteParticipants.has(p.identity)) playSound('streamEnd');
         this.refreshStreams();
         this.refreshCameras();
       })
@@ -2315,7 +2324,8 @@ class VoiceEngine {
     // (review N9).
     const stale = (): boolean => this.room !== room;
     try {
-      await this.stopStream();
+      // Switching the source: the old stream goes without the «stream ended» cue.
+      await this.stopStream(false);
       if (stale()) return;
       // 1) capture first (browsers need the click's transient activation for the picker);
       captured = await captureScreen(opts);
@@ -2336,10 +2346,12 @@ class VoiceEngine {
         { ...opts, preset, codec: (await codec).codec, h264Profile: (await codec).profile, ...(fps ? { fps } : {}) },
         () => {
           if (this.screen === share) {
+            // Ended outside the app (the OS «Stop sharing», the window closed).
             this.screen = null;
             annot.presenting(null);
             setVoice({ myStream: null });
             this.refreshStreams();
+            playSound('streamEnd');
           }
         },
         captured,
@@ -2361,6 +2373,7 @@ class VoiceEngine {
         myStream: { sourceName: share.sourceName, preset, hasAudio: share.audio !== null, audioError: audio?.text ?? null, viewers: 0 },
       });
       this.refreshStreams();
+      playSound('streamStart');
       if (preset !== opts.preset) toast.info(t('mediaErr.stream.limited'));
     } catch (err) {
       log.error('stream start failed', err);
@@ -2393,13 +2406,15 @@ class VoiceEngine {
     });
   }
 
-  async stopStream(): Promise<void> {
+  /** `sound`: the «stream ended» cue (not for a leave or a source switch). */
+  async stopStream(sound = true): Promise<void> {
     const s = this.screen;
     this.screen = null;
     if (s) this.viewers.delete(s.video.sid ?? '');
     if (s) annot.presenting(null);
     setVoice({ myStream: null });
     if (s) this.refreshStreams();
+    if (s && sound) playSound('streamEnd');
     if (s) await s.stop();
   }
 
@@ -2443,8 +2458,11 @@ class VoiceEngine {
       const m = JSON.parse(new TextDecoder().decode(payload)) as { sid?: string; on?: boolean };
       const set = m.sid ? this.viewers.get(m.sid) : undefined;
       if (!set) return;
-      if (m.on) set.add(from.identity);
-      else set.delete(from.identity);
+      // A viewer of my stream came / went (a repeated message changes nothing and stays silent).
+      if (m.on && !set.has(from.identity)) {
+        set.add(from.identity);
+        playSound('watchStart');
+      } else if (!m.on && set.delete(from.identity)) playSound('watchStop');
       if (m.on && m.sid) annot.viewerJoined(from.identity, m.sid);
       this.publishViewers();
     } catch {

@@ -24,6 +24,9 @@ import type {
   TrayAction,
   TrayState,
   UpdateStatus,
+  WebAppBounds,
+  WebAppNavAction,
+  WebAppNavState,
 } from '../shared/ipc';
 import type { ThumbRequest } from '../shared/captureThumb';
 import type { ResumeVoice, ResumeVoiceSeat } from '../shared/resumeVoice';
@@ -62,10 +65,10 @@ export interface CalabaApi {
     /** Current update status (after a renderer reload). */
     updateStatus(): Promise<UpdateStatus>;
     /**
-     * «Перезапустить»: quit and install the downloaded update (main re-checks the feed first);
-     * `afterCall` during a call: when the call ends. false when none is downloaded.
+     * «Перезапустить»: quit and install the downloaded update (main re-checks the feed first) —
+     * at once, also during a call (the relaunched app rejoins it). false when none is downloaded.
      */
-    installUpdate(afterCall?: boolean): Promise<boolean>;
+    installUpdate(): Promise<boolean>;
     /** «Скачать и установить»: download an `installable` available update; false when there is none. */
     downloadUpdate(): Promise<boolean>;
     /** Main is about to restart for an update: answer with setResumeVoice (docs/09 #126). */
@@ -175,6 +178,24 @@ export interface CalabaApi {
      */
     isShown(): Promise<boolean>;
     onShownChange(cb: (shown: boolean) => void): Unsubscribe;
+  };
+  /**
+   * Workspace web apps (ADR-0050 §4): main shows each site in its own sandboxed view over the
+   * content area; the renderer only says which app, where, and ◀ ▶ ⟳. Electron only (the web
+   * client embeds an iframe instead).
+   */
+  webApps?: {
+    /** Show the app at `bounds` (CSS px of this window); loads `url` on first open or when it changed. */
+    open(appId: string, url: string, bounds: WebAppBounds): Promise<void>;
+    /** Hide the shown app (it stays alive, at most two do). */
+    hide(): Promise<void>;
+    setBounds(bounds: WebAppBounds): Promise<void>;
+    navigate(action: WebAppNavAction): Promise<void>;
+    /** The shown app's current page in the system browser. */
+    openExternal(): Promise<void>;
+    /** The app was deleted: its view and this device's site data of it go. */
+    forget(appId: string): Promise<void>;
+    onState(cb: (s: WebAppNavState) => void): Unsubscribe;
   };
 }
 

@@ -1,5 +1,6 @@
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
+import { isActivityTab, type ActivityTab } from '../lib/boards/activity';
 import { EMPTY_FILTER, type FilterState } from '../lib/boards/filter';
 import type { TimelineGroup, Zoom } from '../lib/boards/timeline';
 
@@ -70,6 +71,9 @@ interface BoardsUiState {
   /** «Мои задачи»: which of my tasks (GET /me/tasks scope). */
   myScope: 'assigned' | 'lead' | 'created' | 'subscribed';
   setMyScope: (v: BoardsUiState['myScope']) => void;
+  /** The task panel's «Активность» tab (Все / Изменения / Комментарии), remembered. */
+  activityTab: ActivityTab;
+  setActivityTab: (v: ActivityTab) => void;
 
   setActive: (on: boolean) => void;
   toggle: () => void;
@@ -110,6 +114,8 @@ export const useBoardsUi = create<BoardsUiState>()(
       helpOpen: false,
       myScope: 'assigned',
       setMyScope: (myScope) => set({ myScope }),
+      activityTab: 'all',
+      setActivityTab: (activityTab) => set({ activityTab }),
       setActive: (active) => set(active ? { active } : { active, filterOpen: false, helpOpen: false, menu: null }),
       toggle: () => set((s) => (s.active ? { active: false, filterOpen: false, helpOpen: false, menu: null } : { active: true })),
       openBoard: (wsId, boardId) =>
@@ -137,7 +143,12 @@ export const useBoardsUi = create<BoardsUiState>()(
     {
       name: 'calaba-boards-ui',
       version: 1,
-      partialize: (s) => ({ boardOf: s.boardOf, prefs: s.prefs, myScope: s.myScope, lastBoard: s.lastBoard }),
+      partialize: (s) => ({ boardOf: s.boardOf, prefs: s.prefs, myScope: s.myScope, lastBoard: s.lastBoard, activityTab: s.activityTab }),
+      // A stored value from an older / foreign build must not break the panel.
+      merge: (stored, cur) => {
+        const p = (stored ?? {}) as Partial<BoardsUiState>;
+        return { ...cur, ...p, activityTab: isActivityTab(p.activityTab) ? p.activityTab : cur.activityTab };
+      },
     },
   ),
 );

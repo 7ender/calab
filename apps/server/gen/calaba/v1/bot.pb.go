@@ -179,11 +179,11 @@ type Bot struct {
 	Commands    []*BotCommand          `protobuf:"bytes,6,rep,name=commands,proto3" json:"commands,omitempty"`
 	// The first characters of the current token's secret, to tell tokens apart; empty = the
 	// token was revoked (the bot cannot sign in until a new one is issued). Like webhook: for
-	// the bot, its owner and MANAGE_WORKSPACE members of its home workspace only.
+	// the bot, its owner and MANAGE_BOTS members of its home workspace only.
 	TokenPrefix string                 `protobuf:"bytes,7,opt,name=token_prefix,json=tokenPrefix,proto3" json:"token_prefix,omitempty"`
 	CreatedAt   *timestamppb.Timestamp `protobuf:"bytes,8,opt,name=created_at,json=createdAt,proto3" json:"created_at,omitempty"`
 	RevokedAt   *timestamppb.Timestamp `protobuf:"bytes,9,opt,name=revoked_at,json=revokedAt,proto3" json:"revoked_at,omitempty"`
-	// Set for the bot itself, its owner and MANAGE_WORKSPACE members of its home workspace.
+	// Set for the bot itself, its owner and MANAGE_BOTS members of its home workspace.
 	Webhook       *BotWebhook `protobuf:"bytes,10,opt,name=webhook,proto3" json:"webhook,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
@@ -289,7 +289,7 @@ func (x *Bot) GetWebhook() *BotWebhook {
 	return nil
 }
 
-// POST /api/workspaces/{id}/bots (the owner or MANAGE_WORKSPACE; plan limit `bots`, 409
+// POST /api/workspaces/{id}/bots (MANAGE_BOTS, ADR-0048; plan limit `bots`, 409
 // CONFLICT reason PLAN_LIMIT) → 201. The bot joins the workspace with the member role. The
 // token is returned only here and by POST …/bots/{botId}/token.
 type CreateBotRequest struct {
@@ -404,7 +404,7 @@ func (x *CreateBotResponse) GetToken() string {
 	return ""
 }
 
-// GET /api/workspaces/{id}/bots (MANAGE_WORKSPACE): bots that are members of the workspace.
+// GET /api/workspaces/{id}/bots (MANAGE_BOTS): bots that are members of the workspace.
 type ListBotsResponse struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	Bots          []*Bot                 `protobuf:"bytes,1,rep,name=bots,proto3" json:"bots,omitempty"`
@@ -450,7 +450,7 @@ func (x *ListBotsResponse) GetBots() []*Bot {
 }
 
 // POST /api/workspaces/{id}/bots/{botId}/token — a new token (home workspace: the bot's
-// owner or MANAGE_WORKSPACE); the previous one stops working at once. DELETE of the same
+// owner or MANAGE_BOTS); the previous one stops working at once. DELETE of the same
 // path revokes the token without a new one (204).
 type ReissueBotTokenResponse struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
@@ -506,7 +506,7 @@ func (x *ReissueBotTokenResponse) GetToken() string {
 
 // POST /api/workspaces/{id}/bots/{botId}/avatar — sets the bot's avatar from the multipart
 // field "file" (an image ≤ 5 MB, like POST /api/me/avatar: 422 VALIDATION otherwise); DELETE
-// of the same path removes it. Home workspace only: the bot's owner or MANAGE_WORKSPACE
+// of the same path removes it. Home workspace only: the bot's owner or MANAGE_BOTS
 // (403 elsewhere, 404 when the bot is not a member of {id}). Members see USER_UPDATE, the
 // managers BOT_UPDATE (docs/09 #87).
 type SetBotAvatarResponse struct {
@@ -553,7 +553,7 @@ func (x *SetBotAvatarResponse) GetBot() *Bot {
 	return nil
 }
 
-// POST /api/workspaces/{id}/bots/add (MANAGE_WORKSPACE of that workspace): adds an existing
+// POST /api/workspaces/{id}/bots/add (MANAGE_BOTS of that workspace): adds an existing
 // bot by id or username (member role). 409 CONFLICT: already a member or plan limit.
 type AddBotRequest struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
@@ -1090,7 +1090,7 @@ func (x *ListBlockedBotsResponse) GetBotUserIds() []string {
 }
 
 // BOT_CREATE / BOT_UPDATE: a bot joined the workspace / changed (profile, commands, token,
-// webhook state). To MANAGE_WORKSPACE members and the bot's owner.
+// webhook state). To MANAGE_BOTS members and the bot's owner.
 type BotCreate struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	WorkspaceId   string                 `protobuf:"bytes,1,opt,name=workspace_id,json=workspaceId,proto3" json:"workspace_id,omitempty"`

@@ -4,6 +4,7 @@ import { App } from './app/App';
 import { log } from './lib/log';
 import { installSheetGuard, installVisualViewport, registerServiceWorker } from './lib/mobile';
 import { isWeb, platform } from './platform';
+import { installPopoverScroll } from './lib/popoverScroll';
 import { installWindowVisibility } from './lib/windowVisibility';
 import { startLocale } from './services/locale';
 import { installPlayer } from './services/player';
@@ -18,6 +19,9 @@ window.addEventListener('unhandledrejection', (e) => log.error('unhandled reject
 
 // Desktop: document.visibilityState follows the window (hidden / minimized) — docs/14-energy.md.
 if (!isWeb) installWindowVisibility(document, platform.window);
+
+// Lists in popovers/menus scroll inside modal dialogs (docs/09 #118).
+installPopoverScroll();
 
 void bootstrap();
 

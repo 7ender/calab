@@ -140,6 +140,10 @@ const (
 	TaskMentioned TaskKind = "mentioned" // @<recipient> in the description or a comment
 	TaskComment   TaskKind = "comment"   // a comment in a task the recipient is subscribed to
 	TaskStatus    TaskKind = "status"    // the status of a task the recipient is subscribed to changed
+	// Approvals (ADR-0049 §5).
+	TaskApprovalRequested TaskKind = "approval_requested" // the recipient's vote is asked for: always notifies
+	TaskApproved          TaskKind = "approved"           // the quorum was reached
+	TaskRejected          TaskKind = "rejected"           // an approver rejected
 )
 
 // TaskFacts are one task change by someone else, as seen by one recipient.
@@ -149,13 +153,22 @@ type TaskFacts struct {
 	Subscribed bool                 // the recipient has a subscription row
 	Muted      bool                 // «Отписаться»
 	Workspace  bool                 // the workspace is muted (muted_until in the future)
+	// Mandatory: an APPROVED / REJECTED notice to the task's creator or lead assignee (ADR-0049
+	// §5) — delivered whatever the level, the task's «Отписаться» and a muted workspace.
+	Mandatory bool
 }
 
 // TaskNotifies reports whether a task change notifies the recipient (the unread badge of the
 // boards icon and a system notification): nothing with level NONE or a muted workspace;
 // assignments and mentions with ALL and MENTIONS, even when unsubscribed; comments and
-// status changes with ALL only, to subscribers who did not mute the task.
+// status changes with ALL only, to subscribers who did not mute the task. Approvals (ADR-0049
+// §5) are mandatory like a direct mention, bypassing levels and mutes: APPROVAL_REQUESTED
+// always, APPROVED / REJECTED for the creator and the lead (Mandatory); others get those like
+// a status change.
 func TaskNotifies(f TaskFacts) bool {
+	if f.Kind == TaskApprovalRequested || (f.Mandatory && (f.Kind == TaskApproved || f.Kind == TaskRejected)) {
+		return true
+	}
 	level := orDefault(f.Level, v1.NotificationLevel_NOTIFICATION_LEVEL_ALL)
 	if f.Workspace || level == v1.NotificationLevel_NOTIFICATION_LEVEL_NONE {
 		return false
@@ -163,7 +176,7 @@ func TaskNotifies(f TaskFacts) bool {
 	switch f.Kind {
 	case TaskAssigned, TaskMentioned:
 		return level == v1.NotificationLevel_NOTIFICATION_LEVEL_ALL || level == v1.NotificationLevel_NOTIFICATION_LEVEL_MENTIONS
-	case TaskComment, TaskStatus:
+	case TaskComment, TaskStatus, TaskApproved, TaskRejected:
 		return level == v1.NotificationLevel_NOTIFICATION_LEVEL_ALL && f.Subscribed && !f.Muted
 	}
 	return false

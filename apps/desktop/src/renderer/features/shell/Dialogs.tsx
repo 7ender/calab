@@ -15,6 +15,7 @@ import { CreateWorkspaceDialog, JoinWorkspaceDialog } from '../workspace/Workspa
 import { AdminWindowLazy, AppSettingsWindow, WorkspaceSettingsWindow } from './lazyWindows';
 import { useSession } from '../../stores/session';
 import { EventDialog } from '../calendar/EventDialog';
+import { AppDialog } from '../webapps/AppDialog';
 
 export function Dialogs(): ReactNode {
   const d = useUi((s) => s.dialog);
@@ -74,6 +75,9 @@ export function Dialogs(): ReactNode {
         break;
       case 'event':
         node = <EventDialog key={d.eventKey ?? 'new'} workspaceId={d.workspaceId} {...(d.eventKey ? { eventKey: d.eventKey } : {})} {...(d.draft ? { draft: d.draft } : {})} onClose={close} />;
+        break;
+      case 'web-app':
+        node = <AppDialog key={d.appId ?? 'new'} workspaceId={d.workspaceId} appId={d.appId} onClose={close} />;
         break;
       case 'image':
         node = <Lightbox images={d.images} index={d.index} onClose={close} />;

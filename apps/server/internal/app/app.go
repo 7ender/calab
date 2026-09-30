@@ -43,6 +43,7 @@ import (
 	"github.com/calaba/calaba/server/internal/redisx"
 	"github.com/calaba/calaba/server/internal/rooms"
 	"github.com/calaba/calaba/server/internal/rtc"
+	"github.com/calaba/calaba/server/internal/sip"
 	"github.com/calaba/calaba/server/internal/sounds"
 	"github.com/calaba/calaba/server/internal/stickers"
 	"github.com/calaba/calaba/server/internal/superadmin"
@@ -75,6 +76,11 @@ type Deps struct {
 	// CalDAV tunes the CalDAV client and workers (tests: TLS roots, short polls); the zero
 	// value is production. The address policy is UnfurlAllowAddr's.
 	CalDAV caldav.Options
+	// SIP overrides the LiveKit SIP API client (tests); nil = real client from config.
+	SIP rtc.SIP
+	// SIPOptions tune telephony (tests: address policy, DNS, short timings); the zero value is
+	// production with the address policy of UnfurlAllowAddr.
+	SIPOptions sip.Options
 }
 
 // App is the assembled server.
@@ -103,6 +109,8 @@ type App struct {
 	Boards *boards.Service
 	// Rooms: room handlers with the temporary rooms sweeper (ADR-0044).
 	Rooms *rooms.Handlers
+	// SIP: telephony (ADR-0046) with the lost-call sweeper.
+	SIP   *sip.Service
 	redis rueidis.Client
 	// tempRetention: TEMP_ROOM_RETENTION_DAYS.
 	tempRetention time.Duration
@@ -131,6 +139,7 @@ func (a *App) Run(ctx context.Context) {
 	go a.CalDAV.Run(ctx)
 	go a.Boards.Run(ctx, a.redis, boards.SweepInterval)
 	go a.Rooms.RunTempRooms(ctx, a.redis, a.tempRetention)
+	go a.SIP.Run(ctx)
 }
 
 // mailSender: the test override, else SMTP from config, else nil (mail disabled).
@@ -358,7 +367,25 @@ func New(d Deps) *App {
 		redisx.NewRateLimiter(d.Redis, "rl:caldav-sync:", 1, 1))         // once per minute
 	calSvc.Changed = cdSvc.EventChanged
 	cdSvc.Routes(mux, private)
+	// Telephony (ADR-0046): phone lines join rooms through the LiveKit SIP API.
+	var lkSIP rtc.SIP
+	var lkRooms rtc.LiveKit
 	if rtcSvc != nil {
+		if lkSIP = d.SIP; lkSIP == nil {
+			lkSIP = rtc.NewSIP(d.Config.LiveKitInternalURL, d.Config.LiveKitAPIKey, d.Config.LiveKitAPISecret)
+		}
+		if lkRooms = d.LiveKit; lkRooms == nil {
+			lkRooms = rtc.NewLiveKit(d.Config.LiveKitInternalURL, d.Config.LiveKitAPIKey, d.Config.LiveKitAPISecret)
+		}
+	}
+	sipOpts := d.SIPOptions
+	if sipOpts.AllowAddr == nil {
+		sipOpts.AllowAddr = unfurlPolicy(d)
+	}
+	sipSvc := sip.New(d.DB, d.Redis, lkRooms, lkSIP, pub, planSvc, []byte(d.Config.JWTSecret), sipOpts)
+	sipSvc.Routes(mux, private)
+	if rtcSvc != nil {
+		rtcSvc.SIP = sipSvc
 		rtcSvc.Routes(mux, private)
 	} else {
 		rtc.DisabledRoutes(mux, private)
@@ -376,6 +403,6 @@ func New(d Deps) *App {
 		events.Middleware, // one post-commit publish budget per request
 	)
 	return &App{Handler: h, Auth: authSvc, Gateway: hub, Files: filesSvc, Guests: guestSvc, RTC: rtcSvc, Plans: planSvc, Mail: mailSvc,
-		Recording: recSvc, Bots: botSvc, Birthdays: bdSvc, Calls: callSvc, Calendar: calSvc, CalDAV: cdSvc, Boards: boardSvc, Rooms: roomHandlers, redis: d.Redis, Routes: mux.patterns,
+		Recording: recSvc, Bots: botSvc, Birthdays: bdSvc, Calls: callSvc, Calendar: calSvc, CalDAV: cdSvc, Boards: boardSvc, Rooms: roomHandlers, SIP: sipSvc, redis: d.Redis, Routes: mux.patterns,
 		tempRetention: time.Duration(d.Config.TempRoomRetentionDays) * 24 * time.Hour}
 }

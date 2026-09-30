@@ -9,6 +9,8 @@ import {
   ROLE_DEFAULTS,
   ROOM_ONLY_PERMISSIONS,
   BOARD_ONLY_PERMISSIONS,
+  ROLES_V2_PERMISSIONS,
+  WORKSPACE_ONLY_PERMISSIONS,
   taskRoomPermissions,
   computeMemberBoardPermissions,
   computeMemberRoomPermissions,
@@ -34,7 +36,7 @@ interface Vector {
   restricted?: boolean;
   owner?: boolean;
   // ADR-0042: a board vector.
-  board?: { private: boolean; guest?: boolean };
+  board?: { private: boolean; guest?: boolean; restricted?: boolean; owner?: boolean };
   expected: number;
 }
 
@@ -73,7 +75,7 @@ describe('computePermissions (shared vectors)', () => {
             roles,
             roleOverrides,
             userOverride: toOv(v.userOverride),
-            board: v.board,
+            board: { ...v.board, private: v.board.private || (v.board.restricted ?? false) },
           }),
         ).toBe(BigInt(v.expected));
         const overrides = [
@@ -96,9 +98,17 @@ describe('computePermissions (shared vectors)', () => {
               ]
             : []),
         ];
-        expect(computeMemberBoardPermissions(roles, 'u1', overrides, v.board.private, v.board.guest ?? false)).toBe(
-          BigInt(v.expected),
-        );
+        expect(
+          computeMemberBoardPermissions(
+            roles,
+            'u1',
+            overrides,
+            v.board.private,
+            v.board.guest ?? false,
+            v.board.restricted ?? false,
+            v.board.owner ?? false,
+          ),
+        ).toBe(BigInt(v.expected));
         return;
       }
       if (v.roles) {
@@ -192,7 +202,19 @@ describe('roles (ADR-0026)', () => {
     expect(memberRoles(all, ['m']).map((r) => r.id)).toEqual(['m']);
     expect(workspacePermissions(memberRoles(all, ['m', 'a']))).toBe(ALL_PERMISSIONS);
     expect(ALL_PERMISSIONS & PERMISSION_BITS.MANAGE_ROLES).toBe(PERMISSION_BITS.MANAGE_ROLES);
-    expect(ALL_PERMISSIONS).toBe(16777215n);
+    expect(ALL_PERMISSIONS).toBe(4294967295n);
+    // ADR-0048: workspace-level, in no default role, never settable per room or board.
+    expect(ROLES_V2_PERMISSIONS).toBe(0xfe000000n);
+    expect(PERMISSION_BITS.MANAGE_RECORDINGS).toBe(2147483648n);
+    expect(ROOM_ONLY_PERMISSIONS & ROLES_V2_PERMISSIONS).toBe(0n);
+    expect(BOARD_ONLY_PERMISSIONS & ROLES_V2_PERMISSIONS).toBe(0n);
+    expect(ROLE_DEFAULTS[WorkspaceRole.MEMBER] & ROLES_V2_PERMISSIONS).toBe(0n);
+    expect(WORKSPACE_ONLY_PERMISSIONS & ROLES_V2_PERMISSIONS).toBe(ROLES_V2_PERMISSIONS);
+    // ADR-0046: settable per room, not in any default role.
+    expect(PERMISSION_BITS.PLACE_CALLS).toBe(16777216n);
+    expect(ROOM_ONLY_PERMISSIONS & PERMISSION_BITS.PLACE_CALLS).toBe(PERMISSION_BITS.PLACE_CALLS);
+    expect(ROLE_DEFAULTS[WorkspaceRole.MEMBER] & PERMISSION_BITS.PLACE_CALLS).toBe(0n);
+    expect(ROLE_DEFAULTS[WorkspaceRole.GUEST] & PERMISSION_BITS.PLACE_CALLS).toBe(0n);
     // ADR-0044: workspace-level, in the member default, never settable per room.
     expect(PERMISSION_BITS.CREATE_TEMP_ROOMS).toBe(8388608n);
     expect(ROOM_ONLY_PERMISSIONS & PERMISSION_BITS.CREATE_TEMP_ROOMS).toBe(0n);

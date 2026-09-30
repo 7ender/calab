@@ -9,6 +9,7 @@ import type { PickerGroup, PickerItem } from '../../components/picker/pickerMode
 import { cx } from '../../components/ui';
 import { t } from '../../i18n';
 import { addDays, addMonths, dayKey, formatMonth, monthGrid, monthOf, weekStart, weekdayNames } from '../../lib/calendar/time';
+import { MAX_APPROVERS } from '../../lib/boards/approvals';
 import { autoFocusAllowed } from '../../lib/mobile';
 import { createLabel } from '../../services/boards';
 import { useBoards } from '../../stores/boards';
@@ -148,7 +149,11 @@ export function ChoiceMenu({
 
 // ------------------------------------------------------------------ status / priority
 
-export function StatusMenu({ boardId, value, onPick, ...shell }: MenuShell & { boardId: string; value: string; onPick: (statusId: string) => void }): ReactNode {
+/**
+ * `blocked`: statuses the task may not go to now (ADR-0049: not approved yet) — shown disabled
+ * with the hint «нужно согласование».
+ */
+export function StatusMenu({ boardId, value, onPick, blocked, ...shell }: MenuShell & { boardId: string; value: string; onPick: (statusId: string) => void; blocked?: ReadonlySet<string> | undefined }): ReactNode {
   const statuses = useBoards(useShallow((s) => s.boards[boardId]?.statuses ?? NO_STATUSES));
   const groups = useMemo(
     () => [
@@ -157,10 +162,13 @@ export function StatusMenu({ boardId, value, onPick, ...shell }: MenuShell & { b
         label: '',
         items: [...statuses]
           .sort((a, b) => a.position - b.position)
-          .map((s): Choice => ({ id: s.id, search: [s.name], label: s.name, icon: <StatusIcon type={s.type} color={s.color} />, checked: s.id === value })),
+          .map((s): Choice => {
+            const off = !!blocked?.has(s.id);
+            return { id: s.id, search: [s.name], label: s.name, icon: <StatusIcon type={s.type} color={s.color} />, checked: s.id === value, ...(off ? { disabled: true, note: t('boards.gate.hint') } : {}) };
+          }),
       },
     ],
-    [statuses, value],
+    [statuses, value, blocked],
   );
   return <ChoiceMenu {...shell} groups={groups} onPick={(c) => onPick(c.id)} placeholder={t('boards.menu.status')} label={t('boards.f.status')} digits testId="status-menu" />;
 }
@@ -252,6 +260,61 @@ export function AssigneeMenu({
       placeholder={t('boards.menu.assign')}
       label={t('boards.f.assignee')}
       testId="assignee-menu"
+    />
+  );
+}
+
+/**
+ * «+ Согласующий» (ADR-0049): the assignee picker's people — members who see the workspace, no
+ * guests, no bots — at most 10 (the rest disabled once full). The server checks board access.
+ */
+export function ApproverMenu({
+  workspaceId,
+  value,
+  onToggle,
+  ...shell
+}: MenuShell & { workspaceId: string; value: readonly string[]; onToggle: (userId: string) => void }): ReactNode {
+  const [open, setOpen] = useOpen(shell);
+  const members = useWorkspaces((s) => (open ? s.byId[workspaceId]?.members : undefined));
+  const groups = useMemo((): Array<PickerGroup<Choice>> => {
+    const full = value.length >= MAX_APPROVERS;
+    const list = Object.values(members ?? {}).filter((m) => m.user && !m.user.isBot && m.role !== WorkspaceRole.GUEST);
+    const person = (id: string, name: string, fileId: string): Choice => {
+      const on = value.includes(id);
+      return {
+        id,
+        search: [name],
+        label: name,
+        icon: <Avatar userId={id} name={name} {...(fileId ? { fileId } : {})} size={20} />,
+        checked: on,
+        ...(full && !on ? { disabled: true, note: t('boards.approversMax') } : {}),
+      };
+    };
+    const chosen = value.flatMap((id) => {
+      const m = list.find((x) => x.user?.id === id);
+      return m ? [person(id, nameOf(m), m.user?.avatarFileId ?? '')] : [];
+    });
+    const others = list
+      .filter((m) => !value.includes(m.user?.id ?? ''))
+      .sort((a, b) => nameOf(a).localeCompare(nameOf(b)))
+      .map((m) => person(m.user?.id ?? '', nameOf(m), m.user?.avatarFileId ?? ''));
+    return [
+      { id: 'chosen', label: '', items: chosen },
+      { id: 'members', label: t('boards.members'), items: others },
+    ];
+  }, [members, value]);
+  return (
+    <ChoiceMenu
+      {...shell}
+      open={open}
+      onOpenChange={setOpen}
+      multi
+      width={300}
+      groups={groups}
+      onPick={(c) => onToggle(c.id)}
+      placeholder={t('boards.approverMenu')}
+      label={t('boards.approvals')}
+      testId="approver-menu"
     />
   );
 }

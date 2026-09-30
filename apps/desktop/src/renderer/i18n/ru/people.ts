@@ -114,8 +114,11 @@ export const ruPeople = {
   'sounds.openChatQuiet': 'Тихо',
   'sounds.openChatOff': 'Выкл.',
   'sounds.streamStart': 'Начало стрима',
+  'sounds.streamEnd': 'Конец стрима',
+  'sounds.watchStart': 'Кто-то начал смотреть ваш стрим',
+  'sounds.watchStop': 'Кто-то перестал смотреть ваш стрим',
   'sounds.moved': 'Вас переместили',
-  'sounds.disconnect': 'Связь с голосом потеряна',
+  'sounds.disconnect': 'Вы вышли из голоса или связь потеряна',
   'sounds.reconnect': 'Связь восстановлена',
 
   // room link (guest access, ADR-0016)

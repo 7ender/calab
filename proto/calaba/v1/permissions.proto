@@ -50,6 +50,34 @@ enum Permission {
   // default (migration 00048 added it to existing member roles); never for guests. The
   // workspace switches the feature off by removing it from the member role.
   PERMISSION_CREATE_TEMP_ROOMS = 8388608;
+  // 1 << 24 (ADR-0046): place outbound phone calls (SIP) from a voice room the caller is in
+  // (POST /api/rooms/{id}/calls). Workspace and room level (room overrides grant and take it).
+  // Nobody by default, calls cost money: admins grant it to roles or people. Never for guests
+  // (the server refuses them whatever the bits say; the guest role cannot hold it).
+  PERMISSION_PLACE_CALLS = 16777216;
+  // Roles v2 (ADR-0048): permissions by function, split off MANAGE_WORKSPACE. All seven are
+  // workspace-level: room and board overrides neither grant nor take them. Not implied by
+  // MANAGE_WORKSPACE (migration 00052 granted them to the roles holding it); ADMINISTRATOR
+  // includes them; never for guests.
+  // 1 << 25: create task boards (the creator manages their board through a personal override).
+  PERMISSION_CREATE_BOARDS = 33554432;
+  // 1 << 26: remove and ban / unban members, badges, promote guests, assign roles below one's
+  // highest role (editing the roles themselves is MANAGE_ROLES).
+  PERMISSION_MANAGE_MEMBERS = 67108864;
+  // 1 << 27: create, change and delete the workspace's bots and their tokens (ADR-0031).
+  PERMISSION_MANAGE_BOTS = 134217728;
+  // 1 << 28: telephony settings (ADR-0046), GPTunneL pairing and future integrations.
+  PERMISSION_MANAGE_INTEGRATIONS = 268435456;
+  // 1 << 29: the call journal, board activity export and other workspace journals; entries of
+  // rooms and boards the holder cannot see stay hidden.
+  PERMISSION_VIEW_JOURNALS = 536870912;
+  // 1 << 30: change and cancel other people's meetings, workspace-wide meetings (ADR-0038).
+  PERMISSION_MANAGE_EVENTS = 1073741824;
+  // 1 << 31: delete recordings of any room the holder can see, the recording consent of rooms
+  // (Room.allow_recording). Proto enums are int32: the value is bit 31 as a signed number
+  // (0x80000000); read it as unsigned (TS: BigInt.asUintN(32, …)). Bits from 1 << 32 on cannot be
+  // enum values: they will be listed as constants in this comment block and in docs/04.
+  PERMISSION_MANAGE_RECORDINGS = -2147483648;
 }
 
 // Built-in workspace roles. Since ADR-0026 a member holds several roles (WorkspaceMember.

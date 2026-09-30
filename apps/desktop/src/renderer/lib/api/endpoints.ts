@@ -1,4 +1,11 @@
 import {
+  GetSipSettingsResponseSchema,
+  ListSipCallsResponseSchema,
+  PlaceSipCallRequestSchema,
+  PutSipSettingsRequestSchema,
+  PutSipSettingsResponseSchema,
+  SipCallResponseSchema,
+  TestSipResponseSchema,
   CreateNotesRequestSchema,
   CreateNotesResponseSchema,
   ListNotesResponseSchema,
@@ -105,6 +112,13 @@ import {
   UpdateBackgroundRequestSchema,
   UpdateBackgroundResponseSchema,
   CreateBadgeRequestSchema,
+  CreateWorkspaceAppRequestSchema,
+  CreateWorkspaceAppResponseSchema,
+  ListWorkspaceAppsResponseSchema,
+  SetWorkspaceAppPositionRequestSchema,
+  SetWorkspaceAppPositionResponseSchema,
+  UpdateWorkspaceAppRequestSchema,
+  UpdateWorkspaceAppResponseSchema,
   CreateBadgeResponseSchema,
   UpdateBadgeRequestSchema,
   UpdateBadgeResponseSchema,
@@ -299,6 +313,24 @@ export const api = {
     /** "" clears → WORKSPACE_MEMBER_UPDATE. */
     setMember: (workspaceId: string, userId: string, badgeId: string) =>
       call('PUT', `/api/workspaces/${workspaceId}/members/${userId}/badge`, SetMemberBadgeResponseSchema, body(SetMemberBadgeRequestSchema, { badgeId })),
+  },
+  /**
+   * Web apps of a workspace (ADR-0050): the list for members (not guests); create / edit / delete
+   * / move with MANAGE_INTEGRATIONS. The server checks the address (https, http only to private
+   * hosts) and never fetches it.
+   */
+  apps: {
+    list: (workspaceId: string) => call('GET', `/api/workspaces/${workspaceId}/apps`, ListWorkspaceAppsResponseSchema),
+    /** 201; 409 = 20 apps already; 422 = bad name / url / icon. */
+    create: (workspaceId: string, init: MessageInitShape<typeof CreateWorkspaceAppRequestSchema>) =>
+      call('POST', `/api/workspaces/${workspaceId}/apps`, CreateWorkspaceAppResponseSchema, body(CreateWorkspaceAppRequestSchema, init)),
+    /** Unset fields unchanged; iconFileId "" clears. */
+    update: (appId: string, init: MessageInitShape<typeof UpdateWorkspaceAppRequestSchema>) =>
+      call('PATCH', `/api/workspace-apps/${appId}`, UpdateWorkspaceAppResponseSchema, body(UpdateWorkspaceAppRequestSchema, init)),
+    remove: (appId: string) => callEmpty('DELETE', `/api/workspace-apps/${appId}`),
+    /** Between two neighbours ("" = first / last); → all apps by position. */
+    move: (appId: string, afterAppId: string, beforeAppId: string) =>
+      call('PUT', `/api/workspace-apps/${appId}/position`, SetWorkspaceAppPositionResponseSchema, body(SetWorkspaceAppPositionRequestSchema, { afterAppId, beforeAppId })),
   },
   /**
    * Camera backgrounds of a workspace (ADR-0035 addendum): the list for any member; create / rename
@@ -544,6 +576,21 @@ export const api = {
   calls: {
     start: (dmRoomId: string) => call('POST', `/api/dms/${dmRoomId}/call`, StartCallResponseSchema),
     act: (callId: string, action: 'accept' | 'decline' | 'cancel' | 'hangup') => call('POST', `/api/calls/${callId}/${action}`, CallActionResponseSchema),
+  },
+  /**
+   * Telephony (ADR-0046, sip.proto). Settings, the connection test (a real call, up to ~25 s) and
+   * the journal — MANAGE_WORKSPACE; PUT replaces the form (password unset = keep, "" = remove):
+   * 422 VALIDATION field, 502 SIP_PROVIDER_ERROR. place / hangup — see PlaceSipCallRequest.
+   */
+  sip: {
+    settings: (workspaceId: string) => call('GET', `/api/workspaces/${workspaceId}/sip`, GetSipSettingsResponseSchema),
+    save: (workspaceId: string, init: MessageInitShape<typeof PutSipSettingsRequestSchema>) =>
+      call('PUT', `/api/workspaces/${workspaceId}/sip`, PutSipSettingsResponseSchema, body(PutSipSettingsRequestSchema, init)),
+    test: (workspaceId: string) => call('POST', `/api/workspaces/${workspaceId}/sip/test`, TestSipResponseSchema),
+    journal: (workspaceId: string, cursor?: string, signal?: AbortSignal) =>
+      call('GET', `/api/workspaces/${workspaceId}/calls${qs({ cursor })}`, ListSipCallsResponseSchema, undefined, signal),
+    place: (roomId: string, number: string) => call('POST', `/api/rooms/${roomId}/calls`, SipCallResponseSchema, body(PlaceSipCallRequestSchema, { number })),
+    hangup: (roomId: string, callId: string) => call('DELETE', `/api/rooms/${roomId}/calls/${callId}`, SipCallResponseSchema),
   },
   /** Link preview; image URLs are server-proxied API paths (never third-party hosts). */
   unfurl: {

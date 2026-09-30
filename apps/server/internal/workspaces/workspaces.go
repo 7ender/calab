@@ -106,6 +106,7 @@ func (h *Handlers) Routes(mux httpx.Router, wrap func(http.Handler) http.Handler
 	h.birthdayRoutes(handle)
 	h.badgeRoutes(handle)
 	h.backgroundRoutes(handle)
+	h.appRoutes(handle)
 }
 
 func uid(r *http.Request) uuid.UUID { return auth.MustFromContext(r.Context()).UserID }
@@ -127,13 +128,26 @@ func access(r *http.Request) (uuid.UUID, perm.Bits, perm.Role, error) {
 	return wsID, bits, role, err
 }
 
+// requireManage: MANAGE_WORKSPACE — settings, appearance, plan, danger zone, guest policy,
+// camera backgrounds (what ADR-0048 left there).
 func requireManage(r *http.Request) (uuid.UUID, perm.Role, error) {
+	return requireBit(r, perm.ManageWorkspace, "MANAGE_WORKSPACE")
+}
+
+// requireMembers: MANAGE_MEMBERS (ADR-0048) — remove, ban, promote, badges, built-in role.
+func requireMembers(r *http.Request) (uuid.UUID, perm.Role, error) {
+	return requireBit(r, perm.ManageMembers, "MANAGE_MEMBERS")
+}
+
+// requireBit: the caller holds the workspace-level bit; guests never pass (none of these bits
+// is in the guest set, a role given to a guest could still carry one).
+func requireBit(r *http.Request, bit perm.Bits, name string) (uuid.UUID, perm.Role, error) {
 	wsID, bits, role, err := access(r)
 	if err != nil {
 		return uuid.Nil, "", err
 	}
-	if !bits.Has(perm.ManageWorkspace) {
-		return uuid.Nil, "", httpx.Forbidden("MANAGE_WORKSPACE required")
+	if !bits.Has(bit) || (role == perm.RoleGuest && bit != perm.ManageWorkspace) {
+		return uuid.Nil, "", httpx.Forbidden(name + " required")
 	}
 	return wsID, role, nil
 }
@@ -179,6 +193,13 @@ func Snapshot(ctx context.Context, q *sqlc.Queries, pl *plans.Service, ws sqlc.W
 	if err != nil {
 		return nil, err
 	}
+	// Web apps (ADR-0050): not for guests; the gateway drops them for bots.
+	var apps []sqlc.WorkspaceApp
+	if SeesApps(role) {
+		if apps, err = q.ListWorkspaceApps(ctx, ws.ID); err != nil {
+			return nil, err
+		}
+	}
 	var allowed map[uuid.UUID]bool
 	if role == perm.RoleGuest {
 		if allowed, err = guestVisibleUsers(ctx, q, ws.ID, userID); err != nil {
@@ -213,6 +234,22 @@ func Snapshot(ctx context.Context, q *sqlc.Queries, pl *plans.Service, ws sqlc.W
 			recordings = append(recordings, pbconv.RoomRecording(rec))
 		}
 	}
+	// Phone calls (ADR-0046) live in the visible rooms.
+	var sipCalls []*v1.SipCall
+	if ws.SipEnabled {
+		live, err := q.ListLiveSipCallsByWorkspace(ctx, ws.ID)
+		if err != nil {
+			return nil, err
+		}
+		for _, c := range live {
+			if c.RoomID == nil {
+				continue
+			}
+			if _, ok := bits[c.RoomID.String()]; ok {
+				sipCalls = append(sipCalls, pbconv.SipCall(c))
+			}
+		}
+	}
 	// Task boards (ADR-0042 §4): the visible ones with the recipient's bits, and their unread tasks.
 	bs, unread, err := boards.Snapshot(ctx, q, ws.ID, me)
 	if err != nil {
@@ -223,7 +260,7 @@ func Snapshot(ctx context.Context, q *sqlc.Queries, pl *plans.Service, ws sqlc.W
 	return &v1.WorkspaceSnapshot{Workspace: pbconv.ForViewer(pw, role), Role: role.Proto(), Rooms: rs, Members: members,
 		Permissions: bits, Categories: pbconv.Categories(cats), Recordings: recordings, Roles: pbconv.Roles(roles),
 		Badges: pbconv.Badges(badges), Backgrounds: pbconv.Backgrounds(backgrounds), Sounds: pbconv.Sounds(sounds),
-		Boards: bs, UnreadTaskIds: unread}, nil
+		Boards: bs, UnreadTaskIds: unread, SipCalls: sipCalls, Apps: pbconv.WorkspaceApps(apps)}, nil
 }
 
 // MemberPB loads a member's role ids and converts the membership row.
@@ -259,6 +296,9 @@ func AnnounceJoin(ctx context.Context, q *sqlc.Queries, pl *plans.Service, pub e
 		isBot := false
 		if u, err := q.GetUser(ctx, m.UserID); err == nil {
 			isBot = u.IsBot
+		}
+		if isBot {
+			snap.Apps = nil // web apps are for people (ADR-0050)
 		}
 		if err := calendar.FillActive(ctx, q, m.UserID, isBot, []*v1.WorkspaceSnapshot{snap}, time.Now()); err != nil {
 			slog.WarnContext(ctx, "workspace snapshot: meetings", "err", err)
@@ -1005,8 +1045,8 @@ func (h *Handlers) updateMember(w http.ResponseWriter, r *http.Request) error {
 		switch {
 		case !ok:
 			return httpx.Validation("role", "invalid role")
-		case !bits.Has(perm.ManageWorkspace):
-			return httpx.Forbidden("MANAGE_WORKSPACE required")
+		case !bits.Has(perm.ManageMembers) || actorRole == perm.RoleGuest:
+			return httpx.Forbidden("MANAGE_MEMBERS required")
 		case self:
 			return httpx.Forbidden("cannot change your own role")
 		case newRole == perm.RoleOwner || perm.Role(cur.Role) == perm.RoleOwner:
@@ -1073,8 +1113,8 @@ func (h *Handlers) removeMember(w http.ResponseWriter, r *http.Request) error {
 		}
 	} else {
 		switch {
-		case !bits.Has(perm.ManageWorkspace):
-			return httpx.Forbidden("MANAGE_WORKSPACE required")
+		case !bits.Has(perm.ManageMembers) || actorRole == perm.RoleGuest:
+			return httpx.Forbidden("MANAGE_MEMBERS required")
 		case targetRole == perm.RoleOwner:
 			return httpx.Forbidden("the owner cannot be removed")
 		case targetRole == perm.RoleAdmin && actorRole != perm.RoleOwner:
@@ -1105,10 +1145,10 @@ func (h *Handlers) removeMember(w http.ResponseWriter, r *http.Request) error {
 	return nil
 }
 
-// promote: POST /api/workspaces/{id}/members/{userId}/promote (MANAGE_WORKSPACE) turns a
-// guest into a member. A guest account is kept from then on (no inactivity cleanup).
+// promote: POST /api/workspaces/{id}/members/{userId}/promote (MANAGE_MEMBERS, ADR-0048) turns
+// a guest into a member. A guest account is kept from then on (no inactivity cleanup).
 func (h *Handlers) promote(w http.ResponseWriter, r *http.Request) error {
-	wsID, _, err := requireManage(r)
+	wsID, _, err := requireMembers(r)
 	if err != nil {
 		return err
 	}

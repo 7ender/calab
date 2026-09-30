@@ -28,6 +28,7 @@ import {
   ChevronDown,
   CircleDot,
   CircleStop,
+  Phone,
   Ellipsis,
   ChevronRight,
   FolderInput,
@@ -83,7 +84,7 @@ import { moveMember } from '../people/actions';
 import { errorText } from '../../lib/api/errors';
 import { VoiceInviteRow, VoiceStatusLine, useStatusLine } from './VoiceRoomRows';
 import { VoiceStateIcons } from '../voice/VoiceStateIcons';
-import { useMobile } from '../../lib/mobile';
+import { isMobileNow, useMobile } from '../../lib/mobile';
 import { useChatDrop } from '../chat/useChatDrop';
 import { applyChatDrop } from '../notes/dropActions';
 import type { DropAction, DropTarget } from '../../lib/messageDrag';
@@ -94,6 +95,10 @@ import { useLocalTimeTag } from '../../services/timezone';
 import { roomMenuGroups, type RoomMenuItem } from '../../lib/roomMenu';
 import { RoomRecBadge } from '../voice/Recording';
 import { useRecordings } from '../../stores/recordings';
+import { useSipCalls } from '../../stores/sipCalls';
+import { SipCallRow, useCanDial } from '../voice/Sip';
+import { dialFromMenu } from '../../lib/dialFromMenu';
+import { useSipDial } from '../../stores/sipDial';
 import { startRecording, stopRecording } from '../../services/recording';
 import { MiniCalendar } from '../calendar/MiniCalendar';
 import { CREATE_TASKS, hasBit } from '../boards/model';
@@ -106,6 +111,7 @@ import { useBoardsUi } from '../../stores/boardsUi';
 import { RoomEventBadge } from '../calendar/RoomEvent';
 import { newEvent } from '../calendar/actions';
 import { DRAG_ROOM, dropRoomAt, hoverRoomAt } from '../calendar/dragState';
+import { RestrictedMark } from '../workspace/AccessLevel';
 
 export { menuBox, menuItem };
 
@@ -756,6 +762,30 @@ function RoomActions({ room, canInvite, canSettings, active }: { room: Room; can
 }
 
 /**
+ * «Позвонить на номер» from the room menu: joins the room's call when needed (the normal join,
+ * its errors stay), then asks the room header's dial popover (phone: the members drawer's sheet)
+ * to open. The request is deferred a beat so the closing menu's focus return does not dismiss
+ * the popover at once.
+ */
+function dialFromRoomMenu(room: Room): Promise<void> {
+  const inCall = (): boolean => {
+    const v = useVoice.getState();
+    return v.roomId === room.id && (v.phase === 'connected' || v.phase === 'reconnecting');
+  };
+  return dialFromMenu({
+    inCall,
+    openRoom: () => useUi.getState().openRoom(room.workspaceId, room.id),
+    join: () => voice.join(room.id, room.workspaceId),
+    reveal: () => {
+      if (isMobileNow()) useUi.getState().setMembersOverlay(true);
+    },
+    open: () => {
+      setTimeout(() => useSipDial.getState().request(room.id), 60);
+    },
+  });
+}
+
+/**
  * The room menu (docs/09 #30): right click / long press on a room row, and the voice room's «…»
  * button (the same menu, opened at the button). Item set: lib/roomMenu.roomMenuGroups.
  */
@@ -788,6 +818,8 @@ function RoomMenu({
   const mobile = useMobile();
   const voiceRoom = isVoice(room);
   const recording = useRecordings((s) => !!s.byRoom[room.id]);
+  // «Позвонить на номер» (ADR-0046): the header button's gate minus «I am in the call».
+  const dial = useCanDial(room.workspaceId, room.id, true) && voiceRoom;
   // Categories are read when the menu renders (it mounts on open), like RoomOrderItems.
   const groups = roomMenuGroups({
     voice: voiceRoom,
@@ -795,6 +827,7 @@ function RoomMenu({
     guest,
     admin,
     inviteRoom,
+    dial,
     canManage,
     canOrder,
     hasCategories: canOrder && workspaceCategories(room.workspaceId).length > 0,
@@ -840,6 +873,13 @@ function RoomMenu({
           >
             <CircleDot className="size-4" /> <span className="flex-1">{t('roomMenu.record')}</span>
             {room.allowRecording ? null : <span className="text-micro text-muted">{t('roomMenu.recordOff')}</span>}
+          </ContextMenu.Item>
+        );
+      case 'dial':
+        // In this room's call: the dial popover; otherwise join first, then the popover (lib/dialFromMenu).
+        return (
+          <ContextMenu.Item key={id} className={menuItem} data-testid="room-menu-dial" onSelect={() => void dialFromRoomMenu(room)}>
+            <Phone className="size-4" /> {t('sip.dial')}
           </ContextMenu.Item>
         );
       case 'settings':
@@ -1140,6 +1180,7 @@ const TextRoomRow = memo(function TextRoomRow({
             <span className="min-w-0 flex-1 truncate" title={room.name}>
               {room.name}
             </span>
+            {room.restricted ? <RestrictedMark /> : null}
           </button>
           <span className="flex shrink-0 items-center gap-1 pr-2.5">
             <KnockBadge roomId={room.id} />
@@ -1185,6 +1226,8 @@ function VoiceRoomRow({
     [voiceStates, room.id],
   );
   const canConnect = can(perms, 'CONNECT');
+  // The room's phone line (ADR-0046): one more row under the people, drawn from the SipCall.
+  const sipLine = useSipCalls((s) => !!s.byRoom[room.id]);
   const canMove = mayMoveMembersIn(role, me, room);
   // A temporary room (ADR-0044): its creator manages it too; it sits in «Временные», not in the
   // reorder layout (no drop slot).
@@ -1282,9 +1325,10 @@ function VoiceRoomRow({
                     </span>
                   ) : null}
                 </span>
-                <span className={cx('min-w-0 truncate', !temp && 'flex-1')} title={room.name}>
+                <span className={cx('min-w-0 truncate', !temp && !room.restricted && 'flex-1')} title={room.name}>
                   {room.name}
                 </span>
+                {room.restricted ? <RestrictedMark className={temp ? undefined : 'mr-auto'} /> : null}
                 {temp ? <TempLeft expires={expires} /> : null}
               </button>
               <span className={cx('flex shrink-0 items-center gap-1', !card && 'pr-2.5')}>
@@ -1315,7 +1359,7 @@ function VoiceRoomRow({
       </div>
       {/* A meeting here within 15 minutes / now (ADR-0038 §6): «Планёрка в 15:00» → its card. */}
       <RoomEventBadge roomId={room.id} variant="row" />
-      {people.length > 0 ? (
+      {people.length > 0 || sipLine ? (
         <ul className="flex flex-col gap-px pb-1 pt-0.5" aria-label={room.name}>
           {people.map((v) => (
             <VoiceMember
@@ -1327,6 +1371,7 @@ function VoiceRoomRow({
               canMove={canMove}
             />
           ))}
+          {sipLine ? <SipCallRow workspaceId={workspaceId} roomId={room.id} /> : null}
         </ul>
       ) : null}
       {inRoom && mayRoomInvite(perms) ? <VoiceInviteRow roomId={room.id} full={atCapacity} /> : null}

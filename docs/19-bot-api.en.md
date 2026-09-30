@@ -23,7 +23,7 @@ its rights are only what its roles and room overrides give it, exactly as for pe
 ## Bots in 5 minutes
 
 1. **Create a bot.** "Workspace settings → Bots → Create bot" (the workspace owner or a role with
-   `MANAGE_WORKSPACE`, verified email): name, `username` (`[a-z0-9_]{3,32}`, used in `/cmd@username`), description.
+   `MANAGE_BOTS`, verified email): name, `username` (`[a-z0-9_]{3,32}`, used in `/cmd@username`), description.
    The token is shown **once** — copy it. The bot joins the workspace right away with the member role.
 2. **Grant rights.** By default the bot has the member role's rights (read and write in open rooms, join voice).
    Need more or less — give it a role or room overrides, as you would a person.
@@ -55,7 +55,7 @@ Without the SDK — any language with HTTP and WebSocket: REST below, the gatewa
   recognise leaked tokens.
 - Sent **only** in the `Authorization: Bearer <token>` header (REST) and in `IDENTIFY` (gateway). Never in a URL.
 - The server stores only the secret's `sha256`; a token cannot be shown again. "Reissue token" (the bot's owner or
-  `MANAGE_WORKSPACE` of its home workspace) returns a new one and kills the old one at once; "Revoke" kills it
+  `MANAGE_BOTS` of its home workspace) returns a new one and kills the old one at once; "Revoke" kills it
   without a new one. A revoked / reissued token: REST → `401`, the gateway closes with `4010`, the bot leaves calls.
 - One token is one gateway "device": a second process with the same token pushes the first one out (its socket is
   closed with `4000 replaced by a new session`). Run one process per token.
@@ -63,7 +63,13 @@ Without the SDK — any language with HTTP and WebSocket: REST below, the gatewa
   email, verification, status and profile settings, notes, creating / discovering / joining workspaces, all
   invitations and guest links, notification settings, DM archive, link previews, recording controls (start/stop/retry/delete), superadmin,
   bot management, workspace camera backgrounds (`/api/workspaces/{id}/backgrounds…`, ADR-0035 — bots have no camera).
-- A bot sees only what `VIEW_ROOM` allows; restricted rooms (ADR-0029) apply to bots too.
+- A bot sees only what `VIEW_ROOM` / `VIEW_BOARD` allow; closed (restricted) rooms and boards (ADR-0029, ADR-0048)
+  apply to bots too: a bot gets in only through an override on the object itself (personal or by role), otherwise 404,
+  as for people.
+- The workspace bits of ADR-0048 reach a bot, as a person, through its roles: `MANAGE_MEMBERS` — remove and ban,
+  `CREATE_BOARDS` — create boards, `VIEW_JOURNALS` — a board's journal; bot management, telephony settings, GPTunneL
+  and the call journal stay closed to bots (`403 BOT_NOT_ALLOWED`) even with `MANAGE_BOTS` / `MANAGE_INTEGRATIONS` /
+  `VIEW_JOURNALS`.
 - A person can "Block bot" — the bot then cannot write to them in DMs (`403 BOT_BLOCKED`).
 - One-to-one calls (ADR-0034) are not for bots: a bot neither calls nor answers (`POST /api/dms/{id}/call`, `/api/calls/…` — `403 BOT_NOT_ALLOWED`), and a bot cannot be called.
 - Notes shelves (personal rooms, ADR-0039) are not for bots: `/api/notes*` — `403 BOT_NOT_ALLOWED`; a bot never sees someone's shelf (`404`).
@@ -98,7 +104,7 @@ with the decision for bots is `apps/server/internal/app/botroutes.go`.
 | `GET /api/me` | the bot's account (`me.user.isBot = true`) | — |
 | `PATCH /api/me` | only `displayName`, `avatarFileId` | — |
 | `POST /api/me/avatar` | avatar (multipart `file`) | — |
-| `POST /api/workspaces/{id}/bots/{botId}/avatar` | the bot's avatar from the «Bots» UI (docs/09 #87): multipart `file`, like `POST /api/me/avatar` (not an image — 422) → `{bot}`; a bot gets 403 `BOT_NOT_ALLOWED` | people: the bot's owner or `MANAGE_WORKSPACE` of its home workspace |
+| `POST /api/workspaces/{id}/bots/{botId}/avatar` | the bot's avatar from the «Bots» UI (docs/09 #87): multipart `file`, like `POST /api/me/avatar` (not an image — 422) → `{bot}`; a bot gets 403 `BOT_NOT_ALLOWED` | people: the bot's owner or `MANAGE_BOTS` of its home workspace |
 | `DELETE /api/workspaces/{id}/bots/{botId}/avatar` | remove the bot's avatar → `{bot}`; the bot not a member of `{id}` — 404, not its home workspace — 403 | same |
 | `GET /api/bots/me` · `PATCH /api/bots/me` | the bot's profile: `{displayName?, description?}` | bots only |
 | `PUT /api/bots/me/commands` | replace the command list `{commands: [{name, description}]}` | bots only |
@@ -127,11 +133,12 @@ with the decision for bots is `apps/server/internal/app/botroutes.go`.
 | `PATCH /api/voice/self` · `PATCH /api/rooms/{id}/voice-status` | own mute/deafen, call status | in the call |
 | `POST /api/rooms/{id}/voice/{userId}/mute · unmute · disconnect · move · stop-stream · stop-camera · allow-camera` | voice moderation | `MUTE_MEMBERS` / `MOVE_MEMBERS` |
 | `GET /api/rooms/{id}/admissions` | guests waiting for approval to enter (ADR-0040); admit/decline — 403 `BOT_NOT_ALLOWED` | `MANAGE_ROOM` |
+| `POST /api/rooms/{id}/calls {number}` · `DELETE /api/rooms/{id}/calls/{callId}` | telephony (ADR-0046): call a phone number from the room's call — the callee joins the room as participant `sip:<callId>`; hang up your own line (someone else's with `MUTE_MEMBERS`). Statuses come as the `sipCallUpdate` event. Limit: 20 calls per hour per workspace (`429 SIP_RATE_LIMITED`). SIP settings and the journal — 403 `BOT_NOT_ALLOWED` | `PLACE_CALLS`, the bot is in the room's call, telephony is on |
 | `GET /api/workspaces/{id}/events?from=&to=` · `GET /api/events/{id}` | calendar (ADR-0038): meetings in rooms the bot can see; read-only (create, change, answer — 403 `BOT_NOT_ALLOWED`); external attendees' addresses are not shown to bots; free/busy, finding a time and CalDAV (ADR-0041) — 403 `BOT_NOT_ALLOWED` | `VIEW_ROOM` |
 | task boards (ADR-0042): `GET /api/workspaces/{id}/boards`, `GET /api/boards/{id}`, `GET/POST /api/boards/{id}/tasks`, `GET/PATCH /api/tasks/{id}`, `PUT /api/tasks/{id}/assignees`, `GET /api/workspaces/{id}/tasks/search?q=`, `GET /api/t/{KEY-N}`, `GET /api/me/tasks`, statuses/labels/milestones/views, task archive | the bot works like a person, within the board bits of its roles and overrides (it can be an assignee and be let into a private board personally); a comment is a message in `task.roomId`. Board access (`PUT …/permissions`) and the final delete (`DELETE …?purge=1`) — 403 `BOT_NOT_ALLOWED`. SDK: `bot.boards.list/get`, `bot.tasks.list/search/get/create/update/setAssignees/comment` | `VIEW_BOARD` / `CREATE_TASKS` / `EDIT_TASKS` / `MANAGE_BOARD` |
 | `GET /api/workspaces/{id}/sounds` · `POST /api/rooms/{id}/sounds/play {soundId}` | soundboard (ADR-0036): the workspace's sounds; play one to everyone in the call (`builtin:<name>` or a sound id; 1 per 2 s per bot, 5 per 10 s per room) | the bot is in the room's call; managing sounds — 403 |
 | stickers: `GET/POST /api/workspaces/{id}/sticker-packs`, `/api/sticker-packs/{id}…`, `/api/stickers/{id}`, `/api/me/sticker-packs…` | see [Stickers](#stickers-over-the-api) | member / `MANAGE_STICKERS` |
-| rooms, categories, roles, members, bans (`POST/PATCH/DELETE …`) | workspace management | `MANAGE_ROOM`, `MANAGE_ROLES`, `MANAGE_WORKSPACE`, … |
+| rooms, categories, roles, members, bans (`POST/PATCH/DELETE …`) | workspace management | `MANAGE_ROOM`, `MANAGE_ROLES`, `MANAGE_MEMBERS` (remove, ban, built-in role, assign roles — ADR-0048), `MANAGE_WORKSPACE` (settings), … |
 
 ### Reply targets and meeting transcripts
 
@@ -239,7 +246,8 @@ JSON frames (`?encoding=json`):
 | `typingStart` | "is typing" — only for rooms in `SUBSCRIBE { roomIds }` |
 | `stickerPackCreate/Update/Delete` | the workspace's sticker packs |
 | `soundCreate/Update/Delete` · `soundPlay` | the workspace's soundboard; `soundPlay` only while the bot is in the room's call |
-| `botCreate/Update/Delete` | the workspace's bots — only with `MANAGE_WORKSPACE` |
+| `botCreate/Update/Delete` | the workspace's bots — only with `MANAGE_BOTS` (ADR-0048) |
+| `sipCallUpdate` | a room's phone call was placed or changed status (ADR-0046) |
 
 A bot can also send `TYPING { roomId }` ("is typing", at most once per 3 s per room), `SUBSCRIBE { roomIds }`
 (≤ 100) and `PRESENCE_UPDATE`.
@@ -446,7 +454,7 @@ Every error is an `ApiError`. `code` comes from `ErrorCode` (`ERROR_CODE_…`):
 
 ## FAQ
 
-**The bot does not see a room / messages.** No `VIEW_ROOM`: a private room, a restricted one (by admission only), or
+**The bot does not see a room / messages.** No `VIEW_ROOM`: a private room, a closed one (only through an override on it, ADR-0048), or
 the bot's role gives no access. Check the roles and the room's overrides.
 
 **The bot does not answer `/cmd`.** Nobody registered the command, or several bots of the room did — write

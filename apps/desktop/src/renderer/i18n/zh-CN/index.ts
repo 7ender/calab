@@ -23,6 +23,8 @@ import { zhSounds } from './sounds';
 import { zhBots } from './bots';
 import { zhGuests } from './guests';
 import { zhTemp } from './temp';
+import { zhSip } from './sip';
+import { zhWebApps } from './webapps';
 
 /** Simplified Chinese UI strings (ADR-0022): same keys and placeholders as `ru`/`en`; glossary docs/i18n-glossary.md. */
 export const zhCN: Dict = {
@@ -36,6 +38,8 @@ export const zhCN: Dict = {
   ...zhBots,
   ...zhGuests,
   ...zhTemp,
+  ...zhSip,
+  ...zhWebApps,
   ...zhDm,
   ...zhNotes,
   ...zhCall,
@@ -225,9 +229,6 @@ export const zhCN: Dict = {
   'room.private': '私密房间',
   'room.privateHint': '仅管理员和权限中被授权的成员可见',
   'room.accessCard': '访问权限',
-  'room.restricted': '仅限名单成员',
-  'room.restrictedHint': '不在名单中的管理员也看不到此房间',
-  'room.restrictedOwner': '仅工作区所有者可以更改',
   'room.whoSees': '谁可以看到',
   'room.whoSeesOwner': '所有者，始终可见',
   'room.whoSeesEmpty': '名单中还没有人',
@@ -279,9 +280,18 @@ export const zhCN: Dict = {
   'perm.INVITE_MEMBERS': '邀请成员',
   'perm.INVITE_GUESTS': '邀请访客',
   'perm.CREATE_TEMP_ROOMS': '创建临时房间',
+  'perm.PLACE_CALLS': '拨打电话号码',
+  'perm.CREATE_BOARDS': '创建看板',
+  'perm.MANAGE_MEMBERS': '管理成员',
+  'perm.MANAGE_BOTS': '管理机器人',
+  'perm.MANAGE_INTEGRATIONS': '管理集成',
+  'perm.VIEW_JOURNALS': '查看日志',
+  'perm.MANAGE_EVENTS': '管理会议',
+  'perm.MANAGE_RECORDINGS': '管理录音',
   'perm.hint.INVITE_MEMBERS': '空间的邀请链接和邮件邀请；在房间中为仅限空间成员的链接。',
   'perm.hint.INVITE_GUESTS': '房间的访客链接，以及决定放行哪些等待中的访客。',
   'perm.hint.CREATE_TEMP_ROOMS': '可用一小时或几天、带访客链接的房间；到期自动关闭，历史保留在归档中。',
+  'perm.hint.PLACE_CALLS': '通过工作区的 SIP 账户从语音房间拨打座机和手机号码。通话会产生费用。',
   'perm.ADMINISTRATOR': '管理员',
   'perm.allow': '允许',
   'perm.deny': '禁止',
@@ -694,4 +704,19 @@ export const zhCN: Dict = {
   'main.menuShortcuts': '键盘快捷键',
   'main.menuDocs': '文档',
   'main.menuReportIssue': '报告问题',
+  'main.webAppAsk': '{site} 请求访问：{what}',
+  'main.webAppAskDetail': '此回答将为该工作区应用记住。',
+  'main.webAppAllow': '允许',
+  'main.webAppDeny': '拒绝',
+  'main.webAppCamera': '摄像头',
+  'main.webAppMicrophone': '麦克风',
+  'main.webAppNotifications': '通知',
+  'main.webAppGeolocation': '位置',
+  'main.webAppClipboard': '读取剪贴板',
+  'main.webAppBack': '后退',
+  'main.webAppForward': '前进',
+  'main.webAppReload': '重新加载',
+  'main.webAppOpenLink': '在浏览器中打开链接',
+  'main.webAppCopyLink': '复制链接地址',
+  'main.webAppOpenPage': '在浏览器中打开页面',
 };

@@ -24,15 +24,18 @@ import { createUpdateFlow, type NudgeReason, type UpdateFlow } from './updateFlo
  * - Checks: 10 s after start, then hourly (± 5 min), «Проверить» in «О программе», and — at most
  *   once per 10 min — after wake from sleep, screen unlock and when the network returns (the
  *   renderer's `online` event). «Проверять обновления автоматически» off → only «Проверить».
- * - During a call / stream (tray state inVoice) a found update is not downloaded until it ends.
+ * - A call / stream defers nothing: the update downloads, and «Перезапустить» restarts at once —
+ *   the relaunched app rejoins the same room / 1:1 call (prepareRestart, main/resumeVoice.ts).
  * - Auto (build feed + «Автоматически обновлять» on + Windows / Linux AppImage / macOS built with
  *   MAIN_VITE_UPDATES_SIGNED=1): background download with progress, an accent bar under the
  *   title bar («Доступна версия X — обновление уже загружено · Перезапустить и обновить», docs/09
  *   #125) and a tray item, install on restart or on quit (autoInstallOnAppQuit). A pending
- *   download is re-validated against the feed before install and every 6 h (updateFlow.ts).
+ *   download is re-validated against the feed hourly, before «Перезапустить» and — Windows /
+ *   AppImage — before install-on-quit (`will-quit` held ≤ 3 s; a newer feed → the stale file is not
+ *   installed, the next start fetches the newest; updateFlow.ts).
  * - Otherwise notify only — «Доступна версия X — Скачать» opens `<server>/download/`. When the
- *   update is `installable` (build feed + a platform able to apply it, only the setting is off or
- *   a call is running) «О программе» offers «Скачать и установить» — the same flow, on request.
+ *   update is `installable` (build feed + a platform able to apply it, only the setting is off)
+ *   «О программе» offers «Скачать и установить» — the same flow, on request.
  * - Errors go to the log (electron-log) only; the status turns 'error' for «О программе».
  */
 /** Build-time only: a runtime env must not change what gets installed silently. */
@@ -49,8 +52,7 @@ let flow: UpdateFlow | null = null;
 let notification: Notification | null = null;
 
 function broadcast(s: UpdateStatus): void {
-  // The tray item never cuts a call short: during one it installs when the call ends.
-  setTrayUpdate(s.state === 'downloaded' ? s.version : null, () => installUpdate(true));
+  setTrayUpdate(s.state === 'downloaded' ? s.version : null, () => installUpdate());
   for (const w of BrowserWindow.getAllWindows()) w.webContents.send(IPC.appUpdateStatus, s);
 }
 
@@ -95,6 +97,14 @@ function getFlow(): UpdateFlow {
   return flow;
 }
 
+/** OS shutdown / reboot / logout is under way: the quit must not wait for a feed re-check. */
+let sessionEnding = false;
+
+/** Windows `query-session-end` / `session-end` of the main window (macOS / Linux: powerMonitor 'shutdown'). */
+export function updatesSessionEnding(): void {
+  sessionEnding = true;
+}
+
 /** App start: first check in 10 s, then hourly; re-check after wake / unlock / back online. */
 export function startUpdates(): void {
   // Visual tests fake the status (window.__calabaUpdateStatus); a real check 10 s in would
@@ -104,17 +114,23 @@ export function startUpdates(): void {
   f.start();
   powerMonitor.on('resume', () => f.nudge('resume'));
   powerMonitor.on('unlock-screen', () => f.nudge('unlock'));
+  powerMonitor.on('shutdown', updatesSessionEnding);
+  // Install-on-quit of a pending download: re-check the feed first (≤ 3 s) so a stale file is not
+  // installed when a newer version is out (docs/09 #125). `will-quit` comes after the lifecycle's
+  // `before-quit` (in-call question, tray «Выход», ⌘Q, forceQuit) and after the windows closed, and
+  // before electron-updater's `quit` handler reads autoInstallOnAppQuit. beforeQuit() acts once:
+  // the app.quit() re-issued below passes through (before-quit is then a no-op — already quitting).
+  app.on('will-quit', (e) => {
+    const wait = f.beforeQuit(sessionEnding);
+    if (!wait) return;
+    e.preventDefault();
+    void wait.then(() => app.quit());
+  });
 }
 
 /** Wake / unlock / back online (renderer `online`): a throttled check. No-op before startUpdates(). */
 export function updatesNudge(reason: NudgeReason): void {
   flow?.nudge(reason);
-}
-
-/** A call / stream started or ended: a found update waits for the end of the call to download. */
-export function setUpdateInCall(inCall: boolean): void {
-  if (process.env['CALABA_VISUAL_TEST'] === '1') return;
-  getFlow().setInCall(inCall);
 }
 
 /** «Проверить» in «О программе». Never throws. */
@@ -128,10 +144,10 @@ export function updateStatus(): UpdateStatus {
 
 /**
  * «Перезапустить» (bar, «О программе», tray): re-check the feed, then quit and install the
- * downloaded update; `afterCall` during a call — «Перезапустить после звонка», installs when it ends.
+ * downloaded update — at once, also during a call (the relaunched app rejoins it).
  */
-export function installUpdate(afterCall = false): boolean {
-  return getFlow().install({ afterCall });
+export function installUpdate(): boolean {
+  return getFlow().install();
 }
 
 /** «Скачать и установить» in «О программе»: download an installable available update now. */

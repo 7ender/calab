@@ -16,9 +16,11 @@ import {
   SetAssigneesRequestSchema,
   SetBoardPermissionsRequestSchema,
   SetBoardPositionRequestSchema,
+  SetTaskApproversRequestSchema,
   SetTaskRelationRequestSchema,
   SetTaskSubscriptionRequestSchema,
   TaskActivityPageSchema,
+  TaskApprovalRequestSchema,
   TaskFilterSchema,
   TaskResponseSchema,
   UpdateBoardLabelRequestSchema,
@@ -27,6 +29,7 @@ import {
   UpdateBoardStatusRequestSchema,
   UpdateBoardViewRequestSchema,
   UpdateTaskRequestSchema,
+  type TaskApprovalDecision,
   type TaskAssigneeInput,
   type TaskFilter,
   type TaskRelationKind,
@@ -123,6 +126,12 @@ export const boardsApi = {
     /** The full list; exactly one lead when not empty. */
     setAssignees: (taskId: string, assignees: AssigneeInit[]) =>
       call('PUT', `/api/tasks/${taskId}/assignees`, TaskResponseSchema, body(SetAssigneesRequestSchema, { assignees })),
+    /** ADR-0049: the full approver list (order kept) and the quorum (0 = all). */
+    setApprovers: (taskId: string, userIds: string[], required: number) =>
+      call('PUT', `/api/tasks/${taskId}/approvers`, TaskResponseSchema, body(SetTaskApproversRequestSchema, { userIds, required })),
+    /** ADR-0049: my own vote; REJECT needs a comment (≤ 500), WITHDRAW clears it. */
+    approval: (taskId: string, decision: TaskApprovalDecision, comment = '') =>
+      call('POST', `/api/tasks/${taskId}/approval`, TaskResponseSchema, body(TaskApprovalRequestSchema, { decision, comment })),
     setRelation: (taskId: string, relatedId: string, kind: TaskRelationKind) =>
       call('PUT', `/api/tasks/${taskId}/relations`, TaskResponseSchema, body(SetTaskRelationRequestSchema, { relatedId, kind })),
     removeRelation: (taskId: string, relatedId: string, kind: TaskRelationKind) =>

@@ -1,10 +1,11 @@
 import { TaskPriority } from '@calaba/protocol';
 import * as Dropdown from '@radix-ui/react-dropdown-menu';
-import { CalendarClock, Diamond, SquareKanban, Tag, Triangle, UserRound } from 'lucide-react';
+import { BadgeCheck, CalendarClock, Check, Diamond, SquareKanban, Tag, Triangle, UserRound } from 'lucide-react';
 import { useMemo, useRef, useState, type ReactNode } from 'react';
 import { useShallow } from 'zustand/react/shallow';
 import { Button, Modal, Toggle, cx } from '../../components/ui';
 import { t } from '../../i18n';
+import { clampRequired, quorumChoices, toggleApprover } from '../../lib/boards/approvals';
 import { addAssignee, draftsOf, removeAssignee, type AssigneeDraft } from '../../lib/boards/assignees';
 import { MOD } from '../../components/ui';
 import { createTask, openTaskAnywhere } from '../../services/boards';
@@ -12,7 +13,7 @@ import { useBoards, workspaceBoards } from '../../stores/boards';
 import { menuBox, menuItem } from '../shell/menu';
 import { useBoardsUi } from '../../stores/boardsUi';
 import { useToasts } from '../../stores/toasts';
-import { AssigneeMenu, DateMenu, EstimateMenu, LabelMenu, MemberAvatar, MilestoneMenu, PriorityMenu, StatusMenu, useToday } from './menus';
+import { ApproverMenu, AssigneeMenu, DateMenu, EstimateMenu, LabelMenu, MemberAvatar, MilestoneMenu, PriorityMenu, StatusMenu, useToday } from './menus';
 import { hasBit, sortedStatuses, CREATE_TASKS } from './model';
 import { Dot, PRIORITY_LABEL, PriorityIcon, StatusIcon, formatDue } from './visuals';
 
@@ -91,6 +92,9 @@ function Dialog({
   const [due, setDue] = useState('');
   const [estimate, setEstimate] = useState(0);
   const [milestone, setMilestone] = useState('');
+  // ADR-0049: optional approvers from the start and the quorum (0 = all).
+  const [approvers, setApprovers] = useState<string[]>([]);
+  const [required, setRequired] = useState(0);
   const [more, setMore] = useState(false);
   const [busy, setBusy] = useState(false);
   const titleRef = useRef<HTMLInputElement>(null);
@@ -131,6 +135,8 @@ function Dialog({
       dueOn: due,
       estimate,
       milestoneId: milestone,
+      approverIds: approvers,
+      approvalRequired: clampRequired(required, approvers.length),
       parentId: parentId ?? '',
       ...(fromMessage ? { fromMessageId: fromMessage.id } : {}),
     });
@@ -287,6 +293,53 @@ function Dialog({
               <Triangle className="size-3.5" aria-hidden /> {estimate ? t('boards.points', { n: estimate }) : t('boards.f.estimate')}
             </button>
           </EstimateMenu>
+          <ApproverMenu
+            workspaceId={board.workspaceId}
+            value={approvers}
+            onToggle={(u) => {
+              const next = toggleApprover(approvers, u);
+              setApprovers(next);
+              setRequired((r) => clampRequired(r, next.length));
+            }}
+          >
+            <button type="button" className={cx(chip, !approvers.length && 'text-muted')} data-testid="create-task-approvers">
+              {approvers.length ? (
+                <>
+                  <span className="flex -space-x-1.5">
+                    {approvers.slice(0, 3).map((u) => (
+                      <span key={u} className="rounded-full ring-2 ring-[var(--color-popover)]">
+                        <MemberAvatar workspaceId={board.workspaceId} userId={u} size={18} />
+                      </span>
+                    ))}
+                  </span>
+                  {t('boards.nApprovers', { n: approvers.length })}
+                </>
+              ) : (
+                <>
+                  <BadgeCheck className="size-3.5" aria-hidden /> {t('boards.approvals')}
+                </>
+              )}
+            </button>
+          </ApproverMenu>
+          {approvers.length > 1 ? (
+            <Dropdown.Root modal={false}>
+              <Dropdown.Trigger asChild>
+                <button type="button" className={chip} data-testid="create-task-quorum">
+                  {t('boards.quorum')}: {required ? t('boards.quorumN', { n: required, m: approvers.length }) : t('boards.quorumAll')}
+                </button>
+              </Dropdown.Trigger>
+              <Dropdown.Portal>
+                <Dropdown.Content className={cx(menuBox, 'w-40')} sideOffset={4} align="start" collisionPadding={16}>
+                  {quorumChoices(approvers.length).map((r) => (
+                    <Dropdown.Item key={r} className={menuItem} onSelect={() => setRequired(r)}>
+                      {r === required ? <Check className="size-3.5" aria-hidden /> : <span className="size-3.5" />}
+                      {r ? t('boards.quorumN', { n: r, m: approvers.length }) : t('boards.quorumAll')}
+                    </Dropdown.Item>
+                  ))}
+                </Dropdown.Content>
+              </Dropdown.Portal>
+            </Dropdown.Root>
+          ) : null}
           {board.milestones.length ? (
             <MilestoneMenu boardId={boardId} value={milestone} onPick={setMilestone}>
               <button type="button" className={cx(chip, !ms && 'text-muted')}>

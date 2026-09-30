@@ -1,7 +1,9 @@
 import { create as createMsg, type MessageInitShape } from '@bufbuild/protobuf';
 import {
+  ApproverState,
   BoardViewKind,
   PresenceStatus,
+  TaskApproverSchema,
   TaskAssigneeSchema,
   TaskNoticeKind,
   TaskSchema,
@@ -11,6 +13,7 @@ import {
   type DispatchEvent,
   type Room,
   type Task,
+  type TaskApprovalDecision,
   type TaskPriority,
   type TaskRelationKind,
   type UpdateTaskRequestSchema,
@@ -21,6 +24,7 @@ import {
 } from '@calaba/protocol';
 import { t } from '../i18n';
 import { ApiError } from '../lib/api/client';
+import { approvedCount, blockedStatusIds, quorumOf, rejecters } from '../lib/boards/approvals';
 import { draftsOf, type AssigneeDraft } from '../lib/boards/assignees';
 import { toTaskFilter, type FilterState } from '../lib/boards/filter';
 import { between, byPosition } from '../lib/boards/position';
@@ -168,15 +172,7 @@ function notifyTask(u: TaskUpdate): void {
   if (prefs().presence === PresenceStatus.DND) return;
   const visible = document.hasFocus() && useBoardsUi.getState().taskId === task.id;
   if (visible) return;
-  const actor = memberName(task.workspaceId, n.actorId);
-  const what =
-    n.kind === TaskNoticeKind.ASSIGNED
-      ? t('boards.notice.assigned', { name: actor })
-      : n.kind === TaskNoticeKind.MENTIONED
-        ? t('boards.notice.mentioned', { name: actor })
-        : n.kind === TaskNoticeKind.COMMENT
-          ? t('boards.notice.comment', { name: actor })
-          : t('boards.notice.status', { name: actor });
+  const what = noticeText(task, n.kind, n.actorId);
   try {
     const note = new Notification(`${task.key} · ${task.title}`, { body: what, silent: true, tag: `task:${task.id}` });
     note.onclick = () => {
@@ -187,6 +183,33 @@ function notifyTask(u: TaskUpdate): void {
     // notifications unavailable
   }
   platform.app.attention();
+}
+
+/**
+ * The text of a task notice (system notification). Approvals (ADR-0049 §5) are mandatory: the
+ * server sends them past the task level and «Отписаться»; the reminder has no actor.
+ */
+export function noticeText(task: Pick<Task, 'workspaceId' | 'approvers'>, kind: TaskNoticeKind, actorId: string): string {
+  const actor = actorId ? memberName(task.workspaceId, actorId) : '';
+  switch (kind) {
+    case TaskNoticeKind.ASSIGNED:
+      return t('boards.notice.assigned', { name: actor });
+    case TaskNoticeKind.MENTIONED:
+      return t('boards.notice.mentioned', { name: actor });
+    case TaskNoticeKind.COMMENT:
+      return t('boards.notice.comment', { name: actor });
+    case TaskNoticeKind.APPROVAL_REQUESTED:
+      return actor ? t('boards.notice.approvalRequested', { name: actor }) : t('boards.notice.approvalReminder');
+    case TaskNoticeKind.APPROVED:
+      return t('boards.notice.approved');
+    case TaskNoticeKind.REJECTED: {
+      const who = task.approvers.find((a) => a.state === ApproverState.REJECTED && (!actorId || a.userId === actorId));
+      const name = memberName(task.workspaceId, who?.userId ?? actorId);
+      return who?.comment ? t('boards.notice.rejectedWhy', { name, comment: who.comment }) : t('boards.notice.rejected', { name });
+    }
+    default:
+      return t('boards.notice.status', { name: actor });
+  }
 }
 
 // ------------------------------------------------------------------ loading
@@ -397,9 +420,29 @@ function wireOf(p: TaskPatch): MessageInitShape<typeof UpdateTaskRequestSchema> 
   return { ...rest, ...(labelIds ? { setLabels: true, labelIds } : {}) };
 }
 
-function fail(e: unknown): void {
-  if (e instanceof ApiError && e.status === 403) toast.error(t('boards.err.forbidden'));
+function fail(e: unknown, task?: Task): void {
+  if (e instanceof ApiError && e.reason === 'TASK_APPROVAL_REQUIRED' && task) toast.error(gateText(task, e.extra.used, e.extra.limit));
+  else if (e instanceof ApiError && e.status === 403) toast.error(t('boards.err.forbidden'));
   else toast.fail(e, t('boards.err.save'));
+}
+
+/**
+ * Why a task may not go further (ADR-0049 §6): «Отклонено: <имя>» after a veto, else «Нужно
+ * согласование: 1 из 2» (`used` / `limit` of a 409 when there is one, else from the task).
+ */
+export function gateText(task: Pick<Task, 'workspaceId' | 'approvers' | 'approvalRequired'>, used?: number, limit?: number): string {
+  const vetoed = rejecters(task);
+  if (vetoed.length) return t('boards.gate.rejected', { name: vetoed.map((u) => memberName(task.workspaceId, u)).join(', ') });
+  return t('boards.gate.pending', { n: used ?? approvedCount(task), m: limit ?? quorumOf(task) });
+}
+
+/** A status change the approval gate refuses: a toast, nothing is sent (the server would say 409). */
+function gated(task: Task, statusId: string): boolean {
+  if (statusId === task.statusId) return false;
+  const statuses = useBoards.getState().boards[task.boardId]?.statuses ?? [];
+  if (!blockedStatusIds(task, statuses).has(statusId)) return false;
+  toast.error(gateText(task));
+  return true;
 }
 
 /** Optimistic PATCH: the card changes at once, the answer replaces it, a refusal rolls back. */
@@ -407,6 +450,7 @@ export async function updateTask(taskId: string, patch: TaskPatch): Promise<void
   const s = useBoards.getState();
   const prev = s.tasks[taskId];
   if (!prev) return;
+  if (patch.statusId !== undefined && gated(prev, patch.statusId)) return;
   s.upsertTask({ ...prev, ...patch });
   try {
     const r = await boardsApi.tasks.update(taskId, wireOf(patch));
@@ -414,7 +458,7 @@ export async function updateTask(taskId: string, patch: TaskPatch): Promise<void
   } catch (e) {
     const cur = useBoards.getState().tasks[taskId];
     if (cur) useBoards.getState().upsertTask({ ...cur, ...pick(prev, Object.keys(patch) as (keyof TaskPatch)[]) });
-    fail(e);
+    fail(e, cur ?? prev);
   }
 }
 
@@ -432,7 +476,7 @@ function pick(t: Task, keys: (keyof TaskPatch)[]): Partial<Task> {
 export async function moveTask(taskId: string, statusId: string, afterId: string, beforeId: string): Promise<void> {
   const s = useBoards.getState();
   const prev = s.tasks[taskId];
-  if (!prev) return;
+  if (!prev || gated(prev, statusId)) return;
   const a = afterId ? s.tasks[afterId] : undefined;
   const b = beforeId ? s.tasks[beforeId] : undefined;
   const position = between(a?.position ?? null, b?.position ?? null);
@@ -443,7 +487,7 @@ export async function moveTask(taskId: string, statusId: string, afterId: string
   } catch (e) {
     const cur = useBoards.getState().tasks[taskId];
     if (cur) useBoards.getState().upsertTask({ ...cur, statusId: prev.statusId, position: prev.position });
-    fail(e);
+    fail(e, cur ?? prev);
   }
 }
 
@@ -471,6 +515,53 @@ export async function setAssignees(taskId: string, list: AssigneeDraft[]): Promi
   }
 }
 
+// ------------------------------------------------------------------ approvals (ADR-0049)
+
+function approversError(e: ApiError): string {
+  return e.field === 'required' || e.field === 'approvalRequired' ? t('boards.err.quorum') : t('boards.err.approvers');
+}
+
+/**
+ * PUT the full approver list and the quorum (optimistic: kept votes stay, new approvers pending;
+ * the answer carries the server's approval state).
+ */
+export async function setApprovers(taskId: string, userIds: string[], required: number): Promise<void> {
+  const s = useBoards.getState();
+  const prev = s.tasks[taskId];
+  if (!prev) return;
+  const me = myUserId();
+  s.upsertTask({
+    ...prev,
+    approvalRequired: required,
+    approvers: userIds.map((u) => prev.approvers.find((a) => a.userId === u) ?? createMsg(TaskApproverSchema, { userId: u, state: ApproverState.PENDING, addedBy: me })),
+  });
+  try {
+    const r = await boardsApi.tasks.setApprovers(taskId, userIds, required);
+    if (r.task) useBoards.getState().upsertTask(r.task);
+  } catch (e) {
+    const cur = useBoards.getState().tasks[taskId];
+    if (cur) useBoards.getState().upsertTask({ ...cur, approvers: prev.approvers, approvalRequired: prev.approvalRequired });
+    if (e instanceof ApiError && e.status === 422) toast.error(approversError(e));
+    else if (e instanceof ApiError && e.status === 409) toast.error(t('boards.err.archivedTask'));
+    else fail(e);
+  }
+}
+
+/** My vote (APPROVE / REJECT with a comment / WITHDRAW). Resolves true when the server took it. */
+export async function voteApproval(taskId: string, decision: TaskApprovalDecision, comment = ''): Promise<boolean> {
+  try {
+    const r = await boardsApi.tasks.approval(taskId, decision, comment);
+    if (r.task) useBoards.getState().upsertTask(r.task);
+    return true;
+  } catch (e) {
+    if (e instanceof ApiError && e.status === 422) toast.error(t('boards.err.rejectComment'));
+    else if (e instanceof ApiError && e.status === 403) toast.error(t('boards.err.notApprover'));
+    else if (e instanceof ApiError && e.status === 404) toast.error(t('boards.err.notFound'));
+    else fail(e);
+    return false;
+  }
+}
+
 /** Creates a task; the answer goes into the board (TASK_CREATE confirms it again, harmless). */
 export async function createTask(boardId: string, init: MessageInitShape<typeof CreateTaskRequestSchema>): Promise<Task | null> {
   try {
@@ -481,6 +572,8 @@ export async function createTask(boardId: string, init: MessageInitShape<typeof 
     }
   } catch (e) {
     if (e instanceof ApiError && e.reason === 'BOARD_TASK_LIMIT') toast.error(t('boards.err.taskLimit'));
+    else if (e instanceof ApiError && e.reason === 'TASK_APPROVAL_REQUIRED') toast.error(t('boards.err.createApproval'));
+    else if (e instanceof ApiError && e.status === 422 && (e.field?.startsWith('approverIds') || e.field === 'approvalRequired')) toast.error(approversError(e));
     else fail(e);
   }
   return null;
@@ -592,7 +685,14 @@ export async function loadActivity(taskId: string): Promise<TaskActivity[]> {
 
 /** Bulk actions of the list (status, priority, labels, assignee, archive): one request per task. */
 export async function bulkUpdate(ids: readonly string[], patch: TaskPatch): Promise<void> {
-  await Promise.all(ids.map((id) => updateTask(id, patch)));
+  // A status for many: the tasks the approval gate holds stay, one toast names them.
+  const s = useBoards.getState();
+  const held = patch.statusId === undefined ? [] : ids.filter((id) => {
+    const x = s.tasks[id];
+    return !!x && x.statusId !== patch.statusId && blockedStatusIds(x, s.boards[x.boardId]?.statuses ?? []).has(patch.statusId ?? '');
+  });
+  if (held.length) toast.error(t('boards.gate.bulk', { keys: held.map((id) => s.tasks[id]?.key ?? '').join(', ') }));
+  await Promise.all(ids.filter((id) => !held.includes(id)).map((id) => updateTask(id, patch)));
 }
 
 export async function bulkArchive(ids: readonly string[]): Promise<void> {

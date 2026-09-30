@@ -38,11 +38,11 @@ export function AboutUpdateRow({ version }: { version: string }): ReactNode {
   };
   const install = (): void => {
     // Main re-checks the feed (≤ 8 s) and waits (≤ 3 s) for a token refresh in flight before
-    // quitting (docs/09 #89, #125). In a call: «Перезапустить после звонка» — when it ends.
-    if (!inVoice) setInstalling(true);
-    platform.app.installUpdate(inVoice).then(
+    // quitting (docs/09 #89, #125). In a call too: the relaunched app rejoins it (docs/09 #126).
+    setInstalling(true);
+    platform.app.installUpdate().then(
       (ok) => {
-        if (!ok || inVoice) setInstalling(false);
+        if (!ok) setInstalling(false);
       },
       (e: unknown) => {
         log.warn('update install failed', e);
@@ -51,7 +51,8 @@ export function AboutUpdateRow({ version }: { version: string }): ReactNode {
     );
   };
 
-  const line = updateLabel(update);
+  // In a call: say that the restart comes back into it (docs/09 #126).
+  const line = update.state === 'downloaded' && inVoice ? t('update.restartInCallHint', { v: update.version }) : updateLabel(update);
   const hint =
     update.state === 'error' ? (
       <span className="text-danger-text" role="alert">
@@ -84,11 +85,9 @@ export function AboutUpdateRow({ version }: { version: string }): ReactNode {
         </Button>
       ) : action === 'downloading' && update.state === 'downloading' ? (
         <Button disabled>{t('about.install', { v: update.version })}</Button>
-      ) : action === 'restart' && update.state === 'downloaded' && update.afterCall ? (
-        <Button disabled>{t('update.scheduled')}</Button>
       ) : action === 'restart' ? (
         <Button busy={installing} onClick={install} data-testid="update-restart">
-          {inVoice ? t('update.afterCall') : t('about.restart')}
+          {t('about.restart')}
         </Button>
       ) : action === 'page' && update.state === 'available' ? (
         <Button onClick={() => void platform.app.openExternal(update.downloadPage ?? '')}>{t('about.download')}</Button>

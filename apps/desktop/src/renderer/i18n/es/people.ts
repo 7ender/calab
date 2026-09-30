@@ -116,8 +116,11 @@ export const esPeople: DictShape<typeof enPeople> = {
   'sounds.openChatQuiet': 'Bajo',
   'sounds.openChatOff': 'Desactivado',
   'sounds.streamStart': 'Se inició la pantalla compartida',
+  'sounds.streamEnd': 'Terminó la pantalla compartida',
+  'sounds.watchStart': 'Alguien empezó a ver tu pantalla compartida',
+  'sounds.watchStop': 'Alguien dejó de ver tu pantalla compartida',
   'sounds.moved': 'Te movieron',
-  'sounds.disconnect': 'Se perdió la conexión de voz',
+  'sounds.disconnect': 'Saliste de la voz o se perdió la conexión',
   'sounds.reconnect': 'Conexión restablecida',
 
   // room link (guest access, ADR-0016)

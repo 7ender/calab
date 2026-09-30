@@ -1,9 +1,10 @@
 import * as ContextMenu from '@radix-ui/react-context-menu';
 import type { Task } from '@calaba/protocol';
 import { CalendarClock, ChevronRight, Copy, CopyPlus, GitFork, Link2, MessageSquare, Archive, UserPlus, SquareArrowOutUpRight, UserRound } from 'lucide-react';
-import { memo, useCallback, useState, type DragEvent, type MouseEvent, type ReactNode } from 'react';
+import { memo, useCallback, useMemo, useState, type DragEvent, type MouseEvent, type ReactNode } from 'react';
 import { cx } from '../../components/ui';
 import { t } from '../../i18n';
+import { blockedStatusIds } from '../../lib/boards/approvals';
 import { addAssignee, draftsOf, toggleAssignee } from '../../lib/boards/assignees';
 import { archiveTask, copyTaskKey, copyTaskLink, duplicateTask, setAssignees, updateTask } from '../../services/boards';
 import { useBoards } from '../../stores/boards';
@@ -12,6 +13,7 @@ import { myUserId } from '../../stores/session';
 import { memberName } from '../../stores/workspaces';
 import { menuBox, menuItem, menuSeparator } from '../shell/menu';
 import { DRAG_USER, dragKind } from '../calendar/dragState';
+import { ApprovalBadge } from './Approvals';
 import { AssigneeMenu, DateMenu, LabelMenu, MemberAvatar, PriorityMenu, StatusMenu, useToday } from './menus';
 import { doneType, hasBit, mayArchiveTask, mayEditTask, CREATE_TASKS, MANAGE_BOARD } from './model';
 import { Dot, PRIORITY_LABEL, PriorityIcon, StatusIcon, formatDue, isOverdue, PRIORITIES } from './visuals';
@@ -51,6 +53,7 @@ export const TaskCard = memo(function TaskCard({
   const perms = useBoards((s) => s.boards[boardId]?.permissions);
   const statusType = useBoards((s) => (task ? s.boards[boardId]?.statuses.find((x) => x.id === task.statusId)?.type : undefined));
   const statusColor = useBoards((s) => (task ? (s.boards[boardId]?.statuses.find((x) => x.id === task.statusId)?.color ?? 0) : 0));
+  const blocked = useBlockedStatuses(task, boardId);
   const focused = useBoardsUi((s) => s.focused === id);
   const selected = useBoardsUi((s) => !!s.selected[id]);
   const open = useBoardsUi((s) => s.taskId === id);
@@ -164,7 +167,7 @@ export const TaskCard = memo(function TaskCard({
         </AssigneeMenu>
       </div>
       <div className="flex min-w-0 items-start gap-2">
-        <StatusMenu boardId={boardId} value={task.statusId} onPick={(s) => s !== task.statusId && void updateTask(id, { statusId: s })} {...menuOpen('status')}>
+        <StatusMenu boardId={boardId} value={task.statusId} blocked={blocked} onPick={(s) => s !== task.statusId && void updateTask(id, { statusId: s })} {...menuOpen('status')}>
           <button type="button" onClick={stop} disabled={!canEdit} aria-label={t('boards.f.status')} className="mt-[3px] shrink-0 rounded-full disabled:cursor-default" data-testid="card-status">
             <StatusIcon type={statusType ?? 0} color={statusColor} />
           </button>
@@ -188,6 +191,7 @@ export const TaskCard = memo(function TaskCard({
             </button>
           </DateMenu>
         ) : null}
+        <ApprovalBadge task={task} />
         {task.subtaskCount > 0 ? (
           <span className="inline-flex h-5 items-center gap-1 px-1 text-micro tabular-nums text-muted" title={t('boards.subtasks')}>
             <GitFork className="size-3" aria-hidden />
@@ -207,6 +211,17 @@ export const TaskCard = memo(function TaskCard({
 
   return <TaskContextMenu task={task} canEdit={canEdit} canArchive={mayArchiveTask(task, perms, me)} manage={hasBit(perms, MANAGE_BOARD)}>{card}</TaskContextMenu>;
 });
+
+/**
+ * Statuses a task waiting for approval may not go to (ADR-0049), stable while its approval state,
+ * status and the board's statuses stay (the status menu memoizes on it).
+ */
+export function useBlockedStatuses(task: Task | undefined, boardId: string): ReadonlySet<string> | undefined {
+  const statuses = useBoards((s) => s.boards[boardId]?.statuses);
+  const state = task?.approvalState ?? 0;
+  const statusId = task?.statusId ?? '';
+  return useMemo(() => (statuses ? blockedStatusIds({ approvalState: state, statusId }, statuses) : undefined), [statuses, state, statusId]);
+}
 
 function CardLabels({ task, boardId, canEdit, canCreate, chip, req }: { task: Task; boardId: string; canEdit: boolean; canCreate: boolean; chip: string; req: { open?: boolean; onOpenChange?: (v: boolean) => void } }): ReactNode {
   const labels = useBoards((s) => s.boards[boardId]?.labels);
@@ -235,6 +250,7 @@ function CardLabels({ task, boardId, canEdit, canCreate, chip, req }: { task: Ta
 /** Right click on a card / row: the actions of the hotkeys, with their keys. */
 export function TaskContextMenu({ task, canEdit, canArchive, manage, children }: { task: Task; canEdit: boolean; canArchive: boolean; manage: boolean; children: ReactNode }): ReactNode {
   const statuses = useBoards((s) => s.boards[task.boardId]?.statuses);
+  const blocked = useBlockedStatuses(task, task.boardId);
   const me = myUserId();
   const kbd = (id: BoardHotkeyId): ReactNode => <span className="ml-auto pl-4 text-caption text-muted group-data-[highlighted]:text-inherit">{keyOf(id)}</span>;
   const item = cx(menuItem, 'group');
@@ -262,8 +278,9 @@ export function TaskContextMenu({ task, canEdit, canArchive, manage, children }:
                     {[...(statuses ?? [])]
                       .sort((a, b) => a.position - b.position)
                       .map((s) => (
-                        <ContextMenu.Item key={s.id} className={item} onSelect={() => s.id !== task.statusId && void updateTask(task.id, { statusId: s.id })}>
+                        <ContextMenu.Item key={s.id} className={item} disabled={blocked?.has(s.id)} onSelect={() => s.id !== task.statusId && void updateTask(task.id, { statusId: s.id })}>
                           <StatusIcon type={s.type} color={s.color} /> {s.name}
+                          {blocked?.has(s.id) ? <span className="ml-auto pl-3 text-caption text-muted">{t('boards.gate.hint')}</span> : null}
                         </ContextMenu.Item>
                       ))}
                   </ContextMenu.SubContent>

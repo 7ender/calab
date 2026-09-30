@@ -15,7 +15,8 @@ import { myUserId } from '../../stores/session';
 import { memberName } from '../../stores/workspaces';
 import { AssigneeMenu, DateMenu, LabelMenu, MemberAvatar, PriorityMenu, StatusMenu, useToday } from './menus';
 import { doneType, hasBit, mayArchiveTask, mayEditTask, sortedStatuses, CREATE_TASKS } from './model';
-import { TaskContextMenu } from './TaskCard';
+import { ApprovalBadge } from './Approvals';
+import { TaskContextMenu, useBlockedStatuses } from './TaskCard';
 import { useMatchCtx } from './useBoardView';
 import { Dot, PRIORITY_LABEL, PriorityIcon, StatusIcon, formatDue, isOverdue } from './visuals';
 
@@ -238,6 +239,7 @@ export const ListRow = memo(function ListRow({ id, boardId, workspaceId, onClick
   const perms = useBoards((s) => s.boards[boardId]?.permissions);
   const status = useBoards((s) => (task ? s.boards[boardId]?.statuses.find((x) => x.id === task.statusId) : undefined));
   const labels = useBoards((s) => s.boards[boardId]?.labels);
+  const blocked = useBlockedStatuses(task, boardId);
   const selected = useBoardsUi((s) => !!s.selected[id]);
   const focused = useBoardsUi((s) => s.focused === id || s.taskId === id);
   const menu = useBoardsUi((s) => (s.menu?.taskId === id ? s.menu.kind : null));
@@ -283,12 +285,13 @@ export const ListRow = memo(function ListRow({ id, boardId, workspaceId, onClick
           </button>
         </PriorityMenu>
         <span className="w-[64px] shrink-0 truncate text-caption tabular-nums text-muted mobile:hidden">{task.key}</span>
-        <StatusMenu boardId={boardId} value={task.statusId} onPick={(s) => s !== task.statusId && void updateTask(id, { statusId: s })} {...req('status')}>
+        <StatusMenu boardId={boardId} value={task.statusId} blocked={blocked} onPick={(s) => s !== task.statusId && void updateTask(id, { statusId: s })} {...req('status')}>
           <button type="button" onClick={stop} disabled={!canEdit} className={cx(cell, 'size-6')} aria-label={t('boards.f.status')} data-testid="row-status">
             <StatusIcon type={status?.type ?? 0} color={status?.color ?? 0} />
           </button>
         </StatusMenu>
         <span className={cx('min-w-0 flex-1 truncate', done ? 'text-muted' : 'text-fg')}>{task.title}</span>
+        <ApprovalBadge task={task} compact />
         {mine.length || menu === 'label' ? (
           <LabelMenu
             boardId={boardId}

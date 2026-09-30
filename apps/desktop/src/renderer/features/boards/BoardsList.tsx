@@ -6,7 +6,7 @@ import { useShallow } from 'zustand/react/shallow';
 import { confirmAction } from '../../components/Confirm';
 import { Tip, cx } from '../../components/ui';
 import { t } from '../../i18n';
-import { mayManageWorkspace } from '../../lib/permissions';
+import { mayCreateBoards } from '../../lib/permissions';
 import { boardLink, copyText, listArchivedBoards, moveBoard, openBoard, removeBoard, restoreBoard } from '../../services/boards';
 import { DeleteBoardDialog } from './BoardSettings';
 import { unreadCount, useBoards, workspaceBoards } from '../../stores/boards';
@@ -14,17 +14,19 @@ import { MY_TASKS, useBoardsUi } from '../../stores/boardsUi';
 import { useSession } from '../../stores/session';
 import { useMemberRoles } from '../../stores/workspaces';
 import { menuBox, menuItem, menuSeparator } from '../shell/menu';
+import { RestrictedMark } from '../workspace/AccessLevel';
 import { hasBit, MANAGE_BOARD } from './model';
 
 /**
  * The room column in boards mode (ADR-0042 §5): «Мои задачи» on top, the workspace's boards
  * (emoji, name, my open tasks) in their order — dragged to reorder with MANAGE_BOARD (accent line,
- * Esc cancels), ⋯ → settings / access / link / archive — and «+ Доска» for MANAGE_WORKSPACE.
+ * Esc cancels), ⋯ → settings / access / link / archive — and «+ Доска» for CREATE_BOARDS (ADR-0048).
  */
 export function BoardsList({ workspaceId }: { workspaceId: string }): ReactNode {
   const ids = useBoards(useShallow((s) => workspaceBoards(s.boards, workspaceId).map((b) => b.id)));
   const me = useSession((s) => s.me?.user?.id ?? '');
-  const admin = mayManageWorkspace(useMemberRoles(workspaceId, me));
+  // «+ Доска»: CREATE_BOARDS (ADR-0048).
+  const creator = mayCreateBoards(useMemberRoles(workspaceId, me));
   const manageAny = useBoards((s) => workspaceBoards(s.boards, workspaceId).some((b) => hasBit(b.permissions, MANAGE_BOARD)));
   const list = useRef<HTMLDivElement>(null);
   const [drag, setDrag] = useState<string | null>(null);
@@ -113,7 +115,7 @@ export function BoardsList({ workspaceId }: { workspaceId: string }): ReactNode 
       <MyTasksRow workspaceId={workspaceId} />
       <div className="flex h-7 items-center pl-2 pr-1 pt-2">
         <h2 className="min-w-0 flex-1 truncate text-micro font-semibold uppercase tracking-[0.04em] text-muted">{t('boards.boards')}</h2>
-        {admin ? (
+        {creator ? (
           <Tip label={t('boards.newBoard')}>
             <button type="button" aria-label={t('boards.newBoard')} onClick={() => useBoardsUi.getState().openSettings({ boardId: '', workspaceId })} className="grid size-6 place-items-center rounded-[var(--radius-icon)] text-muted hover:bg-hover hover:text-fg" data-testid="board-new">
               <Plus className="size-4" aria-hidden />
@@ -127,7 +129,7 @@ export function BoardsList({ workspaceId }: { workspaceId: string }): ReactNode 
         ))}
       </div>
       {ids.length === 0 ? (
-        admin ? (
+        creator ? (
           <button
             type="button"
             onClick={() => useBoardsUi.getState().openSettings({ boardId: '', workspaceId })}
@@ -143,7 +145,7 @@ export function BoardsList({ workspaceId }: { workspaceId: string }): ReactNode 
           </p>
         )
       ) : null}
-      {admin || manageAny ? <ArchivedBoards workspaceId={workspaceId} live={ids.length} /> : null}
+      {creator || manageAny ? <ArchivedBoards workspaceId={workspaceId} live={ids.length} /> : null}
       {line !== null ? <div aria-hidden className="pointer-events-none absolute inset-x-3 z-10 h-0.5 rounded-full bg-accent" style={{ top: Math.max(0, line - 1) }} /> : null}
     </div>
   );
@@ -171,6 +173,7 @@ const BoardRow = memo(function BoardRow({ id, workspaceId, dragging, onPointerDo
   const name = useBoards((s) => s.boards[id]?.name ?? '');
   const emoji = useBoards((s) => s.boards[id]?.emoji ?? '');
   const priv = useBoards((s) => s.boards[id]?.isPrivate ?? false);
+  const restricted = useBoards((s) => s.boards[id]?.restricted ?? false);
   const mine = useBoards((s) => s.boards[id]?.myOpenTasks ?? 0);
   const perms = useBoards((s) => s.boards[id]?.permissions);
   const active = useBoardsUi((s) => s.boardOf[workspaceId] === id);
@@ -191,6 +194,7 @@ const BoardRow = memo(function BoardRow({ id, workspaceId, dragging, onPointerDo
         </span>
         <span className="min-w-0 flex-1 truncate">{name}</span>
         {priv ? <Lock className="size-3.5 shrink-0 text-faint" aria-label={t('boards.private')} /> : null}
+        {restricted ? <RestrictedMark /> : null}
         {mine > 0 ? (
           <span className="shrink-0 text-caption tabular-nums text-muted" title={t('boards.myOpen')}>
             {mine}

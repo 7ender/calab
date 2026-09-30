@@ -32,7 +32,7 @@ import {
 } from '../lib/calendar/events';
 import { reminderText, remindNow } from '../lib/calendar/reminders';
 import { dayKey, eventSpan, formatWhen, gridWindow, monthOf, occurrenceMs, viewerZone } from '../lib/calendar/time';
-import { can, mayManageWorkspace, roomPerms } from '../lib/permissions';
+import { can, mayManageEvents, roomPerms } from '../lib/permissions';
 import { log } from '../lib/log';
 import { platform } from '../platform';
 import { useCalendar } from '../stores/calendar';
@@ -359,7 +359,11 @@ async function showEventById(id: string): Promise<void> {
 
 // ---------------------------------------------------------------- rights
 
-/** May I change / cancel it (ADR-0038 §2): organizer, MANAGE_ROOM in its room, else MANAGE_WORKSPACE. */
+/**
+ * May I change / cancel it (ADR-0038 §2, ADR-0048): `can_edit` from the server when it sends it;
+ * else the organizer, MANAGE_ROOM in its room, or MANAGE_EVENTS (a meeting without a room, or in a
+ * room I see).
+ */
 export function canEditEvent(ev: Pick<CalendarEvent, 'canEdit' | 'organizerId' | 'roomId' | 'workspaceId'>): boolean {
   if (ev.canEdit) return true;
   const me = myUserId();
@@ -368,9 +372,9 @@ export function canEditEvent(ev: Pick<CalendarEvent, 'canEdit' | 'organizerId' |
   const roles = rolesOf(useWorkspaces.getState().byId[ev.workspaceId], me);
   if (ev.roomId) {
     const room = useRooms.getState().byId[ev.roomId];
-    return !!room && can(roomPerms(roles, me, room), 'MANAGE_ROOM');
+    return !!room && (can(roomPerms(roles, me, room), 'MANAGE_ROOM') || (can(roomPerms(roles, me, room), 'VIEW_ROOM') && mayManageEvents(roles)));
   }
-  return mayManageWorkspace(roles);
+  return mayManageEvents(roles);
 }
 
 /** Guests see no calendar (ADR-0038 §2). */

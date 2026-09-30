@@ -28,7 +28,7 @@ export function uniquePath(dir: string, name: string): string {
 const run = promisify(execFile);
 
 /** Marks a file as downloaded from `origin` (quarantine / Mark-of-the-Web). Never throws. */
-async function markFromInternet(path: string, origin: string): Promise<void> {
+export async function markFromInternet(path: string, origin: string): Promise<void> {
   try {
     if (process.platform === 'darwin') {
       // flags 0x0083 = quarantined + downloaded by a user agent; time in hex seconds.

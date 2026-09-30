@@ -35,10 +35,12 @@ import { parseMainStrings, setMainStrings } from './strings';
 import { setTrayBadge, setTrayState } from './tray';
 import { setMenuState } from './appMenu';
 import { parseMenuState } from '../shared/menu';
-import { checkForUpdates, downloadUpdate, installUpdate, setUpdateInCall, updateSettingsChanged, updatesNudge, updateStatus } from './updater';
+import { checkForUpdates, downloadUpdate, installUpdate, updateSettingsChanged, updatesNudge, updateStatus } from './updater';
 import { reloadIfServerChanged } from './csp';
 import { setResumeSeat, takeResumeVoice } from './resumeVoice';
-import { isOwnPage, isShown } from './windows';
+import { forgetApp, hideApp, navigateApp, openApp, openAppExternal, setAppBounds } from './webApps';
+import { parseAppId, parseBounds } from './webAppPolicy';
+import { getMainWindow, isOwnPage, isShown } from './windows';
 
 const VISUAL_TEST = process.env['CALABA_VISUAL_TEST'] === '1';
 
@@ -196,7 +198,7 @@ export function registerIpc(): void {
   handle(IPC.appTakeDeepLink, () => takePendingDeepLink());
   handle(IPC.appCheckUpdates, () => checkForUpdates());
   handle(IPC.appGetUpdateStatus, () => updateStatus());
-  handle(IPC.appInstallUpdate, (_e, afterCall) => installUpdate(afterCall === true));
+  handle(IPC.appInstallUpdate, () => installUpdate());
   handle(IPC.appDownloadUpdate, () => downloadUpdate());
   handle(IPC.appNetworkOnline, () => updatesNudge('online'));
   handle(IPC.appResumeVoice, (_e, a) => setResumeSeat(a));
@@ -280,10 +282,7 @@ export function registerIpc(): void {
   // ---- tray ----
   handle(IPC.trayState, (_e, a) => {
     const r = obj(a);
-    const inVoice = Boolean(r['inVoice']);
-    setTrayState({ inVoice, muted: Boolean(r['muted']), deafened: Boolean(r['deafened']) } satisfies TrayState);
-    // A call / stream in progress: an update does not start downloading until it ends.
-    setUpdateInCall(inVoice);
+    setTrayState({ inVoice: Boolean(r['inVoice']), muted: Boolean(r['muted']), deafened: Boolean(r['deafened']) } satisfies TrayState);
   });
 
   // ---- macOS menu ----
@@ -345,6 +344,38 @@ export function registerIpc(): void {
       gpuCpu: cpuOf((m) => m.type === 'GPU'),
       mainCpu: cpuOf((m) => m.type === 'Browser'),
     };
+  });
+  // ---- workspace web apps (ADR-0050 §4): only the main window's page drives the views ----
+  const mainOnly = (e: IpcMainInvokeEvent): BrowserWindow => {
+    const win = getMainWindow();
+    if (!win || BrowserWindow.fromWebContents(e.sender) !== win) throw new Error('web apps: main window only');
+    return win;
+  };
+  handle(IPC.webAppOpen, (e, a) => {
+    const win = mainOnly(e);
+    const r = obj(a);
+    openApp(parseAppId(r['appId']), str(r['url'], 2048), parseBounds(r['bounds'], win.webContents.getZoomFactor()));
+  });
+  handle(IPC.webAppHide, (e) => {
+    mainOnly(e);
+    hideApp();
+  });
+  handle(IPC.webAppSetBounds, (e, a) => {
+    const win = mainOnly(e);
+    setAppBounds(parseBounds(a, win.webContents.getZoomFactor()));
+  });
+  handle(IPC.webAppNavigate, (e, a) => {
+    mainOnly(e);
+    if (a !== 'back' && a !== 'forward' && a !== 'reload') throw new Error('invalid action');
+    navigateApp(a);
+  });
+  handle(IPC.webAppOpenExternal, (e) => {
+    mainOnly(e);
+    openAppExternal();
+  });
+  handle(IPC.webAppForget, (e, a) => {
+    mainOnly(e);
+    return forgetApp(parseAppId(a));
   });
   handle(IPC.systemOpenPrivacySettings, (_e, pane) => {
     if (process.platform === 'win32') {

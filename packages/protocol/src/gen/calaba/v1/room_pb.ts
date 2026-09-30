@@ -208,16 +208,17 @@ export type Room = Message<"calaba.v1.Room"> & {
 
   /**
    * Voice rooms: members may record the meeting (ADR-0025). Default true; changed with
-   * PATCH /api/rooms/{id} allow_recording, which needs MANAGE_WORKSPACE.
+   * PATCH /api/rooms/{id} allow_recording, which needs MANAGE_RECORDINGS (ADR-0048).
    *
    * @generated from field: bool allow_recording = 18;
    */
   allowRecording: boolean;
 
   /**
-   * Private rooms only (ADR-0029): «Только по списку». ADMINISTRATOR gives no bypass here:
-   * admins see the room only through an allow VIEW_ROOM override (by role or personally),
-   * the workspace owner always does. Changed with PATCH /api/rooms/{id} restricted.
+   * Private rooms only (ADR-0029, ADR-0048): closed even to administrators. ADMINISTRATOR gives
+   * no bypass and VIEW_ROOM comes only from an allow override on the room (by role or
+   * personally); the workspace owner always sees it. Changed with PATCH /api/rooms/{id}
+   * restricted. Strangers get 404 for the room everywhere.
    *
    * @generated from field: bool restricted = 19;
    */
@@ -856,7 +857,7 @@ export type UpdateRoomRequest = Message<"calaba.v1.UpdateRoomRequest"> & {
   userLimit?: number | undefined;
 
   /**
-   * Voice rooms: allow meeting recording (ADR-0025). Needs MANAGE_WORKSPACE besides
+   * Voice rooms: allow meeting recording (ADR-0025). Needs MANAGE_RECORDINGS (ADR-0048) besides
    * MANAGE_ROOM; switching it off stops a running recording.
    *
    * @generated from field: optional bool allow_recording = 7;
@@ -864,8 +865,9 @@ export type UpdateRoomRequest = Message<"calaba.v1.UpdateRoomRequest"> & {
   allowRecording?: boolean | undefined;
 
   /**
-   * Private rooms only (ADR-0029). Only the workspace owner (Workspace.owner_id) may change
-   * it: anyone else gets 403 FORBIDDEN with reason OWNER_ONLY.
+   * Private rooms only (ADR-0029, 422 on a public one). MANAGE_ROOM in the room (ADR-0048; the
+   * creator of a temporary room too); the owner may always lift it. Switching it on gives the
+   * caller (unless the owner) a personal allow VIEW_ROOM | MANAGE_ROOM so they keep access.
    *
    * @generated from field: optional bool restricted = 8;
    */

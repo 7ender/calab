@@ -116,8 +116,11 @@ export const zhPeople: DictShape<typeof enPeople> = {
   'sounds.openChatQuiet': '轻声',
   'sounds.openChatOff': '关闭',
   'sounds.streamStart': '屏幕共享已开始',
+  'sounds.streamEnd': '屏幕共享已结束',
+  'sounds.watchStart': '有人开始观看你的屏幕共享',
+  'sounds.watchStop': '有人停止观看你的屏幕共享',
   'sounds.moved': '你被移动了',
-  'sounds.disconnect': '语音连接已断开',
+  'sounds.disconnect': '你离开了语音或连接已断开',
   'sounds.reconnect': '连接已恢复',
 
   // room link (guest access, ADR-0016)

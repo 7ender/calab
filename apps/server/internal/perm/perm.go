@@ -37,9 +37,24 @@ const (
 	InviteGuests  Bits = 1 << 22 // room links admitting guests, their approval, admission decisions
 	// CreateTempRooms (ADR-0044): workspace-level, create temporary rooms (member default).
 	CreateTempRooms Bits = 1 << 23
+	// PlaceCalls (ADR-0046): outbound phone calls from a voice room; workspace and room level,
+	// nobody by default, never guests (the handlers refuse them).
+	PlaceCalls Bits = 1 << 24
+	// Roles v2 (ADR-0048): workspace-level bits split off MANAGE_WORKSPACE (WorkspaceOnly).
+	CreateBoards       Bits = 1 << 25 // create task boards
+	ManageMembers      Bits = 1 << 26 // remove, ban, badges, promote guests, assign roles below one's own
+	ManageBots         Bits = 1 << 27 // the workspace's bots
+	ManageIntegrations Bits = 1 << 28 // telephony settings, GPTunneL, future integrations
+	ViewJournals       Bits = 1 << 29 // call journal, board activity export
+	ManageEvents       Bits = 1 << 30 // others' meetings, workspace-wide meetings
+	ManageRecordings   Bits = 1 << 31 // delete any visible room's recordings, recording consent
 
-	All Bits = CreateTempRooms<<1 - 1
+	All Bits = ManageRecordings<<1 - 1
 )
+
+// RolesV2 are the seven bits of ADR-0048; migration 00052 gave them to every role that held
+// MANAGE_WORKSPACE.
+const RolesV2 = CreateBoards | ManageMembers | ManageBots | ManageIntegrations | ViewJournals | ManageEvents | ManageRecordings
 
 // BoardOnly are the bits of task boards (ADR-0042): board overrides touch only them, room
 // overrides never do.
@@ -155,7 +170,8 @@ func (m Member) Has(id string) bool {
 
 // Scope carries the room-level inputs of the rule besides the overrides (ADR-0029).
 type Scope struct {
-	// Restricted: rooms.restricted — ADMINISTRATOR gives no bypass in the room.
+	// Restricted: rooms.restricted — ADMINISTRATOR gives no bypass in the room and VIEW_ROOM
+	// comes only from an override (ADR-0029, ADR-0048).
 	Restricted bool
 	// Owner: the user is the workspace owner (workspaces.owner_id, the holder of the built-in
 	// owner role): everything, always, restricted or not.
@@ -167,21 +183,22 @@ func ScopeOf(m Member, restricted bool) Scope {
 	return Scope{Restricted: restricted, Owner: m.Role == RoleOwner}
 }
 
-// ComputeOrdered is the one room-permission rule (ADR-0026, ADR-0029): raw = OR of the
-// member's roles' permissions (not expanded). In a restricted room the owner gets everything
-// and ADMINISTRATOR is dropped (admins count as plain members); elsewhere ADMINISTRATOR means
+// ComputeOrdered is the one room-permission rule (ADR-0026, ADR-0029, ADR-0048): raw = OR of
+// the member's roles' permissions (not expanded). In a restricted room the owner gets
+// everything, ADMINISTRATOR is dropped (admins count as plain members) and so is the roles'
+// VIEW_ROOM: only an allow override on the room lets anyone in; elsewhere ADMINISTRATOR means
 // everything, overrides ignored. Then each role's override in the room lowest position first
 // (deny, then allow; the most senior role wins), then the user's own override; without
 // VIEW_ROOM nothing. Overrides only touch RoomOnly bits: the workspace-level ones
-// (ADMINISTRATOR, MANAGE_WORKSPACE, MANAGE_NICKNAMES, MANAGE_ROLES, MANAGE_STICKERS) are neither granted nor
-// taken away per room, whatever is stored. roleOvs are in the order of the roles; a zero
-// Override is "none".
+// (ADMINISTRATOR, MANAGE_WORKSPACE, MANAGE_NICKNAMES, MANAGE_ROLES, MANAGE_STICKERS,
+// CREATE_TEMP_ROOMS, the ADR-0048 bits) are neither granted nor taken away per room, whatever
+// is stored. roleOvs are in the order of the roles; a zero Override is "none".
 func ComputeOrdered(raw Bits, sc Scope, roleOvs []Override, userOv *Override) Bits {
 	switch {
 	case sc.Restricted && sc.Owner:
 		return All
 	case sc.Restricted:
-		raw &^= Administrator
+		raw &^= Administrator | ViewRoom
 	case raw&Administrator != 0:
 		return All
 	}

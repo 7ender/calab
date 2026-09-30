@@ -246,4 +246,36 @@ describe('boards mock (ADR-0042)', () => {
     expect(renamed?.event.case === 'taskUpdate' ? renamed.event.value.task?.title : '').toBe('Переименовал Борис');
     vera.close();
   });
+
+  it('approvals (ADR-0049): the seeded CAL-6, the forward gate, votes, veto, reset on a new title', async () => {
+    server.reset();
+    const anna = await login();
+    const boris = await login('boris@calaba.test');
+    const cal = (await json<{ boards: BoardJ[] }>(api(anna, `/api/workspaces/${IDS.workspaces.main}/boards`))).boards[0] as BoardJ;
+    const st = (name: string): string => cal.statuses.find((s) => s.name === name)?.id ?? '';
+    type ApprovalJ = TaskJ & { approvers?: { userId: string; state?: string; comment?: string }[]; approvalState?: string };
+    const cal6 = (await json<{ tasks: ApprovalJ[] }>(api(anna, `/api/boards/${cal.id}/tasks`))).tasks.find((t) => t.key === 'CAL-6') as ApprovalJ;
+    expect(cal6.approvalState).toBe('TASK_APPROVAL_STATE_PENDING');
+    expect(cal6.approvers?.map((a) => a.state)).toEqual(['APPROVER_STATE_APPROVED', 'APPROVER_STATE_PENDING']);
+    // Forward (Готово) refused with the counts; back (Todo) and Отменено are fine.
+    const refused = await api(anna, `/api/tasks/${cal6.id}`, { method: 'PATCH', body: { statusId: st('Готово') } });
+    expect(refused.status).toBe(409);
+    expect(await refused.json()).toMatchObject({ reason: 'TASK_APPROVAL_REQUIRED' });
+    expect((await api(anna, `/api/tasks/${cal6.id}`, { method: 'PATCH', body: { statusId: st('Todo') } })).status).toBe(200);
+    // Борис approves: the quorum («все») is reached, the move goes through.
+    const ok = await json<{ task: ApprovalJ }>(api(boris, `/api/tasks/${cal6.id}/approval`, { method: 'POST', body: { decision: 'TASK_APPROVAL_DECISION_APPROVE' } }));
+    expect(ok.task.approvalState).toBe('TASK_APPROVAL_STATE_APPROVED');
+    // A new title resets the votes; a veto needs a comment.
+    await api(anna, `/api/tasks/${cal6.id}`, { method: 'PATCH', body: { title: 'Ревью прав v2' } });
+    expect((await api(boris, `/api/tasks/${cal6.id}/approval`, { method: 'POST', body: { decision: 'TASK_APPROVAL_DECISION_REJECT' } })).status).toBe(422);
+    const vetoed = await json<{ task: ApprovalJ }>(api(boris, `/api/tasks/${cal6.id}/approval`, { method: 'POST', body: { decision: 'TASK_APPROVAL_DECISION_REJECT', comment: 'Нет тестов' } }));
+    expect(vetoed.task.approvalState).toBe('TASK_APPROVAL_STATE_REJECTED');
+    // Not an approver → 403; the list: a guest → 422, the quorum above the count → 422.
+    const vera = await login('vera@calaba.test');
+    expect((await api(vera, `/api/tasks/${cal6.id}/approval`, { method: 'POST', body: { decision: 'TASK_APPROVAL_DECISION_APPROVE' } })).status).toBe(403);
+    expect((await api(anna, `/api/tasks/${cal6.id}/approvers`, { method: 'PUT', body: { userIds: [IDS.users.dina] } })).status).toBe(422);
+    expect((await api(anna, `/api/tasks/${cal6.id}/approvers`, { method: 'PUT', body: { userIds: [IDS.users.boris], required: 2 } })).status).toBe(422);
+    const cleared = await json<{ task: ApprovalJ }>(api(anna, `/api/tasks/${cal6.id}/approvers`, { method: 'PUT', body: { userIds: [] } }));
+    expect(cleared.task.approvalState).toBe('TASK_APPROVAL_STATE_NONE');
+  });
 });
