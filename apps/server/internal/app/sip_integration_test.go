@@ -200,7 +200,7 @@ func TestSIP(t *testing.T) {
 
 	// Validation.
 	valid := func() *v1.PutSipSettingsRequest {
-		pw := "s3cret-Пароль"
+		pw := "s3cret-Пароль" //nolint:gosec // G101: a test fixture
 		return &v1.PutSipSettingsRequest{Enabled: true, Provider: "Zadarma", Host: "203.0.113.10:5060",
 			Transport: v1.SipTransport_SIP_TRANSPORT_TCP, Username: "u100", Password: &pw, CallerId: "8 (495) 123-45-67",
 			AllowedPrefixes: []string{"+7", "+7"}}

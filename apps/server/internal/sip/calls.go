@@ -13,6 +13,7 @@ import (
 	v1 "github.com/calaba/calaba/server/gen/calaba/v1"
 	"github.com/calaba/calaba/server/internal/db"
 	"github.com/calaba/calaba/server/internal/db/sqlc"
+	"github.com/calaba/calaba/server/internal/events"
 	"github.com/calaba/calaba/server/internal/httpx"
 	"github.com/calaba/calaba/server/internal/pbconv"
 	"github.com/calaba/calaba/server/internal/perm"
@@ -166,7 +167,9 @@ func (s *Service) place(w http.ResponseWriter, r *http.Request) error {
 	}
 	slog.InfoContext(ctx, "sip: call placed", "workspace", acc.WorkspaceID, "room", room.ID, "call", id, "by", me)
 	s.publish(ctx, call)
-	go s.dial(call, a, voice.RoomName(acc.WorkspaceID, room.ID))
+	// The dial outlives the request (it waits for the answer): detached from its cancellation,
+	// with its own post-commit budget for the status events.
+	go s.dial(events.WithBudget(context.WithoutCancel(ctx), events.RequestBudget), call, a, voice.RoomName(acc.WorkspaceID, room.ID))
 	httpx.Write(w, http.StatusCreated, &v1.SipCallResponse{Call: pbconv.SipCall(call)})
 	return nil
 }
@@ -174,8 +177,8 @@ func (s *Service) place(w http.ResponseWriter, r *http.Request) error {
 // dial asks LiveKit to call and waits for the answer (CreateSIPParticipant with
 // wait_until_answered), then records ACTIVE or FAILED. A call ended meanwhile (hangup,
 // everybody left) has its line removed again.
-func (s *Service) dial(call sqlc.SipCall, a sqlc.SipAccount, lkRoom string) {
-	ctx, cancel := context.WithTimeout(context.Background(), s.opts.RingingTimeout+45*time.Second)
+func (s *Service) dial(ctx context.Context, call sqlc.SipCall, a sqlc.SipAccount, lkRoom string) {
+	ctx, cancel := context.WithTimeout(ctx, s.opts.RingingTimeout+45*time.Second)
 	defer cancel()
 	info, err := s.sip.CreateSIPParticipant(ctx, rtc.SIPCall{
 		TrunkID: a.TrunkID, CallTo: DialString(a.OutboundPrefix, call.Number), Room: lkRoom,
