@@ -627,7 +627,7 @@ func (x *Heartbeat) GetLastSeq() uint64 {
 type DeviceInfo struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	Name          string                 `protobuf:"bytes,1,opt,name=name,proto3" json:"name,omitempty"`         // e.g. hostname
-	Platform      string                 `protobuf:"bytes,2,opt,name=platform,proto3" json:"platform,omitempty"` // darwin | win32 | linux
+	Platform      string                 `protobuf:"bytes,2,opt,name=platform,proto3" json:"platform,omitempty"` // darwin | win32 | linux | web
 	AppVersion    string                 `protobuf:"bytes,3,opt,name=app_version,json=appVersion,proto3" json:"app_version,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
@@ -2640,9 +2640,15 @@ type Presence struct {
 	Until *timestamppb.Timestamp `protobuf:"bytes,7,opt,name=until,proto3" json:"until,omitempty"`
 	// In a one-to-one call now (ADR-0034, call ACTIVE); with whom is not disclosed. Changes
 	// come as PRESENCE_UPDATE to all the user's workspaces.
-	OnCall        bool `protobuf:"varint,8,opt,name=on_call,json=onCall,proto3" json:"on_call,omitempty"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
+	OnCall bool `protobuf:"varint,8,opt,name=on_call,json=onCall,proto3" json:"on_call,omitempty"`
+	// The client of the user's most recently connected live session (docs/09 #143), from its
+	// Identify.device: app version («1.1.0») and platform (web | darwin | win32 | linux). When
+	// offline, the last known ones (the session last active). Empty when unknown, and hidden
+	// like last_seen (invisible).
+	ClientVersion  string `protobuf:"bytes,9,opt,name=client_version,json=clientVersion,proto3" json:"client_version,omitempty"`
+	ClientPlatform string `protobuf:"bytes,10,opt,name=client_platform,json=clientPlatform,proto3" json:"client_platform,omitempty"`
+	unknownFields  protoimpl.UnknownFields
+	sizeCache      protoimpl.SizeCache
 }
 
 func (x *Presence) Reset() {
@@ -2729,6 +2735,20 @@ func (x *Presence) GetOnCall() bool {
 		return x.OnCall
 	}
 	return false
+}
+
+func (x *Presence) GetClientVersion() string {
+	if x != nil {
+		return x.ClientVersion
+	}
+	return ""
+}
+
+func (x *Presence) GetClientPlatform() string {
+	if x != nil {
+		return x.ClientPlatform
+	}
+	return ""
 }
 
 type ReadState struct {
@@ -6689,7 +6709,7 @@ const file_calaba_v1_gateway_proto_rawDesc = "" +
 	"\fserver_muted\x18\b \x01(\bR\vserverMuted\x12\x16\n" +
 	"\x06camera\x18\t \x01(\bR\x06camera\x12\x18\n" +
 	"\apending\x18\n" +
-	" \x01(\bR\apending\"\xe6\x02\n" +
+	" \x01(\bR\apending\"\xb6\x03\n" +
 	"\bPresence\x12\x17\n" +
 	"\auser_id\x18\x01 \x01(\tR\x06userId\x121\n" +
 	"\x06status\x18\x02 \x01(\x0e2\x19.calaba.v1.PresenceStatusR\x06status\x127\n" +
@@ -6699,7 +6719,10 @@ const file_calaba_v1_gateway_proto_rawDesc = "" +
 	"\fstatus_emoji\x18\x05 \x01(\tR\vstatusEmoji\x12F\n" +
 	"\x11status_expires_at\x18\x06 \x01(\v2\x1a.google.protobuf.TimestampR\x0fstatusExpiresAt\x120\n" +
 	"\x05until\x18\a \x01(\v2\x1a.google.protobuf.TimestampR\x05until\x12\x17\n" +
-	"\aon_call\x18\b \x01(\bR\x06onCall\"\x9d\x01\n" +
+	"\aon_call\x18\b \x01(\bR\x06onCall\x12%\n" +
+	"\x0eclient_version\x18\t \x01(\tR\rclientVersion\x12'\n" +
+	"\x0fclient_platform\x18\n" +
+	" \x01(\tR\x0eclientPlatform\"\x9d\x01\n" +
 	"\tReadState\x12\x17\n" +
 	"\aroom_id\x18\x01 \x01(\tR\x06roomId\x12/\n" +
 	"\x14last_read_message_id\x18\x02 \x01(\tR\x11lastReadMessageId\x12!\n" +

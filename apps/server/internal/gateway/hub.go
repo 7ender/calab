@@ -955,7 +955,7 @@ func (h *Hub) TouchBot(_ context.Context, id auth.Identity) {
 	go func() { //nolint:gosec // G118: presence outlives the request that reported it
 		ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
 		defer cancel()
-		if err := h.pres.set(ctx, id.UserID, id.SessionID, v1.PresenceStatus_PRESENCE_STATUS_ONLINE); err != nil {
+		if err := h.pres.set(ctx, id.UserID, id.SessionID, v1.PresenceStatus_PRESENCE_STATUS_ONLINE, clientInfo{}); err != nil {
 			return
 		}
 		h.publishPresence(ctx, id.UserID)

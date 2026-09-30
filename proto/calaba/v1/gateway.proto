@@ -89,7 +89,7 @@ message Heartbeat {
 
 message DeviceInfo {
   string name = 1;     // e.g. hostname
-  string platform = 2; // darwin | win32 | linux
+  string platform = 2; // darwin | win32 | linux | web
   string app_version = 3;
 }
 
@@ -289,6 +289,12 @@ message Presence {
   // In a one-to-one call now (ADR-0034, call ACTIVE); with whom is not disclosed. Changes
   // come as PRESENCE_UPDATE to all the user's workspaces.
   bool on_call = 8;
+  // The client of the user's most recently connected live session (docs/09 #143), from its
+  // Identify.device: app version («1.1.0») and platform (web | darwin | win32 | linux). When
+  // offline, the last known ones (the session last active). Empty when unknown, and hidden
+  // like last_seen (invisible).
+  string client_version = 9;
+  string client_platform = 10;
 }
 
 message ReadState {
