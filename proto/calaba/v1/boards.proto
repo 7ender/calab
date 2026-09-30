@@ -159,6 +159,37 @@ message TaskAssigneeInput {
   string note = 3;
 }
 
+// Task approvals (ADR-0049). The task's derived state: NONE = no approvers; PENDING = fewer
+// approvals than the quorum and no rejection; APPROVED = approvals ≥ the quorum and no
+// rejection; REJECTED = at least one approver rejected (a veto, the quorum does not matter).
+// The quorum is min(Task.approval_required, number of approvers); approval_required 0 = all.
+// The server computes it; clients read Task.approval_state.
+enum TaskApprovalState {
+  TASK_APPROVAL_STATE_UNSPECIFIED = 0;
+  TASK_APPROVAL_STATE_NONE = 1;
+  TASK_APPROVAL_STATE_PENDING = 2;
+  TASK_APPROVAL_STATE_APPROVED = 3;
+  TASK_APPROVAL_STATE_REJECTED = 4;
+}
+
+// One approver's vote.
+enum ApproverState {
+  APPROVER_STATE_UNSPECIFIED = 0;
+  APPROVER_STATE_PENDING = 1;
+  APPROVER_STATE_APPROVED = 2;
+  APPROVER_STATE_REJECTED = 3;
+}
+
+// An approver of a task (ADR-0049 §1): a member who sees the board, not a guest nor a bot.
+message TaskApprover {
+  string user_id = 1;
+  ApproverState state = 2;
+  string comment = 3; // ≤ 500 characters; always set when REJECTED
+  google.protobuf.Timestamp decided_at = 4; // unset while PENDING
+  string added_by = 5;
+  google.protobuf.Timestamp added_at = 6;
+}
+
 message TaskRelation {
   string task_id = 1;    // the blocking side for BLOCKS
   string related_id = 2;
@@ -208,13 +239,26 @@ message Task {
   // the recipient's user channel; false in board broadcasts (TASK_CREATE / TASK_UPDATE on the
   // workspace channel) — keep the known values then.
   bool viewer_state = 35;
+  // Approvals (ADR-0049): approvers by added_at; approval_required = approvals needed, 0 =
+  // all; approval_state is derived by the server (see TaskApprovalState). While the state is
+  // PENDING or REJECTED the task cannot move "forward": into a status with a greater position
+  // than the current one, or into any COMPLETED status (409 CONFLICT, reason
+  // "TASK_APPROVAL_REQUIRED"); backwards, within the column and into CANCELLED are allowed.
+  repeated TaskApprover approvers = 36;
+  uint32 approval_required = 37;
+  TaskApprovalState approval_state = 38;
 }
 
 // One entry of the task journal (ADR-0042 §1): written on every change, never edited.
 // kind: "created" | "status" | "assignees" | "priority" | "labels" | "dates" | "estimate" |
 // "parent" | "milestone" | "relation" | "title" | "description" | "archived" | "restored" |
-// "moved_board" | "attachments". before / after hold the changed fields
-// (e.g. {"status_id": "…", "status_type": "started"}, {"assignees": [{"user_id": …}]}).
+// "moved_board" | "attachments" | "approvers" | "approval" | "approvals_reset". before / after
+// hold the changed fields (e.g. {"status_id": "…", "status_type": "started"},
+// {"assignees": [{"user_id": …}]}). Approvals (ADR-0049): "approvers" — {"user_ids": […],
+// "required": n} before and after; "approval" — after {"user_id", "state": "pending" |
+// "approved" | "rejected", "comment"}; "approvals_reset" — the title / description / its
+// attachments changed and every vote went back to pending: before {"approved": n,
+// "rejected": n}.
 message TaskActivity {
   string id = 1;
   string task_id = 2;
@@ -244,6 +288,9 @@ message TaskActivityItem {
 // "week_end" (Monday..Sunday), "month_end", "-7d" / "+14d" (days from today), today in the
 // caller's profile zone. HAS_ATTACHMENTS / HAS_COMMENTS / ARCHIVED: IS "true" | "false" (or
 // NOT_EMPTY / EMPTY). TEXT: CONTAINS values[0] (title and description words, or the key).
+// APPROVAL_STATE (ADR-0049): "none" | "pending" | "approved" | "rejected" with IS / ANY_OF /
+// IS_NOT / NONE_OF. APPROVER_PENDING: user ids or "me" — an approver whose vote is still
+// pending («Ждут моего согласования»); EMPTY / NOT_EMPTY: nobody's / somebody's vote pending.
 enum TaskField {
   TASK_FIELD_UNSPECIFIED = 0;
   TASK_FIELD_STATUS = 1;
@@ -266,6 +313,8 @@ enum TaskField {
   TASK_FIELD_HAS_COMMENTS = 18;
   TASK_FIELD_TEXT = 19;
   TASK_FIELD_ARCHIVED = 20;
+  TASK_FIELD_APPROVAL_STATE = 21;
+  TASK_FIELD_APPROVER_PENDING = 22;
 }
 
 // Operations. IS / ANY_OF: one of values (LABEL IS: all of values); IS_NOT / NONE_OF: none of
@@ -427,7 +476,9 @@ message ListTasksResponse {
 // from_message_id: «Создать задачу из сообщения» — a message the caller can see (404
 // otherwise); the description gets its quote and link. attachment_ids: unattached uploads of
 // the caller (POST /api/boards/{id}/files), ≤ 20. ≤ 5000 live tasks per board (409 CONFLICT,
-// reason "BOARD_TASK_LIMIT"), ≤ 200 subtasks per parent.
+// reason "BOARD_TASK_LIMIT"), ≤ 200 subtasks per parent. approver_ids / approval_required:
+// approvers from the start (ADR-0049; the rules of SetTaskApproversRequest), each subscribed and
+// notified (APPROVAL_REQUESTED).
 message CreateTaskRequest {
   string title = 1;
   string description = 2;
@@ -443,6 +494,8 @@ message CreateTaskRequest {
   string after_task_id = 12;
   string from_message_id = 13;
   repeated string attachment_ids = 14;
+  repeated string approver_ids = 15;
+  uint32 approval_required = 16;
 }
 
 // POST /tasks (201), GET /tasks/{id}, PATCH, archive / restore, relations, subscription,
@@ -460,7 +513,10 @@ message TaskResponse {
 // it created or is assigned to; EDIT_TASKS any. status_id with after_task_id / before_task_id =
 // a kanban move (position between the neighbours; neither = last). board_id moves the task to
 // another board (MANAGE_BOARD on both; a new number, activity "moved_board"; statuses by type,
-// labels by name, milestone dropped).
+// labels by name, milestone dropped; approvers and votes move along). A status change of a task
+// whose approval_state is PENDING / REJECTED is refused when it goes forward (see Task
+// approvals): 409 CONFLICT, reason "TASK_APPROVAL_REQUIRED", used = approvals, limit = the
+// quorum. A title / description / attachments change resets every vote (ADR-0049 §3).
 message UpdateTaskRequest {
   optional string title = 1;
   optional string description = 2;
@@ -484,6 +540,33 @@ message UpdateTaskRequest {
 // TaskResponse. New assignees are subscribed and notified.
 message SetAssigneesRequest {
   repeated TaskAssigneeInput assignees = 1;
+}
+
+// PUT /api/tasks/{id}/approvers → TaskResponse (ADR-0049): the full list of approvers and the
+// quorum, by whoever may edit the task (EDIT_TASKS, or CREATE_TASKS on a task they created or
+// are assigned to). ≤ 10 distinct members who see the board, not guests nor bots (422);
+// required 0 = all, else 1..number of approvers (422 otherwise). Those who stay keep their
+// votes; removed ones lose them; new ones start PENDING, are subscribed and notified
+// (APPROVAL_REQUESTED). Journal "approvers".
+message SetTaskApproversRequest {
+  repeated string user_ids = 1;
+  uint32 required = 2;
+}
+
+enum TaskApprovalDecision {
+  TASK_APPROVAL_DECISION_UNSPECIFIED = 0;
+  TASK_APPROVAL_DECISION_APPROVE = 1;
+  TASK_APPROVAL_DECISION_REJECT = 2;   // a veto: comment required
+  TASK_APPROVAL_DECISION_WITHDRAW = 3; // back to PENDING
+}
+
+// POST /api/tasks/{id}/approval → TaskResponse (ADR-0049 §3): the caller's own vote; only an
+// approver (403 otherwise) who sees the board (404). comment ≤ 500 characters, required for
+// REJECT (422). A vote may change any time. Journal "approval"; the quorum reached notifies
+// APPROVED, a rejection REJECTED (see TaskNoticeKind).
+message TaskApprovalRequest {
+  TaskApprovalDecision decision = 1;
+  string comment = 2;
 }
 
 // PUT /api/tasks/{id}/relations → TaskResponse; DELETE /api/tasks/{id}/relations?related_id=
@@ -607,6 +690,16 @@ enum TaskNoticeKind {
   TASK_NOTICE_KIND_MENTIONED = 2; // @<user_id> in the description or a comment
   TASK_NOTICE_KIND_COMMENT = 3;   // a comment in a task the recipient is subscribed to
   TASK_NOTICE_KIND_STATUS = 4;    // the status of a task the recipient is subscribed to changed
+  // Approvals (ADR-0049 §5). Mandatory notices bypass the task level, a muted workspace and
+  // «Отписаться» (like a direct mention; only «Не беспокоить» silences them on the client).
+  // APPROVAL_REQUESTED (mandatory): the recipient became an approver, every vote was reset
+  // (the task changed), or a daily reminder of a vote pending for 24 h (≤ 3; actor_id empty).
+  TASK_NOTICE_KIND_APPROVAL_REQUESTED = 5;
+  // APPROVED: the quorum was reached; REJECTED: an approver rejected (the comment is in
+  // Task.approvers). Mandatory for the task's creator and lead assignee; other assignees and
+  // subscribers by their task level (like STATUS).
+  TASK_NOTICE_KIND_APPROVED = 6;
+  TASK_NOTICE_KIND_REJECTED = 7;
 }
 
 // The task was archived (purged false) or deleted with its board.

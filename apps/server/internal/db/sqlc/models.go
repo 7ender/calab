@@ -559,27 +559,28 @@ type StickerPack struct {
 }
 
 type Task struct {
-	ID          uuid.UUID
-	BoardID     uuid.UUID
-	Number      int32
-	Title       string
-	Description string
-	StatusID    uuid.UUID
-	Priority    int16
-	CreatedBy   *uuid.UUID
-	Estimate    *int16
-	StartOn     pgtype.Date
-	DueOn       pgtype.Date
-	ParentID    *uuid.UUID
-	MilestoneID *uuid.UUID
-	Position    float64
-	RoomID      uuid.UUID
-	CreatedAt   time.Time
-	UpdatedAt   time.Time
-	StartedAt   *time.Time
-	CompletedAt *time.Time
-	CompletedBy *uuid.UUID
-	ArchivedAt  *time.Time
+	ID               uuid.UUID
+	BoardID          uuid.UUID
+	Number           int32
+	Title            string
+	Description      string
+	StatusID         uuid.UUID
+	Priority         int16
+	CreatedBy        *uuid.UUID
+	Estimate         *int16
+	StartOn          pgtype.Date
+	DueOn            pgtype.Date
+	ParentID         *uuid.UUID
+	MilestoneID      *uuid.UUID
+	Position         float64
+	RoomID           uuid.UUID
+	CreatedAt        time.Time
+	UpdatedAt        time.Time
+	StartedAt        *time.Time
+	CompletedAt      *time.Time
+	CompletedBy      *uuid.UUID
+	ArchivedAt       *time.Time
+	ApprovalRequired int16
 }
 
 type TaskActivity struct {
@@ -591,6 +592,19 @@ type TaskActivity struct {
 	Before    []byte
 	After     []byte
 	CreatedAt time.Time
+}
+
+type TaskApprover struct {
+	TaskID      uuid.UUID
+	UserID      uuid.UUID
+	State       string
+	Comment     string
+	DecidedAt   *time.Time
+	AddedBy     *uuid.UUID
+	AddedAt     time.Time
+	RequestedAt time.Time
+	Reminders   int16
+	RemindedAt  *time.Time
 }
 
 type TaskAssignee struct {

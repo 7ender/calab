@@ -529,6 +529,20 @@ func (q *Queries) DeleteBoardView(ctx context.Context, arg DeleteBoardViewParams
 	return result.RowsAffected(), nil
 }
 
+const deleteTaskApprovers = `-- name: DeleteTaskApprovers :exec
+DELETE FROM task_approvers WHERE task_id = $1 AND user_id = ANY($2::uuid[])
+`
+
+type DeleteTaskApproversParams struct {
+	TaskID  uuid.UUID
+	UserIds []uuid.UUID
+}
+
+func (q *Queries) DeleteTaskApprovers(ctx context.Context, arg DeleteTaskApproversParams) error {
+	_, err := q.db.Exec(ctx, deleteTaskApprovers, arg.TaskID, arg.UserIds)
+	return err
+}
+
 const deleteTaskAssignees = `-- name: DeleteTaskAssignees :exec
 DELETE FROM task_assignees WHERE task_id = $1
 `
@@ -584,6 +598,45 @@ UPDATE tasks SET parent_id = NULL, updated_at = now() WHERE parent_id = $1
 func (q *Queries) DetachSubtasks(ctx context.Context, parentID *uuid.UUID) error {
 	_, err := q.db.Exec(ctx, detachSubtasks, parentID)
 	return err
+}
+
+const dueApprovalReminders = `-- name: DueApprovalReminders :many
+SELECT a.task_id, a.user_id FROM task_approvers a
+JOIN tasks t ON t.id = a.task_id AND t.archived_at IS NULL
+JOIN boards b ON b.id = t.board_id AND b.archived_at IS NULL
+JOIN board_statuses st ON st.id = t.status_id AND st.type NOT IN ('completed', 'cancelled')
+WHERE a.state = 'pending' AND a.reminders < 3
+  AND coalesce(a.reminded_at, a.requested_at) <= now() - interval '24 hours'
+  AND NOT EXISTS (SELECT 1 FROM task_approvers r WHERE r.task_id = a.task_id AND r.state = 'rejected')
+ORDER BY a.task_id, a.user_id
+LIMIT $1
+`
+
+type DueApprovalRemindersRow struct {
+	TaskID uuid.UUID
+	UserID uuid.UUID
+}
+
+// Votes pending for 24 h since they were asked for or last reminded (≤ 3 reminders), on live
+// tasks of live boards that are neither finished nor rejected.
+func (q *Queries) DueApprovalReminders(ctx context.Context, lim int32) ([]DueApprovalRemindersRow, error) {
+	rows, err := q.db.Query(ctx, dueApprovalReminders, lim)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []DueApprovalRemindersRow{}
+	for rows.Next() {
+		var i DueApprovalRemindersRow
+		if err := rows.Scan(&i.TaskID, &i.UserID); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
 }
 
 const dueAutoArchive = `-- name: DueAutoArchive :many
@@ -830,7 +883,7 @@ func (q *Queries) GetBoardView(ctx context.Context, arg GetBoardViewParams) (Boa
 }
 
 const getTaskByNumber = `-- name: GetTaskByNumber :one
-SELECT t.id, t.board_id, t.number, t.title, t.description, t.status_id, t.priority, t.created_by, t.estimate, t.start_on, t.due_on, t.parent_id, t.milestone_id, t.position, t.room_id, t.created_at, t.updated_at, t.started_at, t.completed_at, t.completed_by, t.archived_at FROM tasks t JOIN boards b ON b.id = t.board_id
+SELECT t.id, t.board_id, t.number, t.title, t.description, t.status_id, t.priority, t.created_by, t.estimate, t.start_on, t.due_on, t.parent_id, t.milestone_id, t.position, t.room_id, t.created_at, t.updated_at, t.started_at, t.completed_at, t.completed_by, t.archived_at, t.approval_required FROM tasks t JOIN boards b ON b.id = t.board_id
 WHERE b.workspace_id = $1 AND b.key = $2 AND t.number = $3 AND b.archived_at IS NULL
 `
 
@@ -865,6 +918,7 @@ func (q *Queries) GetTaskByNumber(ctx context.Context, arg GetTaskByNumberParams
 		&i.CompletedAt,
 		&i.CompletedBy,
 		&i.ArchivedAt,
+		&i.ApprovalRequired,
 	)
 	return i, err
 }
@@ -928,7 +982,7 @@ func (q *Queries) GetTaskRoomRef(ctx context.Context, roomID uuid.UUID) (GetTask
 }
 
 const getTaskRow = `-- name: GetTaskRow :one
-SELECT id, board_id, number, title, description, status_id, priority, created_by, estimate, start_on, due_on, parent_id, milestone_id, position, room_id, created_at, updated_at, started_at, completed_at, completed_by, archived_at FROM tasks WHERE id = $1
+SELECT id, board_id, number, title, description, status_id, priority, created_by, estimate, start_on, due_on, parent_id, milestone_id, position, room_id, created_at, updated_at, started_at, completed_at, completed_by, archived_at, approval_required FROM tasks WHERE id = $1
 `
 
 func (q *Queries) GetTaskRow(ctx context.Context, id uuid.UUID) (Task, error) {
@@ -956,12 +1010,13 @@ func (q *Queries) GetTaskRow(ctx context.Context, id uuid.UUID) (Task, error) {
 		&i.CompletedAt,
 		&i.CompletedBy,
 		&i.ArchivedAt,
+		&i.ApprovalRequired,
 	)
 	return i, err
 }
 
 const getTaskRowForUpdate = `-- name: GetTaskRowForUpdate :one
-SELECT id, board_id, number, title, description, status_id, priority, created_by, estimate, start_on, due_on, parent_id, milestone_id, position, room_id, created_at, updated_at, started_at, completed_at, completed_by, archived_at FROM tasks WHERE id = $1 FOR UPDATE
+SELECT id, board_id, number, title, description, status_id, priority, created_by, estimate, start_on, due_on, parent_id, milestone_id, position, room_id, created_at, updated_at, started_at, completed_at, completed_by, archived_at, approval_required FROM tasks WHERE id = $1 FOR UPDATE
 `
 
 func (q *Queries) GetTaskRowForUpdate(ctx context.Context, id uuid.UUID) (Task, error) {
@@ -989,6 +1044,7 @@ func (q *Queries) GetTaskRowForUpdate(ctx context.Context, id uuid.UUID) (Task, 
 		&i.CompletedAt,
 		&i.CompletedBy,
 		&i.ArchivedAt,
+		&i.ApprovalRequired,
 	)
 	return i, err
 }
@@ -1040,32 +1096,34 @@ func (q *Queries) InsertBoardOverride(ctx context.Context, arg InsertBoardOverri
 
 const insertTask = `-- name: InsertTask :one
 INSERT INTO tasks (board_id, number, title, description, status_id, priority, created_by, estimate,
-                   start_on, due_on, parent_id, milestone_id, position, room_id, started_at, completed_at, completed_by)
+                   start_on, due_on, parent_id, milestone_id, position, room_id, started_at, completed_at, completed_by,
+                   approval_required)
 VALUES ($1, $2, $3, $4, $5,
         $6, $7, $8, $9, $10,
         $11, $12, $13, $14,
-        $15, $16, $17)
+        $15, $16, $17, $18)
 RETURNING id
 `
 
 type InsertTaskParams struct {
-	BoardID     uuid.UUID
-	Number      int32
-	Title       string
-	Description string
-	StatusID    uuid.UUID
-	Priority    int16
-	CreatedBy   *uuid.UUID
-	Estimate    *int16
-	StartOn     pgtype.Date
-	DueOn       pgtype.Date
-	ParentID    *uuid.UUID
-	MilestoneID *uuid.UUID
-	Position    float64
-	RoomID      uuid.UUID
-	StartedAt   *time.Time
-	CompletedAt *time.Time
-	CompletedBy *uuid.UUID
+	BoardID          uuid.UUID
+	Number           int32
+	Title            string
+	Description      string
+	StatusID         uuid.UUID
+	Priority         int16
+	CreatedBy        *uuid.UUID
+	Estimate         *int16
+	StartOn          pgtype.Date
+	DueOn            pgtype.Date
+	ParentID         *uuid.UUID
+	MilestoneID      *uuid.UUID
+	Position         float64
+	RoomID           uuid.UUID
+	StartedAt        *time.Time
+	CompletedAt      *time.Time
+	CompletedBy      *uuid.UUID
+	ApprovalRequired int16
 }
 
 func (q *Queries) InsertTask(ctx context.Context, arg InsertTaskParams) (uuid.UUID, error) {
@@ -1087,6 +1145,7 @@ func (q *Queries) InsertTask(ctx context.Context, arg InsertTaskParams) (uuid.UU
 		arg.StartedAt,
 		arg.CompletedAt,
 		arg.CompletedBy,
+		arg.ApprovalRequired,
 	)
 	var id uuid.UUID
 	err := row.Scan(&id)
@@ -1131,6 +1190,23 @@ func (q *Queries) InsertTaskActivity(ctx context.Context, arg InsertTaskActivity
 		&i.CreatedAt,
 	)
 	return i, err
+}
+
+const insertTaskApprover = `-- name: InsertTaskApprover :exec
+INSERT INTO task_approvers (task_id, user_id, added_by, added_at) VALUES ($1, $2, $3, clock_timestamp())
+ON CONFLICT DO NOTHING
+`
+
+type InsertTaskApproverParams struct {
+	TaskID  uuid.UUID
+	UserID  uuid.UUID
+	AddedBy *uuid.UUID
+}
+
+// clock_timestamp: approvers added in one request keep their order (added_at).
+func (q *Queries) InsertTaskApprover(ctx context.Context, arg InsertTaskApproverParams) error {
+	_, err := q.db.Exec(ctx, insertTaskApprover, arg.TaskID, arg.UserID, arg.AddedBy)
+	return err
 }
 
 const insertTaskAssignee = `-- name: InsertTaskAssignee :exec
@@ -1548,6 +1624,44 @@ func (q *Queries) ListTaskActivity(ctx context.Context, arg ListTaskActivityPara
 	return items, nil
 }
 
+const listTaskApprovers = `-- name: ListTaskApprovers :many
+
+SELECT task_id, user_id, state, comment, decided_at, added_by, added_at, requested_at, reminders, reminded_at FROM task_approvers WHERE task_id = ANY($1::uuid[])
+ORDER BY task_id, added_at, user_id
+`
+
+// ---- approvals (ADR-0049) ----
+func (q *Queries) ListTaskApprovers(ctx context.Context, taskIds []uuid.UUID) ([]TaskApprover, error) {
+	rows, err := q.db.Query(ctx, listTaskApprovers, taskIds)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []TaskApprover{}
+	for rows.Next() {
+		var i TaskApprover
+		if err := rows.Scan(
+			&i.TaskID,
+			&i.UserID,
+			&i.State,
+			&i.Comment,
+			&i.DecidedAt,
+			&i.AddedBy,
+			&i.AddedAt,
+			&i.RequestedAt,
+			&i.Reminders,
+			&i.RemindedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const listTaskAssignees = `-- name: ListTaskAssignees :many
 SELECT task_id, user_id, is_lead, note, assigned_by, assigned_at FROM task_assignees WHERE task_id = ANY($1::uuid[])
 ORDER BY task_id, is_lead DESC, assigned_at, user_id
@@ -1875,6 +1989,21 @@ func (q *Queries) LockBoards(ctx context.Context, workspaceID string) error {
 	return err
 }
 
+const markApprovalReminded = `-- name: MarkApprovalReminded :exec
+UPDATE task_approvers SET reminders = reminders + 1, reminded_at = now()
+WHERE task_id = $1 AND user_id = ANY($2::uuid[])
+`
+
+type MarkApprovalRemindedParams struct {
+	TaskID  uuid.UUID
+	UserIds []uuid.UUID
+}
+
+func (q *Queries) MarkApprovalReminded(ctx context.Context, arg MarkApprovalRemindedParams) error {
+	_, err := q.db.Exec(ctx, markApprovalReminded, arg.TaskID, arg.UserIds)
+	return err
+}
+
 const markNotified = `-- name: MarkNotified :exec
 UPDATE task_subscribers SET notified_at = now() WHERE task_id = $1 AND user_id = ANY($2::uuid[])
 `
@@ -1991,6 +2120,45 @@ func (q *Queries) NextTaskNumber(ctx context.Context, id uuid.UUID) (int32, erro
 	var column_1 int32
 	err := row.Scan(&column_1)
 	return column_1, err
+}
+
+const resetTaskApprovals = `-- name: ResetTaskApprovals :exec
+UPDATE task_approvers SET state = 'pending', comment = '', decided_at = NULL, requested_at = now(),
+    reminders = 0, reminded_at = NULL
+WHERE task_id = $1
+`
+
+// The task changed (title / description / its attachments): every vote is asked for again.
+func (q *Queries) ResetTaskApprovals(ctx context.Context, taskID uuid.UUID) error {
+	_, err := q.db.Exec(ctx, resetTaskApprovals, taskID)
+	return err
+}
+
+const setApproverVote = `-- name: SetApproverVote :exec
+UPDATE task_approvers SET state = $1::text, comment = $2::text,
+    decided_at = CASE WHEN $1::text = 'pending' THEN NULL ELSE now() END,
+    requested_at = CASE WHEN $1::text = 'pending' THEN now() ELSE requested_at END,
+    reminders = CASE WHEN $1::text = 'pending' THEN 0 ELSE reminders END,
+    reminded_at = CASE WHEN $1::text = 'pending' THEN NULL ELSE reminded_at END
+WHERE task_id = $3 AND user_id = $4
+`
+
+type SetApproverVoteParams struct {
+	State   string
+	Comment string
+	TaskID  uuid.UUID
+	UserID  uuid.UUID
+}
+
+// A vote; pending (withdraw) asks for it again: the reminders start over.
+func (q *Queries) SetApproverVote(ctx context.Context, arg SetApproverVoteParams) error {
+	_, err := q.db.Exec(ctx, setApproverVote,
+		arg.State,
+		arg.Comment,
+		arg.TaskID,
+		arg.UserID,
+	)
+	return err
 }
 
 const setBoardArchived = `-- name: SetBoardArchived :one
@@ -2122,6 +2290,20 @@ func (q *Queries) SetSubscription(ctx context.Context, arg SetSubscriptionParams
 		&i.SeenAt,
 	)
 	return i, err
+}
+
+const setTaskApprovalRequired = `-- name: SetTaskApprovalRequired :exec
+UPDATE tasks SET approval_required = $2, updated_at = now() WHERE id = $1
+`
+
+type SetTaskApprovalRequiredParams struct {
+	ID               uuid.UUID
+	ApprovalRequired int16
+}
+
+func (q *Queries) SetTaskApprovalRequired(ctx context.Context, arg SetTaskApprovalRequiredParams) error {
+	_, err := q.db.Exec(ctx, setTaskApprovalRequired, arg.ID, arg.ApprovalRequired)
+	return err
 }
 
 const setTaskArchived = `-- name: SetTaskArchived :exec

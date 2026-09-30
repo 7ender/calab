@@ -277,11 +277,12 @@ INSERT INTO rooms (workspace_id, type, name, position) VALUES ($1, 'task', $2, 0
 
 -- name: InsertTask :one
 INSERT INTO tasks (board_id, number, title, description, status_id, priority, created_by, estimate,
-                   start_on, due_on, parent_id, milestone_id, position, room_id, started_at, completed_at, completed_by)
+                   start_on, due_on, parent_id, milestone_id, position, room_id, started_at, completed_at, completed_by,
+                   approval_required)
 VALUES (sqlc.arg('board_id'), sqlc.arg('number'), sqlc.arg('title'), sqlc.arg('description'), sqlc.arg('status_id'),
         sqlc.arg('priority'), sqlc.arg('created_by'), sqlc.narg('estimate'), sqlc.narg('start_on'), sqlc.narg('due_on'),
         sqlc.narg('parent_id'), sqlc.narg('milestone_id'), sqlc.arg('position'), sqlc.arg('room_id'),
-        sqlc.narg('started_at'), sqlc.narg('completed_at'), sqlc.narg('completed_by'))
+        sqlc.narg('started_at'), sqlc.narg('completed_at'), sqlc.narg('completed_by'), sqlc.arg('approval_required'))
 RETURNING id;
 
 -- name: GetTaskRow :one
@@ -487,3 +488,52 @@ LIMIT sqlc.arg('lim');
 UPDATE tasks SET archived_at = now(), updated_at = now()
 WHERE id = ANY(sqlc.arg('ids')::uuid[]) AND archived_at IS NULL
 RETURNING id, board_id;
+
+-- ---- approvals (ADR-0049) ----
+
+-- name: ListTaskApprovers :many
+SELECT * FROM task_approvers WHERE task_id = ANY(sqlc.arg('task_ids')::uuid[])
+ORDER BY task_id, added_at, user_id;
+
+-- name: InsertTaskApprover :exec
+-- clock_timestamp: approvers added in one request keep their order (added_at).
+INSERT INTO task_approvers (task_id, user_id, added_by, added_at) VALUES ($1, $2, $3, clock_timestamp())
+ON CONFLICT DO NOTHING;
+
+-- name: DeleteTaskApprovers :exec
+DELETE FROM task_approvers WHERE task_id = $1 AND user_id = ANY(sqlc.arg('user_ids')::uuid[]);
+
+-- name: SetTaskApprovalRequired :exec
+UPDATE tasks SET approval_required = $2, updated_at = now() WHERE id = $1;
+
+-- name: SetApproverVote :exec
+-- A vote; pending (withdraw) asks for it again: the reminders start over.
+UPDATE task_approvers SET state = sqlc.arg('state')::text, comment = sqlc.arg('comment')::text,
+    decided_at = CASE WHEN sqlc.arg('state')::text = 'pending' THEN NULL ELSE now() END,
+    requested_at = CASE WHEN sqlc.arg('state')::text = 'pending' THEN now() ELSE requested_at END,
+    reminders = CASE WHEN sqlc.arg('state')::text = 'pending' THEN 0 ELSE reminders END,
+    reminded_at = CASE WHEN sqlc.arg('state')::text = 'pending' THEN NULL ELSE reminded_at END
+WHERE task_id = sqlc.arg('task_id') AND user_id = sqlc.arg('user_id');
+
+-- name: ResetTaskApprovals :exec
+-- The task changed (title / description / its attachments): every vote is asked for again.
+UPDATE task_approvers SET state = 'pending', comment = '', decided_at = NULL, requested_at = now(),
+    reminders = 0, reminded_at = NULL
+WHERE task_id = $1;
+
+-- name: DueApprovalReminders :many
+-- Votes pending for 24 h since they were asked for or last reminded (≤ 3 reminders), on live
+-- tasks of live boards that are neither finished nor rejected.
+SELECT a.task_id, a.user_id FROM task_approvers a
+JOIN tasks t ON t.id = a.task_id AND t.archived_at IS NULL
+JOIN boards b ON b.id = t.board_id AND b.archived_at IS NULL
+JOIN board_statuses st ON st.id = t.status_id AND st.type NOT IN ('completed', 'cancelled')
+WHERE a.state = 'pending' AND a.reminders < 3
+  AND coalesce(a.reminded_at, a.requested_at) <= now() - interval '24 hours'
+  AND NOT EXISTS (SELECT 1 FROM task_approvers r WHERE r.task_id = a.task_id AND r.state = 'rejected')
+ORDER BY a.task_id, a.user_id
+LIMIT sqlc.arg('lim');
+
+-- name: MarkApprovalReminded :exec
+UPDATE task_approvers SET reminders = reminders + 1, reminded_at = now()
+WHERE task_id = $1 AND user_id = ANY(sqlc.arg('user_ids')::uuid[]);
