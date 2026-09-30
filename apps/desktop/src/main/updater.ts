@@ -30,7 +30,9 @@ import { createUpdateFlow, type NudgeReason, type UpdateFlow } from './updateFlo
  *   MAIN_VITE_UPDATES_SIGNED=1): background download with progress, an accent bar under the
  *   title bar («Доступна версия X — обновление уже загружено · Перезапустить и обновить», docs/09
  *   #125) and a tray item, install on restart or on quit (autoInstallOnAppQuit). A pending
- *   download is re-validated against the feed before install and every 6 h (updateFlow.ts).
+ *   download is re-validated against the feed hourly, before «Перезапустить» and — Windows /
+ *   AppImage — before install-on-quit (`will-quit` held ≤ 3 s; a newer feed → the stale file is not
+ *   installed, the next start fetches the newest; updateFlow.ts).
  * - Otherwise notify only — «Доступна версия X — Скачать» opens `<server>/download/`. When the
  *   update is `installable` (build feed + a platform able to apply it, only the setting is off)
  *   «О программе» offers «Скачать и установить» — the same flow, on request.
@@ -95,6 +97,14 @@ function getFlow(): UpdateFlow {
   return flow;
 }
 
+/** OS shutdown / reboot / logout is under way: the quit must not wait for a feed re-check. */
+let sessionEnding = false;
+
+/** Windows `query-session-end` / `session-end` of the main window (macOS / Linux: powerMonitor 'shutdown'). */
+export function updatesSessionEnding(): void {
+  sessionEnding = true;
+}
+
 /** App start: first check in 10 s, then hourly; re-check after wake / unlock / back online. */
 export function startUpdates(): void {
   // Visual tests fake the status (window.__calabaUpdateStatus); a real check 10 s in would
@@ -104,6 +114,18 @@ export function startUpdates(): void {
   f.start();
   powerMonitor.on('resume', () => f.nudge('resume'));
   powerMonitor.on('unlock-screen', () => f.nudge('unlock'));
+  powerMonitor.on('shutdown', updatesSessionEnding);
+  // Install-on-quit of a pending download: re-check the feed first (≤ 3 s) so a stale file is not
+  // installed when a newer version is out (docs/09 #125). `will-quit` comes after the lifecycle's
+  // `before-quit` (in-call question, tray «Выход», ⌘Q, forceQuit) and after the windows closed, and
+  // before electron-updater's `quit` handler reads autoInstallOnAppQuit. beforeQuit() acts once:
+  // the app.quit() re-issued below passes through (before-quit is then a no-op — already quitting).
+  app.on('will-quit', (e) => {
+    const wait = f.beforeQuit(sessionEnding);
+    if (!wait) return;
+    e.preventDefault();
+    void wait.then(() => app.quit());
+  });
 }
 
 /** Wake / unlock / back online (renderer `online`): a throttled check. No-op before startUpdates(). */

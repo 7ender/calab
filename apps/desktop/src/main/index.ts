@@ -14,7 +14,7 @@ import { applyDevDockIcon } from './icons';
 import { resetPttGate, shutdownPtt } from './ptt';
 import { createTray } from './tray';
 import { installAppMenu } from './appMenu';
-import { startUpdates } from './updater';
+import { startUpdates, updatesSessionEnding } from './updater';
 import { loadResumeVoice } from './resumeVoice';
 import {
   createMainWindow,
@@ -79,7 +79,14 @@ if (process.env['CALABA_FAKE_MEDIA'] === '1') {
 registerApiScheme();
 // Close button hides (the call goes on), ⌘Q / tray «Выход» during a call asks (docs/09 #31).
 installLifecycle();
-setMainWindowHooks({ close: handleMainWindowClose, sessionEnd: forceQuit });
+setMainWindowHooks({
+  close: handleMainWindowClose,
+  // Windows logoff / shutdown: quit without questions, and without holding the quit for an update re-check.
+  sessionEnd: () => {
+    updatesSessionEnding();
+    forceQuit();
+  },
+});
 // Every webContents (main window, stream pop-outs, anything created later) gets the same
 // navigation / window.open / <webview> guards (review L12).
 installWebContentsGuards();

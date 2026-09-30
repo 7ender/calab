@@ -6,11 +6,13 @@ import {
   INSTALL_FRESH_MS,
   INSTALL_RECHECK_TIMEOUT_MS,
   NUDGE_MIN_GAP_MS,
-  PENDING_RECHECK_MS,
   NUDGE_MS,
+  QUIT_FRESH_MS,
+  QUIT_RECHECK_TIMEOUT_MS,
   RECHECK_JITTER_MS,
   RECHECK_MS,
-  canAutoInstall,   createUpdateFlow,
+  canAutoInstall,
+  createUpdateFlow,
   type UpdateFlowEnv,
   type UpdaterLike,
 } from './updateFlow';
@@ -385,23 +387,156 @@ describe('update flow', () => {
       expect(t.updater.installs).toEqual([[false, true]]);
     });
 
-    it('while pending, the periodic check re-reads the feed every 6 h and replaces a stale download', async () => {
+    it('while pending, the hourly check re-reads the feed and replaces a stale download', async () => {
       const t = setup();
       t.updater.next = { version: '0.1.1' };
       t.flow.start();
       await vi.advanceTimersByTimeAsync(FIRST_CHECK_MS);
       t.updater.finishDownload('0.1.1');
-      t.updater.next = { version: '0.1.2' };
-      await vi.advanceTimersByTimeAsync(PENDING_RECHECK_MS - RECHECK_MS);
-      expect(t.updater.checks).toBe(1); // hourly ticks skipped while the pending one is fresh
-      await vi.advanceTimersByTimeAsync(RECHECK_MS);
+      // Same version on the feed: re-checked every hour, the pending download stays.
+      await vi.advanceTimersByTimeAsync(RECHECK_MS - FIRST_CHECK_MS);
       expect(t.updater.checks).toBe(2);
+      expect(t.flow.status()).toEqual({ state: 'downloaded', version: '0.1.1' });
+      expect(t.updater.downloads).toBe(1);
+      // A newer release: the next hourly tick replaces the pending download.
+      t.updater.next = { version: '0.1.2' };
+      await vi.advanceTimersByTimeAsync(RECHECK_MS);
+      expect(t.updater.checks).toBe(3);
       expect(t.flow.status()).toEqual({ state: 'downloading', version: '0.1.2', percent: 0 });
       expect(t.updater.downloads).toBe(2);
       t.updater.finishDownload('0.1.2');
       expect(t.flow.status()).toEqual({ state: 'downloaded', version: '0.1.2' });
+      expect(t.updater.autoInstallOnAppQuit).toBe(true);
       expect(t.updater.installs).toEqual([]); // nobody pressed «Перезапустить»
       t.flow.stop();
+    });
+
+    it('while pending, a nudge finding a newer version replaces the download (the bar shows it)', async () => {
+      const t = setup();
+      t.updater.next = { version: '0.1.1' };
+      t.flow.start();
+      await vi.advanceTimersByTimeAsync(FIRST_CHECK_MS);
+      t.updater.finishDownload('0.1.1');
+      await vi.advanceTimersByTimeAsync(NUDGE_MIN_GAP_MS);
+      t.updater.next = { version: '0.1.3' };
+      t.flow.nudge('resume');
+      await vi.advanceTimersByTimeAsync(NUDGE_MS);
+      expect(t.statuses).toContainEqual({ state: 'available', version: '0.1.3', installable: true });
+      expect(t.flow.status()).toEqual({ state: 'downloading', version: '0.1.3', percent: 0 });
+      t.updater.finishDownload('0.1.3');
+      expect(t.flow.status()).toEqual({ state: 'downloaded', version: '0.1.3' });
+      t.flow.stop();
+    });
+
+    describe('install on quit (beforeQuit)', () => {
+      /** 0.1.1 downloaded, the last check QUIT_FRESH_MS ago. */
+      async function stalePending(opts: Parameters<typeof setup>[0] = {}) {
+        const t = setup(opts);
+        t.updater.next = { version: '0.1.1' };
+        await t.flow.check();
+        t.updater.finishDownload('0.1.1');
+        await vi.advanceTimersByTimeAsync(QUIT_FRESH_MS);
+        return t;
+      }
+
+      it('stale check + a newer feed: holds, re-checks, and does not install the stale file', async () => {
+        const t = await stalePending();
+        t.updater.next = { version: '0.1.3' };
+        const wait = t.flow.beforeQuit(false);
+        expect(wait).not.toBeNull();
+        await wait;
+        expect(t.updater.checks).toBe(2);
+        expect(t.updater.autoInstallOnAppQuit).toBe(false);
+        expect(t.updater.downloads).toBe(1); // no download started on the way out
+        expect(t.updater.installs).toEqual([]);
+        // Acts once: the re-issued quit passes through; nothing turns install-on-quit back on.
+        expect(t.flow.beforeQuit(false)).toBeNull();
+        t.flow.applySettings();
+        expect(t.updater.autoInstallOnAppQuit).toBe(false);
+      });
+
+      it('stale check + the same version on the feed: installs after the re-check', async () => {
+        const t = await stalePending();
+        const wait = t.flow.beforeQuit(false);
+        expect(wait).not.toBeNull();
+        await wait;
+        expect(t.updater.checks).toBe(2);
+        expect(t.updater.autoInstallOnAppQuit).toBe(true);
+      });
+
+      it('fresh check (< QUIT_FRESH_MS): decides at once, no re-check, installs', async () => {
+        const t = setup();
+        t.updater.next = { version: '0.1.1' };
+        await t.flow.check();
+        t.updater.finishDownload('0.1.1');
+        await vi.advanceTimersByTimeAsync(QUIT_FRESH_MS - 1);
+        expect(t.flow.beforeQuit(false)).toBeNull();
+        expect(t.updater.checks).toBe(1);
+        expect(t.updater.autoInstallOnAppQuit).toBe(true);
+      });
+
+      it('a re-check that hangs: installs after QUIT_RECHECK_TIMEOUT_MS', async () => {
+        const t = await stalePending();
+        t.updater.checkForUpdates = () => new Promise(() => undefined);
+        let done = false;
+        void t.flow.beforeQuit(false)?.then(() => (done = true));
+        await vi.advanceTimersByTimeAsync(QUIT_RECHECK_TIMEOUT_MS - 1);
+        expect(done).toBe(false);
+        await vi.advanceTimersByTimeAsync(1);
+        expect(done).toBe(true);
+        expect(t.updater.autoInstallOnAppQuit).toBe(true);
+      });
+
+      it('a failing re-check (offline): installs', async () => {
+        const t = await stalePending();
+        t.updater.next = new Error('offline');
+        await t.flow.beforeQuit(false);
+        expect(t.updater.autoInstallOnAppQuit).toBe(true);
+        expect(t.flow.status()).toEqual({ state: 'downloaded', version: '0.1.1' });
+      });
+
+      it('OS shutdown: never waits; the last known feed version decides', async () => {
+        const t = await stalePending();
+        expect(t.flow.beforeQuit(true)).toBeNull();
+        expect(t.updater.checks).toBe(1);
+        expect(t.updater.autoInstallOnAppQuit).toBe(true);
+
+        // A newer version already known (its replacement download still running) → no install.
+        const u = await stalePending();
+        u.updater.next = { version: '0.1.2' };
+        await u.flow.check();
+        expect(u.flow.status().state).toBe('downloading');
+        expect(u.flow.beforeQuit(true)).toBeNull();
+        expect(u.updater.autoInstallOnAppQuit).toBe(false);
+      });
+
+      it('a newer version already known (replacement downloading): no install, no wait', async () => {
+        const t = await stalePending();
+        t.updater.next = { version: '0.1.2' };
+        await t.flow.check();
+        await vi.advanceTimersByTimeAsync(QUIT_FRESH_MS);
+        const checks = t.updater.checks;
+        expect(t.flow.beforeQuit(false)).toBeNull();
+        expect(t.updater.checks).toBe(checks);
+        expect(t.updater.autoInstallOnAppQuit).toBe(false);
+      });
+
+      it('macOS (Squirrel.Mac installs its staged update itself), nothing downloaded, or «Перезапустить» under way: no wait', async () => {
+        const mac = await stalePending({ platform: 'darwin', signed: true });
+        expect(mac.flow.beforeQuit(false)).toBeNull();
+        expect(mac.updater.checks).toBe(1);
+
+        const none = setup();
+        await none.flow.check();
+        await vi.advanceTimersByTimeAsync(QUIT_FRESH_MS);
+        expect(none.flow.beforeQuit(false)).toBeNull();
+        expect(none.updater.checks).toBe(1);
+
+        const restart = await stalePending();
+        restart.updater.checkForUpdates = () => new Promise(() => undefined);
+        expect(restart.flow.install()).toBe(true); // waiting for its own re-check
+        expect(restart.flow.beforeQuit(false)).toBeNull();
+      });
     });
   });
 
