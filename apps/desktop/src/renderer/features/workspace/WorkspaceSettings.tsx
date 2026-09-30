@@ -6,7 +6,7 @@ import {
 } from '@calaba/protocol';
 import { timestampDate } from '@bufbuild/protobuf/wkt';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { Award, AudioLines, Ban, Music, Bot as BotIcon, Cake, CircleDot, Copy, Gem, Search, Settings2, Shield, Sticker, Trash2, TriangleAlert, Upload, UserPlus, Users, Wallpaper } from 'lucide-react';
+import { Award, AudioLines, Ban, Music, Bot as BotIcon, Cake, CircleDot, Copy, Gem, Search, Settings2, Shield, Sticker, Timer, Trash2, TriangleAlert, Upload, UserPlus, Users, Wallpaper } from 'lucide-react';
 import { useRef, useState, type ReactNode } from 'react';
 import { Avatar } from '../../components/Avatar';
 import { confirmAction } from '../../components/Confirm';
@@ -19,7 +19,8 @@ import { api, thumbnailPath, uploadFile, uploadPath } from '../../lib/api/endpoi
 import { fmt, type TimeFormatPref } from '../../lib/format';
 import { ICON_SIDE, IMAGE_ACCEPT, avatarFile } from '../../lib/image';
 import { workspaceInitials } from '../../lib/initials';
-import { can, mayInviteMembers, mayManageWorkspace, workspacePerms } from '../../lib/permissions';
+import { can, mayArrangeRooms, mayInviteMembers, mayManageWorkspace, workspacePerms } from '../../lib/permissions';
+import { TempRoomsTab } from './TempRoomsTab';
 import { inviteUrl } from '../../services/links';
 import { useSession } from '../../stores/session';
 import { toast } from '../../stores/toasts';
@@ -84,6 +85,7 @@ export function WorkspaceSettingsDialog({
   const manageStickers = can(workspacePerms(myRoles), 'MANAGE_STICKERS');
   // «Приглашения»: INVITE_MEMBERS (ADR-0043), like the server's invite endpoints.
   const inviter = mayInviteMembers(myRoles);
+  const manageRooms = mayArrangeRooms(myRoles);
   const sections: SettingsSection[] = [
     ...(admin
       ? [
@@ -111,6 +113,10 @@ export function WorkspaceSettingsDialog({
     ...(inviter ? [{ id: 'invites', label: t('ws.tabInvites'), icon: UserPlus, content: <InvitesTab workspaceId={workspaceId} roomId={roomId} /> }] : []),
     // «Забаненные» (docs/09 #32): the same right as kicking (MANAGE_WORKSPACE).
     ...(admin ? [{ id: 'bans', label: t('bans.tab'), icon: Ban, content: <BansTab workspaceId={workspaceId} /> }] : []),
+    // «Временные комнаты» (ADR-0044): the members' right (MANAGE_ROLES) and the archive (MANAGE_ROOM).
+    ...(manageRoles || manageRooms
+      ? [{ id: 'temp-rooms', label: t('temp.tab'), icon: Timer, content: <TempRoomsTab workspaceId={workspaceId} manageRoles={manageRoles} manageRooms={manageRooms} /> }]
+      : []),
     ...(owner
       ? [{ id: 'danger', label: t('ws.tabDanger'), icon: TriangleAlert, destructive: true, content: <DangerTab workspaceId={workspaceId} onDone={onClose} /> }]
       : []),

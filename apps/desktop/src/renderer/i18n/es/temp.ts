@@ -70,5 +70,5 @@ export const esTemp = {
   'temp.archivedHint': 'Solo lectura: no se puede escribir ni entrar al audio.',
   'temp.archiveBack': 'Cerrar',
   'temp.memberPick': 'Personas',
-  'temp.archiveMessages': { one: '{n} mensaje', other: '{n} mensajes' },
+  'temp.archiveMessages': { one: '{n} mensaje', many: '{n} mensajes', other: '{n} mensajes' },
 };

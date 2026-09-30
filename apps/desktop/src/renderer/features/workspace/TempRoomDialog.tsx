@@ -75,13 +75,12 @@ export function TempRoomDialog({ workspaceId, onClose }: { workspaceId: string; 
   const [created, setCreated] = useState<Created | null>(null);
 
   const ttl = presetTtl(preset, now, preset === 'date' ? fromLocalInput(until) : undefined);
-  const canCreate = !!name.trim() && ttl !== null && !busy;
 
   const addPeople = useCallback((ids: readonly string[]) => setPeople((p) => [...p, ...ids.filter((id) => !p.includes(id))]), []);
   const removePerson = useCallback((id: string) => setPeople((p) => p.filter((x) => x !== id)), []);
 
   const submit = async (): Promise<void> => {
-    if (!canCreate || ttl === null) return;
+    if (!name.trim() || ttl === null || busy) return;
     setBusy(true);
     setError(null);
     try {
@@ -119,7 +118,7 @@ export function TempRoomDialog({ workspaceId, onClose }: { workspaceId: string; 
           <Button variant="secondary" onClick={onClose}>
             {t('common.cancel')}
           </Button>
-          <Button busy={busy} disabled={!canCreate} onClick={() => void submit()} data-testid="temp-create">
+          <Button busy={busy} disabled={!name.trim() || ttl === null} onClick={() => void submit()} data-testid="temp-create">
             {t('common.create')}
           </Button>
         </>

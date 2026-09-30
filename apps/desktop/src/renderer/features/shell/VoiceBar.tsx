@@ -21,6 +21,7 @@ import { useRooms } from '../../stores/rooms';
 import { useUi } from '../../stores/ui';
 import { setVoice, useVoice, type LinkQuality, type VoicePhase } from '../../stores/voice';
 import { RecordingPill } from '../voice/Recording';
+import { TempExpiry } from '../voice/TempExpiry';
 import { SoundChip, SoundboardButton } from '../voice/Soundboard';
 import { MyStreamAnnot } from '../voice/Annotations';
 import { useBackgroundList, useMemberName, useWorkspaces } from '../../stores/workspaces';
@@ -600,6 +601,8 @@ export function VoiceBar(): ReactNode {
       {/* A recording (docs/09 #30): the red «● Запись · 12:34» pill on a line under the header,
           aligned with its text (36 px square + 8 px); who started it — in the tooltip. */}
       <RecordingPill roomId={roomId} workspaceId={wsId} className="mt-1 pl-11" />
+      {/* A temporary room closing within 10 minutes (ADR-0044): «⏱ 9 мин» and «Продлить». */}
+      {call ? null : <TempExpiry roomId={roomId} workspaceId={wsId} className="mt-1 pl-11" />}
       {/* Soundboard (ADR-0036): «🥁 Ba dum tss · Илья» for 2 s after a sound played in the call. */}
       {call ? null : <SoundChip className="mt-1 pl-11" />}
 
