@@ -208,6 +208,12 @@ export const useUi = create<UiState>()(
   ),
 );
 
+// The workspace modes are exclusive (docs/09 #140): the boards turned on from anywhere (the tab, a
+// board link, «Мои задачи», a task) close the day view — as opening a day turns the boards off.
+useBoardsUi.subscribe((s, prev) => {
+  if (s.active && !prev.active && useUi.getState().calDay !== null) useUi.getState().closeCalendar();
+});
+
 function here(s: Pick<UiState, 'activeWorkspaceId' | 'lastRoom'>): Loc | null {
   return s.activeWorkspaceId ? { ws: s.activeWorkspaceId, room: s.lastRoom[s.activeWorkspaceId] ?? null } : null;
 }

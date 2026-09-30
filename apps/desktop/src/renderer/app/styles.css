@@ -51,6 +51,9 @@
      light (#007aff): sidebar 3.6, popover 3.8, content 4.0, rail 3.3 */
   --color-focus: var(--color-accent);
   --color-on-accent: #ffffff;
+  /* attention (docs/09 #140): orange filled buttons that invite a setup step; dark text 8.2:1 */
+  --color-attention: #ff9f0a;
+  --color-on-attention: #1d1d1f;
   /* warm second stop of the birthday card gradient (accent-strong → this; white text 8.9:1),
      same in both themes */
   --color-birthday-warm: #c2185b;
@@ -196,6 +199,9 @@
   --color-accent: #007aff;
   --color-accent-strong: #0071e3;
   --color-accent-text: #0066cc;
+  /* attention: white text 5.3:1 */
+  --color-attention: #c93400;
+  --color-on-attention: #ffffff;
   --color-green: #1f7a34;
   --color-green-text: #145a26;
   --color-yellow: #a05a00;
@@ -264,6 +270,8 @@
   --color-accent-strong: var(--color-accent-strong);
   --color-accent-text: var(--color-accent-text);
   --color-accent-fg: var(--color-on-accent);
+  --color-attention: var(--color-attention);
+  --color-attention-fg: var(--color-on-attention);
   --color-focus: var(--color-focus);
   --color-ok: var(--color-green);
   --color-warn: var(--color-yellow);

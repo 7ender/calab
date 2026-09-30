@@ -4,8 +4,6 @@ import type { DictShape } from '../types';
 /** Spanish UI strings — task boards (ADR-0042). Same keys and placeholders as ru. */
 export const esBoards: DictShape<typeof ruBoards> = {
   'boards.boards': 'Tableros',
-  'boards.openMode': 'Tableros de tareas',
-  'boards.close': 'Volver a las salas',
   'boards.unreadCount': { one: 'Tableros: {n} tarea sin leer', many: 'Tableros: {n} tareas sin leer', other: 'Tableros: {n} tareas sin leer' },
   'boards.myTasks': 'Mis tareas',
   'boards.newBoard': 'Nuevo tablero',

@@ -32,7 +32,7 @@ export function cx(...c: Array<string | false | null | undefined>): string {
 /** Platform modifier label for shortcuts (⌘ on macOS, Ctrl elsewhere). */
 export const MOD = typeof navigator !== 'undefined' && /Mac OS X|Macintosh/.test(navigator.userAgent) ? '⌘' : 'Ctrl+';
 
-type Variant = 'primary' | 'secondary' | 'destructive' | 'ghost';
+type Variant = 'primary' | 'secondary' | 'destructive' | 'ghost' | 'attention';
 
 const VARIANTS: Record<Variant, string> = {
   primary: 'bg-accent-strong text-accent-fg hover:brightness-110 active:brightness-95',
@@ -41,6 +41,8 @@ const VARIANTS: Record<Variant, string> = {
   // macOS: destructive = red text (docs/08); a faint red tint keeps the text ≥ 4.5:1 on any surface.
   destructive: 'bg-[color-mix(in_srgb,var(--color-danger)_12%,transparent)] text-danger-text hover:bg-[color-mix(in_srgb,var(--color-danger)_18%,transparent)] active:brightness-95',
   ghost: 'bg-transparent text-muted hover:bg-hover hover:text-fg',
+  // An invitation to set something up (docs/08 «Цвета»: orange, e.g. «Подключить свой календарь»).
+  attention: 'bg-attention text-attention-fg hover:brightness-110 active:brightness-95',
 };
 
 export const Button = forwardRef<

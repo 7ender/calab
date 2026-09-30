@@ -785,8 +785,8 @@ test('m-settings-bots', async ({ page }) => {
 test('m-room-new', async ({ page }) => {
   await signedIn(page);
   await page.getByRole('button', { name: 'Комнаты и пространства' }).first().tap();
-  // The workspace header's menu (not the rail icon of the same name).
-  await page.getByTestId('mobile-nav').locator('button[aria-haspopup="menu"]', { hasText: 'Команда Calab' }).tap();
+  // The room column's «+» (docs/09 #140: no longer in the workspace menu).
+  await page.getByTestId('mobile-nav').getByTestId('sidebar-create').tap();
   await page.getByRole('menuitem', { name: 'Создать комнату' }).tap();
   const dialog = page.getByRole('dialog', { name: 'Новая комната' });
   await expect(dialog).toBeVisible();

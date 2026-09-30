@@ -444,7 +444,7 @@ test('invite-email', async ({ open, win, mock, shot }) => {
     locale: '',
   });
   await mainWindow(win, mock);
-  await win.locator('aside').getByRole('button', { name: /Команда Calab/ }).click();
+  await win.getByTestId('titlebar-title').click();
   await win.getByRole('menuitem', { name: 'Настройки пространства' }).click();
   // By name: the tab's position depends on the plan («Тариф» comes before it, ADR-0024).
   await win.getByRole('dialog').getByRole('tab', { name: 'Приглашения' }).click();
@@ -1354,7 +1354,7 @@ test('self-mic-menu', async ({ open, win, mock, shot }) => {
 test('workspace-menu', async ({ open, win, mock, shot }) => {
   await open();
   await mainWindow(win, mock);
-  await win.locator('aside').getByRole('button', { name: /Команда Calab/ }).click();
+  await win.getByTestId('titlebar-title').click();
   await expect(win.getByRole('menu')).toBeVisible();
   await checkpoint(shot, 'workspace-menu');
 });
@@ -1367,8 +1367,8 @@ test('sidebar-create-menu', async ({ open, win, mock, shot }) => {
   const menu = win.getByRole('menu');
   await expect(menu.getByRole('menuitem', { name: 'Создать комнату' })).toBeVisible();
   await expect(menu.getByRole('menuitem', { name: 'Создать категорию' })).toBeVisible();
-  // docs/09 #135: the header's only «+» also adds a meeting and, last, invites to the workspace.
-  await expect(menu.getByRole('menuitem')).toHaveText(['Создать комнату', 'Создать категорию', 'Добавить встречу', 'Пригласить в пространство']);
+  // docs/09 #135 / #140: the header's only «+» also adds a meeting, creates a task and, last, invites to the workspace.
+  await expect(menu.getByRole('menuitem')).toHaveText(['Создать комнату', 'Создать категорию', 'Добавить встречу', 'Создать задачу', 'Пригласить в пространство']);
   await expect(win.locator('aside').getByRole('button', { name: 'Пригласить людей' })).toHaveCount(0);
   await checkpoint(shot, 'sidebar-create-menu');
 });
@@ -1383,7 +1383,7 @@ for (let i = 1; i <= TABS['workspace-settings']; i++) {
     await openSettingsTab(
       win,
       async () => {
-        await win.locator('aside').getByRole('button', { name: /Команда Calab/ }).click();
+        await win.getByTestId('titlebar-title').click();
         await win.getByRole('menuitem', { name: 'Настройки пространства' }).click();
       },
       i,
@@ -1399,7 +1399,7 @@ for (let i = 1; i <= TABS['workspace-settings']; i++) {
 test('settings-members', async ({ open, win, mock, shot }) => {
   await open();
   await mainWindow(win, mock);
-  await win.locator('aside').getByRole('button', { name: /Команда Calab/ }).click();
+  await win.getByTestId('titlebar-title').click();
   await win.getByRole('menuitem', { name: 'Настройки пространства' }).click();
   const dialog = win.getByRole('dialog');
   await dialog.getByRole('tab', { name: 'Участники' }).click();
@@ -1423,7 +1423,7 @@ test('settings-members-birthday', async ({ open, win, mock, shot }) => {
   mock.setBirthday(IDS.users.boris, { day: 3, month: 5, year: 1990 });
   mock.setBirthdayHidden(IDS.users.boris, true);
   mock.setBirthday(IDS.users.grigory, { day: 21, month: 11 });
-  await win.locator('aside').getByRole('button', { name: /Команда Calab/ }).click();
+  await win.getByTestId('titlebar-title').click();
   await win.getByRole('menuitem', { name: 'Настройки пространства' }).click();
   const dialog = win.getByRole('dialog');
   await dialog.getByRole('tab', { name: 'Участники' }).click();
@@ -1452,7 +1452,7 @@ test('settings-roles', async ({ open, win, mock, shot }) => {
   await open();
   await mainWindow(win, mock);
   giveFixtureRoles(mock);
-  await win.locator('aside').getByRole('button', { name: /Команда Calab/ }).click();
+  await win.getByTestId('titlebar-title').click();
   await win.getByRole('menuitem', { name: 'Настройки пространства' }).click();
   const dialog = win.getByRole('dialog');
   await dialog.getByRole('tab', { name: 'Роли' }).click();
@@ -1466,7 +1466,7 @@ test('settings-role-edit', async ({ open, win, mock, shot }) => {
   await open();
   await mainWindow(win, mock);
   giveFixtureRoles(mock);
-  await win.locator('aside').getByRole('button', { name: /Команда Calab/ }).click();
+  await win.getByTestId('titlebar-title').click();
   await win.getByRole('menuitem', { name: 'Настройки пространства' }).click();
   const dialog = win.getByRole('dialog');
   await dialog.getByRole('tab', { name: 'Роли' }).click();
@@ -1488,7 +1488,7 @@ test('settings-plan', async ({ open, win, mock, shot }) => {
   if (!ws) throw new Error('no main workspace');
   ws.plan = create(WorkspacePlanSchema, { plan: Plan.FREE, limits: FREE_PLAN_LIMITS, expired: false });
   mock.dispatch({ event: { case: 'workspaceUpdate', value: { workspace: ws } } });
-  await win.locator('aside').getByRole('button', { name: /Команда Calab/ }).click();
+  await win.getByTestId('titlebar-title').click();
   await win.getByRole('menuitem', { name: 'Настройки пространства' }).click();
   await win.getByRole('dialog').getByRole('tab', { name: 'Тариф' }).click();
   await expect(win.getByTestId('plan-limits')).toBeVisible();
@@ -1504,7 +1504,7 @@ test('settings-plan', async ({ open, win, mock, shot }) => {
 test('settings-gptunnel', async ({ open, win, mock, shot }) => {
   await open();
   await mainWindow(win, mock);
-  await win.locator('aside').getByRole('button', { name: /Команда Calab/ }).click();
+  await win.getByTestId('titlebar-title').click();
   await win.getByRole('menuitem', { name: 'Настройки пространства' }).click();
   const dialog = win.getByRole('dialog');
   await dialog.getByRole('tab', { name: 'GPTunneL' }).click();
@@ -1592,7 +1592,7 @@ test('settings-bans', async ({ open, win, mock, shot }) => {
       createdAt: ts('2026-01-12T16:05:00Z'),
     }),
   ]);
-  await win.locator('aside').getByRole('button', { name: /Команда Calab/ }).click();
+  await win.getByTestId('titlebar-title').click();
   await win.getByRole('menuitem', { name: 'Настройки пространства' }).click();
   await win.getByRole('dialog').getByRole('tab', { name: 'Забаненные' }).click();
   await expect(win.getByTestId('ws-ban-row')).toHaveCount(1);
@@ -2074,7 +2074,7 @@ test('settings-badges', async ({ open, win, mock, shot }) => {
   await open();
   await mainWindow(win, mock);
   giveFixtureBadges(mock);
-  await win.locator('aside').getByRole('button', { name: /Команда Calab/ }).click();
+  await win.getByTestId('titlebar-title').click();
   await win.getByRole('menuitem', { name: 'Настройки пространства' }).click();
   const dialog = win.getByRole('dialog');
   await dialog.getByRole('tab', { name: 'Бейджи' }).click();
@@ -2101,7 +2101,7 @@ test('settings-backgrounds', async ({ open, win, mock, shot }) => {
   await open();
   await mainWindow(win, mock);
   giveFixtureBackgrounds(mock);
-  await win.locator('aside').getByRole('button', { name: /Команда Calab/ }).click();
+  await win.getByTestId('titlebar-title').click();
   await win.getByRole('menuitem', { name: 'Настройки пространства' }).click();
   const dialog = win.getByRole('dialog');
   await dialog.getByRole('tab', { name: 'Фоны камеры' }).click();
@@ -2118,7 +2118,7 @@ test('settings-sounds', async ({ open, win, mock, shot }) => {
   await mainWindow(win, mock);
   mock.addSound(IDS.workspaces.main, 'Фанфары', '🎺');
   mock.addSound(IDS.workspaces.main, 'Ну и ну', '😮');
-  await win.locator('aside').getByRole('button', { name: /Команда Calab/ }).click();
+  await win.getByTestId('titlebar-title').click();
   await win.getByRole('menuitem', { name: 'Настройки пространства' }).click();
   const dialog = win.getByRole('dialog');
   await dialog.getByRole('tab', { name: 'Звуки' }).click();
@@ -3186,7 +3186,7 @@ test('settings-stickers', async ({ open, win, mock, shot }) => {
   await open();
   await win.emulateMedia({ reducedMotion: 'reduce' });
   await mainWindow(win, mock);
-  await win.locator('aside').getByRole('button', { name: /Команда Calab/ }).click();
+  await win.getByTestId('titlebar-title').click();
   await win.getByRole('menuitem', { name: 'Настройки пространства' }).click();
   const dialog = win.getByRole('dialog');
   await dialog.getByRole('tab', { name: 'Стикеры' }).click();
@@ -3209,7 +3209,7 @@ test('settings-stickers-upload', async ({ open, win, mock, shot }) => {
   await open();
   await win.emulateMedia({ reducedMotion: 'reduce' });
   await mainWindow(win, mock);
-  await win.locator('aside').getByRole('button', { name: /Команда Calab/ }).click();
+  await win.getByTestId('titlebar-title').click();
   await win.getByRole('menuitem', { name: 'Настройки пространства' }).click();
   const dialog = win.getByRole('dialog');
   await dialog.getByRole('tab', { name: 'Стикеры' }).click();
@@ -3237,7 +3237,7 @@ test('settings-stickers-emoji', async ({ open, win, mock, shot }) => {
   await open();
   await win.emulateMedia({ reducedMotion: 'reduce' });
   await mainWindow(win, mock);
-  await win.locator('aside').getByRole('button', { name: /Команда Calab/ }).click();
+  await win.getByTestId('titlebar-title').click();
   await win.getByRole('menuitem', { name: 'Настройки пространства' }).click();
   const dialog = win.getByRole('dialog');
   await dialog.getByRole('tab', { name: 'Стикеры' }).click();
@@ -3258,7 +3258,7 @@ test('settings-stickers-emoji', async ({ open, win, mock, shot }) => {
 /** Workspace settings → «Боты» with the two seeded bots (mock.seedBots()). */
 async function botsTab(win: Page, mock: MockServer): Promise<Locator> {
   mock.seedBots();
-  await win.locator('aside').getByRole('button', { name: /Команда Calab/ }).click();
+  await win.getByTestId('titlebar-title').click();
   await win.getByRole('menuitem', { name: 'Настройки пространства' }).click();
   const dialog = win.getByRole('dialog');
   await dialog.getByRole('tab', { name: 'Боты' }).click();

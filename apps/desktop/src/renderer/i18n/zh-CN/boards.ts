@@ -4,8 +4,6 @@ import type { DictShape } from '../types';
 /** Simplified Chinese UI strings — task boards (ADR-0042). Same keys and placeholders as ru. */
 export const zhBoards: DictShape<typeof ruBoards> = {
   'boards.boards': '看板',
-  'boards.openMode': '任务看板',
-  'boards.close': '返回房间',
   'boards.unreadCount': { other: '看板：{n} 个未读任务' },
   'boards.myTasks': '我的任务',
   'boards.newBoard': '新建看板',

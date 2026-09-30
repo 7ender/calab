@@ -5,8 +5,6 @@
 export const ruBoards = {
   // mode, list
   'boards.boards': 'Доски',
-  'boards.openMode': 'Доски задач',
-  'boards.close': 'Вернуться к комнатам',
   'boards.unreadCount': { one: 'Доски: {n} непрочитанная задача', few: 'Доски: {n} непрочитанные задачи', many: 'Доски: {n} непрочитанных задач', other: 'Доски: {n} непрочитанной задачи' },
   'boards.myTasks': 'Мои задачи',
   'boards.newBoard': 'Новая доска',

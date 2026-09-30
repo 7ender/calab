@@ -40,7 +40,7 @@ test('composer picker', async ({ open, win }) => {
 test('sticker emoji chip in settings', async ({ open, win }) => {
   await open();
   await general(win);
-  await win.locator('aside').getByRole('button', { name: /Команда Calab/ }).click();
+  await win.getByTestId('titlebar-title').click();
   await win.getByRole('menuitem', { name: 'Настройки пространства' }).click();
   const dialog = win.getByRole('dialog');
   await dialog.getByRole('tab', { name: 'Стикеры' }).click();

@@ -8,8 +8,12 @@ import type { DictShape } from '../types';
 export const zhShell: DictShape<typeof enShell> = {
   // title bar
   'shell.titlebar': '窗口栏',
+  'shell.modes': '空间模式',
+  'shell.modeVoice': '语音',
+  'shell.modeBoards': '看板',
+  'shell.createTask': '创建任务',
+  'shell.createTaskOn': '选择看板',
   'shell.back': '后退',
-  'shell.forward': '前进',
   'shell.search': '搜索',
   'shell.inbox': '提及',
   'shell.inboxEmpty': '暂无新提及',

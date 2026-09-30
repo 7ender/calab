@@ -17,6 +17,7 @@ import { WorkspaceRail } from './WorkspaceRail';
 import { VerifyBanner } from '../auth/VerifyEmail';
 import { SuspendedBanner } from '../workspace/SuspendedBanner';
 import { UpdateBar } from './UpdateBar';
+import { WorkspaceMenu } from './WorkspaceMenu';
 
 /** A horizontal swipe longer than this (and mostly horizontal) opens / closes a drawer. */
 const SWIPE_PX = 56;
@@ -94,7 +95,12 @@ function MobileTopBar({ workspaceId }: { workspaceId: string | null }): ReactNod
   return (
     <header className="mat-toolbar flex h-12 shrink-0 items-center gap-2 border-b border-line px-2">
       {workspaceId ? <NavButton /> : <span className="w-2" />}
-      <h1 className="min-w-0 truncate text-list font-semibold">{name ?? 'Calab'}</h1>
+      {/* A workspace: its name is the workspace menu, as in the desktop title bar (docs/09 #140). */}
+      {workspaceId && workspaceId !== HOME && name !== undefined ? (
+        <WorkspaceMenu workspaceId={workspaceId} variant="topbar" />
+      ) : (
+        <h1 className="min-w-0 truncate text-list font-semibold">{name ?? 'Calab'}</h1>
+      )}
     </header>
   );
 }

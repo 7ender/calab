@@ -1,17 +1,16 @@
-import { CalendarDays, ChevronLeft, ChevronRight } from 'lucide-react';
+import { ChevronLeft, ChevronRight } from 'lucide-react';
 import { memo, useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore, type KeyboardEvent, type ReactNode } from 'react';
 import { useShallow } from 'zustand/react/shallow';
-import { WorkspaceRole } from '@calaba/protocol';
 import { Tip, cx } from '../../components/ui';
-import { plural, t, useLocale } from '../../i18n';
+import { t, useLocale } from '../../i18n';
 import { busyDays } from '../../lib/calendar/events';
 import { addDays, addMonths, dayEnd, dayKey, dayStart, formatLongDay, formatMonth, monthGrid, monthOf, weekStart, weekdayNames } from '../../lib/calendar/time';
 import { ensureMonth } from '../../services/calendar';
 import { ensureBusy } from '../../services/freebusy';
 import { useCalendar } from '../../stores/calendar';
-import { entryKey, selectPeople, useFreeBusy, type FbEntry } from '../../stores/freebusy';
+import { entryKey, selectMine, selectPeople, useFreeBusy, type FbEntry } from '../../stores/freebusy';
+import { myUserId } from '../../stores/session';
 import { useUi } from '../../stores/ui';
-import { useWorkspaces } from '../../stores/workspaces';
 import { clockFor } from '../shell/voiceFormat';
 import { useDayDrag } from './dragState';
 
@@ -38,61 +37,6 @@ function peopleBusyDays(entries: ReadonlyArray<FbEntry | undefined>, from: numbe
   return [...days].sort();
 }
 
-/** The icon's click (and Enter / Space on it): today's day view with the mini month, or both closed. */
-export function toggleCalendar(): void {
-  const ui = useUi.getState();
-  if (ui.calDay !== null) {
-    ui.closeCalendar();
-    ui.toggleMiniCal(false);
-    return;
-  }
-  ui.setCalMonth(null);
-  useFreeBusy.getState().setFind(null);
-  ui.openCalendarDay(dayKey(Date.now()), null);
-  ui.toggleMiniCal(true);
-}
-
-/**
- * Calendar icon in the room column header (ADR-0038 §7, ADR-0041 §3): the number of my upcoming
- * meetings of today (hidden at 0); a click opens today's day view at once with the mini month under
- * the header, a second click closes both (back to the room). Not for guests. Memo: the header
- * re-renders with the room list on every voice state (tools/perf-call.ts --calendar).
- */
-export const CalendarButton = memo(function CalendarButton({ workspaceId }: { workspaceId: string }): ReactNode {
-  const count = useCalendar((s) => s.todayCount);
-  const open = useUi((s) => s.calDay !== null);
-  const guest = useWorkspaces((s) => s.byId[workspaceId]?.role === WorkspaceRole.GUEST);
-  if (guest) return null;
-  const label = count > 0 ? plural('cal.todayCount', count) : t('cal.open');
-  return (
-    <Tip label={label}>
-      <button
-        type="button"
-        aria-label={label}
-        aria-expanded={open}
-        aria-controls="mini-calendar"
-        data-testid="calendar-button"
-        onClick={toggleCalendar}
-        className={cx(
-          'relative grid size-8 shrink-0 place-items-center rounded-[var(--radius-icon)] transition-colors duration-[var(--motion-fast)] hover:bg-hover hover:text-fg',
-          open ? 'bg-active text-fg' : 'text-muted',
-        )}
-      >
-        <CalendarDays className="size-[18px]" aria-hidden />
-        {count > 0 ? (
-          <span
-            aria-hidden
-            data-testid="calendar-count"
-            className="absolute -right-0.5 -top-0.5 grid h-4 min-w-4 place-items-center rounded-full bg-accent-strong px-1 text-micro font-semibold tabular-nums leading-none text-accent-fg"
-          >
-            {count > 9 ? '9+' : count}
-          </span>
-        ) : null}
-      </button>
-    </Tip>
-  );
-});
-
 /**
  * The mini month under the column header (Apple Calendar): dots on days with meetings, today
  * filled, the selected day raised; ‹ › and «Сегодня»; arrows move the focus (←/→ a day, ↑/↓ a
@@ -116,8 +60,11 @@ export const MiniCalendar = memo(function MiniCalendar({ workspaceId }: { worksp
   useEffect(() => {
     if (people.length) ensureBusy(workspaceId, people, from, to);
   }, [workspaceId, people, from, to]);
-  const busy = useCalendar(useShallow((s) => busyDays(s.occ, workspaceId, from, to, undefined, peopleSet)));
-  const fbBusy = useFreeBusy(useShallow((s) => (peopleSet ? peopleBusyDays(people.map((u) => s.entries[entryKey(workspaceId, u)]), from, to) : NO_DAYS)));
+  // «Только мои» (docs/09 #140): only days of meetings I organize or attend; nobody else's busy time.
+  const mineOn = useFreeBusy(selectMine(workspaceId));
+  const mine = mineOn ? myUserId() : '';
+  const busy = useCalendar(useShallow((s) => busyDays(s.occ, workspaceId, from, to, undefined, peopleSet, mine)));
+  const fbBusy = useFreeBusy(useShallow((s) => (peopleSet && !mineOn ? peopleBusyDays(people.map((u) => s.entries[entryKey(workspaceId, u)]), from, to) : NO_DAYS)));
   const busySet = useMemo(() => new Set([...busy, ...fbBusy]), [busy, fbBusy]);
   const names = useMemo(() => weekdayNames(first), [first, locale]); // eslint-disable-line react-hooks/exhaustive-deps
   const [focusDay, setFocus] = useState<string>(selected ?? today);
