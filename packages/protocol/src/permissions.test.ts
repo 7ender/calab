@@ -192,7 +192,10 @@ describe('roles (ADR-0026)', () => {
     expect(memberRoles(all, ['m']).map((r) => r.id)).toEqual(['m']);
     expect(workspacePermissions(memberRoles(all, ['m', 'a']))).toBe(ALL_PERMISSIONS);
     expect(ALL_PERMISSIONS & PERMISSION_BITS.MANAGE_ROLES).toBe(PERMISSION_BITS.MANAGE_ROLES);
-    expect(ALL_PERMISSIONS).toBe(2097151n);
+    expect(ALL_PERMISSIONS).toBe(8388607n);
+    const invite = PERMISSION_BITS.INVITE_MEMBERS | PERMISSION_BITS.INVITE_GUESTS;
+    expect(invite).toBe(6291456n);
+    expect(ROOM_ONLY_PERMISSIONS & invite).toBe(invite); // ADR-0043: settable per room
     expect(ROOM_ONLY_PERMISSIONS & PERMISSION_BITS.MANAGE_STICKERS).toBe(0n);
     expect(ROOM_ONLY_PERMISSIONS & BOARD_ONLY_PERMISSIONS).toBe(0n);
   });

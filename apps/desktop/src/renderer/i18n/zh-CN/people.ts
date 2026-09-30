@@ -152,6 +152,7 @@ export const zhPeople: DictShape<typeof enPeople> = {
   'people.link.guestsOff': '需要账号',
   'people.link.open': '进入房间',
   'people.link.invalid': '链接无效或已过期',
+  'people.link.membersOnly': '此链接仅限空间成员使用。',
   'people.link.needAccount': '此链接需要账号才能使用',
   'people.link.unreachable': '服务器不可用——请稍后再试',
   'guestInvite.title': '邀请无需注册的访客',

@@ -9,10 +9,12 @@
 | «Только по списку» (`restricted`) приватной комнаты (изменено ADR-0029) | владелец (`workspaces.owner_id`), иначе `403 OWNER_ONLY` | `rooms.update` | `RoomSettings` (owner) |
 | Переопределения комнаты | `MANAGE_ROOM` room; не-админ — только свои биты | `rooms.validateOverrides` | вкладка «Права» |
 | `allow_recording` комнаты | `MANAGE_ROOM` room + `MANAGE_WORKSPACE` ws | `rooms.update` | `mayManageWorkspace` |
-| Ссылка-приглашение в комнату (гости) | `MANAGE_ROOM` room; не-админ — не шире своих | `guests.manage` | `roomMenuGroups` (voice + canManage) |
-| Подтверждение входа гостей: настройка комнаты / ссылки (ADR-0040) | `MANAGE_ROOM` room | `rooms.update`, `guests.update` | — (клиент — отдельная задача) |
-| Пустить / отклонить гостя, имя и бейдж при допуске (ADR-0040) | `MANAGE_ROOM` room или автор ссылки (не гость); бот — только `GET` | `guests.loadDecider`, `decider.may` | — |
-| Настройки, медиа, инвайты, email-инвайты, баны, GPTunneL | `MANAGE_WORKSPACE` ws; тариф: `members` (инвайты, вход), `audio_tier_max_kbps` (медиа) | `requireManage`, `recording`, `plans.Check` | `mayManageWorkspace`, `useMembersCap` |
+| Ссылка-приглашение в комнату (гости): создать / список / отозвать (ADR-0043) | `INVITE_GUESTS` room (не гость); не-админ — не шире своих | `guests.linkAccess` | `mayInviteGuestsIn`, `roomMenuGroups` (voice + inviteRoom) |
+| Ссылка комнаты «только для участников» (ADR-0043) | `INVITE_MEMBERS` или `INVITE_GUESTS` room; вход — только участник (не гость), иначе 403 `INVITE_MEMBERS_ONLY` | `guests.linkAccess`, `guests.grant` | `mayInviteToRoom`, `InviteToRoomDialog` |
+| Подтверждение входа гостей: настройка комнаты / ссылки (ADR-0040) | комната — `MANAGE_ROOM` room; ссылка — `INVITE_GUESTS` room | `rooms.update`, `guests.update` | `RoomLinkTab` |
+| Пустить / отклонить гостя, имя и бейдж при допуске (ADR-0040) | `INVITE_GUESTS` room (не гость) или автор ссылки (не гость); бот — только `GET` | `guests.loadDecider`, `decider.may`, шлюз `RoomAdmission*` | — (только решающим приходят «стуки») |
+| Инвайты и email-инвайты в пространство (ADR-0043) | `INVITE_MEMBERS` ws, подтверждённый не-гостевой аккаунт | `requireInvite`, `inviter` | `mayInviteMembers` |
+| Настройки, медиа, баны, GPTunneL | `MANAGE_WORKSPACE` ws; тариф: `members` (инвайты, вход), `audio_tier_max_kbps` (медиа) | `requireManage`, `recording`, `plans.Check` | `mayManageWorkspace`, `useMembersCap` |
 | Пригласить админом по email | владелец | `createEmailInvite` | `EmailInvite` (owner) |
 | Исключить / забанить / встроенная роль | `MANAGE_WORKSPACE` ws + иерархия: не владельца, админа — только владелец, цель ниже моей старшей роли | `workspaces.outranks` | `canRemoveMember` |
 | Гость → участник | `MANAGE_WORKSPACE` ws | `promote` | `memberActions.promote` |
@@ -47,7 +49,7 @@
 | Свободно/занято, подбор времени (ADR-0041) | не гость, не бот; о ком спрашивают — участники (не гости, не боты) того же пространства; `event_id` — только видимой встречи этого пространства | `calendar.busyViewer`, `calendar.people`, `viewer.sees` | — |
 | Внешний календарь CalDAV (ADR-0041) | свой аккаунт; не гость, не бот | `caldav.person` | — |
 | Ответить на встречу | участник встречи; внешний — подписанной ссылкой без входа | `calendar.rsvp`, `calendar.publicAnswer` | — |
-| Гостевая ссылка встречи для внешнего | делается от имени организатора, если у него `MANAGE_ROOM` room (не шире его прав) | `calendar.linkBits` | `event.guest_links` |
+| Гостевая ссылка встречи для внешнего | делается от имени организатора, если у него `INVITE_GUESTS` room (не шире его прав) | `calendar.linkBits` | `event.guest_links` |
 | Саммари, аудио, транскрипт записи (docs/09 #47) | `VIEW_ROOM` room (карточка — сообщение комнаты; аудио — вложение; ограниченная — только допущенные) | `files.CanRead`, `recording.transcript` | — |
 | Переслать сообщение / карточку записи (ADR-0033) | `VIEW_ROOM` в источнике (restricted — можно), `SEND_MESSAGES` в цели (+ `ATTACH_FILES` для вложений; DM — участник); копия даёт читателям цели файлы и транскрипт, её удаление — отзывает | `messages.forward`, `files.CanRead`, `recording.visibleRecording` | MessageMenu, ForwardDialog |
 | «Заметки» (ADR-0039): полки — создать (≤ 20) / переименовать / эмодзи / порядок / удалить; сообщения, файлы, закрепы, поиск в полке; пересылка в полку и из неё | владелец полки (набор DM); чужая полка — 404; боты и гостевые аккаунты — 403; файлы — личная квота (`413 PERSONAL_QUOTA`); голос/звонок в полке — 404 | `notes.*`, `perm.Resolver` (`Notes`), `files.uploadDM`, `rtc` | `NotesSection`, `NotesHeader`, ForwardDialog |

@@ -34,10 +34,14 @@ message RoomInvite {
   // arriving by this link wait for a decision; false = they come in at once. Meeting guest
   // links are made unset.
   optional bool require_approval = 17;
+  // Members-only link (ADR-0043): gives members of the workspace (not guests) access to the
+  // room; anyone else is refused (403 INVITE_MEMBERS_ONLY). allow_guests is false then.
+  bool members_only = 18;
 }
 
-// POST /api/rooms/{id}/invites (MANAGE_ROOM). Unset fields take the defaults:
-// 7 days, unlimited uses, allow_guests true, speak true, messages true, files false, stream false.
+// POST /api/rooms/{id}/invites: INVITE_GUESTS in the room; a members_only link also with
+// INVITE_MEMBERS there (ADR-0043). Unset fields take the defaults: 7 days, unlimited uses,
+// allow_guests true, speak true, messages true, files false, stream false.
 message CreateRoomInviteRequest {
   optional uint32 expires_in_seconds = 1; // 0 = never; ≤ 365 days
   uint32 max_uses = 2;
@@ -47,13 +51,14 @@ message CreateRoomInviteRequest {
   optional bool allow_files = 6;
   optional bool allow_stream = 7;
   optional bool require_approval = 8; // unset = as the room (ADR-0040)
+  bool members_only = 9; // ADR-0043: only for members of the workspace; forces allow_guests false
 }
 
 message CreateRoomInviteResponse {
   RoomInvite invite = 1;
 }
 
-// PATCH /api/rooms/{id}/invites/{invite_id} (MANAGE_ROOM): the link's approval setting
+// PATCH /api/rooms/{id}/invites/{invite_id} (INVITE_GUESTS): the link's approval setting
 // (ADR-0040). inherit_approval true resets it to the room's (require_approval must then be
 // unset); otherwise require_approval, when set, overrides the room for this link.
 message UpdateRoomInviteRequest {
@@ -65,7 +70,8 @@ message UpdateRoomInviteResponse {
   RoomInvite invite = 1;
 }
 
-// GET /api/rooms/{id}/invites (MANAGE_ROOM): active links.
+// GET /api/rooms/{id}/invites: active links — all with INVITE_GUESTS in the room, only the
+// members_only ones with INVITE_MEMBERS alone (ADR-0043).
 message ListRoomInvitesResponse {
   repeated RoomInvite invites = 1;
 }
@@ -84,6 +90,8 @@ message GetRoomInviteResponse {
   // Guests arriving by this link wait for the organizer's approval (ADR-0040): the link's
   // require_approval, else the room's guest_approval. Members of the workspace never wait.
   bool requires_approval = 8;
+  // Only members of the workspace may use the link (ADR-0043).
+  bool members_only = 9;
 }
 
 // POST /api/room-invites/{code}/join. With an access token: joins as the current user.

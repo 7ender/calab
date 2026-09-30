@@ -152,6 +152,7 @@ export const enPeople: DictShape<typeof ruPeople> = {
   'people.link.guestsOff': 'account required',
   'people.link.open': 'Join room',
   'people.link.invalid': 'The link is invalid or has expired',
+  'people.link.membersOnly': 'This link is for members of the workspace only.',
   'people.link.needAccount': 'This link requires an account',
   'people.link.unreachable': 'The server is unavailable — try again later',
   'guestInvite.title': 'Invite a guest without an account',

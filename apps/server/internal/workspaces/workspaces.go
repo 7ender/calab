@@ -138,6 +138,19 @@ func requireManage(r *http.Request) (uuid.UUID, perm.Role, error) {
 	return wsID, role, nil
 }
 
+// requireInvite: the caller may invite members to the workspace (INVITE_MEMBERS, ADR-0043) —
+// invite links, e-mail invitations, adding an account.
+func requireInvite(r *http.Request) (uuid.UUID, perm.Role, error) {
+	wsID, bits, role, err := access(r)
+	if err != nil {
+		return uuid.Nil, "", err
+	}
+	if !bits.Has(perm.InviteMembers) || role == perm.RoleGuest { // guests never invite (ADR-0043)
+		return uuid.Nil, "", httpx.Forbidden("INVITE_MEMBERS required")
+	}
+	return wsID, role, nil
+}
+
 // Snapshot builds the workspace state as seen by userID (rooms filtered by VIEW_ROOM), with
 // the plan from pl (nil = unset). Voice states and presences are filled in by the gateway.
 func Snapshot(ctx context.Context, q *sqlc.Queries, pl *plans.Service, ws sqlc.Workspace, userID uuid.UUID, me perm.Member) (*v1.WorkspaceSnapshot, error) {
@@ -839,7 +852,7 @@ func (h *Handlers) createInvite(w http.ResponseWriter, r *http.Request) error {
 }
 
 func (h *Handlers) listInvites(w http.ResponseWriter, r *http.Request) error {
-	wsID, _, err := requireManage(r)
+	wsID, _, err := requireInvite(r)
 	if err != nil {
 		return err
 	}
@@ -856,7 +869,7 @@ func (h *Handlers) listInvites(w http.ResponseWriter, r *http.Request) error {
 }
 
 func (h *Handlers) deleteInvite(w http.ResponseWriter, r *http.Request) error {
-	wsID, _, err := requireManage(r)
+	wsID, _, err := requireInvite(r)
 	if err != nil {
 		return err
 	}

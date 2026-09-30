@@ -424,3 +424,120 @@ func TestRolesGatewayAndGrants(t *testing.T) {
 	grant("microphone back after the delete", mic)
 	webhook(t, whEvent("participant_left", roomName, j.GetIdentity(), nil), "secret")
 }
+
+// Invite rights (ADR-0043) apply at once, without a re-login: assigning a role, editing its
+// bits and a room override reach the affected user's gateway (WORKSPACE_MEMBER_UPDATE with the
+// new role ids, ROLE_UPDATE with the new bits, ROOM_PERMISSIONS_UPDATE) and the next request is
+// judged by them. Members-only room links admit members of the workspace only.
+func TestInviteRightsApplyLive(t *testing.T) {
+	o, bob, ws, _ := setupTeam(t)
+	wid := ws.GetId()
+	bg := dialGW(t)
+	bg.identify(bob.token)
+	wsInvite := func() int {
+		return bob.do("POST", "/api/workspaces/"+wid+"/invites", &v1.CreateInviteRequest{MaxUses: 1}, nil)
+	}
+	if st := wsInvite(); st != 403 {
+		t.Fatalf("member invites without INVITE_MEMBERS: %d", st)
+	}
+
+	// Assigning a role with INVITE_MEMBERS: bob's session gets his new role ids, the right works.
+	hr := newRole(t, o, wid, "hr", perm.InviteMembers)
+	if st, _ := setMemberRoles(o, wid, bob.id, hr.GetId()); st != 200 {
+		t.Fatalf("assign: %d", st)
+	}
+	bg.wait("WORKSPACE_MEMBER_UPDATE with the role", func(e *v1.DispatchEvent) bool {
+		m := e.GetWorkspaceMemberUpdate().GetMember()
+		return m.GetUser().GetId() == bob.id && slices.Contains(m.GetRoleIds(), hr.GetId())
+	})
+	if st := wsInvite(); st != 201 {
+		t.Fatalf("invite after the role was assigned: %d", st)
+	}
+
+	// Editing the role's bits: ROLE_UPDATE carries them, the right is gone at once.
+	none := uint64(0)
+	o.must(200, "PATCH", "/api/workspaces/"+wid+"/roles/"+hr.GetId(), &v1.UpdateRoleRequest{Permissions: &none}, nil)
+	bg.wait("ROLE_UPDATE without INVITE_MEMBERS", func(e *v1.DispatchEvent) bool {
+		r := e.GetRoleUpdate().GetRole()
+		return r.GetId() == hr.GetId() && r.GetPermissions() == 0
+	})
+	if st := wsInvite(); st != 403 {
+		t.Fatalf("invite after the role lost the bit: %d", st)
+	}
+
+	// A room override: INVITE_GUESTS in one room only; MANAGE_ROOM alone does not give it.
+	vid := voiceRoom(t, o, wid, "v2", 0)
+	guestLink := func(room string, membersOnly bool) int {
+		return bob.do("POST", "/api/rooms/"+room+"/invites", &v1.CreateRoomInviteRequest{MembersOnly: membersOnly}, nil)
+	}
+	setOv := func(room string, ovs ...*v1.RoomPermissionOverride) {
+		o.must(200, "PUT", "/api/rooms/"+room+"/permissions", &v1.SetRoomPermissionsRequest{Overrides: ovs}, nil)
+		bg.wait("ROOM_PERMISSIONS_UPDATE", func(e *v1.DispatchEvent) bool { return e.GetRoomPermissionsUpdate().GetRoomId() == room })
+	}
+	setOv(vid, userOv(bob.id, perm.ManageRoom, 0))
+	if st := guestLink(vid, false); st != 403 {
+		t.Fatalf("guest link with MANAGE_ROOM only: %d", st)
+	}
+	setOv(vid, userOv(bob.id, perm.InviteGuests, 0))
+	if st := guestLink(vid, false); st != 201 {
+		t.Fatalf("guest link with the room override: %d", st)
+	}
+	var list v1.ListRoomInvitesResponse
+	bob.must(200, "GET", "/api/rooms/"+vid+"/invites", nil, &list)
+	if len(list.GetInvites()) != 1 {
+		t.Fatalf("links: %v", list.GetInvites())
+	}
+
+	// Members-only links: a private room bob sees with INVITE_MEMBERS there (no INVITE_GUESTS).
+	member := builtinRole(t, o, wid, v1.WorkspaceRole_WORKSPACE_ROLE_MEMBER)
+	pid := voiceRoom(t, o, wid, "private", 0)
+	setOv(pid, roleOv(member.GetId(), 0, perm.ViewRoom), userOv(bob.id, perm.ViewRoom|perm.Connect|perm.Speak|perm.InviteMembers, 0))
+	if st := guestLink(pid, false); st != 403 {
+		t.Fatalf("guest link with INVITE_MEMBERS only: %d", st)
+	}
+	yes := true
+	if st := bob.do("POST", "/api/rooms/"+pid+"/invites", &v1.CreateRoomInviteRequest{MembersOnly: true, AllowGuests: &yes}, nil); st != 422 {
+		t.Fatalf("members-only link that admits guests: %d", st)
+	}
+	var mo v1.CreateRoomInviteResponse
+	bob.must(201, "POST", "/api/rooms/"+pid+"/invites", &v1.CreateRoomInviteRequest{MembersOnly: true}, &mo)
+	if inv := mo.GetInvite(); !inv.GetMembersOnly() || inv.GetAllowGuests() {
+		t.Fatalf("members-only link: %v", inv)
+	}
+	// bob lists only members-only links there; the owner's guest link stays hidden, and bob
+	// cannot change or revoke it.
+	var og v1.CreateRoomInviteResponse
+	o.must(201, "POST", "/api/rooms/"+pid+"/invites", &v1.CreateRoomInviteRequest{}, &og)
+	bob.must(200, "GET", "/api/rooms/"+pid+"/invites", nil, &list)
+	if len(list.GetInvites()) != 1 || list.GetInvites()[0].GetId() != mo.GetInvite().GetId() {
+		t.Fatalf("bob's links: %v", list.GetInvites())
+	}
+	bob.must(404, "DELETE", "/api/rooms/"+pid+"/invites/"+og.GetInvite().GetId(), nil, nil)
+	bob.must(403, "PATCH", "/api/rooms/"+pid+"/invites/"+og.GetInvite().GetId(), &v1.UpdateRoomInviteRequest{RequireApproval: &yes}, nil)
+
+	// A member without access comes in by it; an outsider is refused (and not made a guest).
+	code := mo.GetInvite().GetCode()
+	carol := register(t, invite(t, o, wid))
+	if _, st := roomPerms(t, carol, pid); st != 404 {
+		t.Fatalf("carol sees the private room before: %d", st)
+	}
+	carol.must(200, "POST", "/api/room-invites/"+code+"/join", &v1.JoinRoomInviteRequest{}, nil)
+	if bits, st := roomPerms(t, carol, pid); st != 200 || !perm.Bits(bits).Has(perm.ViewRoom) {
+		t.Fatalf("carol after the members-only link: %d %d", st, bits)
+	}
+	outsider := register(t, invite(t, o, createWorkspace(t, o, v1.WorkspaceVisibility_WORKSPACE_VISIBILITY_PRIVATE).GetId()))
+	if st := outsider.do("POST", "/api/room-invites/"+code+"/join", &v1.JoinRoomInviteRequest{}, nil); st != 403 {
+		t.Fatalf("outsider by a members-only link: %d", st)
+	}
+	if r, _ := errReason(outsider.client); r != "INVITE_MEMBERS_ONLY" {
+		t.Fatalf("reason %q", r)
+	}
+	var ms v1.ListMembersResponse
+	o.must(200, "GET", "/api/workspaces/"+wid+"/members", nil, &ms)
+	for _, m := range ms.GetMembers() {
+		if m.GetUser().GetId() == outsider.id {
+			t.Fatal("the outsider became a member")
+		}
+	}
+	bob.must(204, "DELETE", "/api/rooms/"+pid+"/invites/"+mo.GetInvite().GetId(), nil, nil)
+}
