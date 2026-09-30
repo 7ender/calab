@@ -39,6 +39,11 @@
 #              every file in them 200 with the size from the yml, sha512 recomputed ON the stand, latest/VERSION
 #              and the five latest/<stable name> files (stable versions only), the GitHub
 #              Release published (not a draft)
+#   verify ∥ desktop  (default when both steps run; RELEASE_SERIAL=1 = the old order verify → desktop):
+#              the tag is pushed right after deploy and verify runs while release.yml builds (~8 min, verify
+#              ~3 min). If verify fails after the tag: the release.yml run is cancelled unless publish-s3 has
+#              already started (then the update feed is LIVE — said loudly), the GitHub Release stays a
+#              draft, no announce; the tag stays on origin (release the next version, or delete it by hand)
 #   announce   only when nothing failed and CALAB_RELEASE_BOT_TOKEN is set (else skipped): the bot posts the
 #              CHANGELOG section of $VERSION (from <commit>) into the «what's new» room —
 #              tools/release-announce.py; nonce release-$VERSION, so a re-run never double-posts. After
@@ -142,7 +147,7 @@ if step web; then
     (cd "$WORK/src" && pnpm install --frozen-lockfile)
     echo "$COMMIT" > "$WORK/src/.release-commit"
   fi
-  (cd "$WORK/src" && pnpm -F @calaba/desktop build:web)
+  (cd "$WORK/src" && VERSION="$VERSION" pnpm -F @calaba/desktop build:web)
   [[ -f "$WORK/src/apps/desktop/dist-web/index.html" ]] && ok "dist-web built" || { bad "dist-web missing"; exit 1; }
   if [[ -n "$LAND" ]]; then
     log "build landing ($COMMIT)"
@@ -162,13 +167,12 @@ if step deploy; then
     infra/docker/sync.sh
 fi
 
-# --- verify ----------------------------------------------------------------------------------------
-if step verify; then
+# --- verify (a function: runs before desktop, or while release.yml builds — see the end) -------------
+SRC_DIR="$WORK/src"
+have_export() { [[ -d "$SRC_DIR/node_modules" && "$(cat "$SRC_DIR/.release-commit" 2>/dev/null)" == "$COMMIT" ]]; }
+run_verify() {
   log "verify v$VERSION ($COMMIT)"
-  SRC_DIR="$WORK/src"
-  if [[ ! -d "$SRC_DIR/node_modules" || "$(cat "$SRC_DIR/.release-commit" 2>/dev/null)" != "$COMMIT" ]]; then
-    bad "no export of $COMMIT in $SRC_DIR (run the web step first)"; exit 1
-  fi
+  have_export || { bad "no export of $COMMIT in $SRC_DIR (run the web step first)"; exit 1; }
   sleep 10
   # 1. health + build info on both domains (.ai via IP), readiness inside
   for d in "$D1" "$D2"; do
@@ -301,36 +305,64 @@ if step verify; then
   fi
   backup >/dev/null && ok "backup AFTER deploy" || bad "backup after deploy failed"
   on_stand 'docker stats --no-stream --format "{{.Name}} {{.CPUPerc}} {{.MemUsage}}" | grep calaba' | sed 's/^/        /'
-fi
+}
 
 # --- desktop: tag → release.yml (GitHub Actions) → S3 → RELEASES_HOST -------------------------------
-if step desktop; then
+# desktop_tag: tag + push + find the release.yml run of the tag (→ $run); desktop_finish: wait for it, check
+# the feed, publish the GitHub Release draft. Split so that verify can run in between (end of the file).
+run=""
+desktop_tag() {
   log "desktop v$VERSION via GitHub Actions ($REPO)"
-  if (( FAILS )); then
-    log "NOT tagging: $FAILS check(s) failed"
-  else
-    git rev-parse -q --verify "refs/tags/v$VERSION" >/dev/null || git tag -a "v$VERSION" "$COMMIT" -m "Calab $VERSION"
-    [[ "$(git rev-parse --short "v$VERSION^{commit}")" == "$COMMIT" ]] || { bad "local tag v$VERSION does not point at $COMMIT"; exit 1; }
-    git push origin "refs/tags/v$VERSION" && ok "pushed tag v$VERSION → $COMMIT"
-    run=""
-    for _ in $(seq 1 30); do   # the tag-push run shows up within seconds; give it 5 min
-      run=$(gh run list --repo "$REPO" --workflow release.yml --event push --branch "v$VERSION" --limit 1 --json databaseId --jq '.[0].databaseId // empty' 2>/dev/null || true)
-      [[ -n "$run" ]] && break; sleep 10
-    done
+  git rev-parse -q --verify "refs/tags/v$VERSION" >/dev/null || git tag -a "v$VERSION" "$COMMIT" -m "Calab $VERSION"
+  [[ "$(git rev-parse --short "v$VERSION^{commit}")" == "$COMMIT" ]] || { bad "local tag v$VERSION does not point at $COMMIT"; exit 1; }
+  git push origin "refs/tags/v$VERSION" && ok "pushed tag v$VERSION → $COMMIT"
+  for _ in $(seq 1 30); do   # the tag-push run shows up within seconds; give it 5 min
+    run=$(gh run list --repo "$REPO" --workflow release.yml --event push --branch "v$VERSION" --limit 1 --json databaseId --jq '.[0].databaseId // empty' 2>/dev/null || true)
+    [[ -n "$run" ]] && break; sleep 10
+  done
+  [[ -n "$run" ]] && ok "release.yml run $run started for v$VERSION" || true
+}
+
+# verify failed after the tag was pushed: stop the desktop publication if it has not reached the feed yet
+verify_failed_after_tag() {
+  local s3="" st=""
+  printf '\n!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!\n'
+  printf '!!  verify FAILED (%s check(s)) — tag v%s is ALREADY on origin\n' "$FAILS" "$VERSION"
+  if [[ -n "$run" ]]; then
+    st=$(gh run view "$run" --repo "$REPO" --json status --jq .status 2>/dev/null || echo unknown)
+    s3=$(gh run view "$run" --repo "$REPO" --json jobs --jq '[.jobs[]|select(.name=="publish-s3")|.status+"/"+.conclusion][0] // "not started"' 2>/dev/null || echo unknown)
+    if [[ "$s3" == in_progress/* || "$s3" == completed/success ]]; then
+      printf '!!  release.yml run %s: %s, publish-s3: %s — the update feed may ALREADY serve v%s:\n' "$run" "$st" "$s3" "$VERSION"
+      printf '!!  https://%s/latest*.yml — decide: roll forward with a fix release, or restore the previous feed\n' "$REL"
+    elif [[ "$st" == completed ]]; then
+      printf '!!  release.yml run %s already finished without publishing (publish-s3: %s): feed unchanged\n' "$run" "$s3"
+    elif gh run cancel "$run" --repo "$REPO" >/dev/null 2>&1; then
+      printf '!!  release.yml run %s CANCELLED before publish-s3 (%s): the update feed is unchanged\n' "$run" "$s3"
+    else
+      printf '!!  could NOT cancel release.yml run %s (publish-s3: %s) — cancel it by hand NOW:\n' "$run" "$s3"
+      printf '!!    gh run cancel %s --repo %s\n' "$run" "$REPO"
+    fi
+  fi
+  printf '!!  GitHub Release v%s stays a DRAFT, nothing is announced. Fix and release the next version\n' "$VERSION"
+  printf '!!  (or drop the tag: git push origin :refs/tags/v%s && git tag -d v%s)\n' "$VERSION" "$VERSION"
+  printf '!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!\n'
+}
+
+desktop_finish() {
     if [[ -z "$run" ]]; then
       bad "no release.yml run for tag v$VERSION"
     else
       # Poll instead of `gh run watch`: one API hiccup (TLS handshake timeout through a VPN) made
-      # `watch` exit non-zero while the run was still going (0.7.0). Up to 10 failed polls in a row
-      # are tolerated; the run itself has no time limit here (mac notarization takes ~40–60 min).
+      # `watch` exit non-zero while the run was still going (0.7.0). Up to 30 failed polls in a row
+      # (~10 min) are tolerated; the run itself has no time limit here (mac notarization ~5–60 min).
       st="" errs=0
       while :; do
         if st=$(gh run view "$run" --repo "$REPO" --json status,conclusion --jq '.status + " " + .conclusion' 2>>"$WORK.actions.log"); then
           errs=0; [[ "$st" == completed* ]] && break
         else
-          errs=$((errs + 1)); (( errs >= 10 )) && { st="unknown (10 failed polls)"; break; }
+          errs=$((errs + 1)); (( errs >= 30 )) && { st="unknown (30 failed polls)"; break; }
         fi
-        sleep 60
+        sleep 20   # a release run takes ~8 min: a 60 s poll wasted ~30 s on average
       done
       if [[ "$st" == "completed success" ]]; then
         ok "release.yml run $run: all jobs green"
@@ -405,6 +437,31 @@ PY
     fi
     rel=$(gh release view "v$VERSION" --repo "$REPO" --json isDraft,isPrerelease,assets --jq '"draft=\(.isDraft) prerelease=\(.isPrerelease) assets=\(.assets|length)"' 2>/dev/null || echo "absent")
     [[ "$rel" == draft=false* ]] && ok "GitHub Release v$VERSION: $rel" || bad "GitHub Release v$VERSION: $rel"
+}
+
+# --- verify + desktop ------------------------------------------------------------------------------
+# Default (both steps, no RELEASE_SERIAL): the tag goes out right after deploy and verify (~3 min) runs
+# while release.yml builds (~8 min), so verify costs no wall time. The GitHub Release stays a draft and
+# nothing is announced unless verify passed; a verify failure cancels the run before it reaches the feed.
+if step verify && step desktop && [[ -z "${RELEASE_SERIAL:-}" ]]; then
+  if (( FAILS )); then
+    log "NOT tagging: $FAILS check(s) failed before verify"
+    run_verify
+  else
+    have_export || { bad "no export of $COMMIT in $SRC_DIR (run the web step first)"; exit 1; }   # before the tag
+    desktop_tag
+    run_verify
+    if (( FAILS )); then
+      verify_failed_after_tag
+    else
+      log "verify passed — waiting for release.yml run ${run:-?} (v$VERSION)"
+      desktop_finish
+    fi
+  fi
+else
+  if step verify; then run_verify; fi
+  if step desktop; then
+    if (( FAILS )); then log "NOT tagging: $FAILS check(s) failed"; else desktop_tag; desktop_finish; fi
   fi
 fi
 

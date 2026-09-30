@@ -108,8 +108,11 @@ type RoomInvite struct {
 	// arriving by this link wait for a decision; false = they come in at once. Meeting guest
 	// links are made unset.
 	RequireApproval *bool `protobuf:"varint,17,opt,name=require_approval,json=requireApproval,proto3,oneof" json:"require_approval,omitempty"`
-	unknownFields   protoimpl.UnknownFields
-	sizeCache       protoimpl.SizeCache
+	// Members-only link (ADR-0043): gives members of the workspace (not guests) access to the
+	// room; anyone else is refused (403 INVITE_MEMBERS_ONLY). allow_guests is false then.
+	MembersOnly   bool `protobuf:"varint,18,opt,name=members_only,json=membersOnly,proto3" json:"members_only,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
 }
 
 func (x *RoomInvite) Reset() {
@@ -261,8 +264,16 @@ func (x *RoomInvite) GetRequireApproval() bool {
 	return false
 }
 
-// POST /api/rooms/{id}/invites (MANAGE_ROOM). Unset fields take the defaults:
-// 7 days, unlimited uses, allow_guests true, speak true, messages true, files false, stream false.
+func (x *RoomInvite) GetMembersOnly() bool {
+	if x != nil {
+		return x.MembersOnly
+	}
+	return false
+}
+
+// POST /api/rooms/{id}/invites: INVITE_GUESTS in the room; a members_only link also with
+// INVITE_MEMBERS there (ADR-0043). Unset fields take the defaults: 7 days, unlimited uses,
+// allow_guests true, speak true, messages true, files false, stream false.
 type CreateRoomInviteRequest struct {
 	state            protoimpl.MessageState `protogen:"open.v1"`
 	ExpiresInSeconds *uint32                `protobuf:"varint,1,opt,name=expires_in_seconds,json=expiresInSeconds,proto3,oneof" json:"expires_in_seconds,omitempty"` // 0 = never; ≤ 365 days
@@ -273,6 +284,7 @@ type CreateRoomInviteRequest struct {
 	AllowFiles       *bool                  `protobuf:"varint,6,opt,name=allow_files,json=allowFiles,proto3,oneof" json:"allow_files,omitempty"`
 	AllowStream      *bool                  `protobuf:"varint,7,opt,name=allow_stream,json=allowStream,proto3,oneof" json:"allow_stream,omitempty"`
 	RequireApproval  *bool                  `protobuf:"varint,8,opt,name=require_approval,json=requireApproval,proto3,oneof" json:"require_approval,omitempty"` // unset = as the room (ADR-0040)
+	MembersOnly      bool                   `protobuf:"varint,9,opt,name=members_only,json=membersOnly,proto3" json:"members_only,omitempty"`                   // ADR-0043: only for members of the workspace; forces allow_guests false
 	unknownFields    protoimpl.UnknownFields
 	sizeCache        protoimpl.SizeCache
 }
@@ -363,6 +375,13 @@ func (x *CreateRoomInviteRequest) GetRequireApproval() bool {
 	return false
 }
 
+func (x *CreateRoomInviteRequest) GetMembersOnly() bool {
+	if x != nil {
+		return x.MembersOnly
+	}
+	return false
+}
+
 type CreateRoomInviteResponse struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	Invite        *RoomInvite            `protobuf:"bytes,1,opt,name=invite,proto3" json:"invite,omitempty"`
@@ -407,7 +426,7 @@ func (x *CreateRoomInviteResponse) GetInvite() *RoomInvite {
 	return nil
 }
 
-// PATCH /api/rooms/{id}/invites/{invite_id} (MANAGE_ROOM): the link's approval setting
+// PATCH /api/rooms/{id}/invites/{invite_id} (INVITE_GUESTS): the link's approval setting
 // (ADR-0040). inherit_approval true resets it to the room's (require_approval must then be
 // unset); otherwise require_approval, when set, overrides the room for this link.
 type UpdateRoomInviteRequest struct {
@@ -506,7 +525,8 @@ func (x *UpdateRoomInviteResponse) GetInvite() *RoomInvite {
 	return nil
 }
 
-// GET /api/rooms/{id}/invites (MANAGE_ROOM): active links.
+// GET /api/rooms/{id}/invites: active links — all with INVITE_GUESTS in the room, only the
+// members_only ones with INVITE_MEMBERS alone (ADR-0043).
 type ListRoomInvitesResponse struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	Invites       []*RoomInvite          `protobuf:"bytes,1,rep,name=invites,proto3" json:"invites,omitempty"`
@@ -566,8 +586,10 @@ type GetRoomInviteResponse struct {
 	// Guests arriving by this link wait for the organizer's approval (ADR-0040): the link's
 	// require_approval, else the room's guest_approval. Members of the workspace never wait.
 	RequiresApproval bool `protobuf:"varint,8,opt,name=requires_approval,json=requiresApproval,proto3" json:"requires_approval,omitempty"`
-	unknownFields    protoimpl.UnknownFields
-	sizeCache        protoimpl.SizeCache
+	// Only members of the workspace may use the link (ADR-0043).
+	MembersOnly   bool `protobuf:"varint,9,opt,name=members_only,json=membersOnly,proto3" json:"members_only,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
 }
 
 func (x *GetRoomInviteResponse) Reset() {
@@ -652,6 +674,13 @@ func (x *GetRoomInviteResponse) GetNotBefore() *timestamppb.Timestamp {
 func (x *GetRoomInviteResponse) GetRequiresApproval() bool {
 	if x != nil {
 		return x.RequiresApproval
+	}
+	return false
+}
+
+func (x *GetRoomInviteResponse) GetMembersOnly() bool {
+	if x != nil {
+		return x.MembersOnly
 	}
 	return false
 }
@@ -1088,7 +1117,7 @@ var File_calaba_v1_invite_proto protoreflect.FileDescriptor
 
 const file_calaba_v1_invite_proto_rawDesc = "" +
 	"\n" +
-	"\x16calaba/v1/invite.proto\x12\tcalaba.v1\x1a\x1fgoogle/protobuf/timestamp.proto\x1a\x14calaba/v1/auth.proto\x1a\x14calaba/v1/room.proto\x1a\x14calaba/v1/user.proto\"\xfa\x04\n" +
+	"\x16calaba/v1/invite.proto\x12\tcalaba.v1\x1a\x1fgoogle/protobuf/timestamp.proto\x1a\x14calaba/v1/auth.proto\x1a\x14calaba/v1/room.proto\x1a\x14calaba/v1/user.proto\"\x9d\x05\n" +
 	"\n" +
 	"RoomInvite\x12\x0e\n" +
 	"\x02id\x18\x01 \x01(\tR\x02id\x12\x17\n" +
@@ -1114,8 +1143,9 @@ const file_calaba_v1_invite_proto_rawDesc = "" +
 	"\n" +
 	"not_before\x18\x0f \x01(\v2\x1a.google.protobuf.TimestampR\tnotBefore\x12\x19\n" +
 	"\bevent_id\x18\x10 \x01(\tR\aeventId\x12.\n" +
-	"\x10require_approval\x18\x11 \x01(\bH\x00R\x0frequireApproval\x88\x01\x01B\x13\n" +
-	"\x11_require_approval\"\xe0\x03\n" +
+	"\x10require_approval\x18\x11 \x01(\bH\x00R\x0frequireApproval\x88\x01\x01\x12!\n" +
+	"\fmembers_only\x18\x12 \x01(\bR\vmembersOnlyB\x13\n" +
+	"\x11_require_approval\"\x83\x04\n" +
 	"\x17CreateRoomInviteRequest\x121\n" +
 	"\x12expires_in_seconds\x18\x01 \x01(\rH\x00R\x10expiresInSeconds\x88\x01\x01\x12\x19\n" +
 	"\bmax_uses\x18\x02 \x01(\rR\amaxUses\x12&\n" +
@@ -1126,7 +1156,8 @@ const file_calaba_v1_invite_proto_rawDesc = "" +
 	"\vallow_files\x18\x06 \x01(\bH\x04R\n" +
 	"allowFiles\x88\x01\x01\x12&\n" +
 	"\fallow_stream\x18\a \x01(\bH\x05R\vallowStream\x88\x01\x01\x12.\n" +
-	"\x10require_approval\x18\b \x01(\bH\x06R\x0frequireApproval\x88\x01\x01B\x15\n" +
+	"\x10require_approval\x18\b \x01(\bH\x06R\x0frequireApproval\x88\x01\x01\x12!\n" +
+	"\fmembers_only\x18\t \x01(\bR\vmembersOnlyB\x15\n" +
 	"\x13_expires_in_secondsB\x0f\n" +
 	"\r_allow_guestsB\x0e\n" +
 	"\f_allow_speakB\x11\n" +
@@ -1143,7 +1174,7 @@ const file_calaba_v1_invite_proto_rawDesc = "" +
 	"\x18UpdateRoomInviteResponse\x12-\n" +
 	"\x06invite\x18\x01 \x01(\v2\x15.calaba.v1.RoomInviteR\x06invite\"J\n" +
 	"\x17ListRoomInvitesResponse\x12/\n" +
-	"\ainvites\x18\x01 \x03(\v2\x15.calaba.v1.RoomInviteR\ainvites\"\x88\x03\n" +
+	"\ainvites\x18\x01 \x03(\v2\x15.calaba.v1.RoomInviteR\ainvites\"\xab\x03\n" +
 	"\x15GetRoomInviteResponse\x12\x1b\n" +
 	"\troom_name\x18\x01 \x01(\tR\broomName\x120\n" +
 	"\troom_type\x18\x02 \x01(\x0e2\x13.calaba.v1.RoomTypeR\broomType\x12%\n" +
@@ -1154,7 +1185,8 @@ const file_calaba_v1_invite_proto_rawDesc = "" +
 	"expires_at\x18\x06 \x01(\v2\x1a.google.protobuf.TimestampR\texpiresAt\x129\n" +
 	"\n" +
 	"not_before\x18\a \x01(\v2\x1a.google.protobuf.TimestampR\tnotBefore\x12+\n" +
-	"\x11requires_approval\x18\b \x01(\bR\x10requiresApproval\"T\n" +
+	"\x11requires_approval\x18\b \x01(\bR\x10requiresApproval\x12!\n" +
+	"\fmembers_only\x18\t \x01(\bR\vmembersOnly\"T\n" +
 	"\x15JoinRoomInviteRequest\x12\x1a\n" +
 	"\bnickname\x18\x01 \x01(\tR\bnickname\x12\x1f\n" +
 	"\vdevice_name\x18\x02 \x01(\tR\n" +

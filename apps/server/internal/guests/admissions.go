@@ -2,7 +2,7 @@ package guests
 
 // Guest admission, the «waiting room» of room links (ADR-0040). A guest arriving by a link
 // that requires approval becomes a `guest` member without the room's override and knocks
-// (room_admissions, pending); a decider — MANAGE_ROOM in the room, or the author of the link —
+// (room_admissions, pending); a decider — INVITE_GUESTS in the room, or the author of the link —
 // admits (the override is written as the link would have) or declines. Nobody answering
 // within 30 minutes declines the knock (the sweeper, every 30 s).
 
@@ -140,7 +140,7 @@ func OwnAdmissions(ctx context.Context, q *sqlc.Queries, userID uuid.UUID) ([]*v
 }
 
 // FillAdmissions adds to each snapshot of a READY the pending knocks the recipient decides:
-// on rooms where they hold MANAGE_ROOM (Permissions of the snapshot), or by their links.
+// on rooms where they hold INVITE_GUESTS (Permissions of the snapshot), or by their links.
 func FillAdmissions(ctx context.Context, q *sqlc.Queries, userID uuid.UUID, snaps []*v1.WorkspaceSnapshot) error {
 	if len(snaps) == 0 {
 		return nil
@@ -174,7 +174,7 @@ func FillAdmissions(ctx context.Context, q *sqlc.Queries, userID uuid.UUID, snap
 			continue
 		}
 		bits := perm.Bits(sn.GetPermissions()[r.RoomAdmission.RoomID.String()])
-		if bits.Has(perm.ManageRoom) || (r.InviteCreatedBy != nil && *r.InviteCreatedBy == userID) {
+		if bits.Has(perm.InviteGuests) || (r.InviteCreatedBy != nil && *r.InviteCreatedBy == userID) {
 			sn.Admissions = append(sn.Admissions, admissionPB(r.RoomAdmission, *r.WorkspaceID, r.User, r.InviteCreatedBy))
 		}
 	}
@@ -283,7 +283,7 @@ func (s *Service) publishOverrides(ctx context.Context, wsID, roomID uuid.UUID) 
 	}})
 }
 
-// decider checks that the caller may decide on knocks of roomID: MANAGE_ROOM there, or (when
+// decider checks that the caller may decide on knocks of roomID: INVITE_GUESTS there, or (when
 // inviteBy is the caller) the author of the link, still a member of the workspace.
 type decider struct {
 	caller uuid.UUID
@@ -300,7 +300,7 @@ func loadDecider(r *http.Request, roomID uuid.UUID) (decider, error) {
 	if err != nil {
 		return decider{}, err
 	}
-	return decider{caller: caller, acc: acc, manage: acc.Bits.Has(perm.ManageRoom)}, nil
+	return decider{caller: caller, acc: acc, manage: acc.Role != perm.RoleGuest && acc.Bits.Has(perm.InviteGuests)}, nil
 }
 
 func (d decider) may(inviteBy *uuid.UUID) bool {
@@ -318,7 +318,7 @@ func (s *Service) listAdmissions(w http.ResponseWriter, r *http.Request) error {
 		return err
 	}
 	if !d.manage {
-		// Without MANAGE_ROOM only the author of a link of the room decides (on its knocks).
+		// Without INVITE_GUESTS only the author of a link of the room decides (on its knocks).
 		n, err := s.db.Q.CountUserRoomInvites(r.Context(), sqlc.CountUserRoomInvitesParams{RoomID: roomID, CreatedBy: d.caller})
 		if err != nil {
 			return err
@@ -327,7 +327,7 @@ func (s *Service) listAdmissions(w http.ResponseWriter, r *http.Request) error {
 			if !d.acc.Bits.Has(perm.ViewRoom) {
 				return httpx.NotFound("room")
 			}
-			return httpx.Forbidden("MANAGE_ROOM required")
+			return httpx.Forbidden("INVITE_GUESTS required")
 		}
 	}
 	rows, err := s.db.Q.ListRoomPendingAdmissions(r.Context(), roomID)
@@ -412,7 +412,7 @@ func (s *Service) decide(w http.ResponseWriter, r *http.Request) error {
 			if d.manage {
 				return httpx.NotFound("admission")
 			}
-			return httpx.Forbidden("MANAGE_ROOM required")
+			return httpx.Forbidden("INVITE_GUESTS required")
 		}
 		if err != nil {
 			return err
@@ -428,7 +428,7 @@ func (s *Service) decide(w http.ResponseWriter, r *http.Request) error {
 			}
 		}
 		if !d.may(inviteBy) {
-			return httpx.Forbidden("MANAGE_ROOM required")
+			return httpx.Forbidden("INVITE_GUESTS required")
 		}
 		if adm.Status != statusPending {
 			return httpx.Conflict("the knock is no longer pending")

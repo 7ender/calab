@@ -14,7 +14,7 @@ import { myUserId, useSession } from '../stores/session';
 import { activeRoomId, useUi } from '../stores/ui';
 import { useVoice } from '../stores/voice';
 import { rolesOf, useWorkspaces } from '../stores/workspaces';
-import { resyncLoadedRooms, resyncPins } from './chat';
+import { resyncLoadedRooms, resyncPins, retryFailedLoads } from './chat';
 import { queryClient } from '../lib/queryClient';
 import { bansKey } from '../lib/moderation';
 import { applyDm, applyDmState, refreshDmPreview, refreshDms } from './dms';
@@ -50,6 +50,9 @@ import {
 import { applyReadyAdmissions, onAdmissionEvent } from '../features/guests/services/admissions';
 import { applyBoardEvent, applySnapshotBoards, dropWorkspaceBoards, onBoardsReady, restoreTaskRooms } from './boards';
 import { isTaskRoom } from '../stores/rooms';
+import { onRoomArchived } from '../lib/api/client';
+import { isTempRoom } from '../lib/tempRooms';
+import { roomClosedToast } from './roomClosed';
 
 /** «печатает» lives 5 s after the last TYPING_START: senders repeat it every 3 s while typing (services/chat.ts), so a stuck indicator (a lost stop, a closed tab) fades fast (docs/09 #64). */
 export const TYPING_MS = 5000;
@@ -72,6 +75,34 @@ function openAdminRoute(superadmin: boolean): void {
 }
 
 /** Applies one gateway DISPATCH event to the stores. */
+/**
+ * ROOM_DELETE: deleted, or hidden from me by a role / override change — or a temporary room closed
+ * (ADR-0044: deleted, expired, or found archived by a 410). Its participants are no longer «in
+ * voice» for me (the server stops sending their states for a room I cannot see); the chat falls
+ * back to the workspace's default room (AppShell). A temporary room I was in (voice or its open
+ * chat) says «Комната закрыта».
+ */
+export function removeRoom(workspaceId: string, roomId: string): void {
+  const room = useRooms.getState().byId[roomId];
+  const ui = useUi.getState();
+  const inVoice = voice.currentRoomId === roomId;
+  if (room && isTempRoom(room) && (inVoice || (ui.activeWorkspaceId === workspaceId && ui.lastRoom[workspaceId] === roomId))) roomClosedToast(roomId);
+  useRooms.getState().remove(roomId);
+  useWorkspaces.getState().clearRoomVoice(workspaceId, roomId);
+  useMessages.getState().unload(roomId);
+  dropRecordings((r) => r === roomId);
+  useInbox.getState().removeRooms((id) => id !== roomId);
+  if (inVoice) void voice.leave();
+}
+
+// A request about a live room answered 410 ROOM_ARCHIVED (a temporary room closed meanwhile, the
+// event missed): drop it like ROOM_DELETE. The archive view reads such rooms on purpose — they are
+// not in the live list, so nothing happens there.
+onRoomArchived((roomId) => {
+  const room = useRooms.getState().byId[roomId];
+  if (room) removeRoom(room.workspaceId, roomId);
+});
+
 export function applyDispatch(ev: DispatchEvent): void {
   const e = ev.event;
   switch (e.case) {
@@ -127,6 +158,7 @@ export function applyDispatch(ev: DispatchEvent): void {
       const msgs = useMessages.getState();
       for (const id of Object.keys(msgs.rooms)) if (!(id in alive)) msgs.unload(id);
       void resyncLoadedRooms();
+      void retryFailedLoads(); // a room left on «Не удалось загрузить» (docs/09 #146)
       void resyncPins();
       // Recordings (ADR-0025): the server's state replaces ours (REC, «Остановить запись»).
       resetRecordings(r.workspaces);
@@ -155,6 +187,7 @@ export function applyDispatch(ev: DispatchEvent): void {
     case 'resumed':
       log.info(`gateway resumed, replayed ${e.value.replayed}`);
       voice.checkSeat();
+      void retryFailedLoads(); // a room left on «Не удалось загрузить» (docs/09 #146)
       return;
     case 'workspaceCreate': {
       const snap = e.value.snapshot;
@@ -281,17 +314,9 @@ export function applyDispatch(ev: DispatchEvent): void {
         if (e.value.room.id === voice.currentRoomId) voice.refreshRights();
       }
       return;
-    case 'roomDelete': {
-      useRooms.getState().remove(e.value.roomId);
-      // Deleted, or hidden from me by a role / override change: its participants are no longer
-      // «in voice» for me (the server stops sending their states for a room I cannot see).
-      useWorkspaces.getState().clearRoomVoice(e.value.workspaceId, e.value.roomId);
-      useMessages.getState().unload(e.value.roomId);
-      dropRecordings((room) => room === e.value.roomId);
-      useInbox.getState().removeRooms((id) => id !== e.value.roomId);
-      if (voice.currentRoomId === e.value.roomId) void voice.leave();
+    case 'roomDelete':
+      removeRoom(e.value.workspaceId, e.value.roomId);
       return;
-    }
     case 'roomPermissionsUpdate':
       useRooms.getState().setOverrides(e.value.roomId, e.value.permissions);
       if (e.value.roomId === voice.currentRoomId) voice.refreshRights();

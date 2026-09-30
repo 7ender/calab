@@ -13,6 +13,7 @@ import { api, thumbnailPath } from '../../lib/api/endpoints';
 import { fmt } from '../../lib/format';
 import { startDm } from '../../services/dms';
 import { LocalTime } from './LocalTime';
+import { ClientVersion } from './ClientVersion';
 import { BirthdayInfo } from './Birthday';
 import { isGuest, rolesOf, useMemberName, useMemberRoles, useRoleLook, useWorkspaces } from '../../stores/workspaces';
 import { useSession } from '../../stores/session';
@@ -169,6 +170,7 @@ export function ProfileDialog({
                 </div>
               ) : null}
               <LocalTime userId={userId} variant="line" />
+              {u.isBot ? null : <ClientVersion userId={userId} />}
               <BirthdayInfo userId={userId} variant="line" />
               <EditBirthday workspaceId={workspaceId} userId={userId} />
               <EditBadge workspaceId={workspaceId} userId={userId} />

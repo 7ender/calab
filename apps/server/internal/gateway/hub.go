@@ -539,7 +539,7 @@ func (h *Hub) routeLocked(st *wsState, wid, id uuid.UUID, ev *v1.DispatchEvent) 
 		*v1.DispatchEvent_EventRsvp, *v1.DispatchEvent_RoomEventActive, *v1.DispatchEvent_RoomEventEnded:
 		h.routeCalendar(st, sessions, view, id, ev)
 	case *v1.DispatchEvent_RoomAdmissionRequest, *v1.DispatchEvent_RoomAdmissionDecided:
-		// Guest admission (ADR-0040): to the room's deciders — MANAGE_ROOM there, or the
+		// Guest admission (ADR-0040): to the room's deciders — INVITE_GUESTS there (not guests), or the
 		// author of the link the guest came by. The guest gets DECIDED on their user channel.
 		a := ev.GetRoomAdmissionRequest().GetAdmission()
 		if a == nil {
@@ -547,7 +547,7 @@ func (h *Hub) routeLocked(st *wsState, wid, id uuid.UUID, ev *v1.DispatchEvent) 
 		}
 		rid, author := parseID(a.GetRoomId()), parseID(a.GetInviteCreatedBy())
 		for _, s := range sessions {
-			if st.bits(rid, s.user).Has(perm.ManageRoom) || (author != uuid.Nil && s.user == author && st.role(s.user) != perm.RoleGuest) {
+			if st.role(s.user) != perm.RoleGuest && (st.bits(rid, s.user).Has(perm.InviteGuests) || (author != uuid.Nil && s.user == author)) {
 				s.dispatchEnc(id, shared)
 			}
 		}
@@ -955,7 +955,7 @@ func (h *Hub) TouchBot(_ context.Context, id auth.Identity) {
 	go func() { //nolint:gosec // G118: presence outlives the request that reported it
 		ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
 		defer cancel()
-		if err := h.pres.set(ctx, id.UserID, id.SessionID, v1.PresenceStatus_PRESENCE_STATUS_ONLINE); err != nil {
+		if err := h.pres.set(ctx, id.UserID, id.SessionID, v1.PresenceStatus_PRESENCE_STATUS_ONLINE, clientInfo{}); err != nil {
 			return
 		}
 		h.publishPresence(ctx, id.UserID)

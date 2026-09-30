@@ -119,7 +119,7 @@ func (q *Queries) ClaimEventRoomSignal(ctx context.Context, arg ClaimEventRoomSi
 const createEventRoomInvite = `-- name: CreateEventRoomInvite :one
 INSERT INTO room_invites (room_id, code, created_by, expires_at, max_uses, allow_guests, allow_bits, not_before, event_id)
 VALUES ($1, $2, $3, $4, 1, true, $5, $6, $7)
-RETURNING id, room_id, code, created_by, expires_at, max_uses, uses, allow_guests, allow_bits, revoked_at, created_at, not_before, event_id, require_approval
+RETURNING id, room_id, code, created_by, expires_at, max_uses, uses, allow_guests, allow_bits, revoked_at, created_at, not_before, event_id, require_approval, members_only
 `
 
 type CreateEventRoomInviteParams struct {
@@ -158,6 +158,7 @@ func (q *Queries) CreateEventRoomInvite(ctx context.Context, arg CreateEventRoom
 		&i.NotBefore,
 		&i.EventID,
 		&i.RequireApproval,
+		&i.MembersOnly,
 	)
 	return i, err
 }
@@ -198,6 +199,43 @@ DELETE FROM event_room_signals WHERE event_room_signals.sent_at < $1
 func (q *Queries) DeleteOldEventSignals(ctx context.Context, before time.Time) error {
 	_, err := q.db.Exec(ctx, deleteOldEventSignals, before)
 	return err
+}
+
+const endEventAt = `-- name: EndEventAt :one
+UPDATE events SET ends_at = $1, sequence = sequence + 1, updated_at = now()
+WHERE id = $2 AND cancelled_at IS NULL AND starts_at < $1 AND ends_at > $1
+RETURNING id, workspace_id, room_id, title, description, starts_at, ends_at, all_day, tz, organizer_id, record, rrule, until_at, sequence, created_at, updated_at, cancelled_at
+`
+
+type EndEventAtParams struct {
+	At time.Time
+	ID uuid.UUID
+}
+
+// A running one-off meeting ends at `at` (its room closed).
+func (q *Queries) EndEventAt(ctx context.Context, arg EndEventAtParams) (Event, error) {
+	row := q.db.QueryRow(ctx, endEventAt, arg.At, arg.ID)
+	var i Event
+	err := row.Scan(
+		&i.ID,
+		&i.WorkspaceID,
+		&i.RoomID,
+		&i.Title,
+		&i.Description,
+		&i.StartsAt,
+		&i.EndsAt,
+		&i.AllDay,
+		&i.Tz,
+		&i.OrganizerID,
+		&i.Record,
+		&i.Rrule,
+		&i.UntilAt,
+		&i.Sequence,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+		&i.CancelledAt,
+	)
+	return i, err
 }
 
 const getEvent = `-- name: GetEvent :one
@@ -259,7 +297,7 @@ func (q *Queries) GetEventForUpdate(ctx context.Context, id uuid.UUID) (Event, e
 }
 
 const getRoomInvite = `-- name: GetRoomInvite :one
-SELECT id, room_id, code, created_by, expires_at, max_uses, uses, allow_guests, allow_bits, revoked_at, created_at, not_before, event_id, require_approval FROM room_invites WHERE id = $1
+SELECT id, room_id, code, created_by, expires_at, max_uses, uses, allow_guests, allow_bits, revoked_at, created_at, not_before, event_id, require_approval, members_only FROM room_invites WHERE id = $1
 `
 
 func (q *Queries) GetRoomInvite(ctx context.Context, id uuid.UUID) (RoomInvite, error) {
@@ -280,6 +318,7 @@ func (q *Queries) GetRoomInvite(ctx context.Context, id uuid.UUID) (RoomInvite, 
 		&i.NotBefore,
 		&i.EventID,
 		&i.RequireApproval,
+		&i.MembersOnly,
 	)
 	return i, err
 }
@@ -722,6 +761,58 @@ type ListRoomEventsNearParams struct {
 // badge of the snapshots of a READY, ADR-0038 §6).
 func (q *Queries) ListRoomEventsNear(ctx context.Context, arg ListRoomEventsNearParams) ([]Event, error) {
 	rows, err := q.db.Query(ctx, listRoomEventsNear, arg.WorkspaceIds, arg.To, arg.From)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []Event{}
+	for rows.Next() {
+		var i Event
+		if err := rows.Scan(
+			&i.ID,
+			&i.WorkspaceID,
+			&i.RoomID,
+			&i.Title,
+			&i.Description,
+			&i.StartsAt,
+			&i.EndsAt,
+			&i.AllDay,
+			&i.Tz,
+			&i.OrganizerID,
+			&i.Record,
+			&i.Rrule,
+			&i.UntilAt,
+			&i.Sequence,
+			&i.CreatedAt,
+			&i.UpdatedAt,
+			&i.CancelledAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listRoomLiveEvents = `-- name: ListRoomLiveEvents :many
+SELECT id, workspace_id, room_id, title, description, starts_at, ends_at, all_day, tz, organizer_id, record, rrule, until_at, sequence, created_at, updated_at, cancelled_at FROM events
+WHERE room_id = $1 AND cancelled_at IS NULL AND rrule IS NULL AND ends_at > $2
+ORDER BY starts_at
+FOR UPDATE
+`
+
+type ListRoomLiveEventsParams struct {
+	RoomID *uuid.UUID
+	Now    time.Time
+}
+
+// One-off meetings of a room that have not ended at `now` (ADR-0044: a temporary room closes
+// them).
+func (q *Queries) ListRoomLiveEvents(ctx context.Context, arg ListRoomLiveEventsParams) ([]Event, error) {
+	rows, err := q.db.Query(ctx, listRoomLiveEvents, arg.RoomID, arg.Now)
 	if err != nil {
 		return nil, err
 	}

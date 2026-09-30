@@ -115,3 +115,15 @@ Standalone helpers: `verifyWebhookSignature(secret, rawBody, header)`, `signWebh
 
 `pnpm -F @calaba/bot-sdk test` — against an in-process fake server (`test/fake-server.ts`: REST table +
 the real binary gateway protocol on loopback), no network.
+
+
+### Inline buttons
+
+`send(roomId, { text, inlineKeyboard: { rows: [{ buttons: [{ id: 'confirm', label: 'Confirm', data: 'draft:42:v3' }] }], allowedUserIds: [authorId] } })`
+attaches an author-bound keyboard. `edit(messageId, { inlineKeyboard: { rows: [] } })`
+removes it without changing text. `edit(messageId, { text, inlineKeyboard })` updates
+both atomically; a text-only edit preserves the keyboard and changes its revision. `bot.on('callback', c => …)`
+receives the generated `BotCallback` type over gateway or webhook. Persist and dedupe `c.id`
+and revalidate your current draft version and author before external effects. Data is public,
+never a secret; acceptance is not completion. For delivery guarantees and REST fields see
+[Bot API](../../docs/19-bot-api.en.md#inline-buttons-adr-0047).

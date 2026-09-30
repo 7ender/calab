@@ -13,6 +13,10 @@ export type Dialog =
   /** `roomId`: opened from a room («Пригласить», docs/09 #55) — the invites tab leads with its guest link. */
   | { kind: 'workspace-settings'; workspaceId: string; tab?: string; roomId?: string }
   | { kind: 'room-create'; workspaceId: string; voice: boolean; categoryId?: string }
+  /** «Временная комната» (ADR-0044): name, lifetime, visibility, guests, meeting → the link. */
+  | { kind: 'temp-room-create'; workspaceId: string }
+  /** «Продлить › До даты…» of a temporary room. */
+  | { kind: 'temp-room-extend'; roomId: string }
   | { kind: 'room-settings'; roomId: string; tab?: string }
   | { kind: 'settings'; tab?: string }
   | { kind: 'stream-picker' }
@@ -47,6 +51,9 @@ export interface EventDraftInit {
   attendees?: readonly string[];
   /** Copy everything else from this occurrence («Дублировать»). */
   copyOf?: string;
+  /** «Создать встречу в Calab» from an external event (ADR-0045 §3): its title, and the addresses of its attendees who are not members here. */
+  title?: string;
+  outside?: readonly string[];
 }
 
 interface UiState {
@@ -207,6 +214,12 @@ export const useUi = create<UiState>()(
     },
   ),
 );
+
+// The workspace modes are exclusive (docs/09 #140): the boards turned on from anywhere (the tab, a
+// board link, «Мои задачи», a task) close the day view — as opening a day turns the boards off.
+useBoardsUi.subscribe((s, prev) => {
+  if (s.active && !prev.active && useUi.getState().calDay !== null) useUi.getState().closeCalendar();
+});
 
 function here(s: Pick<UiState, 'activeWorkspaceId' | 'lastRoom'>): Loc | null {
   return s.activeWorkspaceId ? { ws: s.activeWorkspaceId, room: s.lastRoom[s.activeWorkspaceId] ?? null } : null;

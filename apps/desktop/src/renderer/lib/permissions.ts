@@ -54,6 +54,79 @@ export function mayManageWorkspace(roles: readonly RoleBits[] | undefined): bool
   return can(workspacePerms(roles), 'MANAGE_WORKSPACE');
 }
 
+/**
+ * Invitations (ADR-0043) — separate bits, not implied by MANAGE_WORKSPACE / MANAGE_ROOM; guests
+ * never (the server refuses them regardless of overrides).
+ * - workspace INVITE_MEMBERS: invite links, e-mail invitations, the «Приглашения» tab;
+ * - room INVITE_MEMBERS: members-only links of that room (the member picker of «Пригласить»);
+ * - workspace / room INVITE_GUESTS: guest links of a room, their approval, admitting knocks.
+ */
+export function mayInviteMembers(roles: readonly RoleBits[] | undefined): boolean {
+  return !isGuestOnly(roles) && can(workspacePerms(roles), 'INVITE_MEMBERS');
+}
+
+export function mayInviteGuests(roles: readonly RoleBits[] | undefined): boolean {
+  return !isGuestOnly(roles) && can(workspacePerms(roles), 'INVITE_GUESTS');
+}
+
+export function mayInviteMembersIn(roles: readonly RoleBits[] | undefined, userId: string, room: Room | undefined): boolean {
+  return roomInviteAllowed(roles, userId, room, 'INVITE_MEMBERS');
+}
+
+export function mayInviteGuestsIn(roles: readonly RoleBits[] | undefined, userId: string, room: Room | undefined): boolean {
+  return roomInviteAllowed(roles, userId, room, 'INVITE_GUESTS');
+}
+
+/**
+ * Temporary rooms (ADR-0044): «+» → «Временная комната» — workspace CREATE_TEMP_ROOMS (members by
+ * default); guests never.
+ */
+export function mayCreateTempRooms(roles: readonly RoleBits[] | undefined): boolean {
+  return !isGuestOnly(roles) && can(workspacePerms(roles), 'CREATE_TEMP_ROOMS');
+}
+
+/**
+ * Managing a room (settings, link, extend, delete): MANAGE_ROOM in it, or — a temporary room — its
+ * creator (ADR-0044 «Контракт для клиента»: `expires_at && created_by == me && not a guest`). The
+ * server does the same check (rooms.MayManage).
+ */
+export function mayManageRoom(roles: readonly RoleBits[] | undefined, userId: string, room: Room | undefined): boolean {
+  if (!room) return false;
+  return can(roomPerms(roles, userId, room), 'MANAGE_ROOM') || isTempCreator(roles, userId, room);
+}
+
+/** The same from already computed room bits (rows that have them). */
+export function mayManageRoomWith(perms: PermissionBits, roles: readonly RoleBits[] | undefined, userId: string, room: Room): boolean {
+  return can(perms, 'MANAGE_ROOM') || isTempCreator(roles, userId, room);
+}
+
+function isTempCreator(roles: readonly RoleBits[] | undefined, userId: string, room: Room): boolean {
+  return !!room.expiresAt && !!userId && room.createdBy === userId && !isGuestOnly(roles);
+}
+
+/** A room invite right in already computed room bits (rows that have them): either bit. */
+export function mayRoomInvite(perms: PermissionBits): boolean {
+  return can(perms, 'INVITE_GUESTS') || can(perms, 'INVITE_MEMBERS');
+}
+
+/** «Пригласить» of a room: either right there (a guest link, or a members-only one). */
+export function mayInviteToRoom(roles: readonly RoleBits[] | undefined, userId: string, room: Room | undefined): boolean {
+  return mayInviteGuestsIn(roles, userId, room) || mayInviteMembersIn(roles, userId, room);
+}
+
+function roomInviteAllowed(roles: readonly RoleBits[] | undefined, userId: string, room: Room | undefined, bit: PermissionName): boolean {
+  if (!room || room.type === RoomType.DM || room.type === RoomType.NOTES || room.type === RoomType.TASK) return false;
+  return !isGuestOnly(roles) && can(roomPerms(roles, userId, room), bit);
+}
+
+/** The member is a guest of the workspace (highest built-in role GUEST: no member / admin role). */
+function isGuestOnly(roles: readonly RoleBits[] | undefined): boolean {
+  if (!roles) return true;
+  const member = (r: RoleBits): boolean =>
+    r.builtin === WorkspaceRole.MEMBER || r.builtin === WorkspaceRole.ADMIN || r.builtin === WorkspaceRole.OWNER;
+  return roles.some((r) => r.builtin === WorkspaceRole.GUEST) && !roles.some(member);
+}
+
 const voiceRank = (r: WorkspaceRole | undefined): number => (r === WorkspaceRole.OWNER ? 3 : r === WorkspaceRole.ADMIN ? 2 : 1);
 
 /**
@@ -155,4 +228,6 @@ export const ROOM_EDITABLE: PermissionName[] = [
   'MOVE_MEMBERS',
   'MENTION_EVERYONE',
   'MANAGE_ROOM',
+  'INVITE_MEMBERS',
+  'INVITE_GUESTS',
 ];

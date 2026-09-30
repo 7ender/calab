@@ -22,6 +22,7 @@ import { zhStickers } from './stickers';
 import { zhSounds } from './sounds';
 import { zhBots } from './bots';
 import { zhGuests } from './guests';
+import { zhTemp } from './temp';
 
 /** Simplified Chinese UI strings (ADR-0022): same keys and placeholders as `ru`/`en`; glossary docs/i18n-glossary.md. */
 export const zhCN: Dict = {
@@ -34,6 +35,7 @@ export const zhCN: Dict = {
   ...zhSounds,
   ...zhBots,
   ...zhGuests,
+  ...zhTemp,
   ...zhDm,
   ...zhNotes,
   ...zhCall,
@@ -274,6 +276,12 @@ export const zhCN: Dict = {
   'perm.CREATE_TASKS': '创建任务',
   'perm.EDIT_TASKS': '编辑任何任务',
   'perm.MANAGE_BOARD': '管理看板',
+  'perm.INVITE_MEMBERS': '邀请成员',
+  'perm.INVITE_GUESTS': '邀请访客',
+  'perm.CREATE_TEMP_ROOMS': '创建临时房间',
+  'perm.hint.INVITE_MEMBERS': '空间的邀请链接和邮件邀请；在房间中为仅限空间成员的链接。',
+  'perm.hint.INVITE_GUESTS': '房间的访客链接，以及决定放行哪些等待中的访客。',
+  'perm.hint.CREATE_TEMP_ROOMS': '可用一小时或几天、带访客链接的房间；到期自动关闭，历史保留在归档中。',
   'perm.ADMINISTRATOR': '管理员',
   'perm.allow': '允许',
   'perm.deny': '禁止',

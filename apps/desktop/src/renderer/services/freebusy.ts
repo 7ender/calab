@@ -1,6 +1,7 @@
 import { t } from '../i18n';
+import { eventsByDay, mergeDays } from '../lib/calendar/external';
 import { chunksIn, CHUNK_MS, replaceBusy, type WorkHours } from '../lib/calendar/freebusy';
-import { freebusyApi, type BusyInterval, type CalDavAccount } from '../lib/calendar/freebusyApi';
+import { freebusyApi, type BusyInterval, type CalDavAccount, type ShareLevel } from '../lib/calendar/freebusyApi';
 import { MAX_PEOPLE } from '../lib/calendar/people';
 import { log } from '../lib/log';
 import { entryKey, useFreeBusy, type FbEntry } from '../stores/freebusy';
@@ -91,23 +92,33 @@ function invalidateMe(): void {
 
 /**
  * One person's busy time over [from, to) as a primitive (a component re-renders only when it
- * changes): `start~end~kind~eventId~allDay` joined by `|`; '' = nothing (or not loaded).
+ * changes): `start~end~kind~eventId~allDay~title~attendees` joined by `|` (the title of a shared
+ * external interval URI-encoded, ADR-0045 §4); '' = nothing (or not loaded).
  */
 export function busySignature(e: FbEntry | undefined, from: number, to: number): string {
   if (!e) return '';
   let out = '';
   for (const b of e.busy) {
     if (b.end <= from || b.start >= to) continue;
-    out += `${out ? '|' : ''}${b.start}~${b.end}~${b.kind === 'external' ? 'x' : 'm'}~${b.eventId}~${b.allDay ? 1 : 0}`;
+    out += `${out ? '|' : ''}${b.start}~${b.end}~${b.kind === 'external' ? 'x' : 'm'}~${b.eventId}~${b.allDay ? 1 : 0}~${encodeTitle(b.title)}~${b.attendees.join(',')}`;
   }
   return out;
+}
+
+const encodeTitle = (t: string): string => (t ? encodeURIComponent(t).replace(/~/g, '%7E') : '');
+function decodeTitle(t: string): string {
+  try {
+    return t ? decodeURIComponent(t) : '';
+  } catch {
+    return '';
+  }
 }
 
 export function parseBusySignature(sig: string): BusyInterval[] {
   if (!sig) return [];
   return sig.split('|').map((p) => {
-    const [s, e, k, id = '', a] = p.split('~');
-    return { start: Number(s), end: Number(e), kind: k === 'x' ? 'external' : 'meeting', eventId: id, allDay: a === '1' };
+    const [s, e, k, id = '', a, title = '', att = ''] = p.split('~');
+    return { start: Number(s), end: Number(e), kind: k === 'x' ? 'external' : 'meeting', eventId: id, allDay: a === '1', title: decodeTitle(title), attendees: att ? att.split(',') : [] };
   });
 }
 
@@ -146,8 +157,60 @@ export async function loadCalDav(): Promise<void> {
   }
 }
 
-/** The account's new state (a connect, a change, a sync); my busy windows are asked again. */
+/** The account's new state (a connect, a change, a sync); my busy windows and external events are asked again. */
 export function setCalDav(account: CalDavAccount | null): void {
-  useFreeBusy.setState({ caldav: account });
+  useFreeBusy.setState({ caldav: account, external: {}, externalWs: '', externalChunks: {} });
   invalidateMe();
+}
+
+/** PATCH share_level (ADR-0045 §2): shown at once, back on a failure. */
+export async function setShareLevel(level: ShareLevel): Promise<void> {
+  const before = fb().caldav;
+  if (!before || before.shareLevel === level) return;
+  useFreeBusy.setState({ caldav: { ...before, shareLevel: level } });
+  try {
+    const account = await freebusyApi.caldav.setShare(level);
+    if (account) useFreeBusy.setState({ caldav: account });
+  } catch (e) {
+    useFreeBusy.setState((s) => (s.caldav ? { caldav: { ...s.caldav, shareLevel: before.shareLevel } } : s));
+    toast.fail(e, t('err.ctx.save'));
+  }
+}
+
+// ---------------------------------------------------------------- my external events (ADR-0045 §3)
+
+/**
+ * Loads my external events of [from, to) with the attendees matched to `ws`'s members, each 14-day
+ * window once; another workspace starts over (its members differ). Only with an importing account.
+ */
+export function ensureExternal(ws: string, from: number, to: number): void {
+  const s = fb();
+  if (!ws || !s.caldav?.calendarHref || !s.caldav.import) return;
+  const held = s.externalWs === ws ? s.externalChunks : {};
+  const todo = chunksIn(from, to).filter((c) => !held[c]);
+  if (!todo.length) return;
+  useFreeBusy.setState((st) => {
+    const same = st.externalWs === ws;
+    const chunks: Record<number, true> = same ? { ...st.externalChunks } : {};
+    for (const c of todo) chunks[c] = true;
+    return same ? { externalChunks: chunks } : { external: {}, externalWs: ws, externalChunks: chunks };
+  });
+  for (const c of todo) void loadExternal(ws, c);
+}
+
+async function loadExternal(ws: string, chunk: number): Promise<void> {
+  const from = chunk * CHUNK_MS;
+  const to = from + CHUNK_MS;
+  try {
+    const list = await freebusyApi.externalEvents(ws, from, to);
+    useFreeBusy.setState((s) => (s.externalWs === ws && s.externalChunks[chunk] ? { external: mergeDays(s.external, eventsByDay(list, from, to), from, to) } : s));
+  } catch (e) {
+    log.warn('freebusy: external events failed', e);
+    useFreeBusy.setState((s) => {
+      if (s.externalWs !== ws) return s;
+      const externalChunks = { ...s.externalChunks };
+      delete externalChunks[chunk];
+      return { externalChunks };
+    });
+  }
 }

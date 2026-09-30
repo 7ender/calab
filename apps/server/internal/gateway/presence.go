@@ -17,10 +17,12 @@ import (
 
 // Presence keys (docs/05; inside the key namespace, redisx.Key):
 //
-//	presence:<user_id>       hash gateway_session_id -> status (int), each field with its own
-//	                         TTL (HEXPIRE, Redis ≥ 7.4) of 2×heartbeat, renewed by heartbeats
+//	presence:<user_id>       hash gateway_session_id -> "<status>[|<identify ms>|<platform>|<version>]"
+//	                         (see encodeSession), each field with its own TTL (HEXPIRE,
+//	                         Redis ≥ 7.4) of 2×heartbeat, renewed by heartbeats
 //	presence:last:<user_id>  last published aggregate (to publish only on change)
-//	presence:seen:<user_id>  unix ms of the last activity of a visible session
+//	presence:seen:<user_id>  "<unix ms>[|<platform>|<version>]": the last activity of a visible
+//	                         session and its client (Presence.client_* when offline)
 //	presence:users           zset user_id -> last touch (for the offline sweeper)
 //	presence:manual:<user_id> the user's manual status "<status>:<until unix ms, 0 = no end>",
 //	                         expiring at until (PXAT); the durable copy is users.presence_*
@@ -138,6 +140,74 @@ func AggregateStatus(statuses []v1.PresenceStatus) v1.PresenceStatus {
 	return best
 }
 
+// clientInfo is the app a gateway session runs (Identify.device, docs/09 #143). Presence shows
+// the one of the most recently identified live session.
+type clientInfo struct {
+	since    int64  // IDENTIFY time, unix ms
+	platform string // web | darwin | win32 | linux; "" = unknown
+	version  string // «1.1.0»; "" = unknown
+}
+
+func (c clientInfo) known() bool { return c.platform != "" || c.version != "" }
+
+// maxClientVersion bounds the stored version (a semver with a pre-release tag fits).
+const maxClientVersion = 32
+
+// newClientInfo keeps only a known platform and a plain version string (no separators).
+func newClientInfo(d *v1.DeviceInfo, now time.Time) clientInfo {
+	c := clientInfo{since: now.UnixMilli()}
+	switch p := d.GetPlatform(); p {
+	case "web", "darwin", "win32", "linux":
+		c.platform = p
+	}
+	v := strings.TrimSpace(d.GetAppVersion())
+	if len(v) <= maxClientVersion && v != "" && strings.Trim(v, "0123456789abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ.+-") == "" {
+		c.version = strings.TrimPrefix(v, "v")
+	}
+	return c
+}
+
+// encodeSession is a session's presence hash value: the bare status (old format, bots) or
+// "<status>|<since>|<platform>|<version>".
+func encodeSession(st v1.PresenceStatus, c clientInfo) string {
+	if !c.known() {
+		return strconv.Itoa(int(st))
+	}
+	return strconv.Itoa(int(st)) + "|" + strconv.FormatInt(c.since, 10) + "|" + c.platform + "|" + c.version
+}
+
+func decodeSession(v string) (v1.PresenceStatus, clientInfo) {
+	parts := strings.SplitN(v, "|", 4)
+	n, _ := strconv.Atoi(parts[0])
+	st := v1.PresenceStatus(n) //nolint:gosec // small enum
+	if len(parts) < 4 {
+		return st, clientInfo{}
+	}
+	since, _ := strconv.ParseInt(parts[1], 10, 64)
+	return st, clientInfo{since: since, platform: parts[2], version: parts[3]}
+}
+
+// encodeSeen / decodeSeen: presence:seen value ("<ms>" before docs/09 #143).
+func encodeSeen(now time.Time, c clientInfo) string {
+	ms := strconv.FormatInt(now.UnixMilli(), 10)
+	if !c.known() {
+		return ms
+	}
+	return ms + "|" + c.platform + "|" + c.version
+}
+
+func decodeSeen(v string) (int64, clientInfo, bool) {
+	parts := strings.SplitN(v, "|", 3)
+	ms, err := strconv.ParseInt(parts[0], 10, 64)
+	if err != nil {
+		return 0, clientInfo{}, false
+	}
+	if len(parts) < 3 {
+		return ms, clientInfo{}, true
+	}
+	return ms, clientInfo{since: ms, platform: parts[1], version: parts[2]}, true
+}
+
 type presenceStore struct {
 	c   rueidis.Client
 	ttl time.Duration
@@ -151,17 +221,17 @@ func presManualKey(u uuid.UUID) string {
 }
 func presUsersKey() string { return redisx.Key("presence:users") }
 
-// set records a session's status and renews its TTL.
-func (p presenceStore) set(ctx context.Context, user, gsid uuid.UUID, st v1.PresenceStatus) error {
+// set records a session's status (and its client) and renews its TTL.
+func (p presenceStore) set(ctx context.Context, user, gsid uuid.UUID, st v1.PresenceStatus, c clientInfo) error {
 	now := time.Now()
 	cmds := rueidis.Commands{
-		p.c.B().Hset().Key(presKey(user)).FieldValue().FieldValue(gsid.String(), strconv.Itoa(int(st))).Build(),
+		p.c.B().Hset().Key(presKey(user)).FieldValue().FieldValue(gsid.String(), encodeSession(st, c)).Build(),
 		p.c.B().Hexpire().Key(presKey(user)).Seconds(int64(p.ttl.Seconds())).Fields().Numfields(1).Field(gsid.String()).Build(),
 		p.c.B().Expire().Key(presKey(user)).Seconds(int64(p.ttl.Seconds()) + 60).Build(),
 		p.c.B().Zadd().Key(presUsersKey()).ScoreMember().ScoreMember(float64(now.UnixMilli()), user.String()).Build(),
 	}
 	if st != v1.PresenceStatus_PRESENCE_STATUS_INVISIBLE {
-		cmds = append(cmds, p.c.B().Set().Key(presSeenKey(user)).Value(strconv.FormatInt(now.UnixMilli(), 10)).Ex(90*24*time.Hour).Build())
+		cmds = append(cmds, p.c.B().Set().Key(presSeenKey(user)).Value(encodeSeen(now, c)).Ex(90*24*time.Hour).Build())
 	}
 	for _, r := range p.c.DoMulti(ctx, cmds...) {
 		if err := r.Error(); err != nil {
@@ -169,6 +239,17 @@ func (p presenceStore) set(ctx context.Context, user, gsid uuid.UUID, st v1.Pres
 		}
 	}
 	return nil
+}
+
+// client returns the client a live session stored (a session taken over from another
+// instance keeps it); none when unknown.
+func (p presenceStore) client(ctx context.Context, user, gsid uuid.UUID) clientInfo {
+	v, err := p.c.Do(ctx, p.c.B().Hget().Key(presKey(user)).Field(gsid.String()).Build()).ToString()
+	if err != nil {
+		return clientInfo{}
+	}
+	_, c := decodeSession(v)
+	return c
 }
 
 func (p presenceStore) remove(ctx context.Context, user, gsid uuid.UUID) error {
@@ -194,10 +275,9 @@ func (p presenceStore) get(ctx context.Context, users []uuid.UUID) (map[uuid.UUI
 		if err != nil && !rueidis.IsRedisNil(err) {
 			return nil, err
 		}
-		sts := make([]v1.PresenceStatus, 0, len(vals))
-		for _, v := range vals {
-			n, _ := strconv.Atoi(v)
-			sts = append(sts, v1.PresenceStatus(n)) //nolint:gosec // small enum
+		seen, err := res[per*i+1].ToString()
+		if err != nil && !rueidis.IsRedisNil(err) {
+			return nil, err
 		}
 		var m manualStatus
 		if v, err := res[per*i+2].ToString(); err == nil {
@@ -205,24 +285,49 @@ func (p presenceStore) get(ctx context.Context, users []uuid.UUID) (map[uuid.UUI
 		} else if !rueidis.IsRedisNil(err) {
 			return nil, err
 		}
-		st, until := Aggregate(sts, m, now)
-		pr := &v1.Presence{UserId: u.String(), Status: st}
-		if !until.IsZero() {
-			pr.Until = timestamppb.New(until)
-		}
-		// Invisible (chosen on every session, or as the manual status) also hides last_seen.
-		hidden := (len(sts) > 0 && AggregateStatus(sts) == v1.PresenceStatus_PRESENCE_STATUS_OFFLINE) ||
-			(m.active(now) && m.status == v1.PresenceStatus_PRESENCE_STATUS_INVISIBLE)
-		if ms, err := res[per*i+1].AsInt64(); err == nil && !hidden {
-			pr.LastSeen = timestamppb.New(time.UnixMilli(ms))
-		}
-		// «На звонке» (ADR-0034) only with a visible status: offline / invisible hide it.
-		if n, err := res[per*i+3].AsInt64(); err == nil && n > 0 && st != v1.PresenceStatus_PRESENCE_STATUS_OFFLINE {
-			pr.OnCall = true
-		}
-		out[u] = pr
+		n, err := res[per*i+3].AsInt64()
+		onCall := err == nil && n > 0
+		out[u] = presenceOf(u, vals, seen, m, onCall, now)
 	}
 	return out, nil
+}
+
+// presenceOf builds the presence others see from the stored values: the sessions' hash
+// values, presence:seen ("" = none), the manual status and the on-call flag.
+func presenceOf(u uuid.UUID, vals []string, seen string, m manualStatus, onCall bool, now time.Time) *v1.Presence {
+	sts := make([]v1.PresenceStatus, 0, len(vals))
+	var latest clientInfo // of the most recently identified live session
+	for _, v := range vals {
+		st, c := decodeSession(v)
+		sts = append(sts, st)
+		if c.known() && c.since >= latest.since {
+			latest = c
+		}
+	}
+	st, until := Aggregate(sts, m, now)
+	pr := &v1.Presence{UserId: u.String(), Status: st}
+	if !until.IsZero() {
+		pr.Until = timestamppb.New(until)
+	}
+	// «На звонке» (ADR-0034) only with a visible status: offline / invisible hide it.
+	if onCall && st != v1.PresenceStatus_PRESENCE_STATUS_OFFLINE {
+		pr.OnCall = true
+	}
+	// Invisible (chosen on every session, or as the manual status) also hides last_seen and
+	// the client.
+	hidden := (len(sts) > 0 && AggregateStatus(sts) == v1.PresenceStatus_PRESENCE_STATUS_OFFLINE) ||
+		(m.active(now) && m.status == v1.PresenceStatus_PRESENCE_STATUS_INVISIBLE)
+	if hidden {
+		return pr
+	}
+	if ms, c, ok := decodeSeen(seen); ok {
+		pr.LastSeen = timestamppb.New(time.UnixMilli(ms))
+		if len(sts) == 0 {
+			latest = c // offline: the client last seen active
+		}
+	}
+	pr.ClientVersion, pr.ClientPlatform = latest.version, latest.platform
+	return pr
 }
 
 // setManual stores the user's manual status in Valkey, expiring at its end; none deletes it.
@@ -266,6 +371,9 @@ func (p presenceStore) changed(ctx context.Context, pr *v1.Presence) (bool, erro
 	}
 	if pr.GetOnCall() {
 		cur += ":call"
+	}
+	if pr.GetClientVersion() != "" || pr.GetClientPlatform() != "" {
+		cur += "|" + pr.GetClientPlatform() + "|" + pr.GetClientVersion()
 	}
 	prev, err := p.c.Do(ctx, p.c.B().Set().Key(presLastKey(u)).Value(cur).Get().Ex(30*24*time.Hour).Build()).ToString()
 	if err != nil && !rueidis.IsRedisNil(err) {

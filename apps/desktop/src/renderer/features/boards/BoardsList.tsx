@@ -204,7 +204,7 @@ const BoardRow = memo(function BoardRow({ id, workspaceId, dragging, onPointerDo
           </button>
         </Dropdown.Trigger>
         <Dropdown.Portal>
-          <Dropdown.Content className={cx(menuBox, 'w-56')} sideOffset={4} align="start" collisionPadding={16}>
+          <Dropdown.Content className={cx(menuBox, 'min-w-56')} sideOffset={4} align="start" collisionPadding={16}>
             {manage ? (
               <>
                 <Dropdown.Item className={menuItem} onSelect={() => useBoardsUi.getState().openSettings({ boardId: id, workspaceId })}>

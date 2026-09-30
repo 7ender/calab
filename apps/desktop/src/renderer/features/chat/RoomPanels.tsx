@@ -4,7 +4,7 @@ import { useEffect, useLayoutEffect, useMemo, useRef, useState, type KeyboardEve
 import { Button, CloseButton, IconButton, Spinner, cx } from '../../components/ui';
 import { t } from '../../i18n';
 import { api } from '../../lib/api/endpoints';
-import { can, mayManageWorkspace } from '../../lib/permissions';
+import { can, mayInviteMembers } from '../../lib/permissions';
 import { loadPins } from '../../services/chat';
 import { useMessages } from '../../stores/messages';
 import { useSession } from '../../stores/session';
@@ -181,8 +181,8 @@ export function EmptyRoom({ workspaceId, room, perms, underStage = false }: { wo
   const peerId = useDms((s) => s.byRoom[room.id]?.peerId ?? '');
   const peerName = useMemberName(null, peerId);
   const peerAvatar = useWorkspaces((s) => s.users[peerId]?.avatarFileId ?? '');
-  // The workspace invite: MANAGE_WORKSPACE (a custom role's included), as the server checks.
-  const canInvite = !dm && !isNotes(room) && mayManageWorkspace(myRoles);
+  // The workspace invite: INVITE_MEMBERS (ADR-0043, a custom role's included), as the server checks.
+  const canInvite = !dm && !isNotes(room) && mayInviteMembers(myRoles);
   const canSetup = can(perms, 'MANAGE_ROOM');
   const ref = useRef<HTMLDivElement>(null);
   const [short, setShort] = useState(false);

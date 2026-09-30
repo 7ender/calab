@@ -12,23 +12,33 @@ import { AT_15, DAY, HOUR, expect, openDay, signIn, test } from './calendarWeb';
 const W = IDS.workspaces.main;
 const U = IDS.users;
 
-test('the calendar icon opens today’s day view at once; a second click goes back to the room', async ({ page, mock }) => {
+test('the «Календарь» tab opens today’s day view at once; «Голос» goes back to the room; ←/→ switch tabs', async ({ page, mock }) => {
   await signIn(page, mock);
   await expect(page.getByRole('heading', { name: 'общий' })).toBeVisible();
-  const icon = page.getByTestId('calendar-button');
-  await icon.click();
+  const tab = page.getByTestId('calendar-button');
+  const voice = page.getByTestId('mode-voice');
+  await expect(voice).toHaveAttribute('aria-selected', 'true');
+  await tab.click();
   await expect(page.getByTestId('day-view')).toBeVisible();
   await expect(page.getByTestId('day-view').getByRole('heading', { level: 1 })).toHaveText(/15 января/);
   await expect(page.getByTestId('mini-calendar')).toBeVisible();
-  await expect(icon).toHaveAttribute('aria-expanded', 'true');
-  // Keyboard: the same button, Enter.
-  await icon.focus();
-  await page.keyboard.press('Enter');
+  await expect(tab).toHaveAttribute('aria-selected', 'true');
+  // Keyboard (docs/09 #140): ← from «Календарь» selects «Голос» — the room again.
+  await tab.focus();
+  await page.keyboard.press('ArrowLeft');
+  await expect(voice).toHaveAttribute('aria-selected', 'true');
+  await expect(voice).toBeFocused();
   await expect(page.getByTestId('day-view')).toHaveCount(0);
   await expect(page.getByTestId('mini-calendar')).toHaveCount(0);
   await expect(page.getByRole('heading', { name: 'общий' })).toBeVisible();
-  await icon.focus();
-  await page.keyboard.press('Space');
+  // → twice: «Доски» (the calendar is off), then ← back to «Календарь» (the boards are off).
+  await page.keyboard.press('ArrowRight');
+  await expect(page.getByTestId('day-view')).toBeVisible();
+  await page.keyboard.press('ArrowRight');
+  await expect(page.getByTestId('boards-button')).toHaveAttribute('aria-selected', 'true');
+  await expect(page.getByTestId('day-view')).toHaveCount(0);
+  await page.keyboard.press('ArrowLeft');
+  await expect(tab).toHaveAttribute('aria-selected', 'true');
   await expect(page.getByTestId('day-view')).toBeVisible();
 });
 
@@ -139,7 +149,7 @@ test('find a time from the dialog hands the slot back; a conflict warns; NO_COMM
   await expect(page.getByTestId('find-slot').first()).toBeVisible();
 });
 
-test('CalDAV: connect → pick a calendar → busy time from it in my day view', async ({ page, mock }) => {
+test('CalDAV: connect → pick a calendar → its event in my day view; «Что видят коллеги» saved', async ({ page, mock }) => {
   await signIn(page, mock);
   await page.getByRole('button', { name: 'Настройки', exact: true }).click();
   const settings = page.getByRole('dialog', { name: 'Настройки' });
@@ -158,10 +168,15 @@ test('CalDAV: connect → pick a calendar → busy time from it in my day view',
   const patch = page.waitForRequest((r) => r.method() === 'PATCH' && r.url().endsWith('/api/me'));
   await settings.getByTestId('wh-start').selectOption({ label: '09:00' });
   expect((await patch).postDataJSON()).toMatchObject({ workHours: { startMin: 540, endMin: 1140, days: [1, 2, 3, 4, 5] } });
+  // ADR-0045 §2: what colleagues see — PATCH /api/me/caldav.
+  const share = page.waitForRequest((r) => r.method() === 'PATCH' && r.url().endsWith('/api/me/caldav'));
+  await account.getByRole('radio', { name: 'Название', exact: true }).click();
+  expect((await share).postDataJSON()).toEqual({ shareLevel: 'CAL_DAV_SHARE_LEVEL_TITLE' });
+  await expect(account.getByTestId('caldav-share')).toContainText('Коллеги видят название события');
   await page.keyboard.press('Escape');
 
+  // My external event (no title in the fake calendar) as a card instead of grey «Занято».
   await openDay(page);
-  const busy = page.getByTestId('busy-block');
-  await expect(busy).toHaveCount(1);
-  await expect(busy).toHaveAccessibleName(/Занято · внешний календарь, 11:00 – 12:00/);
+  await expect(page.getByTestId('busy-block')).toHaveCount(0);
+  await expect(page.getByTestId('external-block')).toHaveAccessibleName(/Без названия, 11:00 – 12:00 · внешний календарь/);
 });

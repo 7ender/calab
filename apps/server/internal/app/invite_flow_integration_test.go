@@ -8,9 +8,11 @@ package app_test
 import (
 	"strings"
 	"testing"
+	"time"
 
 	v1 "github.com/calaba/calaba/server/gen/calaba/v1"
 	"github.com/calaba/calaba/server/internal/mail"
+	"github.com/calaba/calaba/server/internal/perm"
 )
 
 // emailInviteCode invites addr by email into ws and returns the code of the mailed link;
@@ -154,5 +156,69 @@ func TestInviteFlowEmailedCodeSuspended(t *testing.T) {
 	}
 	if ids := verifyAddr(t, u).GetJoinedWorkspaceIds(); len(ids) != 1 || ids[0] != ws.GetId() {
 		t.Fatalf("joined: %v", ids)
+	}
+}
+
+// Members-only room link (ADR-0043): nobody becomes a guest through it — no account is made
+// without a token, a guest of the workspace is refused — and max_uses, revocation and expiry
+// apply to members as to any link.
+func TestInviteFlowMembersOnlyLink(t *testing.T) {
+	o, bob, ws, room := setupTeam(t)
+	wid := ws.GetId()
+	member := builtinRole(t, o, wid, v1.WorkspaceRole_WORKSPACE_ROLE_MEMBER)
+	pid := voiceRoom(t, o, wid, "private", 0)
+	o.must(200, "PUT", "/api/rooms/"+pid+"/permissions", &v1.SetRoomPermissionsRequest{
+		Overrides: []*v1.RoomPermissionOverride{roleOv(member.GetId(), 0, perm.ViewRoom)}}, nil)
+	link := roomLink(t, o, pid, &v1.CreateRoomInviteRequest{MembersOnly: true, MaxUses: 1})
+	members := func() int {
+		var ms v1.ListMembersResponse
+		o.must(200, "GET", "/api/workspaces/"+wid+"/members", nil, &ms)
+		return len(ms.GetMembers())
+	}
+	before := members()
+
+	// The preview says so; without an account the link makes no guest.
+	var p v1.GetRoomInviteResponse
+	newClient(t).must(200, "GET", "/api/room-invites/"+link.GetCode(), nil, &p)
+	if !p.GetMembersOnly() || p.GetAllowGuests() {
+		t.Fatalf("preview: %v", &p)
+	}
+	if st := newClient(t).do("POST", "/api/room-invites/"+link.GetCode()+"/join", &v1.JoinRoomInviteRequest{Nickname: "Anon"}, nil); st != 401 {
+		t.Fatalf("anonymous join by a members-only link: %d", st)
+	}
+
+	// A guest of the workspace (by an ordinary link to another room) is refused.
+	guest, _ := anonGuest(t, roomLink(t, o, room.GetId(), &v1.CreateRoomInviteRequest{}).GetCode(), "Guest")
+	if st := guest.do("POST", "/api/room-invites/"+link.GetCode()+"/join", &v1.JoinRoomInviteRequest{}, nil); st != 403 {
+		t.Fatalf("workspace guest by a members-only link: %d", st)
+	}
+	if r, _ := errReason(guest.client); r != "INVITE_MEMBERS_ONLY" {
+		t.Fatalf("reason %q", r)
+	}
+	if _, st := roomPerms(t, guest, pid); st != 404 {
+		t.Fatalf("the guest sees the room: %d", st)
+	}
+	if got := members(); got != before+1 { // the guest joined by the ordinary link only
+		t.Fatalf("members %d, want %d", got, before+1)
+	}
+
+	// A member comes in; the single use is spent, the next member is refused.
+	bob.must(200, "POST", "/api/room-invites/"+link.GetCode()+"/join", &v1.JoinRoomInviteRequest{}, nil)
+	if bits, st := roomPerms(t, bob, pid); st != 200 || !perm.Bits(bits).Has(perm.ViewRoom) {
+		t.Fatalf("bob after the link: %d %d", st, bits)
+	}
+	carol := register(t, invite(t, o, wid))
+	carol.must(404, "POST", "/api/room-invites/"+link.GetCode()+"/join", &v1.JoinRoomInviteRequest{}, nil)
+
+	// Revoked and expired links admit nobody.
+	revoked := roomLink(t, o, pid, &v1.CreateRoomInviteRequest{MembersOnly: true})
+	o.must(204, "DELETE", "/api/rooms/"+pid+"/invites/"+revoked.GetId(), nil, nil)
+	carol.must(404, "POST", "/api/room-invites/"+revoked.GetCode()+"/join", &v1.JoinRoomInviteRequest{}, nil)
+	sec := uint32(1)
+	expiring := roomLink(t, o, pid, &v1.CreateRoomInviteRequest{MembersOnly: true, ExpiresInSeconds: &sec})
+	time.Sleep(1100 * time.Millisecond)
+	carol.must(404, "POST", "/api/room-invites/"+expiring.GetCode()+"/join", &v1.JoinRoomInviteRequest{}, nil)
+	if _, st := roomPerms(t, carol, pid); st != 404 {
+		t.Fatalf("carol sees the room: %d", st)
 	}
 }

@@ -2,15 +2,15 @@ import { ChevronRight, RefreshCw, TriangleAlert } from 'lucide-react';
 import { useEffect, useId, useMemo, useState, type ReactNode } from 'react';
 import { confirmAction } from '../../components/Confirm';
 import { useSettingsNav } from '../../components/SettingsWindow';
-import { Button, Card, Field, Input, PasswordInput, Row, Select, Spinner, Toggle, cx } from '../../components/ui';
+import { Button, Card, Field, Input, PasswordInput, Row, Segmented, Select, Spinner, Toggle, cx } from '../../components/ui';
 import { t, useLocale } from '../../i18n';
 import { errorText } from '../../lib/api/errors';
 import type { WorkHours } from '../../lib/calendar/freebusy';
-import { freebusyApi, workHoursOf, type CalDavAccount } from '../../lib/calendar/freebusyApi';
+import { freebusyApi, workHoursOf, type CalDavAccount, type ShareLevel } from '../../lib/calendar/freebusyApi';
 import { formatMinutes, viewerZone, weekStart } from '../../lib/calendar/time';
 import { WORK_ENDS, WORK_STARTS, toggleWeekday, validateWorkHours, weekdayOrder, withStart } from '../../lib/calendar/workHours';
 import { dateTimeFormat } from '../../lib/format';
-import { loadCalDav, saveMyWorkHours, setCalDav } from '../../services/freebusy';
+import { loadCalDav, saveMyWorkHours, setCalDav, setShareLevel } from '../../services/freebusy';
 import { useFreeBusy } from '../../stores/freebusy';
 import { useSession } from '../../stores/session';
 import { toast } from '../../stores/toasts';
@@ -18,7 +18,8 @@ import { toast } from '../../stores/toasts';
 /**
  * Settings → Календарь (ADR-0041 §1, §4): my work hours (what «Подобрать время» shows to others),
  * a link to the meeting reminders (they stay in «Уведомления»), and one external CalDAV calendar —
- * connect, pick the calendar, import busy time / send my meetings, sync now, disconnect.
+ * connect, pick the calendar, import busy time / send my meetings, what colleagues see of it
+ * (ADR-0045 §2), sync now, disconnect.
  */
 export function CalendarTab(): ReactNode {
   return (
@@ -199,6 +200,34 @@ function hostOf(url: string): string {
   }
 }
 
+const SHARE_HINT: Record<ShareLevel, 'fb.dav.shareBusyHint' | 'fb.dav.shareTitleHint' | 'fb.dav.shareDetailsHint'> = {
+  busy: 'fb.dav.shareBusyHint',
+  title: 'fb.dav.shareTitleHint',
+  details: 'fb.dav.shareDetailsHint',
+};
+
+/** «Что видят коллеги» (ADR-0045 §2): a segmented control over the whole row, its one-line hint below. */
+function ShareRow({ level, disabled }: { level: ShareLevel; disabled: boolean }): ReactNode {
+  return (
+    <div className={cx('flex flex-col items-start gap-2 px-3 py-2.5', disabled && 'pointer-events-none opacity-50')} data-settings-row data-testid="caldav-share" aria-disabled={disabled || undefined}>
+      <span className="text-body" data-settings-label data-settings-hint={t('fb.dav.shareHint')}>
+        {t('fb.dav.share')}
+      </span>
+      <Segmented<ShareLevel>
+        label={t('fb.dav.share')}
+        value={level}
+        onChange={(v) => void setShareLevel(v)}
+        options={[
+          { value: 'busy', label: t('fb.dav.shareBusy') },
+          { value: 'title', label: t('fb.dav.shareTitle') },
+          { value: 'details', label: t('fb.dav.shareDetails') },
+        ]}
+      />
+      <span className="text-caption text-faint">{t(SHARE_HINT[level])}</span>
+    </div>
+  );
+}
+
 function CalDavConnected({ account }: { account: CalDavAccount }): ReactNode {
   const [saving, setSaving] = useState(false);
   const [syncing, setSyncing] = useState(false);
@@ -266,6 +295,7 @@ function CalDavConnected({ account }: { account: CalDavAccount }): ReactNode {
       <Row label={t('fb.dav.import')} hint={t('fb.dav.importHint')}>
         <Toggle label={t('fb.dav.import')} checked={account.import} disabled={!picked || saving} onChange={(v) => void update({ import: v })} />
       </Row>
+      <ShareRow level={account.shareLevel} disabled={!picked || !account.import} />
       <Row label={t('fb.dav.push')} hint={t('fb.dav.pushHint')}>
         <Toggle label={t('fb.dav.push')} checked={account.push} disabled={!picked || saving} onChange={(v) => void update({ push: v })} />
       </Row>

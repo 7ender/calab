@@ -59,9 +59,10 @@ export function linkSummary(i: RoomInvite, voice: boolean): string {
 
 /**
  * Room settings → «Ссылка для гостей» (docs/09 #35, ADR-0016): create a link (expiry, max
- * uses, guest rights), copy it, revoke, list active ones. Needs MANAGE_ROOM (server-checked).
+ * uses, guest rights), copy it, revoke, list active ones. Needs INVITE_GUESTS (ADR-0043,
+ * server-checked); the room's own approval switch also MANAGE_ROOM (`manage`).
  */
-export function RoomLinkTab({ roomId }: { roomId: string }): ReactNode {
+export function RoomLinkTab({ roomId, manage }: { roomId: string; manage: boolean }): ReactNode {
   const voice = useRooms((s) => s.byId[roomId]?.type === RoomType.VOICE);
   const qc = useQueryClient();
   const key = ['roomInvites', roomId];
@@ -102,7 +103,7 @@ export function RoomLinkTab({ roomId }: { roomId: string }): ReactNode {
   const invites = q.data?.invites ?? [];
   return (
     <>
-      <RoomApprovalCard roomId={roomId} />
+      {manage ? <RoomApprovalCard roomId={roomId} /> : null}
       <Card title={t('people.link.new')} footer={t('people.link.newHint')}>
         <Row label={t('people.link.expiry')}>
           <Select aria-label={t('people.link.expiry')} className="w-60" value={expires} onChange={(e) => setExpires(Number(e.target.value))}>

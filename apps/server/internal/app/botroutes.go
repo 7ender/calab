@@ -107,6 +107,7 @@ var botRoutes = map[string]botAccess{
 	"DELETE /api/workspaces/{id}/bans/{userId}":            botAllow,
 	"POST /api/workspaces/{id}/rooms":                      botAllow,
 	"GET /api/workspaces/{id}/rooms":                       botAllow,
+	"POST /api/workspaces/{id}/rooms/temp":                 botAllow, // ADR-0044: CREATE_TEMP_ROOMS; members-only link, no meeting
 	"GET /api/rooms/{id}":                                  botAllow,
 	"PATCH /api/rooms/{id}":                                botAllow,
 	"DELETE /api/rooms/{id}":                               botAllow,
@@ -122,6 +123,7 @@ var botRoutes = map[string]botAccess{
 	"GET /api/rooms/{id}/messages/{messageId}":    botAllow,
 	"POST /api/rooms/{id}/messages":               botAllow,
 	"POST /api/rooms/{id}/messages/{mid}/forward": botAllow, // ADR-0033
+	"POST /api/messages/{id}/interactions":        botDeny,  // human intent only
 	"PATCH /api/messages/{id}":                    botAllow,
 	"DELETE /api/messages/{id}":                   botAllow,
 	"PUT /api/rooms/{id}/read":                    botAllow,
@@ -243,6 +245,8 @@ var botRoutes = map[string]botAccess{
 	"GET /api/me/caldav":                         botDeny,
 	"POST /api/me/caldav":                        botDeny,
 	"PUT /api/me/caldav":                         botDeny,
+	"PATCH /api/me/caldav":                       botDeny,
+	"GET /api/me/external-events":                botDeny, // ADR-0045 §5: the owner's own events, people only
 	"DELETE /api/me/caldav":                      botDeny,
 	"POST /api/me/caldav/sync":                   botDeny,
 	"GET /api/event-rsvp":                        botPublic, // signed answer links of external attendees; refuses bot tokens

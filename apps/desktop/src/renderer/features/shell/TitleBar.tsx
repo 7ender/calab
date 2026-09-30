@@ -1,5 +1,5 @@
 import * as Popover from '@radix-ui/react-popover';
-import { AtSign, ChevronLeft, ChevronRight, CircleHelp, Hash, Inbox, Search, Settings, Volume2 } from 'lucide-react';
+import { AtSign, CircleHelp, Hash, Inbox, Search, Settings, Volume2 } from 'lucide-react';
 import type { Message } from '@calaba/protocol';
 import { useEffect, useMemo, type ReactNode } from 'react';
 import { Avatar } from '../../components/Avatar';
@@ -8,14 +8,14 @@ import { t } from '../../i18n';
 import { api } from '../../lib/api/endpoints';
 import { fmt, toDate } from '../../lib/format';
 import { loadMentions } from '../../services/mentions';
-import { NAV_SHORTCUTS, shortcutHelp, useHotkeyLabel } from '../../services/hotkeys';
+import { shortcutHelp, useHotkeyLabel } from '../../services/hotkeys';
 import { platform } from '../../platform';
 import { usePrefs } from '../../stores/prefs';
-import { isDm } from '../../stores/dms';
+import { HOME, isDm } from '../../stores/dms';
 import { useInbox } from '../../stores/inbox';
 import { idAfter, isVoice, useRooms } from '../../stores/rooms';
 import { selectUpdatePending, useSession } from '../../stores/session';
-import { canGoBack, canGoForward, useUi } from '../../stores/ui';
+import { useUi } from '../../stores/ui';
 import { useMemberName, useWorkspaces } from '../../stores/workspaces';
 import { useChatView } from '../chat/chatView';
 import { usePreviewText } from '../chat/mentionText';
@@ -23,13 +23,15 @@ import { bindingLabel } from '../settings/PttBinder';
 import { popoverBox } from './menu';
 import { systemPreview } from '../../lib/recording';
 import { AppSettingsWindow } from './lazyWindows';
+import { WorkspaceMenu } from './WorkspaceMenu';
 
 /**
  * Window title bar (docs/09 #1): 38 px across the whole window, drag region in Electron.
- * Left: 80 px kept empty for the macOS traffic lights (hiddenInset at 12,12), then ← → room
- * history. Centre: the product name «Calab» (docs/09 #127). Right: search (opens the quick switcher), mentions, settings,
- * shortcuts help; on Windows the native caption buttons (Window Controls Overlay) take the
- * space given by env(titlebar-area-*).
+ * Left: 80 px kept empty for the macOS traffic lights (hiddenInset at 12,12), then the current
+ * workspace's name with «⌄» — the workspace menu (docs/09 #140; it replaced the «‹ ›» history
+ * buttons, whose shortcuts stay); «Calab» when no workspace is open («Личные», before READY).
+ * Right: search (opens the quick switcher), mentions, settings, shortcuts help; on Windows the
+ * native caption buttons (Window Controls Overlay) take the space given by env(titlebar-area-*).
  * Web (docs/09 #46): a compact 30 px toolbar — no window chrome, so no reserved inset and no
  * drag region; while the room header shows its own search field the pill hides (otherwise it
  * stays: ⌘K must remain discoverable).
@@ -40,17 +42,13 @@ export function TitleBar(): ReactNode {
   const web = !electron;
   const mac = electron && os === 'darwin';
   const searchKeys = useHotkeyLabel('search');
-  const back = useUi(canGoBack);
-  const fwd = useUi(canGoForward);
-  const goBack = useUi((s) => s.goBack);
-  const goForward = useUi((s) => s.goForward);
   const open = useUi((s) => s.openDialog);
 
   return (
     <header
       aria-label={t('shell.titlebar')}
       className={cx(
-        'mat-rail relative z-[var(--z-sticky)] grid shrink-0 grid-cols-[1fr_auto_1fr] items-center gap-3',
+        'mat-rail relative z-[var(--z-sticky)] flex shrink-0 items-center gap-3',
         web ? 'h-[var(--titlebar-height-web)]' : 'h-[var(--titlebar-height)]',
         electron && 'drag',
       )}
@@ -59,23 +57,13 @@ export function TitleBar(): ReactNode {
       // Windows (WCO): keep clear of the native caption buttons; 0 elsewhere (none on the web).
       style={web ? undefined : { paddingRight: 'calc(100vw - env(titlebar-area-x, 0px) - env(titlebar-area-width, 100vw))' }}
     >
-      <div className={cx('flex min-w-0 items-center gap-0.5', web && 'pl-2')}>
+      <div className={cx('flex min-w-0 items-center', web && 'pl-1')}>
         {/* macOS traffic lights live here — nothing is drawn under them. The web has no window chrome. */}
-        {web ? null : <div className={cx('shrink-0', mac ? 'w-[80px]' : 'w-2')} aria-hidden />}
-        <IconButton size="sm" label={t('shell.back')} shortcut={NAV_SHORTCUTS.back} disabled={!back} onClick={goBack} className="size-7">
-          <ChevronLeft className="size-[18px]" />
-        </IconButton>
-        <IconButton size="sm" label={t('shell.forward')} shortcut={NAV_SHORTCUTS.forward} disabled={!fwd} onClick={goForward} className="size-7">
-          <ChevronRight className="size-[18px]" />
-        </IconButton>
+        {web ? null : <div className={cx('shrink-0', mac ? 'w-[80px]' : 'w-1')} aria-hidden />}
+        <TitleBarWorkspace />
       </div>
 
-      {/* The product name only (owner, 29.09; docs/09 #127): the workspace is already named in the rail and sidebar. */}
-      <div className="flex min-w-0 items-center justify-center text-body font-semibold text-fg" data-testid="titlebar-title">
-        Calab
-      </div>
-
-      <div className="flex min-w-0 items-center justify-end gap-1 pr-2">
+      <div className="ml-auto flex min-w-0 items-center justify-end gap-1 pr-2">
         {/* The one workspace search entry point (docs/09 #53): always shown. */}
         <button
           type="button"
@@ -95,6 +83,23 @@ export function TitleBar(): ReactNode {
       </div>
     </header>
   );
+}
+
+/**
+ * The open workspace's menu trigger (its own leaf: the name and the role are its only
+ * subscriptions), or «Calab» without a workspace.
+ */
+function TitleBarWorkspace(): ReactNode {
+  const wsId = useUi((s) => s.activeWorkspaceId);
+  const known = useWorkspaces((s) => !!wsId && wsId !== HOME && !!s.byId[wsId]);
+  if (!known || !wsId) {
+    return (
+      <div className="px-2 text-body font-semibold text-fg" data-testid="titlebar-title">
+        Calab
+      </div>
+    );
+  }
+  return <WorkspaceMenu workspaceId={wsId} variant="titlebar" testId="titlebar-title" />;
 }
 
 /**

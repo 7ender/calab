@@ -32,7 +32,7 @@ export function cx(...c: Array<string | false | null | undefined>): string {
 /** Platform modifier label for shortcuts (⌘ on macOS, Ctrl elsewhere). */
 export const MOD = typeof navigator !== 'undefined' && /Mac OS X|Macintosh/.test(navigator.userAgent) ? '⌘' : 'Ctrl+';
 
-type Variant = 'primary' | 'secondary' | 'destructive' | 'ghost';
+type Variant = 'primary' | 'secondary' | 'destructive' | 'ghost' | 'attention';
 
 const VARIANTS: Record<Variant, string> = {
   primary: 'bg-accent-strong text-accent-fg hover:brightness-110 active:brightness-95',
@@ -41,6 +41,8 @@ const VARIANTS: Record<Variant, string> = {
   // macOS: destructive = red text (docs/08); a faint red tint keeps the text ≥ 4.5:1 on any surface.
   destructive: 'bg-[color-mix(in_srgb,var(--color-danger)_12%,transparent)] text-danger-text hover:bg-[color-mix(in_srgb,var(--color-danger)_18%,transparent)] active:brightness-95',
   ghost: 'bg-transparent text-muted hover:bg-hover hover:text-fg',
+  // An invitation to set something up (docs/08 «Цвета»: orange, e.g. «Подключить свой календарь»).
+  attention: 'bg-attention text-attention-fg hover:brightness-110 active:brightness-95',
 };
 
 export const Button = forwardRef<
@@ -481,6 +483,30 @@ export function Row({ label, hint, children, htmlFor }: { label: string; hint?: 
 
 // ---------------------------------------------------------------- dialogs
 
+/**
+ * Marks a scroll box with `data-scroll-top` / `data-scroll-bottom` while content is hidden past
+ * that edge (a dialog body, docs/09 #147). Attributes on the node — the dialog never re-renders
+ * on scroll; a field opening inside is caught by the ResizeObserver on the content.
+ */
+function trackScrollEdges(el: HTMLDivElement | null): (() => void) | undefined {
+  if (!el) return undefined;
+  const update = (): void => {
+    const top = el.scrollTop > 1;
+    const bottom = el.scrollTop + el.clientHeight < el.scrollHeight - 1;
+    if (top !== el.hasAttribute('data-scroll-top')) el.toggleAttribute('data-scroll-top', top);
+    if (bottom !== el.hasAttribute('data-scroll-bottom')) el.toggleAttribute('data-scroll-bottom', bottom);
+  };
+  const ro = typeof ResizeObserver === 'undefined' ? null : new ResizeObserver(update);
+  ro?.observe(el);
+  for (const child of Array.from(el.children)) ro?.observe(child);
+  el.addEventListener('scroll', update, { passive: true });
+  update();
+  return () => {
+    ro?.disconnect();
+    el.removeEventListener('scroll', update);
+  };
+}
+
 export function Modal({
   open,
   onClose,
@@ -549,7 +575,7 @@ export function Modal({
             'mobile:anim-sheet mobile:inset-x-0 mobile:bottom-[var(--kb-inset)] mobile:top-auto mobile:max-h-[calc(var(--app-height)-var(--safe-top)-16px)] mobile:w-full mobile:max-w-none mobile:translate-x-0 mobile:translate-y-0 mobile:rounded-b-none mobile:rounded-t-[16px] mobile:border-b-0 mobile:pb-[var(--safe-bottom)]',
           )}
         >
-          <div className="flex items-start justify-between gap-4 px-5 pt-5">
+          <div className="flex shrink-0 items-start justify-between gap-4 px-5 pt-5">
             {/* A flex sibling, never under the «×»: the title wraps before it (docs/09 #105). */}
             <div className="min-w-0 flex-1">
               <DialogP.Title className="text-headline font-semibold">{title}</DialogP.Title>
@@ -563,9 +589,20 @@ export function Modal({
               <CloseButton className="-mr-1 -mt-1" onClick={onClose} />
             ) : null}
           </div>
-          <div className={cx('min-h-0 flex-1 overflow-y-auto px-5 pb-5 pt-4', fill && 'flex flex-col')}>{children}</div>
+          {/* Only the body scrolls (the header and the buttons stay, docs/09 #147); a hairline at an
+              edge with more content past it is the scroll cue — set on the node, no re-render; `-my-px`
+              keeps the transparent borders out of the layout. */}
+          <div
+            ref={fill ? undefined : trackScrollEdges}
+            className={cx(
+              '-my-px min-h-0 flex-1 overflow-y-auto overscroll-contain border-y border-transparent px-5 pb-5 pt-4 transition-colors duration-[var(--motion-fast)] data-[scroll-bottom]:border-b-line data-[scroll-top]:border-t-line',
+              fill && 'flex flex-col',
+            )}
+          >
+            {children}
+          </div>
           {/* macOS order: secondary/cancel on the left of the primary action, primary rightmost. */}
-          {footer ? <div className="flex justify-end gap-2 px-5 pb-5">{footer}</div> : null}
+          {footer ? <div className="flex shrink-0 justify-end gap-2 px-5 pb-5">{footer}</div> : null}
         </DialogP.Content>
       </DialogP.Portal>
     </DialogP.Root>

@@ -29,8 +29,8 @@ var ErrInvalidKey = errors.New("blob: invalid key")
 type Meta struct {
 	Size    int64
 	ModTime time.Time
-	// ContentType is what Put received; drivers without object metadata (fs) return "".
-	// Callers serve files.mime from Postgres, not this field.
+	// ContentType is what Put received (s3: the store's default if Put got none); drivers
+	// without object metadata (fs) return "". Callers serve files.mime from Postgres, not this field.
 	ContentType string
 }
 

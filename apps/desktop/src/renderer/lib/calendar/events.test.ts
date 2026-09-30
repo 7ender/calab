@@ -2,7 +2,8 @@ import { create, type MessageInitShape } from '@bufbuild/protobuf';
 import { timestampFromMs } from '@bufbuild/protobuf/wkt';
 import { AttendeeStatus, CalendarEventAttendeeSchema, CalendarEventCountsSchema, CalendarEventSchema, EventRepeat, type CalendarEvent } from '@calaba/protocol';
 import { describe, expect, it } from 'vitest';
-import { applyCreate, applyDelete, applyRsvp, applyUpdate, keysIn, myStatusOf, occKey, replaceWindow, roomMeeting, withActive, withoutActive } from './events';
+import { applyCreate, applyDelete, busyDays, dayKeys, applyRsvp, applyUpdate, keysIn, myStatusOf, occKey, replaceWindow, roomMeeting, withActive, withoutActive } from './events';
+import { dayKey } from './time';
 
 const H = 3_600_000;
 const T0 = Date.parse('2026-01-15T12:00:00Z');
@@ -127,5 +128,25 @@ describe('room badges (ROOM_EVENT_ACTIVE / ENDED)', () => {
     expect(roomMeeting(m, 'r')?.id).toBe('a');
     m = withoutActive(m, 'r', 'a', null);
     expect(m['r']).toBeUndefined();
+  });
+});
+
+describe('«Только мои» (docs/09 #140)', () => {
+  const invited = ev('invited', T0);
+  const organized = ev('organized', T0 + H / 4, { organizerId: ME, attendees: [] });
+  const others = ev('others', T0 + H / 2, { attendees: [create(CalendarEventAttendeeSchema, { userId: BOB, required: true, status: AttendeeStatus.ACCEPTED })] });
+  const m = map(invited, organized, others);
+  const day = dayKey(T0);
+
+  it('keeps the meetings I organize or attend, on top of the people filter', () => {
+    expect(dayKeys(m, 'ws', day)).toHaveLength(3);
+    expect(dayKeys(m, 'ws', day, undefined, ME).map((k) => m[k]?.id)).toEqual(['invited', 'organized']);
+    expect(dayKeys(m, 'ws', day, new Set([BOB]), ME).map((k) => m[k]?.id)).toEqual(['invited']);
+  });
+
+  it('the mini month dots follow it', () => {
+    const from = T0 - 12 * H;
+    expect(busyDays(map(others), 'ws', from, from + 24 * H, undefined, undefined, ME)).toEqual([]);
+    expect(busyDays(m, 'ws', from, from + 24 * H, undefined, undefined, ME)).toContain(day);
   });
 });

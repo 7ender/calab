@@ -58,6 +58,19 @@ const (
 	Permission_PERMISSION_EDIT_TASKS Permission = 524288
 	// 1 << 20: statuses, labels, milestones, settings, access and archive of the board.
 	Permission_PERMISSION_MANAGE_BOARD Permission = 1048576
+	// Invitations (ADR-0043). Not implied by MANAGE_WORKSPACE / MANAGE_ROOM (migration 00047
+	// granted them to the roles holding those); settable per room; never for guests.
+	// 1 << 21: workspace invites (links, e-mail, adding an account); in a room: members-only
+	// room links (RoomInvite.members_only) that give workspace members access to that room.
+	Permission_PERMISSION_INVITE_MEMBERS Permission = 2097152
+	// 1 << 22: room links that admit guests (ADR-0016), their approval setting and deciding on
+	// knocking guests (ADR-0040); meeting guest links of an organizer (ADR-0038).
+	Permission_PERMISSION_INVITE_GUESTS Permission = 4194304
+	// 1 << 23 (ADR-0044): create temporary rooms (POST /api/workspaces/{id}/rooms/temp).
+	// Workspace-level: room overrides neither grant nor take it. In the built-in member role by
+	// default (migration 00048 added it to existing member roles); never for guests. The
+	// workspace switches the feature off by removing it from the member role.
+	Permission_PERMISSION_CREATE_TEMP_ROOMS Permission = 8388608
 )
 
 // Enum value maps for Permission.
@@ -85,30 +98,36 @@ var (
 		262144:  "PERMISSION_CREATE_TASKS",
 		524288:  "PERMISSION_EDIT_TASKS",
 		1048576: "PERMISSION_MANAGE_BOARD",
+		2097152: "PERMISSION_INVITE_MEMBERS",
+		4194304: "PERMISSION_INVITE_GUESTS",
+		8388608: "PERMISSION_CREATE_TEMP_ROOMS",
 	}
 	Permission_value = map[string]int32{
-		"PERMISSION_UNSPECIFIED":      0,
-		"PERMISSION_VIEW_ROOM":        1,
-		"PERMISSION_SEND_MESSAGES":    2,
-		"PERMISSION_ATTACH_FILES":     4,
-		"PERMISSION_MANAGE_MESSAGES":  8,
-		"PERMISSION_CONNECT":          16,
-		"PERMISSION_SPEAK":            32,
-		"PERMISSION_STREAM":           64,
-		"PERMISSION_MUTE_MEMBERS":     128,
-		"PERMISSION_MANAGE_ROOM":      256,
-		"PERMISSION_MANAGE_WORKSPACE": 512,
-		"PERMISSION_ADMINISTRATOR":    1024,
-		"PERMISSION_MOVE_MEMBERS":     2048,
-		"PERMISSION_MANAGE_NICKNAMES": 4096,
-		"PERMISSION_MENTION_EVERYONE": 8192,
-		"PERMISSION_VIDEO":            16384,
-		"PERMISSION_MANAGE_ROLES":     32768,
-		"PERMISSION_MANAGE_STICKERS":  65536,
-		"PERMISSION_VIEW_BOARD":       131072,
-		"PERMISSION_CREATE_TASKS":     262144,
-		"PERMISSION_EDIT_TASKS":       524288,
-		"PERMISSION_MANAGE_BOARD":     1048576,
+		"PERMISSION_UNSPECIFIED":       0,
+		"PERMISSION_VIEW_ROOM":         1,
+		"PERMISSION_SEND_MESSAGES":     2,
+		"PERMISSION_ATTACH_FILES":      4,
+		"PERMISSION_MANAGE_MESSAGES":   8,
+		"PERMISSION_CONNECT":           16,
+		"PERMISSION_SPEAK":             32,
+		"PERMISSION_STREAM":            64,
+		"PERMISSION_MUTE_MEMBERS":      128,
+		"PERMISSION_MANAGE_ROOM":       256,
+		"PERMISSION_MANAGE_WORKSPACE":  512,
+		"PERMISSION_ADMINISTRATOR":     1024,
+		"PERMISSION_MOVE_MEMBERS":      2048,
+		"PERMISSION_MANAGE_NICKNAMES":  4096,
+		"PERMISSION_MENTION_EVERYONE":  8192,
+		"PERMISSION_VIDEO":             16384,
+		"PERMISSION_MANAGE_ROLES":      32768,
+		"PERMISSION_MANAGE_STICKERS":   65536,
+		"PERMISSION_VIEW_BOARD":        131072,
+		"PERMISSION_CREATE_TASKS":      262144,
+		"PERMISSION_EDIT_TASKS":        524288,
+		"PERMISSION_MANAGE_BOARD":      1048576,
+		"PERMISSION_INVITE_MEMBERS":    2097152,
+		"PERMISSION_INVITE_GUESTS":     4194304,
+		"PERMISSION_CREATE_TEMP_ROOMS": 8388608,
 	}
 )
 
@@ -382,7 +401,7 @@ const file_calaba_v1_permissions_proto_rawDesc = "" +
 	"\abuiltin\x18\a \x01(\x0e2\x18.calaba.v1.WorkspaceRoleR\abuiltin\x12 \n" +
 	"\vmentionable\x18\b \x01(\bR\vmentionable\x129\n" +
 	"\n" +
-	"created_at\x18\t \x01(\v2\x1a.google.protobuf.TimestampR\tcreatedAt*\x91\x05\n" +
+	"created_at\x18\t \x01(\v2\x1a.google.protobuf.TimestampR\tcreatedAt*\xf9\x05\n" +
 	"\n" +
 	"Permission\x12\x1a\n" +
 	"\x16PERMISSION_UNSPECIFIED\x10\x00\x12\x18\n" +
@@ -406,7 +425,10 @@ const file_calaba_v1_permissions_proto_rawDesc = "" +
 	"\x15PERMISSION_VIEW_BOARD\x10\x80\x80\b\x12\x1d\n" +
 	"\x17PERMISSION_CREATE_TASKS\x10\x80\x80\x10\x12\x1b\n" +
 	"\x15PERMISSION_EDIT_TASKS\x10\x80\x80 \x12\x1d\n" +
-	"\x17PERMISSION_MANAGE_BOARD\x10\x80\x80@*\x98\x01\n" +
+	"\x17PERMISSION_MANAGE_BOARD\x10\x80\x80@\x12 \n" +
+	"\x19PERMISSION_INVITE_MEMBERS\x10\x80\x80\x80\x01\x12\x1f\n" +
+	"\x18PERMISSION_INVITE_GUESTS\x10\x80\x80\x80\x02\x12#\n" +
+	"\x1cPERMISSION_CREATE_TEMP_ROOMS\x10\x80\x80\x80\x04*\x98\x01\n" +
 	"\rWorkspaceRole\x12\x1e\n" +
 	"\x1aWORKSPACE_ROLE_UNSPECIFIED\x10\x00\x12\x18\n" +
 	"\x14WORKSPACE_ROLE_OWNER\x10\x01\x12\x18\n" +

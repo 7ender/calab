@@ -91,6 +91,12 @@ const (
 	// 409: POST /api/workspaces/{id}/freebusy/suggest with within_work_hours when the working
 	// hours of the people do not intersect in the window (ADR-0041): offer to turn the flag off.
 	ErrorCode_ERROR_CODE_NO_COMMON_HOURS ErrorCode = 52
+	// 409: POST /api/workspaces/{id}/rooms/temp over the live temporary rooms cap (ADR-0044):
+	// 20 per workspace, or 5 per creator (reason "PER_USER"); used / limit are set.
+	ErrorCode_ERROR_CODE_TEMP_ROOM_LIMIT ErrorCode = 53
+	// 410: the room is an archived temporary room (ADR-0044): its history is readable (VIEW_ROOM),
+	// writes, reactions, voice, links and settings are not.
+	ErrorCode_ERROR_CODE_ROOM_ARCHIVED ErrorCode = 54
 )
 
 // Enum value maps for ErrorCode.
@@ -135,6 +141,8 @@ var (
 		50: "ERROR_CODE_EVENT_OVER",
 		51: "ERROR_CODE_INVITE_NOT_YET_VALID",
 		52: "ERROR_CODE_NO_COMMON_HOURS",
+		53: "ERROR_CODE_TEMP_ROOM_LIMIT",
+		54: "ERROR_CODE_ROOM_ARCHIVED",
 	}
 	ErrorCode_value = map[string]int32{
 		"ERROR_CODE_UNSPECIFIED":           0,
@@ -176,6 +184,8 @@ var (
 		"ERROR_CODE_EVENT_OVER":            50,
 		"ERROR_CODE_INVITE_NOT_YET_VALID":  51,
 		"ERROR_CODE_NO_COMMON_HOURS":       52,
+		"ERROR_CODE_TEMP_ROOM_LIMIT":       53,
+		"ERROR_CODE_ROOM_ARCHIVED":         54,
 	}
 )
 
@@ -585,7 +595,7 @@ const file_calaba_v1_common_proto_rawDesc = "" +
 	"\vattribution\x18\x05 \x01(\tR\vattribution\x12\x10\n" +
 	"\x03url\x18\x06 \x01(\tR\x03url\x12\x18\n" +
 	"\aproduct\x18\a \x01(\tR\aproduct\x12!\n" +
-	"\fplan_contact\x18\b \x01(\tR\vplanContact*\xa5\t\n" +
+	"\fplan_contact\x18\b \x01(\tR\vplanContact*\xe3\t\n" +
 	"\tErrorCode\x12\x1a\n" +
 	"\x16ERROR_CODE_UNSPECIFIED\x10\x00\x12\x17\n" +
 	"\x13ERROR_CODE_INTERNAL\x10\x01\x12\x1a\n" +
@@ -626,7 +636,9 @@ const file_calaba_v1_common_proto_rawDesc = "" +
 	"\x1aERROR_CODE_SESSION_REVOKED\x10,\x12\x19\n" +
 	"\x15ERROR_CODE_EVENT_OVER\x102\x12#\n" +
 	"\x1fERROR_CODE_INVITE_NOT_YET_VALID\x103\x12\x1e\n" +
-	"\x1aERROR_CODE_NO_COMMON_HOURS\x104B\x99\x01\n" +
+	"\x1aERROR_CODE_NO_COMMON_HOURS\x104\x12\x1e\n" +
+	"\x1aERROR_CODE_TEMP_ROOM_LIMIT\x105\x12\x1c\n" +
+	"\x18ERROR_CODE_ROOM_ARCHIVED\x106B\x99\x01\n" +
 	"\rcom.calaba.v1B\vCommonProtoP\x01Z6github.com/calaba/calaba/server/gen/calaba/v1;calabav1\xa2\x02\x03CXX\xaa\x02\tCalaba.V1\xca\x02\tCalaba\\V1\xe2\x02\x15Calaba\\V1\\GPBMetadata\xea\x02\n" +
 	"Calaba::V1b\x06proto3"
 

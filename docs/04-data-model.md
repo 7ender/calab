@@ -46,7 +46,9 @@ rooms               id, workspace_id? (NULL только у DM), type ('voice'|'
                     audio_bitrate_kbps?  (8|16|32|64; 24, 48 legacy),
                     max_stream_preset?   ('economy'|'h720'|'h1080'|'original'),
                     max_streams?         (0..10),
-                    created_at, archived_at
+                    created_at, archived_at,
+                    expires_at?  (временная комната, ADR-0044: архивируется свипером в этот момент),
+                    created_by?  (создатель; у временной — неявный MANAGE_ROOM на неё)
 room_permissions    room_id, target_type ('role'|'user'), target_id (id роли | id пользователя),
                     allow bigint, deny bigint            -- overrides, как в Discord
                     PK (room_id, target_type, target_id)
@@ -169,7 +171,7 @@ voice_states        (не в Postgres — в Redis, источник LiveKit web
 | `owner` | 1001 | `ADMINISTRATOR` | только цвет/`mentionable`; снять/выдать нельзя; единственный, кто удаляет workspace |
 | `admin` | 1000 | `ADMINISTRATOR` | цвет/`mentionable`; выдаёт и снимает только владелец |
 | свои роли | 2 … | заданные | имя, цвет, права, порядок; удаляются |
-| `member` | 1 | `VIEW_ROOM, SEND_MESSAGES, ATTACH_FILES, CONNECT, SPEAK, STREAM, VIDEO, VIEW_BOARD, CREATE_TASKS` (биты досок — миграция 00046, ADR-0042) | права; есть у каждого не-гостя |
+| `member` | 1 | `VIEW_ROOM, SEND_MESSAGES, ATTACH_FILES, CONNECT, SPEAK, STREAM, VIDEO, VIEW_BOARD, CREATE_TASKS, CREATE_TEMP_ROOMS` (биты досок — миграция 00046, ADR-0042; временные комнаты — 00048, ADR-0044) | права; есть у каждого не-гостя |
 | `guest` | 0 | `CONNECT, SPEAK` (комнаты — только с явным `allow VIEW_ROOM`) | права в пределах `VIEW_ROOM, SEND_MESSAGES, ATTACH_FILES, CONNECT, SPEAK, STREAM, VIDEO` |
 
 - Встроенные роли участника следуют `workspace_members.role` (триггер): `owner` → owner + member, `admin` → admin + member, `member` → member, `guest` → guest. Поле `role` остаётся «старшей встроенной ролью» для клиентов до 0.6.0 (`WorkspaceMember.role`); свои роли назначаются отдельно (`member_roles`) и переживают смену встроенной. Имена встроенных ролей — ключи (`owner` …), клиент показывает локализованные.
@@ -198,7 +200,7 @@ export const Permission = {
   STREAM:           1n << 6n,   // публиковать экран
   MUTE_MEMBERS:     1n << 7n,   // серверный мьют/кик из voice
   MANAGE_ROOM:      1n << 8n,   // название, права, удаление комнаты
-  MANAGE_WORKSPACE: 1n << 9n,   // настройки, инвайты, роли
+  MANAGE_WORKSPACE: 1n << 9n,   // настройки, баны, боты (инвайты — INVITE_MEMBERS с ADR-0043)
   ADMINISTRATOR:    1n << 10n,  // всё, игнорирует deny
   MOVE_MEMBERS:     1n << 11n,  // перемещать других между voice-комнатами, входить сверх user_limit
   MANAGE_NICKNAMES: 1n << 12n,  // менять ники других (только уровень workspace)
@@ -211,6 +213,10 @@ export const Permission = {
   CREATE_TASKS:     1n << 18n,  // создавать задачи; править свои и назначенные на себя
   EDIT_TASKS:       1n << 19n,  // править, двигать, архивировать любые задачи; модерация комментариев
   MANAGE_BOARD:     1n << 20n,  // статусы, лейблы, вехи, настройки, доступ, архив доски
+  // Приглашения (ADR-0043): и на роли, и в переопределениях комнаты; MANAGE_* их не дают; гостям — никогда
+  INVITE_MEMBERS:   1n << 21n,  // инвайты в пространство (ссылки, email, добавить); в комнате — ссылка «только для участников»
+  INVITE_GUESTS:    1n << 22n,  // гостевые ссылки комнаты, их подтверждение, решение по ожидающим гостям, гостевые ссылки встреч
+  CREATE_TEMP_ROOMS: 1n << 23n, // временные комнаты (ADR-0044); только уровень workspace, у member по умолчанию, гостям — никогда
 } as const;
 ```
 
@@ -232,7 +238,7 @@ perms &= ~userOverride.deny;  perms |= userOverride.allow   (персональ�
 if !(perms & VIEW_ROOM) → 0
 ```
 
-`ADMINISTRATOR`, `MANAGE_WORKSPACE`, `MANAGE_NICKNAMES`, `MANAGE_ROLES`, `MANAGE_STICKERS` — только уровень пространства, в переопределениях комнаты запрещены (API отвечает `422`), а `computePermissions` их в переопределениях игнорирует (`allow`/`deny` маскируются `RoomOnly` / `ROOM_ONLY_PERMISSIONS`). Цель `role` в `room_permissions` — id роли (миграция 00021 перевела `member`/`guest` на id встроенных; API по-прежнему принимает имена встроенных ролей и сохраняет их id).
+`ADMINISTRATOR`, `MANAGE_WORKSPACE`, `MANAGE_NICKNAMES`, `MANAGE_ROLES`, `MANAGE_STICKERS`, `CREATE_TEMP_ROOMS` — только уровень пространства, в переопределениях комнаты запрещены (API отвечает `422`), а `computePermissions` их в переопределениях игнорирует (`allow`/`deny` маскируются `RoomOnly` / `ROOM_ONLY_PERMISSIONS`). `INVITE_MEMBERS` / `INVITE_GUESTS` (ADR-0043) — и на ролях, и в переопределениях комнаты. Цель `role` в `room_permissions` — id роли (миграция 00021 перевела `member`/`guest` на id встроенных; API по-прежнему принимает имена встроенных ролей и сохраняет их id).
 
 Приватная комната = override для роли `member` с `deny: VIEW_ROOM` + allow для своих ролей или конкретных пользователей (гостям `VIEW_ROOM` и так не положен).
 
@@ -343,7 +349,7 @@ roomAdmin           = MUTE_MEMBERS (позволяет серверные mute/r
 - `users.event_reminders smallint[]` (по умолчанию `{60,5}`, ≤ 5 значений из 5/10/15/30/60/120/1440) и `event_reminders_dnd` (напоминать при «Не беспокоить», по умолчанию да) — отдельно от `settings` jsonb: `PATCH /api/me {settings}` их не затирает.
 - `room_invites.not_before` / `event_id` — гостевая ссылка встречи работает с 15 минут до начала.
 - Видимость: не гость видит встречу, если он организатор/участник или видит её комнату (`VIEW_ROOM`); встречу без комнаты — только её участники. Менять/отменять — организатор, иначе `MANAGE_ROOM` в комнате встречи, без комнаты — `MANAGE_WORKSPACE`. Гости календаря не видят; боты только читают (без адресов внешних).
-- **Свободно/занято и CalDAV (ADR-0041).** `users.work_start_min / work_end_min smallint` (минуты от полуночи зоны пользователя, по умолчанию 600 / 1140) и `work_days smallint[]` (1 = пн … 7 = вс, по умолчанию `{1,2,3,4,5}`) — рабочие часы, отдельно от `settings` jsonb (как напоминания). `caldav_accounts` (PK `user_id`): `url`, `username`, `secret_enc` (пароль, AES-GCM `sealbox` «calaba/caldav/v1» из `JWT_SECRET`, привязан к `user_id`; в API не отдаётся), `calendars jsonb` (найденные календари `[{href, name, color}]`), `calendar_href`, `import` (по умолчанию да), `push` (нет), `last_sync_at`, `last_error`. `external_busy (user_id, uid, starts_at, ends_at, all_day)` — импортированная занятость окна −1…+30 дней: только время, `uid` — хэш UID события, без названий; заменяется целиком при каждом импорте. `caldav_pushes (user_id, event_id)` — outbox экспорта встреч: одна строка на пару, `gen` растёт с каждым изменением (доставка старого состояния не удаляет новое), `attempts` ≤ 5, `next_at`; воркер сам решает PUT или DELETE по текущему состоянию встречи.
+- **Свободно/занято и CalDAV (ADR-0041).** `users.work_start_min / work_end_min smallint` (минуты от полуночи зоны пользователя, по умолчанию 600 / 1140) и `work_days smallint[]` (1 = пн … 7 = вс, по умолчанию `{1,2,3,4,5}`) — рабочие часы, отдельно от `settings` jsonb (как напоминания). `caldav_accounts` (PK `user_id`): `url`, `username`, `secret_enc` (пароль, AES-GCM `sealbox` «calaba/caldav/v1» из `JWT_SECRET`, привязан к `user_id`; в API не отдаётся), `calendars jsonb` (найденные календари `[{href, name, color}]`), `calendar_href`, `import` (по умолчанию да), `push` (нет), `last_sync_at`, `last_error`, `share_level` (ADR-0045: `busy` по умолчанию · `title` · `details` — что коллеги видят в freebusy; меняет только владелец, `PATCH /api/me/caldav`). `external_busy (user_id, uid, starts_at, ends_at, all_day, summary, location, attendees, organizer, url)` — импортированные события окна −1…+30 дней, по строке на вхождение: `uid` — хэш UID события; детали (ADR-0045) — `summary`/`location` ≤ 200 символов, `attendees jsonb` `[{email, name?}]` ≤ 50 (e-mail в нижнем регистре), `organizer` (e-mail), `url` ≤ 500 (`URL` события или первая `https://` из DESCRIPTION; сам DESCRIPTION не хранится); заменяется целиком при каждом импорте. Детали целиком видит только владелец (`GET /api/me/external-events`); коллеги в `freebusy` получают `title` при `title`/`details` и `attendee_user_ids` (участники пространства по подтверждённому `users.email`) при `details` — место, организатор, ссылка и чужие адреса не отдаются никогда. `caldav_pushes (user_id, event_id)` — outbox экспорта встреч: одна строка на пару, `gen` растёт с каждым изменением (доставка старого состояния не удаляет новое), `attempts` ≤ 5, `next_at`; воркер сам решает PUT или DELETE по текущему состоянию встречи.
 
 ## Доски задач (ADR-0042, миграция 00046)
 - `boards` — доска пространства: `name` 1..60, `key` 2..6 `A–Z0–9` с буквы (уникален в пространстве, пустой → из названия: инициалы слов или 3 буквы, кириллица транслитерируется, занятый → суффикс цифрой), `emoji`, `icon_file_id`, `description` ≤ 2000, `is_private`, `position`, `next_number` (нумерация задач; ключ нельзя менять после первой задачи), `auto_archive_days` (30; 0 — никогда), `default_view_id`, `archived_at`. Создатель получает `board_permissions` user-allow всех битов доски. Шаблоны статусов: «Простая» (Todo / В работе / Готово), «Разработка» (+ Backlog, Ревью, Отменено), «Пустая» (Todo).
@@ -352,6 +358,12 @@ roomAdmin           = MUTE_MEMBERS (позволяет серверные mute/r
 - `task_assignees` (≤ 10, ровно один `is_lead`, если есть; `note` ≤ 120, `assigned_by/at`), `task_labels`, `task_relations` (`blocks` хранится один раз, `relates`/`duplicates` читаются в обе стороны), `task_attachments` (файлы описания; сироты-очистка их не трогает, `FileRooms` даёт комнату задачи).
 - `task_activity` — неизменяемый журнал: `kind created|status|assignees|priority|labels|dates|estimate|parent|milestone|relation|title|description|attachments|archived|restored|moved_board`, `before`/`after` jsonb, `actor_id` (человек или бот; `NULL` — метёлка автоархива), удаляется только с доской.
 - `task_subscribers (task_id, user_id, muted, notified_at, seen_at)`: автор, исполнители, комментаторы и упомянутые подписываются сами; «Отписаться» = `muted`; непрочитано = `notified_at > seen_at`. Уровень уведомлений «Задачи» — `workspace_notification_settings.task_level` (`all` по умолчанию | `mentions` | `none`), правило `notifications.TaskNotifies` / `taskNotifies` (векторы `task` в `proto/testdata/notifications.json`): назначение и упоминание — при `all`/`mentions`, даже без подписки; комментарий и смена статуса — при `all` подписчикам без `muted`; mute пространства глушит всё.
+
+## Временные комнаты (ADR-0044, миграция 00048)
+- Временная комната — обычная `voice` с `rooms.expires_at` (`Room.expires_at`, отдельного `is_temp` нет) и `created_by`. Создание — `POST /api/workspaces/{id}/rooms/temp` (`CREATE_TEMP_ROOMS`), лимиты: 20 живых на пространство, 5 на создателя (`409 TEMP_ROOM_LIMIT`).
+- Права: создатель (не гость) управляет своей временной комнатой как с `MANAGE_ROOM` — одна проверка `rooms.MayManage` (сервер) / `mayManageRoom` (клиент); `computePermissions` не меняется. На постоянных комнатах `created_by` прав не даёт. `make_permanent` — только настоящий `MANAGE_ROOM`.
+- Приватная временная = deny `VIEW_ROOM` роли `member` + личные allow (`VIEW_ROOM | CONNECT | SPEAK | VIDEO | STREAM | SEND_MESSAGES | ATTACH_FILES` в пределах прав создателя) создателю, выбранным людям и всем, кто вошёл по ссылке.
+- Архив: `archived_at` (удаление или истечение), ссылки отозваны, LiveKit-комната закрыта. История читается с `VIEW_ROOM` (сообщения, закрепы, вложения), остальное — `410 ROOM_ARCHIVED`; постоянные архивные комнаты по-прежнему скрыты (`404`). Через `TEMP_ROOM_RETENTION_DAYS` (90) архивная временная комната удаляется с историей.
 
 ## Auth (MVP)
 
@@ -368,7 +380,7 @@ roomAdmin           = MUTE_MEMBERS (позволяет серверные mute/r
 - **Подтверждение email.** Код — 6 цифр, argon2id, 10 мин, 5 попыток (попытка списывается до сравнения), новый — не чаще раза в 60 с (атомарно в `PutEmailCode`). Код шлют регистрация, вход неподтверждённого (если прошлый старше 60 с) и `verify/send`. Неподтверждённый аккаунт читает и входит, но `EMAIL_NOT_VERIFIED` (403) на создание пространства, приглашения (ссылки на пространство/комнату, email-приглашения, lookup, добавление) и **новый** DM; гости не затрагиваются. Существующие аккаунты **не** считаются подтверждёнными (владелец, 27.09). Суперадмин (`SUPERADMIN_EMAILS`) — только с подтверждённым адресом.
 - **Смена email** — адрес попадает в `pending_email`, код уходит на новый адрес; вход — по старому, пока код не подтверждён (`verify` переносит адрес и ставит `email_verified_at`). Смена на текущий адрес отменяет ожидающую.
 - **Сброс пароля.** `forgot` → `200 ForgotPasswordResponse` с одинаковым ответом, есть аккаунт или нет (письмо уходит в фоне; обе выборки — точный адрес и «похожий» — выполняются всегда, тайминг одинаковый). Единственное исключение — `similar_account: true` (docs/09 #137): точного аккаунта нет, а есть тот же логин на домене той же организации (та же проверка `HasSimilarAccount`, что у регистрации #119, без доменов инвайтов; под лимитом `forgot` per IP); если точный аккаунт существует — `false`, чужой адрес не называется. Каждая остановка пишется в лог без адреса: `password reset: no account` (`domain`, `email_hash` — 8 hex sha256 нормализованного адреса, `ip`, `similar_account`) или `password reset: account not eligible` (`user_id`, `reason`: `guest` / `no_password` / `disabled`); `reset` с неверным/просроченным кодом или неизвестным адресом — одинаково `422 CODE_INVALID`; успех: новый хэш, адрес подтверждён, **все** сессии отозваны.
-- **Приглашения по email.** Право — `MANAGE_WORKSPACE` (право на приглашения) + подтверждённый адрес. `lookup` — точное совпадение среди подтверждённых активных не-гостей, 20/мин на пользователя, в лог — id действующего и sha256-префикс адреса. `members {user_id}` добавляет сразу (`member`) + письмо `workspace_added`. `invites/email` создаёт одноразовую ссылку, привязанную к адресу (регистрация/вход по ней с другим адресом → `INVITE_INVALID`; с этим — адрес сразу подтверждён), повтор тому же адресу — не чаще раза в 24 ч (новая ссылка, старая удаляется); 20 подряд / 30 в час на пользователя. Подтверждение адреса (код, сброс пароля, ссылка) принимает **все** живые email-приглашения этого адреса.
+- **Приглашения по email.** Право — `INVITE_MEMBERS` (ADR-0043) + подтверждённый адрес. `lookup` — точное совпадение среди подтверждённых активных не-гостей, 20/мин на пользователя, в лог — id действующего и sha256-префикс адреса. `members {user_id}` добавляет сразу (`member`) + письмо `workspace_added`. `invites/email` создаёт одноразовую ссылку, привязанную к адресу (регистрация/вход по ней с другим адресом → `INVITE_INVALID`; с этим — адрес сразу подтверждён), повтор тому же адресу — не чаще раза в 24 ч (новая ссылка, старая удаляется); 20 подряд / 30 в час на пользователя. Подтверждение адреса (код, сброс пароля, ссылка) принимает **все** живые email-приглашения этого адреса.
 - Позже: OIDC (Google Workspace / Keycloak) — таблица `users` уже без привязки к паролю как единственному способу (`password_hash` nullable).
 
 ## Боты (ADR-0031)

@@ -140,7 +140,7 @@ type BusyKind int32
 const (
 	BusyKind_BUSY_KIND_UNSPECIFIED BusyKind = 0
 	BusyKind_BUSY_KIND_MEETING     BusyKind = 1 // a Calab meeting they organize or attend (answer not «declined»)
-	BusyKind_BUSY_KIND_EXTERNAL    BusyKind = 2 // their connected CalDAV calendar (never with a title or an id)
+	BusyKind_BUSY_KIND_EXTERNAL    BusyKind = 2 // their connected CalDAV calendar (no id; a title only by its share_level)
 )
 
 // Enum value maps for BusyKind.
@@ -182,6 +182,59 @@ func (x BusyKind) Number() protoreflect.EnumNumber {
 // Deprecated: Use BusyKind.Descriptor instead.
 func (BusyKind) EnumDescriptor() ([]byte, []int) {
 	return file_calaba_v1_event_proto_rawDescGZIP(), []int{2}
+}
+
+// What colleagues see of the imported events in free / busy (ADR-0045 §2, §4).
+type CalDavShareLevel int32
+
+const (
+	CalDavShareLevel_CAL_DAV_SHARE_LEVEL_UNSPECIFIED CalDavShareLevel = 0
+	CalDavShareLevel_CAL_DAV_SHARE_LEVEL_BUSY        CalDavShareLevel = 1 // only «busy»
+	CalDavShareLevel_CAL_DAV_SHARE_LEVEL_TITLE       CalDavShareLevel = 2 // the title
+	CalDavShareLevel_CAL_DAV_SHARE_LEVEL_DETAILS     CalDavShareLevel = 3 // the title and the attendees who are members of the workspace
+)
+
+// Enum value maps for CalDavShareLevel.
+var (
+	CalDavShareLevel_name = map[int32]string{
+		0: "CAL_DAV_SHARE_LEVEL_UNSPECIFIED",
+		1: "CAL_DAV_SHARE_LEVEL_BUSY",
+		2: "CAL_DAV_SHARE_LEVEL_TITLE",
+		3: "CAL_DAV_SHARE_LEVEL_DETAILS",
+	}
+	CalDavShareLevel_value = map[string]int32{
+		"CAL_DAV_SHARE_LEVEL_UNSPECIFIED": 0,
+		"CAL_DAV_SHARE_LEVEL_BUSY":        1,
+		"CAL_DAV_SHARE_LEVEL_TITLE":       2,
+		"CAL_DAV_SHARE_LEVEL_DETAILS":     3,
+	}
+)
+
+func (x CalDavShareLevel) Enum() *CalDavShareLevel {
+	p := new(CalDavShareLevel)
+	*p = x
+	return p
+}
+
+func (x CalDavShareLevel) String() string {
+	return protoimpl.X.EnumStringOf(x.Descriptor(), protoreflect.EnumNumber(x))
+}
+
+func (CalDavShareLevel) Descriptor() protoreflect.EnumDescriptor {
+	return file_calaba_v1_event_proto_enumTypes[3].Descriptor()
+}
+
+func (CalDavShareLevel) Type() protoreflect.EnumType {
+	return &file_calaba_v1_event_proto_enumTypes[3]
+}
+
+func (x CalDavShareLevel) Number() protoreflect.EnumNumber {
+	return protoreflect.EnumNumber(x)
+}
+
+// Deprecated: Use CalDavShareLevel.Descriptor instead.
+func (CalDavShareLevel) EnumDescriptor() ([]byte, []int) {
+	return file_calaba_v1_event_proto_rawDescGZIP(), []int{3}
 }
 
 // One attendee: a member of the workspace (user_id) or an external address (email,
@@ -1400,9 +1453,15 @@ type BusyInterval struct {
 	EventId string   `protobuf:"bytes,3,opt,name=event_id,json=eventId,proto3" json:"event_id,omitempty"`
 	Kind    BusyKind `protobuf:"varint,4,opt,name=kind,proto3,enum=calaba.v1.BusyKind" json:"kind,omitempty"`
 	// An all-day meeting / external event: busy from midnight to midnight of the person's zone.
-	AllDay        bool `protobuf:"varint,5,opt,name=all_day,json=allDay,proto3" json:"all_day,omitempty"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
+	AllDay bool `protobuf:"varint,5,opt,name=all_day,json=allDay,proto3" json:"all_day,omitempty"`
+	// BUSY_KIND_EXTERNAL only, by the owner's CalDavAccount.share_level (ADR-0045 §4): the event's
+	// title at TITLE / DETAILS, else empty. Never its place, organizer or link.
+	Title string `protobuf:"bytes,6,opt,name=title,proto3" json:"title,omitempty"`
+	// BUSY_KIND_EXTERNAL at DETAILS only: the event's attendees who are members of this workspace
+	// (matched by a confirmed e-mail; not guests or bots). Other addresses are never shared.
+	AttendeeUserIds []string `protobuf:"bytes,7,rep,name=attendee_user_ids,json=attendeeUserIds,proto3" json:"attendee_user_ids,omitempty"`
+	unknownFields   protoimpl.UnknownFields
+	sizeCache       protoimpl.SizeCache
 }
 
 func (x *BusyInterval) Reset() {
@@ -1468,6 +1527,20 @@ func (x *BusyInterval) GetAllDay() bool {
 		return x.AllDay
 	}
 	return false
+}
+
+func (x *BusyInterval) GetTitle() string {
+	if x != nil {
+		return x.Title
+	}
+	return ""
+}
+
+func (x *BusyInterval) GetAttendeeUserIds() []string {
+	if x != nil {
+		return x.AttendeeUserIds
+	}
+	return nil
 }
 
 type FreeBusyUser struct {
@@ -1839,8 +1912,9 @@ type CalDavAccount struct {
 	Import        bool                   `protobuf:"varint,4,opt,name=import,proto3" json:"import,omitempty"`                                // import busy time (default true)
 	Push          bool                   `protobuf:"varint,5,opt,name=push,proto3" json:"push,omitempty"`                                    // put the user's meetings into the calendar (default false)
 	LastSyncAt    *timestamppb.Timestamp `protobuf:"bytes,6,opt,name=last_sync_at,json=lastSyncAt,proto3" json:"last_sync_at,omitempty"`
-	LastError     string                 `protobuf:"bytes,7,opt,name=last_error,json=lastError,proto3" json:"last_error,omitempty"` // of the last import or push; empty = fine
-	Calendars     []*CalDavCalendar      `protobuf:"bytes,8,rep,name=calendars,proto3" json:"calendars,omitempty"`                  // event calendars found at connection
+	LastError     string                 `protobuf:"bytes,7,opt,name=last_error,json=lastError,proto3" json:"last_error,omitempty"`                                     // of the last import or push; empty = fine
+	Calendars     []*CalDavCalendar      `protobuf:"bytes,8,rep,name=calendars,proto3" json:"calendars,omitempty"`                                                      // event calendars found at connection
+	ShareLevel    CalDavShareLevel       `protobuf:"varint,9,opt,name=share_level,json=shareLevel,proto3,enum=calaba.v1.CalDavShareLevel" json:"share_level,omitempty"` // what colleagues see (ADR-0045 §2); BUSY by default
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -1931,6 +2005,57 @@ func (x *CalDavAccount) GetCalendars() []*CalDavCalendar {
 	return nil
 }
 
+func (x *CalDavAccount) GetShareLevel() CalDavShareLevel {
+	if x != nil {
+		return x.ShareLevel
+	}
+	return CalDavShareLevel_CAL_DAV_SHARE_LEVEL_UNSPECIFIED
+}
+
+type SetCalDavShareRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	ShareLevel    CalDavShareLevel       `protobuf:"varint,1,opt,name=share_level,json=shareLevel,proto3,enum=calaba.v1.CalDavShareLevel" json:"share_level,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *SetCalDavShareRequest) Reset() {
+	*x = SetCalDavShareRequest{}
+	mi := &file_calaba_v1_event_proto_msgTypes[20]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *SetCalDavShareRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*SetCalDavShareRequest) ProtoMessage() {}
+
+func (x *SetCalDavShareRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_calaba_v1_event_proto_msgTypes[20]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use SetCalDavShareRequest.ProtoReflect.Descriptor instead.
+func (*SetCalDavShareRequest) Descriptor() ([]byte, []int) {
+	return file_calaba_v1_event_proto_rawDescGZIP(), []int{20}
+}
+
+func (x *SetCalDavShareRequest) GetShareLevel() CalDavShareLevel {
+	if x != nil {
+		return x.ShareLevel
+	}
+	return CalDavShareLevel_CAL_DAV_SHARE_LEVEL_UNSPECIFIED
+}
+
 type CalDavAccountResponse struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	Account       *CalDavAccount         `protobuf:"bytes,1,opt,name=account,proto3" json:"account,omitempty"`
@@ -1940,7 +2065,7 @@ type CalDavAccountResponse struct {
 
 func (x *CalDavAccountResponse) Reset() {
 	*x = CalDavAccountResponse{}
-	mi := &file_calaba_v1_event_proto_msgTypes[20]
+	mi := &file_calaba_v1_event_proto_msgTypes[21]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1952,7 +2077,7 @@ func (x *CalDavAccountResponse) String() string {
 func (*CalDavAccountResponse) ProtoMessage() {}
 
 func (x *CalDavAccountResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_calaba_v1_event_proto_msgTypes[20]
+	mi := &file_calaba_v1_event_proto_msgTypes[21]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1965,7 +2090,7 @@ func (x *CalDavAccountResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use CalDavAccountResponse.ProtoReflect.Descriptor instead.
 func (*CalDavAccountResponse) Descriptor() ([]byte, []int) {
-	return file_calaba_v1_event_proto_rawDescGZIP(), []int{20}
+	return file_calaba_v1_event_proto_rawDescGZIP(), []int{21}
 }
 
 func (x *CalDavAccountResponse) GetAccount() *CalDavAccount {
@@ -1986,7 +2111,7 @@ type ConnectCalDavRequest struct {
 
 func (x *ConnectCalDavRequest) Reset() {
 	*x = ConnectCalDavRequest{}
-	mi := &file_calaba_v1_event_proto_msgTypes[21]
+	mi := &file_calaba_v1_event_proto_msgTypes[22]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1998,7 +2123,7 @@ func (x *ConnectCalDavRequest) String() string {
 func (*ConnectCalDavRequest) ProtoMessage() {}
 
 func (x *ConnectCalDavRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_calaba_v1_event_proto_msgTypes[21]
+	mi := &file_calaba_v1_event_proto_msgTypes[22]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2011,7 +2136,7 @@ func (x *ConnectCalDavRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ConnectCalDavRequest.ProtoReflect.Descriptor instead.
 func (*ConnectCalDavRequest) Descriptor() ([]byte, []int) {
-	return file_calaba_v1_event_proto_rawDescGZIP(), []int{21}
+	return file_calaba_v1_event_proto_rawDescGZIP(), []int{22}
 }
 
 func (x *ConnectCalDavRequest) GetUrl() string {
@@ -2046,7 +2171,7 @@ type UpdateCalDavRequest struct {
 
 func (x *UpdateCalDavRequest) Reset() {
 	*x = UpdateCalDavRequest{}
-	mi := &file_calaba_v1_event_proto_msgTypes[22]
+	mi := &file_calaba_v1_event_proto_msgTypes[23]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2058,7 +2183,7 @@ func (x *UpdateCalDavRequest) String() string {
 func (*UpdateCalDavRequest) ProtoMessage() {}
 
 func (x *UpdateCalDavRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_calaba_v1_event_proto_msgTypes[22]
+	mi := &file_calaba_v1_event_proto_msgTypes[23]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2071,7 +2196,7 @@ func (x *UpdateCalDavRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use UpdateCalDavRequest.ProtoReflect.Descriptor instead.
 func (*UpdateCalDavRequest) Descriptor() ([]byte, []int) {
-	return file_calaba_v1_event_proto_rawDescGZIP(), []int{22}
+	return file_calaba_v1_event_proto_rawDescGZIP(), []int{23}
 }
 
 func (x *UpdateCalDavRequest) GetCalendarHref() string {
@@ -2095,6 +2220,218 @@ func (x *UpdateCalDavRequest) GetPush() bool {
 	return false
 }
 
+type ExternalAttendee struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Email         string                 `protobuf:"bytes,1,opt,name=email,proto3" json:"email,omitempty"`                 // lower case
+	Name          string                 `protobuf:"bytes,2,opt,name=name,proto3" json:"name,omitempty"`                   // CN; may be empty
+	UserId        string                 `protobuf:"bytes,3,opt,name=user_id,json=userId,proto3" json:"user_id,omitempty"` // a member of the asked workspace with this confirmed address; else empty
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *ExternalAttendee) Reset() {
+	*x = ExternalAttendee{}
+	mi := &file_calaba_v1_event_proto_msgTypes[24]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ExternalAttendee) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ExternalAttendee) ProtoMessage() {}
+
+func (x *ExternalAttendee) ProtoReflect() protoreflect.Message {
+	mi := &file_calaba_v1_event_proto_msgTypes[24]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ExternalAttendee.ProtoReflect.Descriptor instead.
+func (*ExternalAttendee) Descriptor() ([]byte, []int) {
+	return file_calaba_v1_event_proto_rawDescGZIP(), []int{24}
+}
+
+func (x *ExternalAttendee) GetEmail() string {
+	if x != nil {
+		return x.Email
+	}
+	return ""
+}
+
+func (x *ExternalAttendee) GetName() string {
+	if x != nil {
+		return x.Name
+	}
+	return ""
+}
+
+func (x *ExternalAttendee) GetUserId() string {
+	if x != nil {
+		return x.UserId
+	}
+	return ""
+}
+
+type ExternalEvent struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Uid           string                 `protobuf:"bytes,1,opt,name=uid,proto3" json:"uid,omitempty"` // a hash of the VEVENT UID (the same for every occurrence of a series)
+	StartsAt      *timestamppb.Timestamp `protobuf:"bytes,2,opt,name=starts_at,json=startsAt,proto3" json:"starts_at,omitempty"`
+	EndsAt        *timestamppb.Timestamp `protobuf:"bytes,3,opt,name=ends_at,json=endsAt,proto3" json:"ends_at,omitempty"`
+	AllDay        bool                   `protobuf:"varint,4,opt,name=all_day,json=allDay,proto3" json:"all_day,omitempty"`
+	Summary       string                 `protobuf:"bytes,5,opt,name=summary,proto3" json:"summary,omitempty"`     // ≤ 200 characters
+	Location      string                 `protobuf:"bytes,6,opt,name=location,proto3" json:"location,omitempty"`   // ≤ 200 characters
+	Attendees     []*ExternalAttendee    `protobuf:"bytes,7,rep,name=attendees,proto3" json:"attendees,omitempty"` // ≤ 50
+	Organizer     string                 `protobuf:"bytes,8,opt,name=organizer,proto3" json:"organizer,omitempty"` // e-mail, lower case
+	Url           string                 `protobuf:"bytes,9,opt,name=url,proto3" json:"url,omitempty"`             // http(s) link of the event (URL, or the first https:// of its description)
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *ExternalEvent) Reset() {
+	*x = ExternalEvent{}
+	mi := &file_calaba_v1_event_proto_msgTypes[25]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ExternalEvent) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ExternalEvent) ProtoMessage() {}
+
+func (x *ExternalEvent) ProtoReflect() protoreflect.Message {
+	mi := &file_calaba_v1_event_proto_msgTypes[25]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ExternalEvent.ProtoReflect.Descriptor instead.
+func (*ExternalEvent) Descriptor() ([]byte, []int) {
+	return file_calaba_v1_event_proto_rawDescGZIP(), []int{25}
+}
+
+func (x *ExternalEvent) GetUid() string {
+	if x != nil {
+		return x.Uid
+	}
+	return ""
+}
+
+func (x *ExternalEvent) GetStartsAt() *timestamppb.Timestamp {
+	if x != nil {
+		return x.StartsAt
+	}
+	return nil
+}
+
+func (x *ExternalEvent) GetEndsAt() *timestamppb.Timestamp {
+	if x != nil {
+		return x.EndsAt
+	}
+	return nil
+}
+
+func (x *ExternalEvent) GetAllDay() bool {
+	if x != nil {
+		return x.AllDay
+	}
+	return false
+}
+
+func (x *ExternalEvent) GetSummary() string {
+	if x != nil {
+		return x.Summary
+	}
+	return ""
+}
+
+func (x *ExternalEvent) GetLocation() string {
+	if x != nil {
+		return x.Location
+	}
+	return ""
+}
+
+func (x *ExternalEvent) GetAttendees() []*ExternalAttendee {
+	if x != nil {
+		return x.Attendees
+	}
+	return nil
+}
+
+func (x *ExternalEvent) GetOrganizer() string {
+	if x != nil {
+		return x.Organizer
+	}
+	return ""
+}
+
+func (x *ExternalEvent) GetUrl() string {
+	if x != nil {
+		return x.Url
+	}
+	return ""
+}
+
+type ExternalEventsResponse struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Events        []*ExternalEvent       `protobuf:"bytes,1,rep,name=events,proto3" json:"events,omitempty"` // earliest first
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *ExternalEventsResponse) Reset() {
+	*x = ExternalEventsResponse{}
+	mi := &file_calaba_v1_event_proto_msgTypes[26]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ExternalEventsResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ExternalEventsResponse) ProtoMessage() {}
+
+func (x *ExternalEventsResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_calaba_v1_event_proto_msgTypes[26]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ExternalEventsResponse.ProtoReflect.Descriptor instead.
+func (*ExternalEventsResponse) Descriptor() ([]byte, []int) {
+	return file_calaba_v1_event_proto_rawDescGZIP(), []int{26}
+}
+
+func (x *ExternalEventsResponse) GetEvents() []*ExternalEvent {
+	if x != nil {
+		return x.Events
+	}
+	return nil
+}
+
 // EVENT_CREATE / EVENT_UPDATE / EVENT_DELETE: the series (occurrence_at unset, my_status
 // UNSPECIFIED), to everyone who may see the event (see above). EVENT_DELETE carries the
 // cancelled event (cancelled_at set) and also goes to attendees who lost the event (removed
@@ -2108,7 +2445,7 @@ type CalendarEventCreate struct {
 
 func (x *CalendarEventCreate) Reset() {
 	*x = CalendarEventCreate{}
-	mi := &file_calaba_v1_event_proto_msgTypes[23]
+	mi := &file_calaba_v1_event_proto_msgTypes[27]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2120,7 +2457,7 @@ func (x *CalendarEventCreate) String() string {
 func (*CalendarEventCreate) ProtoMessage() {}
 
 func (x *CalendarEventCreate) ProtoReflect() protoreflect.Message {
-	mi := &file_calaba_v1_event_proto_msgTypes[23]
+	mi := &file_calaba_v1_event_proto_msgTypes[27]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2133,7 +2470,7 @@ func (x *CalendarEventCreate) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use CalendarEventCreate.ProtoReflect.Descriptor instead.
 func (*CalendarEventCreate) Descriptor() ([]byte, []int) {
-	return file_calaba_v1_event_proto_rawDescGZIP(), []int{23}
+	return file_calaba_v1_event_proto_rawDescGZIP(), []int{27}
 }
 
 func (x *CalendarEventCreate) GetEvent() *CalendarEvent {
@@ -2152,7 +2489,7 @@ type CalendarEventUpdate struct {
 
 func (x *CalendarEventUpdate) Reset() {
 	*x = CalendarEventUpdate{}
-	mi := &file_calaba_v1_event_proto_msgTypes[24]
+	mi := &file_calaba_v1_event_proto_msgTypes[28]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2164,7 +2501,7 @@ func (x *CalendarEventUpdate) String() string {
 func (*CalendarEventUpdate) ProtoMessage() {}
 
 func (x *CalendarEventUpdate) ProtoReflect() protoreflect.Message {
-	mi := &file_calaba_v1_event_proto_msgTypes[24]
+	mi := &file_calaba_v1_event_proto_msgTypes[28]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2177,7 +2514,7 @@ func (x *CalendarEventUpdate) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use CalendarEventUpdate.ProtoReflect.Descriptor instead.
 func (*CalendarEventUpdate) Descriptor() ([]byte, []int) {
-	return file_calaba_v1_event_proto_rawDescGZIP(), []int{24}
+	return file_calaba_v1_event_proto_rawDescGZIP(), []int{28}
 }
 
 func (x *CalendarEventUpdate) GetEvent() *CalendarEvent {
@@ -2196,7 +2533,7 @@ type CalendarEventDelete struct {
 
 func (x *CalendarEventDelete) Reset() {
 	*x = CalendarEventDelete{}
-	mi := &file_calaba_v1_event_proto_msgTypes[25]
+	mi := &file_calaba_v1_event_proto_msgTypes[29]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2208,7 +2545,7 @@ func (x *CalendarEventDelete) String() string {
 func (*CalendarEventDelete) ProtoMessage() {}
 
 func (x *CalendarEventDelete) ProtoReflect() protoreflect.Message {
-	mi := &file_calaba_v1_event_proto_msgTypes[25]
+	mi := &file_calaba_v1_event_proto_msgTypes[29]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2221,7 +2558,7 @@ func (x *CalendarEventDelete) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use CalendarEventDelete.ProtoReflect.Descriptor instead.
 func (*CalendarEventDelete) Descriptor() ([]byte, []int) {
-	return file_calaba_v1_event_proto_rawDescGZIP(), []int{25}
+	return file_calaba_v1_event_proto_rawDescGZIP(), []int{29}
 }
 
 func (x *CalendarEventDelete) GetEvent() *CalendarEvent {
@@ -2245,7 +2582,7 @@ type CalendarEventRsvp struct {
 
 func (x *CalendarEventRsvp) Reset() {
 	*x = CalendarEventRsvp{}
-	mi := &file_calaba_v1_event_proto_msgTypes[26]
+	mi := &file_calaba_v1_event_proto_msgTypes[30]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2257,7 +2594,7 @@ func (x *CalendarEventRsvp) String() string {
 func (*CalendarEventRsvp) ProtoMessage() {}
 
 func (x *CalendarEventRsvp) ProtoReflect() protoreflect.Message {
-	mi := &file_calaba_v1_event_proto_msgTypes[26]
+	mi := &file_calaba_v1_event_proto_msgTypes[30]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2270,7 +2607,7 @@ func (x *CalendarEventRsvp) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use CalendarEventRsvp.ProtoReflect.Descriptor instead.
 func (*CalendarEventRsvp) Descriptor() ([]byte, []int) {
-	return file_calaba_v1_event_proto_rawDescGZIP(), []int{26}
+	return file_calaba_v1_event_proto_rawDescGZIP(), []int{30}
 }
 
 func (x *CalendarEventRsvp) GetWorkspaceId() string {
@@ -2321,7 +2658,7 @@ type CalendarEventReminder struct {
 
 func (x *CalendarEventReminder) Reset() {
 	*x = CalendarEventReminder{}
-	mi := &file_calaba_v1_event_proto_msgTypes[27]
+	mi := &file_calaba_v1_event_proto_msgTypes[31]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2333,7 +2670,7 @@ func (x *CalendarEventReminder) String() string {
 func (*CalendarEventReminder) ProtoMessage() {}
 
 func (x *CalendarEventReminder) ProtoReflect() protoreflect.Message {
-	mi := &file_calaba_v1_event_proto_msgTypes[27]
+	mi := &file_calaba_v1_event_proto_msgTypes[31]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2346,7 +2683,7 @@ func (x *CalendarEventReminder) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use CalendarEventReminder.ProtoReflect.Descriptor instead.
 func (*CalendarEventReminder) Descriptor() ([]byte, []int) {
-	return file_calaba_v1_event_proto_rawDescGZIP(), []int{27}
+	return file_calaba_v1_event_proto_rawDescGZIP(), []int{31}
 }
 
 func (x *CalendarEventReminder) GetEvent() *CalendarEvent {
@@ -2385,7 +2722,7 @@ type RoomEventActive struct {
 
 func (x *RoomEventActive) Reset() {
 	*x = RoomEventActive{}
-	mi := &file_calaba_v1_event_proto_msgTypes[28]
+	mi := &file_calaba_v1_event_proto_msgTypes[32]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2397,7 +2734,7 @@ func (x *RoomEventActive) String() string {
 func (*RoomEventActive) ProtoMessage() {}
 
 func (x *RoomEventActive) ProtoReflect() protoreflect.Message {
-	mi := &file_calaba_v1_event_proto_msgTypes[28]
+	mi := &file_calaba_v1_event_proto_msgTypes[32]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2410,7 +2747,7 @@ func (x *RoomEventActive) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use RoomEventActive.ProtoReflect.Descriptor instead.
 func (*RoomEventActive) Descriptor() ([]byte, []int) {
-	return file_calaba_v1_event_proto_rawDescGZIP(), []int{28}
+	return file_calaba_v1_event_proto_rawDescGZIP(), []int{32}
 }
 
 func (x *RoomEventActive) GetWorkspaceId() string {
@@ -2447,7 +2784,7 @@ type RoomEventEnded struct {
 
 func (x *RoomEventEnded) Reset() {
 	*x = RoomEventEnded{}
-	mi := &file_calaba_v1_event_proto_msgTypes[29]
+	mi := &file_calaba_v1_event_proto_msgTypes[33]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2459,7 +2796,7 @@ func (x *RoomEventEnded) String() string {
 func (*RoomEventEnded) ProtoMessage() {}
 
 func (x *RoomEventEnded) ProtoReflect() protoreflect.Message {
-	mi := &file_calaba_v1_event_proto_msgTypes[29]
+	mi := &file_calaba_v1_event_proto_msgTypes[33]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2472,7 +2809,7 @@ func (x *RoomEventEnded) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use RoomEventEnded.ProtoReflect.Descriptor instead.
 func (*RoomEventEnded) Descriptor() ([]byte, []int) {
-	return file_calaba_v1_event_proto_rawDescGZIP(), []int{29}
+	return file_calaba_v1_event_proto_rawDescGZIP(), []int{33}
 }
 
 func (x *RoomEventEnded) GetWorkspaceId() string {
@@ -2628,13 +2965,15 @@ const file_calaba_v1_event_proto_rawDesc = "" +
 	"guestUntil\x12.\n" +
 	"\x06repeat\x18\x15 \x01(\x0e2\x16.calaba.v1.EventRepeatR\x06repeat\x12=\n" +
 	"\frepeat_until\x18\x16 \x01(\v2\x1a.google.protobuf.TimestampR\vrepeatUntil\x12'\n" +
-	"\x0forganizer_email\x18\x17 \x01(\tR\x0eorganizerEmail\"\xd9\x01\n" +
+	"\x0forganizer_email\x18\x17 \x01(\tR\x0eorganizerEmail\"\x9b\x02\n" +
 	"\fBusyInterval\x127\n" +
 	"\tstarts_at\x18\x01 \x01(\v2\x1a.google.protobuf.TimestampR\bstartsAt\x123\n" +
 	"\aends_at\x18\x02 \x01(\v2\x1a.google.protobuf.TimestampR\x06endsAt\x12\x19\n" +
 	"\bevent_id\x18\x03 \x01(\tR\aeventId\x12'\n" +
 	"\x04kind\x18\x04 \x01(\x0e2\x13.calaba.v1.BusyKindR\x04kind\x12\x17\n" +
-	"\aall_day\x18\x05 \x01(\bR\x06allDay\"\xa5\x01\n" +
+	"\aall_day\x18\x05 \x01(\bR\x06allDay\x12\x14\n" +
+	"\x05title\x18\x06 \x01(\tR\x05title\x12*\n" +
+	"\x11attendee_user_ids\x18\a \x03(\tR\x0fattendeeUserIds\"\xa5\x01\n" +
 	"\fFreeBusyUser\x12\x17\n" +
 	"\auser_id\x18\x01 \x01(\tR\x06userId\x12\x1a\n" +
 	"\btimezone\x18\x02 \x01(\tR\btimezone\x123\n" +
@@ -2658,7 +2997,7 @@ const file_calaba_v1_event_proto_rawDesc = "" +
 	"\x0eCalDavCalendar\x12\x12\n" +
 	"\x04href\x18\x01 \x01(\tR\x04href\x12\x12\n" +
 	"\x04name\x18\x02 \x01(\tR\x04name\x12\x14\n" +
-	"\x05color\x18\x03 \x01(\tR\x05color\"\xa4\x02\n" +
+	"\x05color\x18\x03 \x01(\tR\x05color\"\xe2\x02\n" +
 	"\rCalDavAccount\x12\x10\n" +
 	"\x03url\x18\x01 \x01(\tR\x03url\x12\x1a\n" +
 	"\busername\x18\x02 \x01(\tR\busername\x12#\n" +
@@ -2669,7 +3008,12 @@ const file_calaba_v1_event_proto_rawDesc = "" +
 	"lastSyncAt\x12\x1d\n" +
 	"\n" +
 	"last_error\x18\a \x01(\tR\tlastError\x127\n" +
-	"\tcalendars\x18\b \x03(\v2\x19.calaba.v1.CalDavCalendarR\tcalendars\"K\n" +
+	"\tcalendars\x18\b \x03(\v2\x19.calaba.v1.CalDavCalendarR\tcalendars\x12<\n" +
+	"\vshare_level\x18\t \x01(\x0e2\x1b.calaba.v1.CalDavShareLevelR\n" +
+	"shareLevel\"U\n" +
+	"\x15SetCalDavShareRequest\x12<\n" +
+	"\vshare_level\x18\x01 \x01(\x0e2\x1b.calaba.v1.CalDavShareLevelR\n" +
+	"shareLevel\"K\n" +
 	"\x15CalDavAccountResponse\x122\n" +
 	"\aaccount\x18\x01 \x01(\v2\x18.calaba.v1.CalDavAccountR\aaccount\"`\n" +
 	"\x14ConnectCalDavRequest\x12\x10\n" +
@@ -2679,7 +3023,23 @@ const file_calaba_v1_event_proto_rawDesc = "" +
 	"\x13UpdateCalDavRequest\x12#\n" +
 	"\rcalendar_href\x18\x01 \x01(\tR\fcalendarHref\x12\x16\n" +
 	"\x06import\x18\x02 \x01(\bR\x06import\x12\x12\n" +
-	"\x04push\x18\x03 \x01(\bR\x04push\"E\n" +
+	"\x04push\x18\x03 \x01(\bR\x04push\"U\n" +
+	"\x10ExternalAttendee\x12\x14\n" +
+	"\x05email\x18\x01 \x01(\tR\x05email\x12\x12\n" +
+	"\x04name\x18\x02 \x01(\tR\x04name\x12\x17\n" +
+	"\auser_id\x18\x03 \x01(\tR\x06userId\"\xc9\x02\n" +
+	"\rExternalEvent\x12\x10\n" +
+	"\x03uid\x18\x01 \x01(\tR\x03uid\x127\n" +
+	"\tstarts_at\x18\x02 \x01(\v2\x1a.google.protobuf.TimestampR\bstartsAt\x123\n" +
+	"\aends_at\x18\x03 \x01(\v2\x1a.google.protobuf.TimestampR\x06endsAt\x12\x17\n" +
+	"\aall_day\x18\x04 \x01(\bR\x06allDay\x12\x18\n" +
+	"\asummary\x18\x05 \x01(\tR\asummary\x12\x1a\n" +
+	"\blocation\x18\x06 \x01(\tR\blocation\x129\n" +
+	"\tattendees\x18\a \x03(\v2\x1b.calaba.v1.ExternalAttendeeR\tattendees\x12\x1c\n" +
+	"\torganizer\x18\b \x01(\tR\torganizer\x12\x10\n" +
+	"\x03url\x18\t \x01(\tR\x03url\"J\n" +
+	"\x16ExternalEventsResponse\x120\n" +
+	"\x06events\x18\x01 \x03(\v2\x18.calaba.v1.ExternalEventR\x06events\"E\n" +
 	"\x13CalendarEventCreate\x12.\n" +
 	"\x05event\x18\x01 \x01(\v2\x18.calaba.v1.CalendarEventR\x05event\"E\n" +
 	"\x13CalendarEventUpdate\x12.\n" +
@@ -2720,7 +3080,12 @@ const file_calaba_v1_event_proto_rawDesc = "" +
 	"\bBusyKind\x12\x19\n" +
 	"\x15BUSY_KIND_UNSPECIFIED\x10\x00\x12\x15\n" +
 	"\x11BUSY_KIND_MEETING\x10\x01\x12\x16\n" +
-	"\x12BUSY_KIND_EXTERNAL\x10\x02B\x98\x01\n" +
+	"\x12BUSY_KIND_EXTERNAL\x10\x02*\x95\x01\n" +
+	"\x10CalDavShareLevel\x12#\n" +
+	"\x1fCAL_DAV_SHARE_LEVEL_UNSPECIFIED\x10\x00\x12\x1c\n" +
+	"\x18CAL_DAV_SHARE_LEVEL_BUSY\x10\x01\x12\x1d\n" +
+	"\x19CAL_DAV_SHARE_LEVEL_TITLE\x10\x02\x12\x1f\n" +
+	"\x1bCAL_DAV_SHARE_LEVEL_DETAILS\x10\x03B\x98\x01\n" +
 	"\rcom.calaba.v1B\n" +
 	"EventProtoP\x01Z6github.com/calaba/calaba/server/gen/calaba/v1;calabav1\xa2\x02\x03CXX\xaa\x02\tCalaba.V1\xca\x02\tCalaba\\V1\xe2\x02\x15Calaba\\V1\\GPBMetadata\xea\x02\n" +
 	"Calaba::V1b\x06proto3"
@@ -2737,111 +3102,122 @@ func file_calaba_v1_event_proto_rawDescGZIP() []byte {
 	return file_calaba_v1_event_proto_rawDescData
 }
 
-var file_calaba_v1_event_proto_enumTypes = make([]protoimpl.EnumInfo, 3)
-var file_calaba_v1_event_proto_msgTypes = make([]protoimpl.MessageInfo, 30)
+var file_calaba_v1_event_proto_enumTypes = make([]protoimpl.EnumInfo, 4)
+var file_calaba_v1_event_proto_msgTypes = make([]protoimpl.MessageInfo, 34)
 var file_calaba_v1_event_proto_goTypes = []any{
 	(AttendeeStatus)(0),                 // 0: calaba.v1.AttendeeStatus
 	(EventRepeat)(0),                    // 1: calaba.v1.EventRepeat
 	(BusyKind)(0),                       // 2: calaba.v1.BusyKind
-	(*CalendarEventAttendee)(nil),       // 3: calaba.v1.CalendarEventAttendee
-	(*CalendarEventCounts)(nil),         // 4: calaba.v1.CalendarEventCounts
-	(*CalendarEvent)(nil),               // 5: calaba.v1.CalendarEvent
-	(*CalendarEventAttendeeInput)(nil),  // 6: calaba.v1.CalendarEventAttendeeInput
-	(*ListCalendarEventsResponse)(nil),  // 7: calaba.v1.ListCalendarEventsResponse
-	(*CreateCalendarEventRequest)(nil),  // 8: calaba.v1.CreateCalendarEventRequest
-	(*UpdateCalendarEventRequest)(nil),  // 9: calaba.v1.UpdateCalendarEventRequest
-	(*CalendarEventResponse)(nil),       // 10: calaba.v1.CalendarEventResponse
-	(*RsvpCalendarEventRequest)(nil),    // 11: calaba.v1.RsvpCalendarEventRequest
-	(*TodayCalendarEventsResponse)(nil), // 12: calaba.v1.TodayCalendarEventsResponse
-	(*EventRsvpTokenRequest)(nil),       // 13: calaba.v1.EventRsvpTokenRequest
-	(*EventRsvpTokenResponse)(nil),      // 14: calaba.v1.EventRsvpTokenResponse
-	(*BusyInterval)(nil),                // 15: calaba.v1.BusyInterval
-	(*FreeBusyUser)(nil),                // 16: calaba.v1.FreeBusyUser
-	(*FreeBusyResponse)(nil),            // 17: calaba.v1.FreeBusyResponse
-	(*SuggestSlotsRequest)(nil),         // 18: calaba.v1.SuggestSlotsRequest
-	(*Slot)(nil),                        // 19: calaba.v1.Slot
-	(*SuggestSlotsResponse)(nil),        // 20: calaba.v1.SuggestSlotsResponse
-	(*CalDavCalendar)(nil),              // 21: calaba.v1.CalDavCalendar
-	(*CalDavAccount)(nil),               // 22: calaba.v1.CalDavAccount
-	(*CalDavAccountResponse)(nil),       // 23: calaba.v1.CalDavAccountResponse
-	(*ConnectCalDavRequest)(nil),        // 24: calaba.v1.ConnectCalDavRequest
-	(*UpdateCalDavRequest)(nil),         // 25: calaba.v1.UpdateCalDavRequest
-	(*CalendarEventCreate)(nil),         // 26: calaba.v1.CalendarEventCreate
-	(*CalendarEventUpdate)(nil),         // 27: calaba.v1.CalendarEventUpdate
-	(*CalendarEventDelete)(nil),         // 28: calaba.v1.CalendarEventDelete
-	(*CalendarEventRsvp)(nil),           // 29: calaba.v1.CalendarEventRsvp
-	(*CalendarEventReminder)(nil),       // 30: calaba.v1.CalendarEventReminder
-	(*RoomEventActive)(nil),             // 31: calaba.v1.RoomEventActive
-	(*RoomEventEnded)(nil),              // 32: calaba.v1.RoomEventEnded
-	(*timestamppb.Timestamp)(nil),       // 33: google.protobuf.Timestamp
-	(*WorkHours)(nil),                   // 34: calaba.v1.WorkHours
+	(CalDavShareLevel)(0),               // 3: calaba.v1.CalDavShareLevel
+	(*CalendarEventAttendee)(nil),       // 4: calaba.v1.CalendarEventAttendee
+	(*CalendarEventCounts)(nil),         // 5: calaba.v1.CalendarEventCounts
+	(*CalendarEvent)(nil),               // 6: calaba.v1.CalendarEvent
+	(*CalendarEventAttendeeInput)(nil),  // 7: calaba.v1.CalendarEventAttendeeInput
+	(*ListCalendarEventsResponse)(nil),  // 8: calaba.v1.ListCalendarEventsResponse
+	(*CreateCalendarEventRequest)(nil),  // 9: calaba.v1.CreateCalendarEventRequest
+	(*UpdateCalendarEventRequest)(nil),  // 10: calaba.v1.UpdateCalendarEventRequest
+	(*CalendarEventResponse)(nil),       // 11: calaba.v1.CalendarEventResponse
+	(*RsvpCalendarEventRequest)(nil),    // 12: calaba.v1.RsvpCalendarEventRequest
+	(*TodayCalendarEventsResponse)(nil), // 13: calaba.v1.TodayCalendarEventsResponse
+	(*EventRsvpTokenRequest)(nil),       // 14: calaba.v1.EventRsvpTokenRequest
+	(*EventRsvpTokenResponse)(nil),      // 15: calaba.v1.EventRsvpTokenResponse
+	(*BusyInterval)(nil),                // 16: calaba.v1.BusyInterval
+	(*FreeBusyUser)(nil),                // 17: calaba.v1.FreeBusyUser
+	(*FreeBusyResponse)(nil),            // 18: calaba.v1.FreeBusyResponse
+	(*SuggestSlotsRequest)(nil),         // 19: calaba.v1.SuggestSlotsRequest
+	(*Slot)(nil),                        // 20: calaba.v1.Slot
+	(*SuggestSlotsResponse)(nil),        // 21: calaba.v1.SuggestSlotsResponse
+	(*CalDavCalendar)(nil),              // 22: calaba.v1.CalDavCalendar
+	(*CalDavAccount)(nil),               // 23: calaba.v1.CalDavAccount
+	(*SetCalDavShareRequest)(nil),       // 24: calaba.v1.SetCalDavShareRequest
+	(*CalDavAccountResponse)(nil),       // 25: calaba.v1.CalDavAccountResponse
+	(*ConnectCalDavRequest)(nil),        // 26: calaba.v1.ConnectCalDavRequest
+	(*UpdateCalDavRequest)(nil),         // 27: calaba.v1.UpdateCalDavRequest
+	(*ExternalAttendee)(nil),            // 28: calaba.v1.ExternalAttendee
+	(*ExternalEvent)(nil),               // 29: calaba.v1.ExternalEvent
+	(*ExternalEventsResponse)(nil),      // 30: calaba.v1.ExternalEventsResponse
+	(*CalendarEventCreate)(nil),         // 31: calaba.v1.CalendarEventCreate
+	(*CalendarEventUpdate)(nil),         // 32: calaba.v1.CalendarEventUpdate
+	(*CalendarEventDelete)(nil),         // 33: calaba.v1.CalendarEventDelete
+	(*CalendarEventRsvp)(nil),           // 34: calaba.v1.CalendarEventRsvp
+	(*CalendarEventReminder)(nil),       // 35: calaba.v1.CalendarEventReminder
+	(*RoomEventActive)(nil),             // 36: calaba.v1.RoomEventActive
+	(*RoomEventEnded)(nil),              // 37: calaba.v1.RoomEventEnded
+	(*timestamppb.Timestamp)(nil),       // 38: google.protobuf.Timestamp
+	(*WorkHours)(nil),                   // 39: calaba.v1.WorkHours
 }
 var file_calaba_v1_event_proto_depIdxs = []int32{
 	0,  // 0: calaba.v1.CalendarEventAttendee.status:type_name -> calaba.v1.AttendeeStatus
-	33, // 1: calaba.v1.CalendarEventAttendee.responded_at:type_name -> google.protobuf.Timestamp
-	33, // 2: calaba.v1.CalendarEvent.starts_at:type_name -> google.protobuf.Timestamp
-	33, // 3: calaba.v1.CalendarEvent.ends_at:type_name -> google.protobuf.Timestamp
+	38, // 1: calaba.v1.CalendarEventAttendee.responded_at:type_name -> google.protobuf.Timestamp
+	38, // 2: calaba.v1.CalendarEvent.starts_at:type_name -> google.protobuf.Timestamp
+	38, // 3: calaba.v1.CalendarEvent.ends_at:type_name -> google.protobuf.Timestamp
 	1,  // 4: calaba.v1.CalendarEvent.repeat:type_name -> calaba.v1.EventRepeat
-	33, // 5: calaba.v1.CalendarEvent.repeat_until:type_name -> google.protobuf.Timestamp
-	33, // 6: calaba.v1.CalendarEvent.occurrence_at:type_name -> google.protobuf.Timestamp
-	33, // 7: calaba.v1.CalendarEvent.cancelled_at:type_name -> google.protobuf.Timestamp
+	38, // 5: calaba.v1.CalendarEvent.repeat_until:type_name -> google.protobuf.Timestamp
+	38, // 6: calaba.v1.CalendarEvent.occurrence_at:type_name -> google.protobuf.Timestamp
+	38, // 7: calaba.v1.CalendarEvent.cancelled_at:type_name -> google.protobuf.Timestamp
 	0,  // 8: calaba.v1.CalendarEvent.my_status:type_name -> calaba.v1.AttendeeStatus
-	4,  // 9: calaba.v1.CalendarEvent.counts:type_name -> calaba.v1.CalendarEventCounts
-	3,  // 10: calaba.v1.CalendarEvent.attendees:type_name -> calaba.v1.CalendarEventAttendee
-	33, // 11: calaba.v1.CalendarEvent.cancelled_occurrences:type_name -> google.protobuf.Timestamp
-	33, // 12: calaba.v1.CalendarEvent.created_at:type_name -> google.protobuf.Timestamp
-	33, // 13: calaba.v1.CalendarEvent.updated_at:type_name -> google.protobuf.Timestamp
-	5,  // 14: calaba.v1.ListCalendarEventsResponse.events:type_name -> calaba.v1.CalendarEvent
-	33, // 15: calaba.v1.CreateCalendarEventRequest.starts_at:type_name -> google.protobuf.Timestamp
-	33, // 16: calaba.v1.CreateCalendarEventRequest.ends_at:type_name -> google.protobuf.Timestamp
+	5,  // 9: calaba.v1.CalendarEvent.counts:type_name -> calaba.v1.CalendarEventCounts
+	4,  // 10: calaba.v1.CalendarEvent.attendees:type_name -> calaba.v1.CalendarEventAttendee
+	38, // 11: calaba.v1.CalendarEvent.cancelled_occurrences:type_name -> google.protobuf.Timestamp
+	38, // 12: calaba.v1.CalendarEvent.created_at:type_name -> google.protobuf.Timestamp
+	38, // 13: calaba.v1.CalendarEvent.updated_at:type_name -> google.protobuf.Timestamp
+	6,  // 14: calaba.v1.ListCalendarEventsResponse.events:type_name -> calaba.v1.CalendarEvent
+	38, // 15: calaba.v1.CreateCalendarEventRequest.starts_at:type_name -> google.protobuf.Timestamp
+	38, // 16: calaba.v1.CreateCalendarEventRequest.ends_at:type_name -> google.protobuf.Timestamp
 	1,  // 17: calaba.v1.CreateCalendarEventRequest.repeat:type_name -> calaba.v1.EventRepeat
-	33, // 18: calaba.v1.CreateCalendarEventRequest.repeat_until:type_name -> google.protobuf.Timestamp
-	6,  // 19: calaba.v1.CreateCalendarEventRequest.attendees:type_name -> calaba.v1.CalendarEventAttendeeInput
-	33, // 20: calaba.v1.UpdateCalendarEventRequest.starts_at:type_name -> google.protobuf.Timestamp
-	33, // 21: calaba.v1.UpdateCalendarEventRequest.ends_at:type_name -> google.protobuf.Timestamp
+	38, // 18: calaba.v1.CreateCalendarEventRequest.repeat_until:type_name -> google.protobuf.Timestamp
+	7,  // 19: calaba.v1.CreateCalendarEventRequest.attendees:type_name -> calaba.v1.CalendarEventAttendeeInput
+	38, // 20: calaba.v1.UpdateCalendarEventRequest.starts_at:type_name -> google.protobuf.Timestamp
+	38, // 21: calaba.v1.UpdateCalendarEventRequest.ends_at:type_name -> google.protobuf.Timestamp
 	1,  // 22: calaba.v1.UpdateCalendarEventRequest.repeat:type_name -> calaba.v1.EventRepeat
-	33, // 23: calaba.v1.UpdateCalendarEventRequest.repeat_until:type_name -> google.protobuf.Timestamp
-	6,  // 24: calaba.v1.UpdateCalendarEventRequest.attendees:type_name -> calaba.v1.CalendarEventAttendeeInput
-	5,  // 25: calaba.v1.CalendarEventResponse.event:type_name -> calaba.v1.CalendarEvent
+	38, // 23: calaba.v1.UpdateCalendarEventRequest.repeat_until:type_name -> google.protobuf.Timestamp
+	7,  // 24: calaba.v1.UpdateCalendarEventRequest.attendees:type_name -> calaba.v1.CalendarEventAttendeeInput
+	6,  // 25: calaba.v1.CalendarEventResponse.event:type_name -> calaba.v1.CalendarEvent
 	0,  // 26: calaba.v1.RsvpCalendarEventRequest.status:type_name -> calaba.v1.AttendeeStatus
-	5,  // 27: calaba.v1.TodayCalendarEventsResponse.events:type_name -> calaba.v1.CalendarEvent
-	33, // 28: calaba.v1.EventRsvpTokenResponse.starts_at:type_name -> google.protobuf.Timestamp
-	33, // 29: calaba.v1.EventRsvpTokenResponse.ends_at:type_name -> google.protobuf.Timestamp
+	6,  // 27: calaba.v1.TodayCalendarEventsResponse.events:type_name -> calaba.v1.CalendarEvent
+	38, // 28: calaba.v1.EventRsvpTokenResponse.starts_at:type_name -> google.protobuf.Timestamp
+	38, // 29: calaba.v1.EventRsvpTokenResponse.ends_at:type_name -> google.protobuf.Timestamp
 	0,  // 30: calaba.v1.EventRsvpTokenResponse.status:type_name -> calaba.v1.AttendeeStatus
 	0,  // 31: calaba.v1.EventRsvpTokenResponse.my_status:type_name -> calaba.v1.AttendeeStatus
-	33, // 32: calaba.v1.EventRsvpTokenResponse.guest_from:type_name -> google.protobuf.Timestamp
-	33, // 33: calaba.v1.EventRsvpTokenResponse.guest_until:type_name -> google.protobuf.Timestamp
+	38, // 32: calaba.v1.EventRsvpTokenResponse.guest_from:type_name -> google.protobuf.Timestamp
+	38, // 33: calaba.v1.EventRsvpTokenResponse.guest_until:type_name -> google.protobuf.Timestamp
 	1,  // 34: calaba.v1.EventRsvpTokenResponse.repeat:type_name -> calaba.v1.EventRepeat
-	33, // 35: calaba.v1.EventRsvpTokenResponse.repeat_until:type_name -> google.protobuf.Timestamp
-	33, // 36: calaba.v1.BusyInterval.starts_at:type_name -> google.protobuf.Timestamp
-	33, // 37: calaba.v1.BusyInterval.ends_at:type_name -> google.protobuf.Timestamp
+	38, // 35: calaba.v1.EventRsvpTokenResponse.repeat_until:type_name -> google.protobuf.Timestamp
+	38, // 36: calaba.v1.BusyInterval.starts_at:type_name -> google.protobuf.Timestamp
+	38, // 37: calaba.v1.BusyInterval.ends_at:type_name -> google.protobuf.Timestamp
 	2,  // 38: calaba.v1.BusyInterval.kind:type_name -> calaba.v1.BusyKind
-	34, // 39: calaba.v1.FreeBusyUser.work_hours:type_name -> calaba.v1.WorkHours
-	15, // 40: calaba.v1.FreeBusyUser.busy:type_name -> calaba.v1.BusyInterval
-	16, // 41: calaba.v1.FreeBusyResponse.users:type_name -> calaba.v1.FreeBusyUser
-	33, // 42: calaba.v1.SuggestSlotsRequest.from:type_name -> google.protobuf.Timestamp
-	33, // 43: calaba.v1.SuggestSlotsRequest.to:type_name -> google.protobuf.Timestamp
-	33, // 44: calaba.v1.Slot.starts_at:type_name -> google.protobuf.Timestamp
-	33, // 45: calaba.v1.Slot.ends_at:type_name -> google.protobuf.Timestamp
-	19, // 46: calaba.v1.SuggestSlotsResponse.slots:type_name -> calaba.v1.Slot
-	33, // 47: calaba.v1.CalDavAccount.last_sync_at:type_name -> google.protobuf.Timestamp
-	21, // 48: calaba.v1.CalDavAccount.calendars:type_name -> calaba.v1.CalDavCalendar
-	22, // 49: calaba.v1.CalDavAccountResponse.account:type_name -> calaba.v1.CalDavAccount
-	5,  // 50: calaba.v1.CalendarEventCreate.event:type_name -> calaba.v1.CalendarEvent
-	5,  // 51: calaba.v1.CalendarEventUpdate.event:type_name -> calaba.v1.CalendarEvent
-	5,  // 52: calaba.v1.CalendarEventDelete.event:type_name -> calaba.v1.CalendarEvent
-	3,  // 53: calaba.v1.CalendarEventRsvp.attendee:type_name -> calaba.v1.CalendarEventAttendee
-	4,  // 54: calaba.v1.CalendarEventRsvp.counts:type_name -> calaba.v1.CalendarEventCounts
-	5,  // 55: calaba.v1.CalendarEventRsvp.event:type_name -> calaba.v1.CalendarEvent
-	5,  // 56: calaba.v1.CalendarEventReminder.event:type_name -> calaba.v1.CalendarEvent
-	33, // 57: calaba.v1.CalendarEventReminder.occurrence_at:type_name -> google.protobuf.Timestamp
-	5,  // 58: calaba.v1.RoomEventActive.event:type_name -> calaba.v1.CalendarEvent
-	33, // 59: calaba.v1.RoomEventEnded.occurrence_at:type_name -> google.protobuf.Timestamp
-	60, // [60:60] is the sub-list for method output_type
-	60, // [60:60] is the sub-list for method input_type
-	60, // [60:60] is the sub-list for extension type_name
-	60, // [60:60] is the sub-list for extension extendee
-	0,  // [0:60] is the sub-list for field type_name
+	39, // 39: calaba.v1.FreeBusyUser.work_hours:type_name -> calaba.v1.WorkHours
+	16, // 40: calaba.v1.FreeBusyUser.busy:type_name -> calaba.v1.BusyInterval
+	17, // 41: calaba.v1.FreeBusyResponse.users:type_name -> calaba.v1.FreeBusyUser
+	38, // 42: calaba.v1.SuggestSlotsRequest.from:type_name -> google.protobuf.Timestamp
+	38, // 43: calaba.v1.SuggestSlotsRequest.to:type_name -> google.protobuf.Timestamp
+	38, // 44: calaba.v1.Slot.starts_at:type_name -> google.protobuf.Timestamp
+	38, // 45: calaba.v1.Slot.ends_at:type_name -> google.protobuf.Timestamp
+	20, // 46: calaba.v1.SuggestSlotsResponse.slots:type_name -> calaba.v1.Slot
+	38, // 47: calaba.v1.CalDavAccount.last_sync_at:type_name -> google.protobuf.Timestamp
+	22, // 48: calaba.v1.CalDavAccount.calendars:type_name -> calaba.v1.CalDavCalendar
+	3,  // 49: calaba.v1.CalDavAccount.share_level:type_name -> calaba.v1.CalDavShareLevel
+	3,  // 50: calaba.v1.SetCalDavShareRequest.share_level:type_name -> calaba.v1.CalDavShareLevel
+	23, // 51: calaba.v1.CalDavAccountResponse.account:type_name -> calaba.v1.CalDavAccount
+	38, // 52: calaba.v1.ExternalEvent.starts_at:type_name -> google.protobuf.Timestamp
+	38, // 53: calaba.v1.ExternalEvent.ends_at:type_name -> google.protobuf.Timestamp
+	28, // 54: calaba.v1.ExternalEvent.attendees:type_name -> calaba.v1.ExternalAttendee
+	29, // 55: calaba.v1.ExternalEventsResponse.events:type_name -> calaba.v1.ExternalEvent
+	6,  // 56: calaba.v1.CalendarEventCreate.event:type_name -> calaba.v1.CalendarEvent
+	6,  // 57: calaba.v1.CalendarEventUpdate.event:type_name -> calaba.v1.CalendarEvent
+	6,  // 58: calaba.v1.CalendarEventDelete.event:type_name -> calaba.v1.CalendarEvent
+	4,  // 59: calaba.v1.CalendarEventRsvp.attendee:type_name -> calaba.v1.CalendarEventAttendee
+	5,  // 60: calaba.v1.CalendarEventRsvp.counts:type_name -> calaba.v1.CalendarEventCounts
+	6,  // 61: calaba.v1.CalendarEventRsvp.event:type_name -> calaba.v1.CalendarEvent
+	6,  // 62: calaba.v1.CalendarEventReminder.event:type_name -> calaba.v1.CalendarEvent
+	38, // 63: calaba.v1.CalendarEventReminder.occurrence_at:type_name -> google.protobuf.Timestamp
+	6,  // 64: calaba.v1.RoomEventActive.event:type_name -> calaba.v1.CalendarEvent
+	38, // 65: calaba.v1.RoomEventEnded.occurrence_at:type_name -> google.protobuf.Timestamp
+	66, // [66:66] is the sub-list for method output_type
+	66, // [66:66] is the sub-list for method input_type
+	66, // [66:66] is the sub-list for extension type_name
+	66, // [66:66] is the sub-list for extension extendee
+	0,  // [0:66] is the sub-list for field type_name
 }
 
 func init() { file_calaba_v1_event_proto_init() }
@@ -2856,8 +3232,8 @@ func file_calaba_v1_event_proto_init() {
 		File: protoimpl.DescBuilder{
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_calaba_v1_event_proto_rawDesc), len(file_calaba_v1_event_proto_rawDesc)),
-			NumEnums:      3,
-			NumMessages:   30,
+			NumEnums:      4,
+			NumMessages:   34,
 			NumExtensions: 0,
 			NumServices:   0,
 		},

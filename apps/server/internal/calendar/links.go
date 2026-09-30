@@ -2,9 +2,7 @@ package calendar
 
 import (
 	"context"
-	"crypto/rand"
 	"errors"
-	"math/big"
 	"time"
 
 	"github.com/google/uuid"
@@ -13,6 +11,7 @@ import (
 	"github.com/calaba/calaba/server/internal/db/sqlc"
 	"github.com/calaba/calaba/server/internal/moderation"
 	"github.com/calaba/calaba/server/internal/perm"
+	"github.com/calaba/calaba/server/internal/rooms"
 )
 
 // Meeting guest links (ADR-0038 «Дополнение», ADR-0016): each external attendee of a meeting
@@ -21,25 +20,6 @@ import (
 
 // guestBits: what a meeting guest may do in the room (as a default room link: speak and write).
 const guestBits = perm.ViewRoom | perm.Connect | perm.Speak | perm.SendMessages
-
-// Same alphabet and length as the room links of internal/guests (the code is the capability).
-const (
-	codeAlphabet = "23456789abcdefghjkmnpqrstuvwxyzABCDEFGHJKLMNPQRSTUVWXYZ"
-	codeLen      = 12
-)
-
-func newCode() (string, error) {
-	b := make([]byte, codeLen)
-	n := big.NewInt(int64(len(codeAlphabet)))
-	for i := range b {
-		k, err := rand.Int(rand.Reader, n)
-		if err != nil {
-			return "", err
-		}
-		b[i] = codeAlphabet[k.Int64()]
-	}
-	return string(b), nil
-}
 
 // linkWindow is the validity of a meeting's guest link at now; false = no occurrence ahead.
 func linkWindow(s Series, now time.Time) (notBefore, expires time.Time, ok bool) {
@@ -58,8 +38,8 @@ func linkWindow(s Series, now time.Time) (notBefore, expires time.Time, ok bool)
 }
 
 // linkBits: the bits a guest link of the organizer grants in the room, 0 = the organizer may
-// not make one (no MANAGE_ROOM there, or the workspace is suspended). Not wider than the
-// organizer's own bits (no escalation through links), unless they are an administrator.
+// not make one (no INVITE_GUESTS there, ADR-0043, or the workspace is suspended). Not wider
+// than the organizer's own bits (no escalation through links), unless they are an administrator.
 func linkBits(ctx context.Context, q *sqlc.Queries, b *bundle) (perm.Bits, error) {
 	if b.ev.RoomID == nil {
 		return 0, nil
@@ -74,7 +54,7 @@ func linkBits(ctx context.Context, q *sqlc.Queries, b *bundle) (perm.Bits, error
 	if err != nil {
 		return 0, err
 	}
-	if !acc.Bits.Has(perm.ManageRoom) {
+	if acc.Role == perm.RoleGuest || !acc.Bits.Has(perm.InviteGuests) { // guests never invite
 		return 0, nil
 	}
 	bits := guestBits
@@ -148,7 +128,7 @@ func (s *Service) syncLinks(ctx context.Context, q *sqlc.Queries, b *bundle, roo
 
 func (s *Service) createLink(ctx context.Context, q *sqlc.Queries, b *bundle, bits perm.Bits, nb, exp time.Time) (sqlc.RoomInvite, error) {
 	for range 3 {
-		code, err := newCode()
+		code, err := rooms.NewLinkCode()
 		if err != nil {
 			return sqlc.RoomInvite{}, err
 		}

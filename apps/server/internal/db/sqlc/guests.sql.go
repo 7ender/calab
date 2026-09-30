@@ -39,7 +39,7 @@ WHERE id = $1 AND revoked_at IS NULL
   AND (expires_at IS NULL OR expires_at > now())
   AND (max_uses = 0 OR uses < max_uses)
   AND (not_before IS NULL OR not_before <= now())
-RETURNING id, room_id, code, created_by, expires_at, max_uses, uses, allow_guests, allow_bits, revoked_at, created_at, not_before, event_id, require_approval
+RETURNING id, room_id, code, created_by, expires_at, max_uses, uses, allow_guests, allow_bits, revoked_at, created_at, not_before, event_id, require_approval, members_only
 `
 
 func (q *Queries) ConsumeRoomInvite(ctx context.Context, id uuid.UUID) (RoomInvite, error) {
@@ -60,6 +60,7 @@ func (q *Queries) ConsumeRoomInvite(ctx context.Context, id uuid.UUID) (RoomInvi
 		&i.NotBefore,
 		&i.EventID,
 		&i.RequireApproval,
+		&i.MembersOnly,
 	)
 	return i, err
 }
@@ -115,9 +116,9 @@ func (q *Queries) CreateGuestUser(ctx context.Context, arg CreateGuestUserParams
 }
 
 const createRoomInvite = `-- name: CreateRoomInvite :one
-INSERT INTO room_invites (room_id, code, created_by, expires_at, max_uses, allow_guests, allow_bits, require_approval)
-VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
-RETURNING id, room_id, code, created_by, expires_at, max_uses, uses, allow_guests, allow_bits, revoked_at, created_at, not_before, event_id, require_approval
+INSERT INTO room_invites (room_id, code, created_by, expires_at, max_uses, allow_guests, allow_bits, require_approval, members_only)
+VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+RETURNING id, room_id, code, created_by, expires_at, max_uses, uses, allow_guests, allow_bits, revoked_at, created_at, not_before, event_id, require_approval, members_only
 `
 
 type CreateRoomInviteParams struct {
@@ -129,6 +130,7 @@ type CreateRoomInviteParams struct {
 	AllowGuests     bool
 	AllowBits       int64
 	RequireApproval *bool
+	MembersOnly     bool
 }
 
 func (q *Queries) CreateRoomInvite(ctx context.Context, arg CreateRoomInviteParams) (RoomInvite, error) {
@@ -141,6 +143,7 @@ func (q *Queries) CreateRoomInvite(ctx context.Context, arg CreateRoomInvitePara
 		arg.AllowGuests,
 		arg.AllowBits,
 		arg.RequireApproval,
+		arg.MembersOnly,
 	)
 	var i RoomInvite
 	err := row.Scan(
@@ -158,6 +161,7 @@ func (q *Queries) CreateRoomInvite(ctx context.Context, arg CreateRoomInvitePara
 		&i.NotBefore,
 		&i.EventID,
 		&i.RequireApproval,
+		&i.MembersOnly,
 	)
 	return i, err
 }
@@ -181,7 +185,7 @@ func (q *Queries) DeleteUserRoomOverrides(ctx context.Context, userID string) er
 }
 
 const getRoomInviteByCode = `-- name: GetRoomInviteByCode :one
-SELECT i.id, i.room_id, i.code, i.created_by, i.expires_at, i.max_uses, i.uses, i.allow_guests, i.allow_bits, i.revoked_at, i.created_at, i.not_before, i.event_id, i.require_approval, r.id, r.workspace_id, r.type, r.name, r.topic, r.position, r.is_private, r.audio_bitrate_kbps, r.max_stream_preset, r.max_streams, r.created_at, r.archived_at, r.category_id, r.user_limit, r.voice_status, r.camera_limit, r.dm_key, r.allow_recording, r.restricted, r.emoji, r.guest_approval, w.id, w.slug, w.name, w.icon_file_id, w.visibility, w.owner_id, w.created_at, w.default_audio_bitrate_kbps, w.default_max_stream_preset, w.default_max_streams, w.storage_quota_bytes, w.storage_used_bytes, w.allow_self_nickname, w.default_camera_limit, w.suspended_at, w.suspended_reason, w.suspended_by, w.time_format
+SELECT i.id, i.room_id, i.code, i.created_by, i.expires_at, i.max_uses, i.uses, i.allow_guests, i.allow_bits, i.revoked_at, i.created_at, i.not_before, i.event_id, i.require_approval, i.members_only, r.id, r.workspace_id, r.type, r.name, r.topic, r.position, r.is_private, r.audio_bitrate_kbps, r.max_stream_preset, r.max_streams, r.created_at, r.archived_at, r.category_id, r.user_limit, r.voice_status, r.camera_limit, r.dm_key, r.allow_recording, r.restricted, r.emoji, r.guest_approval, r.expires_at, r.created_by, w.id, w.slug, w.name, w.icon_file_id, w.visibility, w.owner_id, w.created_at, w.default_audio_bitrate_kbps, w.default_max_stream_preset, w.default_max_streams, w.storage_quota_bytes, w.storage_used_bytes, w.allow_self_nickname, w.default_camera_limit, w.suspended_at, w.suspended_reason, w.suspended_by, w.time_format
 FROM room_invites i
 JOIN rooms r ON r.id = i.room_id AND r.archived_at IS NULL
 JOIN workspaces w ON w.id = r.workspace_id
@@ -214,6 +218,7 @@ func (q *Queries) GetRoomInviteByCode(ctx context.Context, code string) (GetRoom
 		&i.RoomInvite.NotBefore,
 		&i.RoomInvite.EventID,
 		&i.RoomInvite.RequireApproval,
+		&i.RoomInvite.MembersOnly,
 		&i.Room.ID,
 		&i.Room.WorkspaceID,
 		&i.Room.Type,
@@ -235,6 +240,8 @@ func (q *Queries) GetRoomInviteByCode(ctx context.Context, code string) (GetRoom
 		&i.Room.Restricted,
 		&i.Room.Emoji,
 		&i.Room.GuestApproval,
+		&i.Room.ExpiresAt,
+		&i.Room.CreatedBy,
 		&i.Workspace.ID,
 		&i.Workspace.Slug,
 		&i.Workspace.Name,
@@ -284,7 +291,7 @@ func (q *Queries) ListExpiredGuests(ctx context.Context, guestExpiresAt *time.Ti
 }
 
 const listRoomInvites = `-- name: ListRoomInvites :many
-SELECT id, room_id, code, created_by, expires_at, max_uses, uses, allow_guests, allow_bits, revoked_at, created_at, not_before, event_id, require_approval FROM room_invites
+SELECT id, room_id, code, created_by, expires_at, max_uses, uses, allow_guests, allow_bits, revoked_at, created_at, not_before, event_id, require_approval, members_only FROM room_invites
 WHERE room_id = $1 AND revoked_at IS NULL AND (expires_at IS NULL OR expires_at > now())
   AND (max_uses = 0 OR uses < max_uses)
 ORDER BY created_at DESC
@@ -314,6 +321,7 @@ func (q *Queries) ListRoomInvites(ctx context.Context, roomID uuid.UUID) ([]Room
 			&i.NotBefore,
 			&i.EventID,
 			&i.RequireApproval,
+			&i.MembersOnly,
 		); err != nil {
 			return nil, err
 		}
@@ -405,16 +413,20 @@ func (q *Queries) PromoteGuest(ctx context.Context, arg PromoteGuestParams) (Wor
 }
 
 const revokeRoomInvite = `-- name: RevokeRoomInvite :execrows
-UPDATE room_invites SET revoked_at = now() WHERE id = $1 AND room_id = $2 AND revoked_at IS NULL
+UPDATE room_invites SET revoked_at = now()
+WHERE id = $1 AND room_id = $2 AND revoked_at IS NULL
+  AND (NOT $3::bool OR members_only)
 `
 
 type RevokeRoomInviteParams struct {
-	ID     uuid.UUID
-	RoomID uuid.UUID
+	ID              uuid.UUID
+	RoomID          uuid.UUID
+	OnlyMembersOnly bool
 }
 
+// only_members_only: the caller may revoke members-only links only (INVITE_MEMBERS, ADR-0043).
 func (q *Queries) RevokeRoomInvite(ctx context.Context, arg RevokeRoomInviteParams) (int64, error) {
-	result, err := q.db.Exec(ctx, revokeRoomInvite, arg.ID, arg.RoomID)
+	result, err := q.db.Exec(ctx, revokeRoomInvite, arg.ID, arg.RoomID, arg.OnlyMembersOnly)
 	if err != nil {
 		return 0, err
 	}
@@ -424,7 +436,7 @@ func (q *Queries) RevokeRoomInvite(ctx context.Context, arg RevokeRoomInvitePara
 const setRoomInviteApproval = `-- name: SetRoomInviteApproval :one
 UPDATE room_invites SET require_approval = $1
 WHERE id = $2 AND room_id = $3 AND revoked_at IS NULL
-RETURNING id, room_id, code, created_by, expires_at, max_uses, uses, allow_guests, allow_bits, revoked_at, created_at, not_before, event_id, require_approval
+RETURNING id, room_id, code, created_by, expires_at, max_uses, uses, allow_guests, allow_bits, revoked_at, created_at, not_before, event_id, require_approval, members_only
 `
 
 type SetRoomInviteApprovalParams struct {
@@ -452,6 +464,7 @@ func (q *Queries) SetRoomInviteApproval(ctx context.Context, arg SetRoomInviteAp
 		&i.NotBefore,
 		&i.EventID,
 		&i.RequireApproval,
+		&i.MembersOnly,
 	)
 	return i, err
 }

@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { roomMenuGroups, type RoomMenuInput } from './roomMenu';
 
-const base: RoomMenuInput = { voice: true, mobile: false, guest: false, admin: false, canManage: false, canOrder: false, hasCategories: false };
+const base: RoomMenuInput = { voice: true, mobile: false, guest: false, admin: false, inviteRoom: false, canManage: false, canOrder: false, hasCategories: false };
 
 describe('roomMenuGroups', () => {
   it('member in a voice room: recording, read, notifications', () => {
@@ -16,13 +16,14 @@ describe('roomMenuGroups', () => {
     ]);
   });
 
-  it('a room manager without admin invites by room link (voice only)', () => {
-    expect(roomMenuGroups({ ...base, canManage: true })[0]).toEqual(['invite', 'record', 'settings']);
-    expect(roomMenuGroups({ ...base, voice: false, canManage: true })[0]).toEqual(['settings']);
+  it('a room invite right (ADR-0043) invites by room link (voice only); MANAGE_ROOM alone does not', () => {
+    expect(roomMenuGroups({ ...base, inviteRoom: true })[0]).toEqual(['invite', 'record']);
+    expect(roomMenuGroups({ ...base, voice: false, inviteRoom: true })).toEqual([['markRead', 'notify']]);
+    expect(roomMenuGroups({ ...base, canManage: true })[0]).toEqual(['record', 'settings']);
   });
 
   it('guest: no invite, no recording', () => {
-    expect(roomMenuGroups({ ...base, guest: true, canManage: true })).toEqual([['settings'], ['markRead', 'notify']]);
+    expect(roomMenuGroups({ ...base, guest: true, canManage: true, inviteRoom: true })).toEqual([['settings'], ['markRead', 'notify']]);
     expect(roomMenuGroups({ ...base, guest: true })).toEqual([['markRead', 'notify']]);
   });
 
@@ -36,5 +37,22 @@ describe('roomMenuGroups', () => {
 
   it('no categories: no «В категорию ›»', () => {
     expect(roomMenuGroups({ ...base, canOrder: true })[2]).toEqual(['moveUp', 'moveDown']);
+  });
+
+  it('a temporary room I manage (ADR-0044): link, extend, meeting, delete; no reorder', () => {
+    expect(roomMenuGroups({ ...base, canManage: true, canOrder: true, hasCategories: true, temp: true })).toEqual([
+      ['record', 'settings'],
+      ['copyLink', 'extend', 'addMeeting'],
+      ['markRead', 'notify'],
+      ['deleteRoom'],
+    ]);
+  });
+
+  it('a temporary room with a meeting already: no «Добавить встречу»', () => {
+    expect(roomMenuGroups({ ...base, canManage: true, temp: true, hasEvent: true })[1]).toEqual(['copyLink', 'extend']);
+  });
+
+  it('a temporary room of someone else: the voice room items only', () => {
+    expect(roomMenuGroups({ ...base, canOrder: true, temp: true })).toEqual([['record'], ['markRead', 'notify']]);
   });
 });

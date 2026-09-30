@@ -32,8 +32,13 @@ const (
 	CreateTasks Bits = 1 << 18 // create tasks; edit own and assigned ones
 	EditTasks   Bits = 1 << 19 // edit, move, archive any task; moderate comments
 	ManageBoard Bits = 1 << 20 // statuses, labels, milestones, settings, access, archive
+	// Invitations (ADR-0043): not implied by MANAGE_WORKSPACE / MANAGE_ROOM; settable per room.
+	InviteMembers Bits = 1 << 21 // workspace invites; in a room: members-only room links
+	InviteGuests  Bits = 1 << 22 // room links admitting guests, their approval, admission decisions
+	// CreateTempRooms (ADR-0044): workspace-level, create temporary rooms (member default).
+	CreateTempRooms Bits = 1 << 23
 
-	All Bits = ManageBoard<<1 - 1
+	All Bits = CreateTempRooms<<1 - 1
 )
 
 // BoardOnly are the bits of task boards (ADR-0042): board overrides touch only them, room
@@ -67,7 +72,7 @@ const (
 var RoleDefaults = map[Role]Bits{
 	RoleOwner:  Administrator,
 	RoleAdmin:  Administrator,
-	RoleMember: ViewRoom | SendMessages | AttachFiles | Connect | Speak | Stream | Video | ViewBoard | CreateTasks,
+	RoleMember: ViewRoom | SendMessages | AttachFiles | Connect | Speak | Stream | Video | ViewBoard | CreateTasks | CreateTempRooms,
 	// Guests see only rooms with an explicit VIEW_ROOM allow override.
 	RoleGuest: Connect | Speak,
 }

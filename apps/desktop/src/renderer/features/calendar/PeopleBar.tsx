@@ -24,6 +24,7 @@ export function PeopleBar({
   onRemove,
   onClear,
   wrap = false,
+  max = MAX_PEOPLE,
   testId,
 }: {
   workspaceId: string;
@@ -33,6 +34,8 @@ export function PeopleBar({
   onClear?: (() => void) | undefined;
   /** Chips wrap to more lines (a sheet, the find-a-time panel) instead of scrolling sideways. */
   wrap?: boolean;
+  /** At most this many people (the calendar's filter: 20; a temporary room's access: 50). */
+  max?: number;
   testId: string;
 }): ReactNode {
   const members = useWorkspaces((s) => s.byId[workspaceId]?.members);
@@ -46,8 +49,8 @@ export function PeopleBar({
 
   const add = (id: string): void => {
     if (people.includes(id)) return;
-    if (people.length >= MAX_PEOPLE) {
-      toast.info(t('fb.maxPeople', { n: MAX_PEOPLE }));
+    if (people.length >= max) {
+      toast.info(t('fb.maxPeople', { n: max }));
       return;
     }
     onAdd([id]);

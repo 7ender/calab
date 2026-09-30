@@ -1,7 +1,7 @@
 import * as Dropdown from '@radix-ui/react-dropdown-menu';
 import { timestampMs } from '@bufbuild/protobuf/wkt';
 import { AttendeeStatus, EventRepeat, RoomType, WorkspaceRole, type CalendarEvent, type CalendarEventAttendee } from '@calaba/protocol';
-import { ArrowLeft, Check, CircleHelp, Clock, Copy, FileAudio, Link2, Mail, Pencil, Repeat, Trash2, Volume2, X, CircleDashed } from 'lucide-react';
+import { ArrowLeft, Check, CircleHelp, Clock, Copy, FileAudio, Link2, Mail, Pencil, Repeat, Timer, Trash2, Volume2, X, CircleDashed } from 'lucide-react';
 import { Suspense, lazy, useEffect, useRef, useState, type DragEvent, type ReactNode } from 'react';
 import { Avatar } from '../../components/Avatar';
 import { Button, CloseButton, IconButton, cx } from '../../components/ui';
@@ -159,7 +159,7 @@ export function EventCard({
           </Line>
         ) : null}
         {room ? (
-          <Line icon={<Volume2 className="size-4" aria-hidden />}>
+          <Line icon={room.expiresAt ? <Timer className="size-4" aria-label={t('temp.icon')} role="img" /> : <Volume2 className="size-4" aria-hidden />}>
             <span className="min-w-0 flex-1 truncate">{room.name}</span>
             <Button size="sm" variant="secondary" onClick={() => goToRoom(ev)} aria-label={t('cal.goRoom', { room: room.name })} data-testid="event-go">
               {t('cal.go')}

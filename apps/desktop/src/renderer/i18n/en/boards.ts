@@ -4,8 +4,6 @@ import type { DictShape } from '../types';
 /** English UI strings — task boards (ADR-0042). Same keys and placeholders as ru. */
 export const enBoards: DictShape<typeof ruBoards> = {
   'boards.boards': 'Boards',
-  'boards.openMode': 'Task boards',
-  'boards.close': 'Back to rooms',
   'boards.unreadCount': { one: 'Boards: {n} unread task', other: 'Boards: {n} unread tasks' },
   'boards.myTasks': 'My tasks',
   'boards.newBoard': 'New board',

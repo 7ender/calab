@@ -88,7 +88,7 @@ type Config struct {
 	HeartbeatInterval time.Duration `env:"GATEWAY_HEARTBEAT_INTERVAL" envDefault:"41s"`
 	MaxDevicesPerUser int           `env:"GATEWAY_MAX_SESSIONS_PER_USER" envDefault:"5"`
 
-	// File bytes (ADR-0011): fs = local directory; s3 is planned.
+	// File bytes (ADR-0011): fs = local directory; s3 = S3-compatible bucket (below).
 	StorageDriver string `env:"STORAGE_DRIVER" envDefault:"fs"`
 	StoragePath   string `env:"STORAGE_PATH" envDefault:"./data/files"`
 	MaxFileSizeMB int64  `env:"MAX_FILE_SIZE_MB" envDefault:"50"`
@@ -97,6 +97,16 @@ type Config struct {
 	FFmpegPath     string `env:"FFMPEG_PATH" envDefault:"ffmpeg"`
 	FFprobePath    string `env:"FFPROBE_PATH" envDefault:"ffprobe"`
 	MigrateOnStart bool   `env:"MIGRATE_ON_START" envDefault:"true"`
+
+	// STORAGE_DRIVER=s3 (several API replicas): the files bucket in Yandex Object Storage,
+	// Garage, Ceph RGW or another S3-compatible store. Not the S3_* of the release bucket.
+	StorageS3Endpoint        string `env:"STORAGE_S3_ENDPOINT"` // https://storage.yandexcloud.net
+	StorageS3Region          string `env:"STORAGE_S3_REGION" envDefault:"us-east-1"`
+	StorageS3Bucket          string `env:"STORAGE_S3_BUCKET"`
+	StorageS3AccessKeyID     string `env:"STORAGE_S3_ACCESS_KEY_ID"`
+	StorageS3SecretAccessKey string `env:"STORAGE_S3_SECRET_ACCESS_KEY"`
+	StorageS3KeyPrefix       string `env:"STORAGE_S3_KEY_PREFIX"` // optional: objects under "<prefix>/"
+	StorageS3ForcePathStyle  bool   `env:"STORAGE_S3_FORCE_PATH_STYLE" envDefault:"true"`
 
 	// Plans (ADR-0024). JSON limits over the built-in defaults, e.g.
 	// {"room_members":5,"stream_max_preset":"h720","stream_max_fps":15,"storage_mb":1024}; 0 = no limit.
@@ -120,9 +130,12 @@ type Config struct {
 	// volume is RECORDINGS_PATH here and RECORDING_EGRESS_DIR in the egress container.
 	// GPTUNNEL_WEB_URL replaces the host app.gptunnel.ai in links GPTunneL gives (docs/17 §4);
 	// RECORDING_KEEP_DAYS: a done recording's audio stays attached to its chat card this long.
-	GPTunnelAPIURL         string `env:"GPTUNNEL_API_URL" envDefault:"https://gptunnel.ru"`
-	GPTunnelWebURL         string `env:"GPTUNNEL_WEB_URL" envDefault:"https://gptunnel.ru"`
-	RecordingKeepDays      int    `env:"RECORDING_KEEP_DAYS" envDefault:"30"`
+	GPTunnelAPIURL    string `env:"GPTUNNEL_API_URL" envDefault:"https://gptunnel.ru"`
+	GPTunnelWebURL    string `env:"GPTUNNEL_WEB_URL" envDefault:"https://gptunnel.ru"`
+	RecordingKeepDays int    `env:"RECORDING_KEEP_DAYS" envDefault:"30"`
+	// TEMP_ROOM_RETENTION_DAYS (ADR-0044): archived temporary rooms are deleted with their
+	// history this many days after they closed.
+	TempRoomRetentionDays  int    `env:"TEMP_ROOM_RETENTION_DAYS" envDefault:"90"`
 	RecordingMaxConcurrent int    `env:"RECORDING_MAX_CONCURRENT" envDefault:"3"`
 	RecordingsPath         string `env:"RECORDINGS_PATH" envDefault:"./data/recordings"`
 	RecordingEgressDir     string `env:"RECORDING_EGRESS_DIR" envDefault:"/out"`
@@ -214,7 +227,18 @@ func (c *Config) Validate() error {
 			errs = append(errs, errors.New("STORAGE_PATH is required for STORAGE_DRIVER=fs"))
 		}
 	case "s3":
-		errs = append(errs, errors.New("STORAGE_DRIVER=s3 is not implemented yet (ADR-0011)"))
+		for _, v := range [][2]string{
+			{"STORAGE_S3_ENDPOINT", c.StorageS3Endpoint}, {"STORAGE_S3_REGION", c.StorageS3Region},
+			{"STORAGE_S3_BUCKET", c.StorageS3Bucket}, {"STORAGE_S3_ACCESS_KEY_ID", c.StorageS3AccessKeyID},
+			{"STORAGE_S3_SECRET_ACCESS_KEY", c.StorageS3SecretAccessKey},
+		} {
+			if strings.TrimSpace(v[1]) == "" {
+				errs = append(errs, fmt.Errorf("%s is required for STORAGE_DRIVER=s3", v[0]))
+			}
+		}
+		if c.StorageS3Endpoint != "" && Origin(c.StorageS3Endpoint) == "" {
+			errs = append(errs, errors.New("STORAGE_S3_ENDPOINT must be an absolute http(s) URL"))
+		}
 	default:
 		errs = append(errs, fmt.Errorf("STORAGE_DRIVER must be fs or s3, got %q", c.StorageDriver))
 	}
@@ -257,6 +281,9 @@ func (c *Config) Validate() error {
 	}
 	if c.RecordingKeepDays < 1 || c.RecordingKeepDays > 3650 {
 		errs = append(errs, errors.New("RECORDING_KEEP_DAYS must be 1..3650"))
+	}
+	if c.TempRoomRetentionDays < 1 || c.TempRoomRetentionDays > 3650 {
+		errs = append(errs, errors.New("TEMP_ROOM_RETENTION_DAYS must be 1..3650"))
 	}
 	if c.RecordingMaxConcurrent < 1 || c.RecordingsPath == "" || !strings.HasPrefix(c.RecordingEgressDir, "/") {
 		errs = append(errs, errors.New("RECORDING_MAX_CONCURRENT must be >= 1, RECORDINGS_PATH set and RECORDING_EGRESS_DIR an absolute path"))

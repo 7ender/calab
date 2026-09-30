@@ -49,7 +49,7 @@ import { useMemberRoles, useWorkspaces } from '../../stores/workspaces';
 import { roleName } from '../people/MemberBits';
 import { MemberPicker } from '../people/MemberPicker';
 import { memberItems, type PeoplePickItem } from '../people/memberPickItems';
-import { PERM_LABEL } from './RoomDialogs';
+import { PERM_HINT, PERM_LABEL } from './RoomDialogs';
 import { toggleMemberRole } from '../people/actions';
 import { nameOf } from '../people/members';
 
@@ -62,6 +62,7 @@ import { nameOf } from '../people/members';
 
 const GROUP_LABEL: Record<PermGroupId, MessageKey> = {
   general: 'roles.group.general',
+  invites: 'roles.group.invites',
   rooms: 'roles.group.rooms',
   voice: 'roles.group.voice',
   moderation: 'roles.group.moderation',
@@ -424,7 +425,7 @@ function PermissionMatrix({ role, editable, onChange }: { role: Role; editable: 
               const can = (editable & bit) !== 0n;
               const id = `perm-${role.id}-${p}`;
               return (
-                <Row key={p} label={t(PERM_LABEL[p])} htmlFor={id}>
+                <Row key={p} label={t(PERM_LABEL[p])} hint={PERM_HINT[p] ? t(PERM_HINT[p]) : undefined} htmlFor={id}>
                   <input
                     id={id}
                     type="checkbox"

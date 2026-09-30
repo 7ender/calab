@@ -59,9 +59,10 @@ func TestPermissionMatrixREST(t *testing.T) {
 	single := map[string]perm.Bits{
 		"rolesMgr": perm.ManageRoles, "wsMgr": perm.ManageWorkspace, "roomMgr": perm.ManageRoom,
 		"msgMgr": perm.ManageMessages, "nick": perm.ManageNicknames,
+		"invMem": perm.InviteMembers, "invGst": perm.InviteGuests,
 	}
 	actors := map[string]*user{"owner": o, "admin": admin, "member": mem, "guest": guest}
-	for _, name := range []string{"rolesMgr", "wsMgr", "roomMgr", "msgMgr", "nick"} {
+	for _, name := range []string{"rolesMgr", "wsMgr", "roomMgr", "msgMgr", "nick", "invMem", "invGst"} {
 		u := register(t, code)
 		r := newRole(t, o, wid, name, single[name])
 		if st, _ := setMemberRoles(o, wid, u.id, r.GetId()); st != 200 {
@@ -72,9 +73,9 @@ func TestPermissionMatrixREST(t *testing.T) {
 	junior := newRole(t, o, wid, "junior", 0) // at the bottom: below every other custom role
 
 	// A text room: the guest sees it by a user override; "roomOv" manages this room only;
-	// "noSend" may not write here.
-	roomOv, noSend := register(t, code), register(t, code)
-	actors["roomOv"], actors["noSend"] = roomOv, noSend
+	// "noSend" may not write here; "roomInv" may invite guests (ADR-0043) to this room only.
+	roomOv, noSend, roomInv := register(t, code), register(t, code), register(t, code)
+	actors["roomOv"], actors["noSend"], actors["roomInv"] = roomOv, noSend, roomInv
 	var cr v1.CreateRoomResponse
 	o.must(201, "POST", "/api/workspaces/"+wid+"/rooms", &v1.CreateRoomRequest{Type: v1.RoomType_ROOM_TYPE_TEXT, Name: "t"}, &cr)
 	rid := cr.GetRoom().GetId()
@@ -82,13 +83,14 @@ func TestPermissionMatrixREST(t *testing.T) {
 		userOv(guest.id, perm.ViewRoom|perm.SendMessages, 0),
 		userOv(roomOv.id, perm.ManageRoom|perm.ManageMessages, 0),
 		userOv(noSend.id, 0, perm.SendMessages),
+		userOv(roomInv.id, perm.InviteGuests, 0),
 	}
 	o.must(200, "PUT", "/api/rooms/"+rid+"/permissions", &v1.SetRoomPermissionsRequest{Overrides: ovs}, nil)
 	var vr v1.CreateRoomResponse
 	o.must(201, "POST", "/api/workspaces/"+wid+"/rooms", &v1.CreateRoomRequest{Type: v1.RoomType_ROOM_TYPE_VOICE, Name: "v"}, &vr)
 	vid := vr.GetRoom().GetId()
 
-	names := []string{"owner", "admin", "member", "guest", "rolesMgr", "wsMgr", "roomMgr", "msgMgr", "nick", "roomOv", "noSend"}
+	names := []string{"owner", "admin", "member", "guest", "rolesMgr", "wsMgr", "roomMgr", "msgMgr", "nick", "invMem", "invGst", "roomOv", "noSend", "roomInv"}
 	// only lists who succeeds; everyone else gets `deny`.
 	only := func(deny int, who ...string) map[string]int {
 		out := map[string]int{}
@@ -128,11 +130,21 @@ func TestPermissionMatrixREST(t *testing.T) {
 			off := false
 			return u.do("PATCH", "/api/rooms/"+vid, &v1.UpdateRoomRequest{AllowRecording: &off}, nil)
 		}},
-		{"room guest link (MANAGE_ROOM in the room)", only(403, "owner", "admin", "roomMgr", "roomOv"), func(u *user) int {
+		// ADR-0043: MANAGE_ROOM / MANAGE_WORKSPACE no longer imply the invite bits.
+		{"room guest link (INVITE_GUESTS in the room)", only(403, "owner", "admin", "invGst", "roomInv"), func(u *user) int {
 			return u.do("POST", "/api/rooms/"+rid+"/invites", &v1.CreateRoomInviteRequest{}, nil)
 		}},
-		{"workspace invite (MANAGE_WORKSPACE)", only(403, "owner", "admin", "wsMgr"), func(u *user) int {
+		{"room members-only link (INVITE_MEMBERS or INVITE_GUESTS in the room)", only(403, "owner", "admin", "invMem", "invGst", "roomInv"), func(u *user) int {
+			return u.do("POST", "/api/rooms/"+rid+"/invites", &v1.CreateRoomInviteRequest{MembersOnly: true}, nil)
+		}},
+		{"list room links (INVITE_GUESTS or INVITE_MEMBERS in the room)", only(403, "owner", "admin", "invMem", "invGst", "roomInv"), func(u *user) int {
+			return u.do("GET", "/api/rooms/"+rid+"/invites", nil, nil)
+		}},
+		{"workspace invite (INVITE_MEMBERS)", only(403, "owner", "admin", "invMem"), func(u *user) int {
 			return u.do("POST", "/api/workspaces/"+wid+"/invites", &v1.CreateInviteRequest{MaxUses: 1}, nil)
+		}},
+		{"list workspace invites (INVITE_MEMBERS)", only(403, "owner", "admin", "invMem"), func(u *user) int {
+			return u.do("GET", "/api/workspaces/"+wid+"/invites", nil, nil)
 		}},
 		{"workspace settings (MANAGE_WORKSPACE)", only(403, "owner", "admin", "wsMgr"), func(u *user) int {
 			n := "Team"
@@ -152,7 +164,7 @@ func TestPermissionMatrixREST(t *testing.T) {
 			st, _ := setMemberRoles(u, wid, tgt.id, junior.GetId())
 			return st
 		}},
-		{"send a message (SEND_MESSAGES)", only(403, "owner", "admin", "member", "guest", "rolesMgr", "wsMgr", "roomMgr", "msgMgr", "nick", "roomOv"), func(u *user) int {
+		{"send a message (SEND_MESSAGES)", only(403, "owner", "admin", "member", "guest", "rolesMgr", "wsMgr", "roomMgr", "msgMgr", "nick", "invMem", "invGst", "roomOv", "roomInv"), func(u *user) int {
 			for {
 				if st := u.do("POST", "/api/rooms/"+rid+"/messages", &v1.CreateMessageRequest{Content: "hi", Nonce: uniq("n")}, nil); st != 429 {
 					return st
@@ -160,7 +172,7 @@ func TestPermissionMatrixREST(t *testing.T) {
 				time.Sleep(500 * time.Millisecond)
 			}
 		}},
-		{"react (SEND_MESSAGES)", only(403, "owner", "admin", "member", "guest", "rolesMgr", "wsMgr", "roomMgr", "msgMgr", "nick", "roomOv"), func(u *user) int {
+		{"react (SEND_MESSAGES)", only(403, "owner", "admin", "member", "guest", "rolesMgr", "wsMgr", "roomMgr", "msgMgr", "nick", "invMem", "invGst", "roomOv", "roomInv"), func(u *user) int {
 			return u.do("PUT", "/api/messages/"+byTgt.GetId()+"/reactions/"+thumbs, nil, nil)
 		}},
 		{"pin another's message (MANAGE_MESSAGES)", only(403, "owner", "admin", "msgMgr", "roomOv"), func(u *user) int {

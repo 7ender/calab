@@ -710,7 +710,7 @@ func (s *Service) CanRead(r *http.Request, f sqlc.File) (bool, error) {
 		return false, err
 	}
 	for _, rid := range roomIDs {
-		acc, err := res.Room(ctx, rid, uid)
+		acc, err := res.ReadRoom(ctx, rid, uid) // attachments of archived temporary rooms stay readable (ADR-0044)
 		if errors.Is(err, perm.ErrNoRoom) {
 			continue
 		}

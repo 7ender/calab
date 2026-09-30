@@ -142,6 +142,7 @@ type CaldavAccount struct {
 	LastError    string
 	CreatedAt    time.Time
 	UpdatedAt    time.Time
+	ShareLevel   string
 }
 
 type CaldavPush struct {
@@ -246,11 +247,16 @@ type EventRoomSignal struct {
 }
 
 type ExternalBusy struct {
-	UserID   uuid.UUID
-	Uid      string
-	StartsAt time.Time
-	EndsAt   time.Time
-	AllDay   bool
+	UserID    uuid.UUID
+	Uid       string
+	StartsAt  time.Time
+	EndsAt    time.Time
+	AllDay    bool
+	Summary   string
+	Location  string
+	Attendees []byte
+	Organizer string
+	Url       string
 }
 
 type File struct {
@@ -293,24 +299,26 @@ type MemberRole struct {
 }
 
 type Message struct {
-	ID              uuid.UUID
-	RoomID          uuid.UUID
-	AuthorID        uuid.UUID
-	Content         string
-	ReplyToID       *uuid.UUID
-	Nonce           *string
-	CreatedAt       time.Time
-	EditedAt        *time.Time
-	DeletedAt       *time.Time
-	PinnedAt        *time.Time
-	PinnedBy        *uuid.UUID
-	EmbedsHidden    bool
-	Kind            string
-	Payload         []byte
-	StickerID       *uuid.UUID
-	ForwardedFrom   *uuid.UUID
-	ForwardAuthorID *uuid.UUID
-	ForwardSentAt   *time.Time
+	ID               uuid.UUID
+	RoomID           uuid.UUID
+	AuthorID         uuid.UUID
+	Content          string
+	ReplyToID        *uuid.UUID
+	Nonce            *string
+	CreatedAt        time.Time
+	EditedAt         *time.Time
+	DeletedAt        *time.Time
+	PinnedAt         *time.Time
+	PinnedBy         *uuid.UUID
+	EmbedsHidden     bool
+	Kind             string
+	Payload          []byte
+	StickerID        *uuid.UUID
+	ForwardedFrom    *uuid.UUID
+	ForwardAuthorID  *uuid.UUID
+	ForwardSentAt    *time.Time
+	InlineKeyboard   []byte
+	KeyboardRevision int64
 }
 
 type MessageAttachment struct {
@@ -323,6 +331,16 @@ type MessageAttachment struct {
 type MessageEveryoneMention struct {
 	MessageID uuid.UUID
 	RoomID    uuid.UUID
+}
+
+type MessageInteraction struct {
+	ID               uuid.UUID
+	MessageID        uuid.UUID
+	UserID           uuid.UUID
+	Nonce            string
+	ButtonID         string
+	KeyboardRevision int64
+	CreatedAt        time.Time
 }
 
 type MessageMention struct {
@@ -366,6 +384,8 @@ type Room struct {
 	Restricted       bool
 	Emoji            string
 	GuestApproval    bool
+	ExpiresAt        *time.Time
+	CreatedBy        *uuid.UUID
 }
 
 type RoomAdmission struct {
@@ -401,6 +421,7 @@ type RoomInvite struct {
 	NotBefore       *time.Time
 	EventID         *uuid.UUID
 	RequireApproval *bool
+	MembersOnly     bool
 }
 
 type RoomNotificationSetting struct {

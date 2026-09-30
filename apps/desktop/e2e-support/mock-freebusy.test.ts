@@ -126,3 +126,51 @@ describe('free / busy (ADR-0041)', () => {
     expect(await (await api(anna, '/api/me/caldav')).json()).toEqual({});
   });
 });
+
+describe('external event details (ADR-0045)', () => {
+  it('the owner sees every detail; a colleague by the share level; members matched by address', async () => {
+    server.reset();
+    server.setClock(DAY0 + 9 * H);
+    const anna = await login();
+    const boris = await login('boris@calaba.test');
+    server.setCalDav(IDS.users.anna);
+    server.setBusy(IDS.users.anna, [
+      {
+        startMs: DAY0 + 11 * H,
+        endMs: DAY0 + 12 * H,
+        uid: 'u1',
+        summary: 'Подрядчик',
+        location: 'Zoom',
+        url: 'https://zoom.us/j/1',
+        organizer: 'pm@partner.org',
+        attendees: [{ email: 'Boris@calaba.test', name: 'Борис' }, { email: 'pm@partner.org' }],
+      },
+    ]);
+    const mine: unknown = await (await api(anna, `/api/me/external-events?from=${iso(DAY0)}&to=${iso(DAY0 + 24 * H)}&workspace=${W}`)).json();
+    expect(mine).toEqual({
+      events: [
+        {
+          uid: 'u1',
+          startsAt: iso(DAY0 + 11 * H),
+          endsAt: iso(DAY0 + 12 * H),
+          summary: 'Подрядчик',
+          location: 'Zoom',
+          attendees: [{ email: 'boris@calaba.test', name: 'Борис', userId: IDS.users.boris }, { email: 'pm@partner.org', name: '' }],
+          organizer: 'pm@partner.org',
+          url: 'https://zoom.us/j/1',
+        },
+      ],
+    });
+    const seen = async (): Promise<Record<string, unknown> | undefined> => {
+      const r = await api(boris, `/api/workspaces/${W}/freebusy?users=${IDS.users.anna}&from=${iso(DAY0)}&to=${iso(DAY0 + 24 * H)}`);
+      const users = ((await r.json()) as { users: Array<{ busy: Array<Record<string, unknown>> }> }).users;
+      return users[0]?.busy.find((b) => b['kind'] === 'BUSY_KIND_EXTERNAL');
+    };
+    expect(await seen()).toEqual({ startsAt: iso(DAY0 + 11 * H), endsAt: iso(DAY0 + 12 * H), kind: 'BUSY_KIND_EXTERNAL', allDay: false });
+    expect((await api(anna, '/api/me/caldav', { method: 'PATCH', body: { shareLevel: 'CAL_DAV_SHARE_LEVEL_TITLE' } })).status).toBe(200);
+    expect(await seen()).toMatchObject({ title: 'Подрядчик' });
+    expect((await api(anna, '/api/me/caldav', { method: 'PATCH', body: { shareLevel: 'CAL_DAV_SHARE_LEVEL_DETAILS' } })).status).toBe(200);
+    expect(await seen()).toMatchObject({ title: 'Подрядчик', attendeeUserIds: [IDS.users.boris] });
+    expect((await api(anna, '/api/me/caldav', { method: 'PATCH', body: {} })).status).toBe(422);
+  });
+});

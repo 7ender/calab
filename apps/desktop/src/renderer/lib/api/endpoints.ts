@@ -57,6 +57,9 @@ import {
   CreateMessageResponseSchema,
   CreateRoomRequestSchema,
   CreateRoomResponseSchema,
+  CreateTempRoomRequestSchema,
+  TempRoomResponseSchema,
+  ListRoomsResponseSchema,
   SetRoomOrderRequestSchema,
   SetRoomOrderResponseSchema,
   CreateWorkspaceRequestSchema,
@@ -109,6 +112,9 @@ import {
   SetMemberBadgeResponseSchema,
   UpdateStatusRequestSchema,
   UpdateMessageRequestSchema,
+  MessageSchema,
+  CreateMessageInteractionRequestSchema,
+  CreateMessageInteractionResponseSchema,
   UpdateMessageResponseSchema,
   SetEmbedsHiddenRequestSchema,
   ForwardMessageRequestSchema,
@@ -386,6 +392,15 @@ export const api = {
   rooms: {
     create: (workspaceId: string, init: MessageInitShape<typeof CreateRoomRequestSchema>) =>
       call('POST', `/api/workspaces/${workspaceId}/rooms`, CreateRoomResponseSchema, body(CreateRoomRequestSchema, init)),
+    /**
+     * A temporary room with its link (ADR-0044): 201; 403 (no CREATE_TEMP_ROOMS; `guests` without
+     * INVITE_GUESTS), 409 TEMP_ROOM_LIMIT (`reason: PER_USER` — the creator's cap), 422.
+     */
+    createTemp: (workspaceId: string, init: MessageInitShape<typeof CreateTempRoomRequestSchema>) =>
+      call('POST', `/api/workspaces/${workspaceId}/rooms/temp`, TempRoomResponseSchema, body(CreateTempRoomRequestSchema, init)),
+    /** Closed temporary rooms (ADR-0044), newest first: MANAGE_ROOM at workspace level. */
+    archived: (workspaceId: string, signal?: AbortSignal) =>
+      call('GET', `/api/workspaces/${workspaceId}/rooms?archived=1`, ListRoomsResponseSchema, undefined, signal),
     get: (id: string) => call('GET', `/api/rooms/${id}`, GetRoomResponseSchema),
     /** Drag & drop result (docs/09 P1 #19): positions + categories of the changed rooms and categories, one batch (MANAGE_ROOM). */
     setOrder: (workspaceId: string, init: MessageInitShape<typeof SetRoomOrderRequestSchema>) =>
@@ -465,6 +480,9 @@ export const api = {
     unblock: (botUserId: string) => callEmpty('DELETE', `/api/me/blocked-bots/${botUserId}`),
   },
   messages: {
+    get: (roomId: string, id: string) => call('GET', `/api/rooms/${roomId}/messages/${id}`, MessageSchema),
+    interact: (id: string, p: MessageInitShape<typeof CreateMessageInteractionRequestSchema>) =>
+      call('POST', `/api/messages/${id}/interactions`, CreateMessageInteractionResponseSchema, body(CreateMessageInteractionRequestSchema, p)),
     list: (roomId: string, p: { before?: string; after?: string; limit?: number }, signal?: AbortSignal) =>
       call('GET', `/api/rooms/${roomId}/messages${qs(p)}`, ListMessagesResponseSchema, undefined, signal),
     create: (roomId: string, init: MessageInitShape<typeof CreateMessageRequestSchema>) =>

@@ -8,8 +8,12 @@ import type { DictShape } from '../types';
 export const enShell: DictShape<typeof ruShell> = {
   // title bar
   'shell.titlebar': 'Window bar',
+  'shell.modes': 'Workspace mode',
+  'shell.modeVoice': 'Voice',
+  'shell.modeBoards': 'Boards',
+  'shell.createTask': 'Create task',
+  'shell.createTaskOn': 'On board',
   'shell.back': 'Back',
-  'shell.forward': 'Forward',
   'shell.search': 'Search',
   'shell.inbox': 'Mentions',
   'shell.inboxEmpty': 'No new mentions',

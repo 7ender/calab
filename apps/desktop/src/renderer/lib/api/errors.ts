@@ -49,6 +49,7 @@ const CODE: Record<string, { key: MessageKey; retry?: boolean }> = {
   ERROR_CODE_ALREADY_UPLOADED: { key: 'rec.retry.alreadyUploaded' },
   ERROR_CODE_WORKSPACE_SUSPENDED: { key: 'err.suspended' },
   ERROR_CODE_BANNED: { key: 'err.banned' },
+  ERROR_CODE_ROOM_ARCHIVED: { key: 'temp.archived' },
 };
 
 const IMAGE_ERR: Record<ImageError['reason'], MessageKey> = {

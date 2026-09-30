@@ -533,6 +533,9 @@ func Room(r sqlc.Room, defaults *v1.RoomMediaSettings, overrides []sqlc.RoomPerm
 		VoiceStatus:         deref(r.VoiceStatus),
 		AllowRecording:      r.AllowRecording,
 		GuestApproval:       r.GuestApproval,
+		ExpiresAt:           tsp(r.ExpiresAt),
+		CreatedBy:           idp(r.CreatedBy),
+		ArchivedAt:          tsp(r.ArchivedAt),
 	}
 }
 
@@ -609,6 +612,11 @@ func Message(m sqlc.Message, files []sqlc.File) *v1.Message {
 		EditedAt:    tsp(m.EditedAt),
 		Attachments: make([]*v1.FileMeta, len(files)),
 	}
+	if len(m.InlineKeyboard) > 0 && m.ForwardSentAt == nil {
+		out.InlineKeyboard = &v1.InlineKeyboard{}
+		_ = protojson.Unmarshal(m.InlineKeyboard, out.InlineKeyboard)
+	}
+	out.KeyboardRevision = uint64(m.KeyboardRevision) //nolint:gosec // nonnegative DB constraint
 	if m.Nonce != nil {
 		out.Nonce = *m.Nonce
 	}

@@ -806,6 +806,9 @@ export function buildState(scenario: Scenario): MockState {
   presence(U.vera, PresenceStatus.ONLINE, '2026-01-15T11:05:00Z');
   presence(U.grigory, PresenceStatus.IDLE, '2026-01-15T10:40:00Z');
   presence(U.dina, PresenceStatus.OFFLINE);
+  // docs/09 #143: the app of Boris's latest session (the profile card shows «Calab 1.1.0 · macOS»).
+  const boris = s.presences.get(U.boris);
+  if (boris) Object.assign(boris, { clientVersion: '1.1.0', clientPlatform: 'darwin' });
 
   if (scenario === 'empty') return s;
 

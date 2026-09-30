@@ -1,3 +1,4 @@
+import { seedInlineButtons } from '../e2e-support/inline-buttons';
 import { existsSync, mkdirSync } from 'node:fs';
 import { join } from 'node:path';
 import { expect, test, type Locator, type Page } from '@playwright/test';
@@ -785,8 +786,8 @@ test('m-settings-bots', async ({ page }) => {
 test('m-room-new', async ({ page }) => {
   await signedIn(page);
   await page.getByRole('button', { name: 'Комнаты и пространства' }).first().tap();
-  // The workspace header's menu (not the rail icon of the same name).
-  await page.getByTestId('mobile-nav').locator('button[aria-haspopup="menu"]', { hasText: 'Команда Calab' }).tap();
+  // The room column's «+» (docs/09 #140: no longer in the workspace menu).
+  await page.getByTestId('mobile-nav').getByTestId('sidebar-create').tap();
   await page.getByRole('menuitem', { name: 'Создать комнату' }).tap();
   const dialog = page.getByRole('dialog', { name: 'Новая комната' });
   await expect(dialog).toBeVisible();
@@ -871,4 +872,13 @@ test('m-keyboard', async ({ page }) => {
   await expect(page.locator('html')).not.toHaveClass(/kb-open/);
   expect(await shellBottom()).toBe(vh);
   await keyboard(null);
+});
+
+
+test('m-chat-inline-buttons', async ({ page }) => {
+  seedInlineButtons(mock);
+  await signedIn(page);
+  await feedToBottom(page);
+  await expect(page.getByTestId('inline-keyboard')).toBeVisible();
+  await checkpoint(page, 'm-chat-inline-buttons', { main: true });
 });

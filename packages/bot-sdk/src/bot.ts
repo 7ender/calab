@@ -4,6 +4,8 @@ import { create, toJson, type MessageInitShape } from '@bufbuild/protobuf';
 import {
   BoardResponseSchema,
   BotWebhookResponseSchema,
+  InlineKeyboardSchema,
+  type BotCallback,
   CreateTaskRequestSchema,
   ListBoardsResponseSchema,
   ListTasksResponseSchema,
@@ -116,9 +118,17 @@ export interface SendOptions {
   replyTo?: string;
   /** Idempotency key (≤ 64 chars); generated when omitted. */
   nonce?: string;
+  /** Public callback metadata; never include secrets. */
+  inlineKeyboard?: MessageInitShape<typeof InlineKeyboardSchema>;
 }
 
 export type SendContent = string | SendOptions;
+
+export interface EditOptions {
+  text?: string;
+  /** Omitted = keep; { rows: [] } = remove. */
+  inlineKeyboard?: MessageInitShape<typeof InlineKeyboardSchema>;
+}
 
 /** A `/command` addressed to this bot (ADR-0031 §6). */
 export interface CommandEvent {
@@ -158,6 +168,8 @@ export interface BotEvents {
   messageDelete: MessageDeleteEvent;
   command: CommandEvent;
   reaction: ReactionEvent;
+  /** Accepted button press. Persistently dedupe by id and revalidate domain state before effects. */
+  callback: BotCallback;
   voiceState: VoiceState;
   /** Every gateway / webhook event, raw. */
   dispatch: DispatchEvent;
@@ -287,6 +299,7 @@ export class Bot extends Emitter<BotEvents> {
         content: o.text ?? '',
         attachmentIds,
         replyToId: o.replyTo ?? '',
+        inlineKeyboard: o.inlineKeyboard,
         stickerId: o.stickerId ?? '',
         nonce: o.nonce ?? randomUUID(),
       }),
@@ -315,9 +328,10 @@ export class Bot extends Emitter<BotEvents> {
   }
 
   /** Edits the bot's own message. */
-  async edit(messageId: string, text: string): Promise<Message> {
+  async edit(messageId: string, content: string | EditOptions): Promise<Message> {
+    const o: EditOptions = typeof content === 'string' ? { text: content } : content;
     const r = await this.rest.call(UpdateMessageResponseSchema, 'PATCH', `/api/messages/${enc(messageId)}`, {
-      json: Rest.body(UpdateMessageRequestSchema, { content: text }),
+      json: Rest.body(UpdateMessageRequestSchema, { content: o.text ?? '', inlineKeyboard: o.inlineKeyboard, preserveContent: o.text === undefined && o.inlineKeyboard !== undefined }),
     });
     if (!r.message) throw new Error('edit: empty response');
     return r.message;
@@ -656,6 +670,9 @@ export class Bot extends Emitter<BotEvents> {
         this.emit('message', m);
         return;
       }
+      case 'botCallback':
+        if (e.value.botUserId === this.botUserId || !this.botUserId) this.emit('callback', e.value);
+        return;
       case 'messageUpdate':
         if (e.value.message && !this.isOwn(e.value.message.authorId)) this.emit('messageUpdate', e.value.message);
         return;

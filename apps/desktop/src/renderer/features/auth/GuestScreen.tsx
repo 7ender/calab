@@ -82,7 +82,7 @@ export function GuestScreen({ code }: { code: string }): ReactNode {
   } else if (!p.allowGuests || !guestJoin) {
     body = (
       <div className="flex flex-col gap-4">
-        <p className="text-center text-body text-muted">{!p.allowGuests ? t('guest.accountOnly') : t('guest.desktop')}</p>
+        <p className="text-center text-body text-muted">{p.membersOnly ? t('people.link.membersOnly') : !p.allowGuests ? t('guest.accountOnly') : t('guest.desktop')}</p>
         {p.allowGuests && browserLink ? (
           <Button variant="secondary" className="h-9 w-full" onClick={() => void platform.app.openExternal(browserLink)}>
             {t('guest.openBrowser')}

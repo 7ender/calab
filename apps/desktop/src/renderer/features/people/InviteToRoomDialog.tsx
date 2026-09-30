@@ -22,7 +22,8 @@ import { roomInviteLink, roomLinkError } from './roomLink';
  * «Пригласить в комнату» (docs/09 #33, #48): the member picker of the room's workspace — picking
  * someone sends them the room link in a DM (they may be anywhere in the app); below, the link
  * itself to copy. Guests have no DMs (ADR-0020) and are left out; people already in the voice
- * room are shown, not choosable. Opened only with MANAGE_ROOM (room links, ADR-0016).
+ * room are shown, not choosable. Opened with INVITE_GUESTS or INVITE_MEMBERS in the room (ADR-0043):
+ * with INVITE_MEMBERS alone the link handed out is a members-only one.
  */
 export function InviteToRoomDialog({ roomId, onClose }: { roomId: string; onClose: () => void }): ReactNode {
   const room = useRooms((s) => s.byId[roomId]);
@@ -36,7 +37,8 @@ export function InviteToRoomDialog({ roomId, onClose }: { roomId: string; onClos
   // docs/09 #55: with the right to create room links the guest-link card leads the dialog and is
   // the link to copy — no second field below, and no link minted just by opening the dialog.
   const guestCard = useGuestInviteShown(roomId);
-  const link = useQuery({ queryKey: ['roomInviteLink', roomId], queryFn: () => roomInviteLink(roomId), retry: false, staleTime: 60_000, enabled: !guestCard });
+  const membersOnly = !guestCard;
+  const link = useQuery({ queryKey: ['roomInviteLink', roomId], queryFn: () => roomInviteLink(roomId, membersOnly), retry: false, staleTime: 60_000, enabled: !guestCard });
 
   const groups = useMemo((): Array<PickerGroup<MemberPickItem>> => {
     const list = Object.values(members ?? {}).filter((m) => m.user && m.user.id !== meId && m.role !== WorkspaceRole.GUEST && !m.user.isGuest);
@@ -53,7 +55,7 @@ export function InviteToRoomDialog({ roomId, onClose }: { roomId: string; onClos
     if (sending || sent.has(item.userId)) return;
     setSending(item.userId);
     try {
-      const url = link.data ?? (await roomInviteLink(roomId));
+      const url = link.data ?? (await roomInviteLink(roomId, membersOnly));
       await sendDmText(item.userId, t('roomInvite.dmText', { room: name, link: url }));
       setSent((s) => new Set(s).add(item.userId));
     } catch (e) {

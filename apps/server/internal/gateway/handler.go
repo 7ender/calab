@@ -349,7 +349,7 @@ func (h *Hub) touch(s *Session) {
 	st := s.status
 	s.mu.Unlock()
 	ttl := 2*h.cfg.HeartbeatInterval + resumeWindow
-	_ = h.pres.set(ctx, s.user, s.id, st)
+	_ = h.pres.set(ctx, s.user, s.id, st, s.client)
 	h.buf.touch(ctx, s.id)
 	h.redis.DoMulti(ctx,
 		h.redis.B().Zadd().Key(deviceKey(s.user)).ScoreMember().ScoreMember(expiryScore(ttl), s.asess.String()).Build(),
@@ -383,12 +383,13 @@ func (h *Hub) identify(c *conn, req *v1.Identify) *Session {
 		return nil
 	}
 	s := newSession(h, gsid, id.UserID, id.SessionID, id.IsBot)
+	s.client = newClientInfo(req.GetDevice(), time.Now())
 	// Register first so that events published while READY is being built are queued.
 	h.register(s, wids)
 	for _, w := range wids {
 		h.ensureState(ctx, w)
 	}
-	_ = h.pres.set(ctx, s.user, s.id, s.status)
+	_ = h.pres.set(ctx, s.user, s.id, s.status, s.client)
 	ready, err := h.buildReady(ctx, s, id.UserID)
 	if err != nil {
 		slog.Error("gateway: build READY", "err", err)
@@ -583,6 +584,7 @@ func (h *Hub) takeover(ctx context.Context, gsid uuid.UUID, meta sessMeta) *Sess
 		return nil
 	}
 	s := newSession(h, gsid, meta.user, meta.asess, meta.bot)
+	s.client = h.pres.client(ctx, meta.user, gsid)
 	h.register(s, wids) // events from now on are queued (s.ready=false)
 	for _, w := range wids {
 		h.ensureState(ctx, w)
@@ -747,7 +749,7 @@ func (h *Hub) setPresence(s *Session, st v1.PresenceStatus) {
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
 	defer cancel()
-	if err := h.pres.set(ctx, s.user, s.id, st); err == nil {
+	if err := h.pres.set(ctx, s.user, s.id, st, s.client); err == nil {
 		h.publishPresence(ctx, s.user)
 	}
 }

@@ -6,6 +6,13 @@ import type { DictShape } from '../types';
  * wording (Discord/飞书 style), full-width punctuation, no space between characters and digits.
  */
 export const zhChat: DictShape<typeof enChat> = {
+  'chat.inlineActions': '机器人操作',
+  'chat.inlinePending': '正在发送给机器人…',
+  'chat.inlineSent': '已发送给机器人',
+  'chat.inlineFailed': '发送失败，请重试。',
+  'chat.inlineStale': '按钮已更改，请刷新消息。',
+  'chat.inlineForbidden': '操作不可用。',
+  'chat.inlineRefresh': '刷新消息',
   // feed
   'chat.today': '今天',
   'chat.yesterday': '昨天',
@@ -19,6 +26,7 @@ export const zhChat: DictShape<typeof enChat> = {
   'chat.reactionLabel': '表情回应 {emoji}：{count}',
   'chat.replyOpen': '显示原消息',
   'chat.messageGone': '消息已删除或不可用',
+  'chat.rowFailed': '无法显示此消息',
   'chat.historyStart': '房间历史记录开始',
   // plural keys: zh only uses the "other" category
   'chat.unreadBanner': { other: '{time}以来有{n}条新消息' },

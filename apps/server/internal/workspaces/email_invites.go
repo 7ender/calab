@@ -69,9 +69,9 @@ func (h *Handlers) verifiedAccount(r *http.Request) (sqlc.User, error) {
 	return u, auth.RequireVerified(u)
 }
 
-// inviter: verified caller with the invite right (MANAGE_WORKSPACE) in the path workspace.
+// inviter: verified caller with the invite right (INVITE_MEMBERS, ADR-0043) in the path workspace.
 func (h *Handlers) inviter(r *http.Request) (sqlc.User, uuid.UUID, perm.Role, error) {
-	wsID, role, err := requireManage(r)
+	wsID, role, err := requireInvite(r)
 	if err != nil {
 		return sqlc.User{}, uuid.Nil, "", err
 	}
@@ -347,7 +347,7 @@ func (h *Handlers) createEmailInvite(w http.ResponseWriter, r *http.Request) err
 }
 
 func (h *Handlers) listEmailInvites(w http.ResponseWriter, r *http.Request) error {
-	wsID, _, err := requireManage(r)
+	wsID, _, err := requireInvite(r)
 	if err != nil {
 		return err
 	}
@@ -364,7 +364,7 @@ func (h *Handlers) listEmailInvites(w http.ResponseWriter, r *http.Request) erro
 }
 
 func (h *Handlers) deleteEmailInvite(w http.ResponseWriter, r *http.Request) error {
-	wsID, _, err := requireManage(r)
+	wsID, _, err := requireInvite(r)
 	if err != nil {
 		return err
 	}

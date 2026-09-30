@@ -120,6 +120,8 @@ func (s *Service) Routes(mux httpx.Router, wrap func(http.Handler) http.Handler)
 	mux.Handle("GET /api/me/caldav", wrap(httpx.HandlerFunc(s.get)))
 	mux.Handle("POST /api/me/caldav", wrap(httpx.HandlerFunc(s.connectAccount)))
 	mux.Handle("PUT /api/me/caldav", wrap(httpx.HandlerFunc(s.update)))
+	mux.Handle("PATCH /api/me/caldav", wrap(httpx.HandlerFunc(s.setShare)))
+	mux.Handle("GET /api/me/external-events", wrap(httpx.HandlerFunc(s.externalEvents)))
 	mux.Handle("DELETE /api/me/caldav", wrap(httpx.HandlerFunc(s.remove)))
 	mux.Handle("POST /api/me/caldav/sync", wrap(httpx.HandlerFunc(s.syncNow)))
 }
@@ -165,7 +167,7 @@ func calendarsOfRow(acc sqlc.CaldavAccount) []Calendar {
 
 func accountProto(acc sqlc.CaldavAccount) *v1.CalDavAccount {
 	out := &v1.CalDavAccount{Url: acc.Url, Username: acc.Username, Import: acc.Import, Push: acc.Push, LastError: acc.LastError,
-		Calendars: []*v1.CalDavCalendar{}}
+		Calendars: []*v1.CalDavCalendar{}, ShareLevel: shareLevelProto(acc.ShareLevel)}
 	if acc.CalendarHref != nil {
 		out.CalendarHref = *acc.CalendarHref
 	}
@@ -431,9 +433,9 @@ func (s *Service) Import(ctx context.Context, user uuid.UUID) (sqlc.CaldavAccoun
 			return err
 		}
 		if len(busy) > 0 {
-			p := sqlc.InsertExternalBusyParams{UserID: user}
-			for _, b := range busy {
-				p.Uids, p.Starts, p.Ends, p.AllDays = append(p.Uids, b.UID), append(p.Starts, b.Start), append(p.Ends, b.End), append(p.AllDays, b.AllDay)
+			p, err := insertParams(user, busy)
+			if err != nil {
+				return err
 			}
 			if err := q.InsertExternalBusy(ctx, p); err != nil {
 				return err
@@ -443,6 +445,35 @@ func (s *Service) Import(ctx context.Context, user uuid.UUID) (sqlc.CaldavAccoun
 		return err
 	})
 	return acc, err
+}
+
+// insertParams: the rows of busy (the details of a series are encoded once).
+func insertParams(user uuid.UUID, busy []Busy) (sqlc.InsertExternalBusyParams, error) {
+	p := sqlc.InsertExternalBusyParams{UserID: user}
+	enc := map[*Details]string{}
+	for _, b := range busy {
+		d := b.Details
+		if d == nil {
+			d = &Details{}
+		}
+		att, ok := enc[d]
+		if !ok {
+			list := d.Attendees
+			if list == nil {
+				list = []Attendee{}
+			}
+			raw, err := json.Marshal(list)
+			if err != nil {
+				return p, err
+			}
+			att = string(raw)
+			enc[d] = att
+		}
+		p.Uids, p.Starts, p.Ends, p.AllDays = append(p.Uids, b.UID), append(p.Starts, b.Start), append(p.Ends, b.End), append(p.AllDays, b.AllDay)
+		p.Summaries, p.Locations, p.Attendees = append(p.Summaries, d.Summary), append(p.Locations, d.Location), append(p.Attendees, att)
+		p.Organizers, p.Urls = append(p.Organizers, d.Organizer), append(p.Urls, d.URL)
+	}
+	return p, nil
 }
 
 // fetch reads the calendar's busy time of −1…+30 days in the user's zone.

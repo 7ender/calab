@@ -6,6 +6,13 @@ import type { DictShape } from '../types';
  * short, verb-first, sentence case, no exclamation marks (docs/08, docs/i18n-glossary.md).
  */
 export const esChat: DictShape<typeof enChat> = {
+  'chat.inlineActions': 'Acciones del bot',
+  'chat.inlinePending': 'Enviando al bot…',
+  'chat.inlineSent': 'Enviado al bot',
+  'chat.inlineFailed': 'No se pudo enviar. Inténtalo de nuevo.',
+  'chat.inlineStale': 'Los botones cambiaron. Actualiza el mensaje.',
+  'chat.inlineForbidden': 'Acción no disponible.',
+  'chat.inlineRefresh': 'Actualizar mensaje',
   // feed
   'chat.today': 'Hoy',
   'chat.yesterday': 'Ayer',
@@ -19,6 +26,7 @@ export const esChat: DictShape<typeof enChat> = {
   'chat.reactionLabel': 'Reacción {emoji}: {count}',
   'chat.replyOpen': 'Mostrar mensaje original',
   'chat.messageGone': 'Mensaje eliminado o no disponible',
+  'chat.rowFailed': 'No se pudo mostrar este mensaje',
   'chat.historyStart': 'Inicio del historial de la sala',
   // plural keys: one object of Intl.PluralRules forms (one/other for Spanish), picked by plural()
   'chat.unreadBanner': { one: '{n} mensaje nuevo desde las {time}', many: '{n} mensajes nuevos desde las {time}', other: '{n} mensajes nuevos desde las {time}' },

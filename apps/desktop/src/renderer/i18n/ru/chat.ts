@@ -4,6 +4,13 @@
  * verb-first, no exclamation marks (docs/08).
  */
 export const ruChat = {
+  'chat.inlineActions': 'Действия бота',
+  'chat.inlinePending': 'Отправляется боту…',
+  'chat.inlineSent': 'Отправлено боту',
+  'chat.inlineFailed': 'Не удалось отправить. Попробуйте снова.',
+  'chat.inlineStale': 'Кнопки изменились. Обновите сообщение.',
+  'chat.inlineForbidden': 'Действие недоступно.',
+  'chat.inlineRefresh': 'Обновить сообщение',
   // feed
   'chat.today': 'Сегодня',
   'chat.yesterday': 'Вчера',
@@ -17,6 +24,7 @@ export const ruChat = {
   'chat.reactionLabel': 'Реакция {emoji}: {count}',
   'chat.replyOpen': 'Показать исходное сообщение',
   'chat.messageGone': 'Сообщение удалено или недоступно',
+  'chat.rowFailed': 'Сообщение не удалось отобразить',
   'chat.historyStart': 'Начало истории комнаты',
   // plural keys: one object of Intl.PluralRules forms (one/few/many/other), picked by plural()
   'chat.unreadBanner': { one: '{n} новое сообщение с {time}', few: '{n} новых сообщения с {time}', many: '{n} новых сообщений с {time}', other: '{n} новых сообщения с {time}' },

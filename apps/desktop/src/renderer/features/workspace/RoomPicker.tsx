@@ -1,6 +1,6 @@
 import * as ContextMenu from '@radix-ui/react-context-menu';
 import { RoomType, type Room } from '@calaba/protocol';
-import { Hash, Lock, Search, Volume2 } from 'lucide-react';
+import { Hash, Lock, Search, Timer, Volume2 } from 'lucide-react';
 import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { PICKER_DEBOUNCE_MS, filterItems, type PickerItem } from '../../components/picker/pickerModel';
 import { cx } from '../../components/ui';
@@ -18,7 +18,7 @@ export const ROOM_SEARCH_MIN = 6;
 
 /** A room row: the type icon (speaker / #), the name, a lock for a private room. */
 export function RoomPickRow({ room }: { room: Room }): ReactNode {
-  const Icon = room.type === RoomType.VOICE ? Volume2 : Hash;
+  const Icon = room.expiresAt ? Timer : room.type === RoomType.VOICE ? Volume2 : Hash;
   return (
     <>
       <Icon className="size-4 shrink-0" aria-hidden />

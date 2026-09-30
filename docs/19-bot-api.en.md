@@ -466,3 +466,59 @@ messages and reactions by default (`receiveOwn: true` delivers them).
 
 **Where are the types?** `proto/calaba/v1/*.proto` is the source of truth; `@calaba/protocol` (TS, protobuf-es) and the
 Go code are generated from it. For other languages — `buf generate` with the plugin you need, or protojson by hand.
+
+## Inline buttons (ADR-0047)
+
+Attach `inlineKeyboard` to an ordinary bot message. Buttons call only their author bot;
+forwarded copies have no active buttons. A keyboard has at most 5 rows of 5 buttons,
+50 `allowedUserIds`, unique button ids (1–64 ASCII letters/digits/`_`/`-`), labels of
+1–80 characters without controls, and `data` of at most 512 UTF-8 bytes. `disabled`
+prevents a press. All keyboard fields are public message metadata, never secrets.
+
+```ts
+const message = await bot.send(roomId, {
+  text: 'Review this draft',
+  inlineKeyboard: {
+    allowedUserIds: [authorId],
+    rows: [{ buttons: [{ id: 'confirm', label: 'Confirm', data: 'draft:42:v3' }] }],
+  },
+});
+await bot.edit(message.id, { inlineKeyboard: { rows: [] } }); // remove, keep text
+// bot.edit(message.id, { text: 'Revised draft', inlineKeyboard: nextKeyboard });
+bot.on('callback', (callback) => {
+  // Persist callback.id in your inbox; verify callback.userId against the draft author,
+  // messageId and your CURRENT draft version before applying any external effect.
+});
+```
+
+REST `PATCH /api/messages/{id}`: omitted `inlineKeyboard` keeps it; `{}` removes it.
+For a keyboard-only edit, send `preserveContent:true` and omit `content`. This flag
+requires a supplied keyboard and rejects nonempty replacement text. Without it,
+`content` keeps its previous semantics (omitted/empty = empty text, allowed only with
+attachments). The SDK sets the flag automatically when edit options omit `text`.
+Every text/keyboard edit changes server-owned `keyboardRevision`.
+
+People press with `POST /api/messages/{id}/interactions`:
+`{buttonId, keyboardRevision, nonce}`. The server requires VIEW_ROOM + SEND_MESSAGES,
+checks the live message, current keyboard, allowed user, active accessible author bot,
+blocks and cleared DM history. A bot removed from the last shared workspace cannot
+receive old DM actions. `KEYBOARD_STALE` / `BUTTON_UNAVAILABLE` return 409. Actor and
+callback data come from the server. The route is denied to bots.
+
+200 `{interactionId}` means **accepted, not completed**. `botCallback` contains `id`,
+`botUserId`, `userId`, `workspaceId` (empty in DM), `roomId`, `messageId`, `buttonId`,
+`data`, `keyboardRevision`, `createdAt`. Only the author bot gets it via its gateway
+user channel and configured signed webhook. An enabled webhook is queued atomically
+with the receipt and uses existing retry/expiry rules. Gateway is best effort after
+commit: ordinary RESUME can replay buffered events, but a fresh session cannot recover
+missed callbacks; important actions should use webhook. No chat message is posted.
+
+Retry the same actor's `nonce` (1–64 bytes) for the same press: the original id returns
+without redelivery, including after a keyboard edit/removal, subject to current access
+and message/bot existence. Reusing it for different inputs conflicts. Receipts last
+until the message is physically deleted. Separate nonces can both be accepted.
+Bots must durably dedupe `callback.id` across transports and retries and use idempotency
+for external effects. A callback accepted before a draft changes is not cancelled:
+revalidate your own current draft/version. The SDK's bounded webhook cache is not an
+exactly-once guarantee. The UI disables the whole keyboard after acceptance until the
+bot sends a new revision; stale clicks refresh the message without executing a new action.

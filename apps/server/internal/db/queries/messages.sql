@@ -1,7 +1,7 @@
 -- name: InsertMessage :one
 -- Idempotent by (author_id, nonce): no row = a message with this nonce already exists.
-INSERT INTO messages (room_id, author_id, content, reply_to_id, nonce, sticker_id)
-VALUES ($1, $2, $3, $4, $5, $6)
+INSERT INTO messages (room_id, author_id, content, reply_to_id, nonce, sticker_id, inline_keyboard, keyboard_revision)
+VALUES ($1, $2, $3, $4, $5, $6, sqlc.narg('inline_keyboard')::jsonb, CASE WHEN sqlc.narg('inline_keyboard')::jsonb IS NULL THEN 0 ELSE 1 END)
 ON CONFLICT (author_id, nonce) WHERE nonce IS NOT NULL DO NOTHING
 RETURNING *;
 
@@ -29,7 +29,9 @@ ORDER BY id ASC
 LIMIT sqlc.arg('lim');
 
 -- name: UpdateMessageContent :one
-UPDATE messages SET content = $2, edited_at = now()
+UPDATE messages SET content = coalesce(sqlc.narg('content')::text, content), edited_at = now(),
+    inline_keyboard = CASE WHEN sqlc.arg('set_keyboard')::boolean THEN sqlc.narg('inline_keyboard')::jsonb ELSE inline_keyboard END,
+    keyboard_revision = keyboard_revision + 1
 WHERE id = $1 AND deleted_at IS NULL
 RETURNING *;
 
