@@ -61,8 +61,14 @@ export const ModeTabs = memo(function ModeTabs({ workspaceId }: { workspaceId: s
     if (next < 0) return;
     e.preventDefault();
     const m = MODES[next] ?? 'voice';
+    const list = e.currentTarget;
+    const focus = (): void => list.querySelector<HTMLElement>(`[data-mode="${m}"]`)?.focus();
     showMode(m);
-    e.currentTarget.querySelector<HTMLElement>(`[data-mode="${m}"]`)?.focus();
+    focus();
+    // «Голос» opens the room, whose composer takes the focus on mount: arrows stay on the tabs.
+    window.setTimeout(() => {
+      if (!list.contains(document.activeElement)) focus();
+    }, 0);
   }, []);
   return (
     <div role="tablist" aria-label={t('shell.modes')} onKeyDown={onKeyDown} className="flex h-8 min-w-0 flex-1 items-center gap-0.5 rounded-[var(--radius-control)] bg-hover p-0.5" data-testid="mode-tabs">

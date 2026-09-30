@@ -163,6 +163,7 @@ export const enCalendar: DictShape<typeof ruCalendar> = {
   'fb.onlyMine': "Only mine",
   'fb.onlyMineHint': "Only meetings you organize or attend",
   'fb.connect': "Connect your calendar",
+  'fb.connectShort': "Connect calendar",
   'fb.connectHint': "Connect a calendar over CalDAV — its busy time shows up in Calab",
   'fb.find': "Find a time",
   'fb.closeFind': "Close find a time",

@@ -168,6 +168,7 @@ export const ruCalendar = {
   'fb.onlyMine': "Только мои",
   'fb.onlyMineHint': "Только встречи, где вы организатор или участник",
   'fb.connect': "Подключить свой календарь",
+  'fb.connectShort': "Подключить календарь",
   'fb.connectHint': "Подключите календарь по CalDAV — его занятость появится в Calab",
   'fb.find': "Подобрать время",
   'fb.closeFind': "Закрыть подбор времени",

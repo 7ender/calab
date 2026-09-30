@@ -163,6 +163,7 @@ export const zhCalendar: DictShape<typeof ruCalendar> = {
   'fb.onlyMine': "仅我的",
   'fb.onlyMineHint': "仅显示你组织或参加的会议",
   'fb.connect': "连接你的日历",
+  'fb.connectShort': "连接日历",
   'fb.connectHint': "通过 CalDAV 连接日历，其忙碌时间将显示在 Calab 中",
   'fb.find': "查找时间",
   'fb.closeFind': "关闭查找时间",

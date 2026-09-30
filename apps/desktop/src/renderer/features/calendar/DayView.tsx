@@ -259,7 +259,7 @@ function FilterRow({ workspaceId, people }: { workspaceId: string; people: reado
   const onRemove = useCallback((id: string) => dispatch({ type: 'remove', workspaceId, id }), [dispatch, workspaceId]);
   const onClear = useCallback(() => dispatch({ type: 'clear', workspaceId }), [dispatch, workspaceId]);
   return (
-    <div className="flex h-10 shrink-0 items-center gap-2 border-b border-line pl-3 pr-2" data-testid="day-filter">
+    <div className="@container flex h-10 shrink-0 items-center gap-2 border-b border-line pl-3 pr-2" data-testid="day-filter">
       <Users className="size-4 shrink-0 text-muted" aria-hidden />
       <PeopleBar workspaceId={workspaceId} people={people} onAdd={onAdd} onRemove={onRemove} onClear={onClear} testId="people-filter" />
       <MineControl workspaceId={workspaceId} />
@@ -286,11 +286,14 @@ function MineControl({ workspaceId }: { workspaceId: string }): ReactNode {
         variant="attention"
         size="sm"
         title={t('fb.connectHint')}
+        aria-label={t('fb.connect')}
         onClick={() => useUi.getState().openDialog({ kind: 'settings', tab: 'calendar' })}
         data-testid="connect-calendar"
       >
         <CalendarPlus className="size-3.5" aria-hidden />
-        {t('fb.connect')}
+        {/* A narrow row (960 px window, chips selected): the short label keeps the chips room. */}
+        <span className="@[720px]:hidden">{t('fb.connectShort')}</span>
+        <span className="hidden @[720px]:inline">{t('fb.connect')}</span>
       </Button>
     );
   }
