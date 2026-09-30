@@ -20,7 +20,7 @@
 ## Решение
 
 ### Модель
-- `rooms.expires_at timestamptz` (NULL = постоянная) и `rooms.created_by uuid` (миграция `00047`).
+- `rooms.expires_at timestamptz` (NULL = постоянная) и `rooms.created_by uuid` (миграция `00048`; `00047` — ADR-0043).
   Временная комната — обычная `type='voice'` с `expires_at`; `is_temp` в контракте = `expires_at != null`.
   Ничего нового в `type`: голос, чат, стрим, записи, права комнаты — как у голосовой.
 - Архив — существующий `rooms.archived_at`. Архивная комната: не в списке, не в LiveKit, ссылки
@@ -122,7 +122,7 @@
   на список. Боты: создание/продление через `botAllow` с тем же битом; свипер не зависит от клиентов.
 
 ## Последствия
-- Миграция `00047`: `rooms.expires_at`, `rooms.created_by`, индекс `rooms_expires_idx (expires_at)
+- Миграция `00048`: `rooms.expires_at`, `rooms.created_by`, индекс `rooms_expires_idx (expires_at)
   WHERE expires_at IS NOT NULL AND archived_at IS NULL`; бит `CREATE_TEMP_ROOMS` существующим ролям Member.
 - Клиент: строки временных комнат перерисовываются раз в 30 с (свой `useNow`), список — нет
   (правило ререндеров). Хранилище комнат уже получает `ROOM_DELETE` — архивная комната просто
