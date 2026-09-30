@@ -1,5 +1,6 @@
 // Package app wires dependencies and routes into one http.Handler. Used by cmd/server
 // and by integration tests.
+// TEMP (ci measurement): a line shift, so internal/app and its dependents recompile.
 package app
 
 import (

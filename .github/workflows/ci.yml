@@ -129,10 +129,10 @@ jobs:
         pg: ${{ fromJSON((github.event_name == 'workflow_dispatch' || startsWith(github.ref, 'refs/tags/v')) && '["18","17"]' || '["18"]') }}
         shard: [app-1, app-2, app-3, rest]
     env:
-      # internal/app split by the first letter after "Test", ~equal run time (go test -json, 30.09:
-      # A–G 95 s, H–P 91 s, the rest 97 s); app-3 takes everything else. Checked in the app-1 shard.
-      APP_1: '^Test[A-G]'
-      APP_2: '^Test[H-P]'
+      # internal/app split by the first letter after "Test", balanced on CI step times (30.09: ~2 min
+      # each); app-3 takes everything else and runs the coverage check. Rebalance when a shard drifts.
+      APP_1: '^Test[A-E]'
+      APP_2: '^Test[F-P]'
       APP_3: '^Test[^A-P]'
       TEST_DATABASE_URL: postgres://calaba:calaba@localhost:5432/calaba
       TEST_REDIS_URL: redis://localhost:6379/15
@@ -193,7 +193,7 @@ jobs:
       # Every test of internal/app runs in exactly one app-N shard: fail on gaps and overlaps (a test named
       # outside the regexes would silently never run). Same build flags as the run below (cached build).
       - name: shards cover internal/app exactly once
-        if: matrix.shard == 'app-1'
+        if: matrix.shard == 'app-3'
         run: |
           list() { go test -race -tags integration -list "$1" ./internal/app | grep -E '^(Test|Example|Fuzz)' | sort; }
           d="$RUNNER_TEMP"; list '.*' > "$d/all"; list "$APP_1" > "$d/1"; list "$APP_2" > "$d/2"; list "$APP_3" > "$d/3"
