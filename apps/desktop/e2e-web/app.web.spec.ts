@@ -55,9 +55,10 @@ test('register → workspace → room → message → reload → voice', async (
     await page.getByLabel('Название').fill('E2E web');
     await page.getByRole('button', { name: 'Создать', exact: true }).click();
   }
-  // The sidebar follows the selected workspace: wait for its header before looking at the rooms.
+  // The selected workspace is named in the title bar since 1.2.0 (docs/09 #140: the column header
+  // shows the mode tabs instead): wait for it before looking at the rooms.
+  await expect(page.getByTestId('titlebar-title')).toContainText(/E2E web/, { timeout: 15_000 });
   const rooms = page.locator('aside').first();
-  await expect(rooms.getByRole('button', { name: /^E2E web\b/ }).first()).toBeVisible();
   const general = rooms.getByRole('button', { name: /^общий(,|$)/ });
   const hasGeneral = await general
     .first()
