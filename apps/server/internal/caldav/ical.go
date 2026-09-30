@@ -4,15 +4,18 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"errors"
+	"net/url"
 	"slices"
 	"strconv"
 	"strings"
 	"time"
+	"unicode/utf8"
 )
 
-// Reading busy time out of iCalendar data (ADR-0041 §4). Of a VEVENT only its timing is used —
+// Reading busy time out of iCalendar data (ADR-0041 §4). Of a VEVENT its timing is used —
 // DTSTART, DTEND / DURATION, RRULE, EXDATE, RECURRENCE-ID, STATUS, TRANSP and the UID (hashed)
-// — never a title. Transparent («free») and cancelled events are skipped, and so are the
+// — and its details for the owner (ADR-0045 §1): SUMMARY, LOCATION, ATTENDEE, ORGANIZER and URL
+// (else the first https:// link of DESCRIPTION; the description itself is dropped). Transparent («free») and cancelled events are skipped, and so are the
 // meetings Calab itself put there (UID …@calab): they are busy time already.
 //
 // Recurrence: the RFC 5545 rules calendars actually write — FREQ DAILY / WEEKLY / MONTHLY /
@@ -25,7 +28,33 @@ type Busy struct {
 	UID        string // hash of the VEVENT UID
 	Start, End time.Time
 	AllDay     bool
+	*Details   // shared by the occurrences of a series; never nil from BusyFromICS
 }
+
+// Attendee is one ATTENDEE of an event.
+type Attendee struct {
+	Email string `json:"email"`          // lower case
+	Name  string `json:"name,omitempty"` // CN
+}
+
+// Details are what the owner sees of an event (ADR-0045 §1), clipped to the column limits.
+type Details struct {
+	Summary   string
+	Location  string
+	Attendees []Attendee
+	Organizer string
+	URL       string
+}
+
+// Limits of the details (the columns of external_busy).
+const (
+	MaxSummary   = 200
+	MaxLocation  = 200
+	MaxAttendees = 50
+	maxName      = 200
+	maxEmail     = 320
+	maxLink      = 500
+)
 
 // icsTime is a DATE or DATE-TIME value.
 type icsTime struct {
@@ -44,6 +73,8 @@ type vevent struct {
 	recurrenceID *icsTime
 	status       string
 	transp       string
+	details      Details
+	descURL      string // the first https:// link of DESCRIPTION
 }
 
 // Windows zone names some servers (Exchange, Outlook) write as TZID.
@@ -156,7 +187,7 @@ func contentLine(line string) (name string, params map[string]string, value stri
 		return "", nil, ""
 	}
 	head, value := line[:colon], line[colon+1:]
-	parts := strings.Split(head, ";")
+	parts := splitUnquoted(head, ';')
 	name = strings.ToUpper(parts[0])
 	params = map[string]string{}
 	for _, p := range parts[1:] {
@@ -165,6 +196,101 @@ func contentLine(line string) (name string, params map[string]string, value stri
 		}
 	}
 	return name, params, value
+}
+
+// splitUnquoted splits s at sep outside double quotes (CN="Petrov; Ivan").
+func splitUnquoted(s string, sep rune) []string {
+	var out []string
+	inQuote, from := false, 0
+	for i, r := range s {
+		switch {
+		case r == '"':
+			inQuote = !inQuote
+		case r == sep && !inQuote:
+			out = append(out, s[from:i])
+			from = i + 1
+		}
+	}
+	return append(out, s[from:])
+}
+
+// unescapeText reads an RFC 5545 TEXT value: \n and \N are new lines, \, \; \\ the character.
+func unescapeText(s string) string {
+	if !strings.Contains(s, `\`) {
+		return s
+	}
+	var b strings.Builder
+	for i := 0; i < len(s); i++ {
+		if s[i] != '\\' || i+1 == len(s) {
+			b.WriteByte(s[i])
+			continue
+		}
+		i++
+		switch s[i] {
+		case 'n', 'N':
+			b.WriteByte('\n')
+		default:
+			b.WriteByte(s[i])
+		}
+	}
+	return b.String()
+}
+
+// clipLine keeps at most n characters of s trimmed, on one line (control characters become spaces).
+func clipLine(s string, n int) string {
+	s = strings.TrimSpace(strings.Map(func(r rune) rune {
+		if r < ' ' || r == 0x7f {
+			return ' '
+		}
+		return r
+	}, s))
+	if !utf8.ValidString(s) {
+		s = strings.ToValidUTF8(s, "")
+	}
+	if utf8.RuneCountInString(s) <= n {
+		return s
+	}
+	return strings.TrimSpace(string([]rune(s)[:n]))
+}
+
+// mailto reads a CAL-ADDRESS: the lower-cased e-mail of "mailto:x@y", else "".
+func mailto(v string) string {
+	v = strings.TrimSpace(v)
+	if len(v) >= 7 && strings.EqualFold(v[:7], "mailto:") {
+		v = v[7:]
+	}
+	v = strings.ToLower(strings.TrimSpace(v))
+	at := strings.IndexByte(v, '@')
+	if at <= 0 || at == len(v)-1 || len(v) > maxEmail || !utf8.ValidString(v) || strings.ContainsAny(v, " \t<>\"(),;:\\") {
+		return ""
+	}
+	return v
+}
+
+// webLink is v when it is an http(s) URL (https only with httpsOnly) of at most maxLink bytes.
+func webLink(v string, httpsOnly bool) string {
+	v = strings.TrimSpace(v)
+	if len(v) > maxLink || strings.ContainsAny(v, " \t\r\n") || !utf8.ValidString(v) {
+		return ""
+	}
+	u, err := url.Parse(v)
+	if err != nil || u.Host == "" || (u.Scheme != "https" && (httpsOnly || u.Scheme != "http")) {
+		return ""
+	}
+	return v
+}
+
+// firstHTTPS is the first https:// link of a text (a description), trailing punctuation cut.
+func firstHTTPS(text string) string {
+	i := strings.Index(strings.ToLower(text), "https://")
+	if i < 0 {
+		return ""
+	}
+	rest := text[i:]
+	if j := strings.IndexFunc(rest, func(r rune) bool { return r <= ' ' || strings.ContainsRune(`<>"'`, r) }); j >= 0 {
+		rest = rest[:j]
+	}
+	return webLink(strings.TrimRight(rest, ".,;:!?)]}"), true)
 }
 
 // parseEvents reads the VEVENTs of a VCALENDAR (bad values skip the event).
@@ -230,6 +356,22 @@ func parseEvents(data string, fallback *time.Location) []vevent {
 			cur.status = strings.ToUpper(strings.TrimSpace(val))
 		case "TRANSP":
 			cur.transp = strings.ToUpper(strings.TrimSpace(val))
+		case "SUMMARY":
+			cur.details.Summary = clipLine(unescapeText(val), MaxSummary)
+		case "LOCATION":
+			cur.details.Location = clipLine(unescapeText(val), MaxLocation)
+		case "ORGANIZER":
+			cur.details.Organizer = mailto(val)
+		case "ATTENDEE":
+			email := mailto(val)
+			if email != "" && len(cur.details.Attendees) < MaxAttendees &&
+				!slices.ContainsFunc(cur.details.Attendees, func(a Attendee) bool { return a.Email == email }) {
+				cur.details.Attendees = append(cur.details.Attendees, Attendee{Email: email, Name: clipLine(params["CN"], maxName)})
+			}
+		case "URL":
+			cur.details.URL = webLink(val, false)
+		case "DESCRIPTION":
+			cur.descURL = firstHTTPS(unescapeText(val))
 		}
 		if err != nil {
 			bad = true
@@ -477,11 +619,15 @@ func (ev vevent) occurrences(from, to time.Time) []Busy {
 		return s, s.Add(dur)
 	}
 	hash := uidHash(ev.uid)
+	det := ev.details
+	if det.URL == "" {
+		det.URL = ev.descURL
+	}
 	var out []Busy
 	emit := func(s time.Time) {
 		st, en := span(s)
 		if en.After(from) && st.Before(to) {
-			out = append(out, Busy{UID: hash, Start: st.UTC(), End: en.UTC(), AllDay: allDay})
+			out = append(out, Busy{UID: hash, Start: st.UTC(), End: en.UTC(), AllDay: allDay, Details: &det})
 		}
 	}
 	excluded := map[int64]bool{}

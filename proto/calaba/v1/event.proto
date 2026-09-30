@@ -227,7 +227,7 @@ message EventRsvpTokenResponse {
 enum BusyKind {
   BUSY_KIND_UNSPECIFIED = 0;
   BUSY_KIND_MEETING = 1;  // a Calab meeting they organize or attend (answer not «declined»)
-  BUSY_KIND_EXTERNAL = 2; // their connected CalDAV calendar (never with a title or an id)
+  BUSY_KIND_EXTERNAL = 2; // their connected CalDAV calendar (no id; a title only by its share_level)
 }
 
 // One busy interval (an occurrence; intervals of a person may overlap).
@@ -240,6 +240,12 @@ message BusyInterval {
   BusyKind kind = 4;
   // An all-day meeting / external event: busy from midnight to midnight of the person's zone.
   bool all_day = 5;
+  // BUSY_KIND_EXTERNAL only, by the owner's CalDavAccount.share_level (ADR-0045 §4): the event's
+  // title at TITLE / DETAILS, else empty. Never its place, organizer or link.
+  string title = 6;
+  // BUSY_KIND_EXTERNAL at DETAILS only: the event's attendees who are members of this workspace
+  // (matched by a confirmed e-mail; not guests or bots). Other addresses are never shared.
+  repeated string attendee_user_ids = 7;
 }
 
 message FreeBusyUser {
@@ -291,11 +297,13 @@ message SuggestSlotsResponse {
 // chosen calendar.
 // PUT /api/me/caldav UpdateCalDavRequest → the account; 404 without one; 422 for a calendar
 // not in calendars.
+// PATCH /api/me/caldav SetCalDavShareRequest → the account; 404 without one; 422 for UNSPECIFIED
+// (ADR-0045 §2: what colleagues see of the imported events in free / busy).
 // DELETE /api/me/caldav → 204; the imported busy time is removed.
 // POST /api/me/caldav/sync → the account after an import now; 422 without a calendar or with
 // import off; once per minute.
-// Import (every CALDAV_SYNC_INTERVAL, default 15 min) keeps only the times of events of
-// −1…+30 days. Push puts the user's meetings into the calendar as <calendar_href><event id>.ics.
+// Import (every CALDAV_SYNC_INTERVAL, default 15 min) keeps the events of −1…+30 days: times,
+// and (ADR-0045 §1) title, place, attendees, organizer and a link; never the description. Push puts the user's meetings into the calendar as <calendar_href><event id>.ics.
 
 message CalDavCalendar {
   string href = 1; // absolute URL of the collection
@@ -312,6 +320,19 @@ message CalDavAccount {
   google.protobuf.Timestamp last_sync_at = 6;
   string last_error = 7; // of the last import or push; empty = fine
   repeated CalDavCalendar calendars = 8; // event calendars found at connection
+  CalDavShareLevel share_level = 9; // what colleagues see (ADR-0045 §2); BUSY by default
+}
+
+// What colleagues see of the imported events in free / busy (ADR-0045 §2, §4).
+enum CalDavShareLevel {
+  CAL_DAV_SHARE_LEVEL_UNSPECIFIED = 0;
+  CAL_DAV_SHARE_LEVEL_BUSY = 1;    // only «busy»
+  CAL_DAV_SHARE_LEVEL_TITLE = 2;   // the title
+  CAL_DAV_SHARE_LEVEL_DETAILS = 3; // the title and the attendees who are members of the workspace
+}
+
+message SetCalDavShareRequest {
+  CalDavShareLevel share_level = 1;
 }
 
 message CalDavAccountResponse {
@@ -328,6 +349,35 @@ message UpdateCalDavRequest {
   string calendar_href = 1;
   bool import = 2;
   bool push = 3;
+}
+
+// ---- the user's own external events (ADR-0045 §3) ----
+//
+// GET /api/me/external-events?from=<RFC 3339>&to=<RFC 3339>[&workspace=<id>] →
+// ExternalEventsResponse: the caller's imported events overlapping [from, to) (≤ 14 days) with
+// their details. With workspace (the caller a member, not a guest; else 403) attendees who are
+// members of it get their user_id. People only: guests and bots → 403.
+
+message ExternalAttendee {
+  string email = 1; // lower case
+  string name = 2;  // CN; may be empty
+  string user_id = 3; // a member of the asked workspace with this confirmed address; else empty
+}
+
+message ExternalEvent {
+  string uid = 1; // a hash of the VEVENT UID (the same for every occurrence of a series)
+  google.protobuf.Timestamp starts_at = 2;
+  google.protobuf.Timestamp ends_at = 3;
+  bool all_day = 4;
+  string summary = 5;  // ≤ 200 characters
+  string location = 6; // ≤ 200 characters
+  repeated ExternalAttendee attendees = 7; // ≤ 50
+  string organizer = 8; // e-mail, lower case
+  string url = 9; // http(s) link of the event (URL, or the first https:// of its description)
+}
+
+message ExternalEventsResponse {
+  repeated ExternalEvent events = 1; // earliest first
 }
 
 // ---- gateway (docs/05) ----

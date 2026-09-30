@@ -1,0 +1,40 @@
+BEGIN:VCALENDAR
+VERSION:2.0
+PRODID:-//Yandex LLC//Yandex Calendar//EN
+BEGIN:VEVENT
+UID:meet-42@yandex.ru
+DTSTART:20261005T090000Z
+DTEND:20261005T100000Z
+SUMMARY:Квартальный обзор\, план\; бюджет
+LOCATION:Переговорная «Волга»\n3 этаж
+ORGANIZER;CN=Anna Ivanova:mailto:Anna@Example.COM
+ATTENDEE;CN="Petrov; Ivan";ROLE=REQ-PARTICIPANT;PARTSTAT=ACCEPTED:mailto:ivan
+ .petrov@example.com
+ATTENDEE;CN=Anna Ivanova:MAILTO:anna@example.com
+ATTENDEE;CN=Anna Duplicate:mailto:ANNA@example.com
+ATTENDEE;CUTYPE=ROOM;CN=Room:urn:uuid:5a1f
+ATTENDEE:mailto:guest@partner.org
+DESCRIPTION:Пароль: 12345\nСсылка: https://telemost.yandex.ru/j/123
+	45.
+BEGIN:VALARM
+ACTION:DISPLAY
+DESCRIPTION:Reminder
+TRIGGER:-PT10M
+END:VALARM
+END:VEVENT
+BEGIN:VEVENT
+UID:call-7
+DTSTART:20261005T120000Z
+DTEND:20261005T123000Z
+SUMMARY:Call
+URL:https://zoom.us/j/777
+DESCRIPTION:see https://other.example/x
+END:VEVENT
+BEGIN:VEVENT
+UID:plain
+DTSTART:20261005T140000Z
+DTEND:20261005T150000Z
+URL:javascript:alert(1)
+DESCRIPTION:no links here http://insecure.example
+END:VEVENT
+END:VCALENDAR
