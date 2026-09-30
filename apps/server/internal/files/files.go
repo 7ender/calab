@@ -432,6 +432,13 @@ func (s *Service) upload(w http.ResponseWriter, r *http.Request) error {
 	if !can {
 		return httpx.Forbidden("ATTACH_FILES required")
 	}
+	return s.UploadInto(w, r, wsID)
+}
+
+// UploadInto stores an upload of the caller into the workspace's quota; the caller checked that
+// they may attach files there (e.g. a task board, ADR-0042).
+func (s *Service) UploadInto(w http.ResponseWriter, r *http.Request, wsID uuid.UUID) error {
+	uid := auth.MustFromContext(r.Context()).UserID
 	if s.limiter != nil {
 		if err := s.limiter.Take(r.Context(), uid.String()); err != nil {
 			return err

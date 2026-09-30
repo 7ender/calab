@@ -1,5 +1,6 @@
 import { Compass, Plus } from 'lucide-react';
 import { MessagesSquare } from 'lucide-react';
+import { WorkspaceRole } from '@calaba/protocol';
 import { useEffect, useMemo, useRef, type PointerEvent as ReactPointerEvent, type ReactNode } from 'react';
 import { Button, Spinner, cx } from '../../components/ui';
 import { t } from '../../i18n';
@@ -27,6 +28,9 @@ import { OnboardingLazy, preloadWindows } from './lazyWindows';
 import { whenIdle } from '../../lib/lazyPreload';
 import { MembersPanel } from './MembersPanel';
 import { DayView } from '../calendar/DayView';
+import { BoardsView } from '../boards/BoardsView';
+import { CreateTaskDialog } from '../boards/CreateTaskDialog';
+import { useBoardsUi } from '../../stores/boardsUi';
 import { EventPanel } from '../calendar/EventCard';
 import { BottomIsland } from './BottomIsland';
 import { Sidebar } from './Sidebar';
@@ -56,6 +60,9 @@ export function AppShell(): ReactNode {
   // The meeting dialog is open: from 1200 px the members column stands beside it (instead of the
   // card) so a member can be dragged in — also while editing a selected meeting.
   const eventDialog = useUi((s) => s.dialog?.kind === 'event');
+  // Boards mode (ADR-0042 §5): the column lists boards, the centre shows one; guests have none.
+  const guestWs = useWorkspaces((s) => (wsId ? s.byId[wsId]?.role === WorkspaceRole.GUEST : false));
+  const boards = useBoardsUi((s) => s.active) && !home && !!wsId && !guestWs;
 
   // Short reconnects (a server deploy re-IDENTIFYs in 1–5 s) don't flash the banner; it goes
   // away the moment READY/RESUMED arrives (lib/gateway/banner.ts).
@@ -92,7 +99,9 @@ export function AppShell(): ReactNode {
             <DmPick />
           )
         ) : ws ? (
-          calDay ? (
+          boards ? (
+            <BoardsView workspaceId={ws} wide={false} mobile />
+          ) : calDay ? (
             // Calendar on a phone (ADR-0038 §7): the day full screen, a meeting full screen over it.
             calEvent ? (
               <EventPanel occ={calEvent} page />
@@ -107,6 +116,7 @@ export function AppShell(): ReactNode {
         ) : (
           <Welcome />
         )}
+        {ready ? <CreateTaskDialog /> : null}
       </MobileShell>
     );
   }
@@ -149,7 +159,9 @@ export function AppShell(): ReactNode {
             <Sidebar workspaceId={wsId} />
             <ResizeHandle />
             <div className="mat-content relative flex min-w-0 flex-1">
-              {calDay ? (
+              {boards ? (
+                <BoardsView workspaceId={wsId} wide={wide} />
+              ) : calDay ? (
                 // Calendar (ADR-0038 §7): the day instead of the room, the selected meeting instead of the
                 // members (a column from 1200 px, floating below); no meeting selected — the members, so
                 // one can be dragged into a meeting (and while the meeting dialog is open).
@@ -174,6 +186,7 @@ export function AppShell(): ReactNode {
           <Welcome />
         )}
         {ready && (home || (hasWs && wsId)) ? <BottomIsland /> : null}
+        {ready ? <CreateTaskDialog /> : null}
       </div>
     </div>
   );

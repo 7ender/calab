@@ -1,7 +1,7 @@
 import { defineConfig } from '@playwright/test';
 
-// Landing + README screenshots per UI language: e2e-marketing/landing.spec.ts (`-g landing`, the
-// renderer out/, raw captures in apps/landing/shots, see apps/landing/README.md).
+// Landing + README screenshots per language: e2e-marketing/landing.spec.ts (the web build dist-web,
+// raw captures in apps/landing/shots, see apps/landing/README.md).
 // shots.spec.ts — real macOS screenshots of the packaged app (docs/09 #52, on demand):
 //   pnpm build && pnpm screenshots:marketing   (needs the dev LiveKit: pnpm infra:dev)
 // Writes 2x PNGs to ../../docs/images: a 1440 pt wide window as tall as the display allows

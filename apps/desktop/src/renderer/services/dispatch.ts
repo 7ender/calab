@@ -48,6 +48,8 @@ import {
   onRoomEventEnded,
 } from './calendar';
 import { applyReadyAdmissions, onAdmissionEvent } from '../features/guests/services/admissions';
+import { applyBoardEvent, applySnapshotBoards, dropWorkspaceBoards, onBoardsReady, restoreTaskRooms } from './boards';
+import { isTaskRoom } from '../stores/rooms';
 
 /** «печатает» lives 5 s after the last TYPING_START: senders repeat it every 3 s while typing (services/chat.ts), so a stuck indicator (a lost stop, a closed tab) fades fast (docs/09 #64). */
 export const TYPING_MS = 5000;
@@ -98,7 +100,10 @@ export function applyDispatch(ev: DispatchEvent): void {
         for (const room of snap.rooms) if (room.lastMessageId) rooms.setLastMessage(room.id, room.lastMessageId);
         applySnapshotExtras(snap);
         applySnapshotSounds(snap);
+        applySnapshotBoards(snap);
       }
+      // Task rooms (ADR-0042) are not in READY: the open ones come back before stale windows go.
+      restoreTaskRooms();
       // DMs (ADR-0020): rooms without a workspace; their read states are in read_states below.
       for (const dm of r.dms) applyDm(dm, false);
       useDms.getState().setAll(r.dms);
@@ -131,6 +136,8 @@ export function applyDispatch(ev: DispatchEvent): void {
       ensureActiveWorkspace();
       // Calendar (ADR-0038): rooms' active meetings, listed months again, today's count, a pending /e/<id>.
       onCalendarReady(r.workspaces);
+      // Boards (ADR-0042): loaded boards and the open task reloaded, a pending /b/ or /t/ link.
+      onBoardsReady();
       // Guest admission (ADR-0040): knocks I decide, my own waiting screen.
       applyReadyAdmissions(r);
       dropStaleWorkspaceBackground();
@@ -159,9 +166,19 @@ export function applyDispatch(ev: DispatchEvent): void {
       applySnapshotSounds(snap);
       applySnapshotRecordings(snap);
       applySnapshotEvents(snap);
+      applySnapshotBoards(snap);
       ensureActiveWorkspace();
       return;
     }
+    case 'boardCreate':
+    case 'boardUpdate':
+    case 'boardDelete':
+    case 'taskCreate':
+    case 'taskUpdate':
+    case 'taskDelete':
+    case 'taskActivity':
+      applyBoardEvent(e);
+      return;
     case 'dmCreate':
       if (e.value.dm) applyDm(e.value.dm, true);
       return;
@@ -185,6 +202,7 @@ export function applyDispatch(ev: DispatchEvent): void {
       useSounds.getState().dropWorkspace(id);
       dropRecordings((_room, rec) => rec.workspaceId === id);
       dropWorkspaceEvents(id);
+      dropWorkspaceBoards(id);
       if (useVoice.getState().workspaceId === id) void voice.leave();
       if (useUi.getState().activeWorkspaceId === id) useUi.getState().setWorkspace(null);
       ensureActiveWorkspace();
@@ -472,6 +490,16 @@ function onMessage(m: Message, workspaceId: string): void {
   useNotes.getState().onMessage(m);
   if (!firstSeen(m.id)) return; // duplicate: no second badge / sound / notification
   const rooms = useRooms.getState();
+  // A comment of a task (ADR-0042): task rooms are hidden — no room badges or chat sounds; the
+  // task's own notice (TASK_UPDATE on my channel) notifies. Unknown workspace rooms likewise.
+  const known = rooms.byId[m.roomId];
+  if (workspaceId && (!known || isTaskRoom(known))) {
+    if (known) {
+      rooms.setLastMessage(m.roomId, m.id);
+      if (m.authorId === myUserId()) rooms.setRead(m.roomId, m.id);
+    }
+    return;
+  }
   rooms.setLastMessage(m.roomId, m.id);
   if (m.authorId === myUserId()) {
     rooms.setRead(m.roomId, m.id);

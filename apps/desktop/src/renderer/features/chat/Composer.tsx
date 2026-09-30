@@ -411,7 +411,9 @@ export function Composer({
       ? t('dm.placeholder', { name: roomLabel(room) })
       : room.type === RoomType.NOTES
         ? t('notes.placeholder', { name: room.name })
-        : t('chat.placeholderIn', { room: roomLabel(room) });
+        : room.type === RoomType.TASK
+          ? t('boards.commentPlaceholder')
+          : t('chat.placeholderIn', { room: roomLabel(room) });
   const bar = editMsg ? (
     <ContextBar
       icon={<Pencil className="size-4" aria-hidden />}
@@ -444,7 +446,7 @@ export function Composer({
         <div
           data-focus-box
           className={cx(
-            'flex min-h-10 min-w-0 flex-1 items-end rounded-[20px] border border-line bg-elev px-1 shadow-[var(--shadow-card)] focus-within:border-accent',
+            'flex min-h-10 min-w-0 flex-1 items-end rounded-[20px] border border-line bg-elev px-1 shadow-[var(--shadow-card)] focus-within:border-focus',
             voice.active && 'hidden',
           )}
         >
@@ -544,7 +546,7 @@ export function Composer({
             onKeyDown={onKey}
             onPaste={onPaste}
             aria-label={placeholder}
-            className="selectable min-h-[38px] min-w-0 flex-1 resize-none bg-transparent px-1.5 py-[9px] text-list leading-5 placeholder:text-faint focus:outline-none focus-visible:outline-none"
+            className="selectable min-h-[38px] min-w-0 flex-1 resize-none bg-transparent px-1.5 py-[9px] text-list leading-5 placeholder:text-faint"
             style={{ maxHeight: MAX_FIELD_H }}
           />
           {stickers ? <StickerButton place={stickers.place} onSend={stickers.onSend} /> : null}

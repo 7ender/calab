@@ -139,6 +139,9 @@ func (h *Handlers) forward(w http.ResponseWriter, r *http.Request) error {
 	rooms.Publish(ctx, h.events, dst, &v1.DispatchEvent{Event: &v1.DispatchEvent_MessageCreate{
 		MessageCreate: &v1.MessageCreate{WorkspaceId: rooms.WorkspaceIDString(dst), Message: pb},
 	}})
+	if dst.Task && h.TaskHook != nil {
+		h.TaskHook(ctx, dst, msg)
+	}
 	h.events.User(ctx, me, &v1.DispatchEvent{Event: &v1.DispatchEvent_ReadStateUpdate{
 		ReadStateUpdate: &v1.ReadStateUpdate{ReadState: &v1.ReadState{RoomId: toID.String(), LastReadMessageId: msg.ID.String()}},
 	}})

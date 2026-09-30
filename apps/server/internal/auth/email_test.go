@@ -61,3 +61,27 @@ func TestRequireVerified(t *testing.T) {
 		t.Fatalf("retry after %v", e.RetryAfter)
 	}
 }
+
+func TestForgotPasswordDiagnostics(t *testing.T) {
+	hash := "x"
+	now := time.Now()
+	email := "kv@gptunnel.ai"
+	for want, u := range map[string]sqlc.User{
+		"":            {PasswordHash: &hash, Email: &email},
+		"guest":       {IsGuest: true, PasswordHash: &hash, Email: &email},
+		"disabled":    {DisabledAt: &now, PasswordHash: &hash, Email: &email},
+		"no_password": {Email: &email},
+	} {
+		if got := resetIneligible(u); got != want {
+			t.Errorf("resetIneligible = %q, want %q", got, want)
+		}
+	}
+	if d := emailDomain("Kv@GPTunnel.AI"); d != "gptunnel.ai" {
+		t.Errorf("domain %q", d)
+	}
+	// 8 hex digits; case and surrounding spaces do not change it, another domain does.
+	h := emailHash("kv@gptunnel.ai")
+	if len(h) != 8 || emailHash(" KV@gptunnel.AI ") != h || emailHash("kv@gptunnel.ru") == h {
+		t.Errorf("hash %q", h)
+	}
+}

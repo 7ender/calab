@@ -174,3 +174,87 @@ export function parseRsvpToken(tok: string): { eventId: string; email: string; s
 
 /** Allowed reminder minutes (ADR-0038 §1). */
 export const REMINDER_CHOICES = [5, 10, 15, 30, 60, 120, 1440];
+
+// ---------------------------------------------------------------- free / busy (ADR-0041)
+
+/*
+ * Free / busy of the mock: one person's busy time (their meetings — not declined — and the external
+ * calendar's), the suggest slots (one per common free window, 15-minute aligned, ≤ 10), the CalDAV
+ * account. The interval math is the client's own pure module (lib/calendar/freebusy.ts), so the
+ * mock and the grid agree by construction; the server has its own.
+ */
+export interface Span {
+  startMs: number;
+  endMs: number;
+}
+
+export interface WorkHoursRec {
+  startMin: number;
+  endMin: number;
+  days: number[];
+}
+
+export const DEFAULT_WORK_HOURS: WorkHoursRec = { startMin: 600, endMin: 1140, days: [1, 2, 3, 4, 5] };
+
+/** A user's meeting occurrences in [from, to): organizer, or an attendee who has not declined. */
+export function meetingBusy(recs: Iterable<CalEventRec>, workspaceId: string, userId: string, fromMs: number, toMs: number): Array<Occurrence & { rec: CalEventRec }> {
+  const out: Array<Occurrence & { rec: CalEventRec }> = [];
+  for (const rec of recs) {
+    const ev = rec.ev;
+    if (ev.workspaceId !== workspaceId || ev.cancelledAt) continue;
+    const mine = ev.organizerId === userId || ev.attendees.some((a) => a.userId === userId && a.status !== AttendeeStatus.DECLINED);
+    if (!mine) continue;
+    for (const o of occurrences(rec, fromMs, toMs)) out.push({ ...o, rec });
+  }
+  return out.sort((a, b) => a.startMs - b.startMs);
+}
+
+/** The first 15-minute-aligned slot of `durationMin` in each free window, earliest first, ≤ `max`. */
+export function slotsOf(windows: readonly { start: number; end: number }[], durationMin: number, max = 10): Span[] {
+  const q = 15 * 60_000;
+  const len = durationMin * 60_000;
+  const out: Span[] = [];
+  for (const w of windows) {
+    const s = Math.ceil(w.start / q) * q;
+    if (s + len <= w.end) out.push({ startMs: s, endMs: s + len });
+    if (out.length >= max) break;
+  }
+  return out;
+}
+
+/** The fake CalDAV account of a user (ADR-0041 §4); the password is never returned. */
+export interface CalDavRec {
+  url: string;
+  username: string;
+  calendarHref: string;
+  import: boolean;
+  push: boolean;
+  lastSyncAt: number | null;
+  lastError: string;
+}
+
+/** The calendars the fake discovery finds under a server address. */
+export function davCalendars(url: string): Array<{ href: string; name: string; color: string }> {
+  const base = url.replace(/\/+$/, '');
+  return [
+    { href: `${base}/calendars/work/`, name: 'Работа', color: '#0a84ff' },
+    { href: `${base}/calendars/home/`, name: 'Личное', color: '#30d158' },
+  ];
+}
+
+/** CalDavAccountResponse: `{account}`, or `{}` without one. */
+export function davOut(a: CalDavRec | undefined): Record<string, unknown> {
+  if (!a) return {};
+  return {
+    account: {
+      url: a.url,
+      username: a.username,
+      calendarHref: a.calendarHref,
+      import: a.import,
+      push: a.push,
+      ...(a.lastSyncAt ? { lastSyncAt: new Date(a.lastSyncAt).toISOString() } : {}),
+      lastError: a.lastError,
+      calendars: davCalendars(a.url),
+    },
+  };
+}

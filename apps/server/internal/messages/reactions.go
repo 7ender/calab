@@ -57,7 +57,13 @@ func (h *Handlers) withDetails(r *http.Request, ms []sqlc.Message) ([]*v1.Messag
 
 // details loads attachments and reactions; viewer uuid.Nil = for events (me always false).
 func (h *Handlers) details(ctx context.Context, ms []sqlc.Message, viewer uuid.UUID) ([]*v1.Message, error) {
-	out, err := withAttachments(ctx, h.db.Q, ms)
+	return Details(ctx, h.db.Q, ms, viewer)
+}
+
+// Details converts messages with their attachments, stickers, forward sources and reactions
+// (as viewer sees them; uuid.Nil = me always false), e.g. the comments of a task feed.
+func Details(ctx context.Context, q *sqlc.Queries, ms []sqlc.Message, viewer uuid.UUID) ([]*v1.Message, error) {
+	out, err := withAttachments(ctx, q, ms)
 	if err != nil || len(ms) == 0 {
 		return out, err
 	}
@@ -65,7 +71,7 @@ func (h *Handlers) details(ctx context.Context, ms []sqlc.Message, viewer uuid.U
 	for i, m := range ms {
 		ids[i] = m.ID
 	}
-	rows, err := h.db.Q.ListReactions(ctx, sqlc.ListReactionsParams{Viewer: viewer, Ids: ids})
+	rows, err := q.ListReactions(ctx, sqlc.ListReactionsParams{Viewer: viewer, Ids: ids})
 	if err != nil {
 		return nil, err
 	}

@@ -146,8 +146,21 @@ const KEY = new Set([
   'calendar-mini',
   'calendar-day',
   'calendar-dialog',
+  // Free / busy, find a time, Settings → Календарь (ADR-0041).
+  'calendar-filter',
+  'calendar-findtime',
+  'settings-calendar',
   // Guest admission (ADR-0040).
   'members-admissions',
+  // Task boards (ADR-0042 §5).
+  'boards-kanban',
+  'boards-task',
+  'boards-list',
+  'boards-filter',
+  'boards-settings',
+  // Timeline and task cards in chat (ADR-0042 §5, 1.1.0).
+  'boards-timeline',
+  'chat-task-card',
 ]);
 
 // Non-key screens: skipped unless CALABA_VISUAL_ALL=1 (before any fixture, so no app launch).
@@ -202,7 +215,7 @@ async function membersList(page: Page): Promise<Locator> {
 }
 
 /** App settings tabs in order (AppSettingsDialog); «О программе» (last) is `settings-about`. */
-const SETTINGS_TABS = ['general', 'profile', 'voice', 'hotkeys', 'notifications', 'connection', 'sessions'] as const;
+const SETTINGS_TABS = ['general', 'profile', 'voice', 'hotkeys', 'notifications', 'calendar', 'connection', 'sessions'] as const;
 /** 1-based position of an app settings tab, for openSettingsTab. */
 const appTab = (id: (typeof SETTINGS_TABS)[number]): number => SETTINGS_TABS.indexOf(id) + 1;
 
@@ -379,16 +392,28 @@ test('auth-register', async ({ open, win, shot }) => {
 
 // ---------------------------------------------------------------- email (ADR-0023)
 
-/** «Забыли пароль?» → the code step: code field with the resend timer, new password. */
+/**
+ * «Забыли пароль?» → the code step: code field with the resend timer, new password. The address
+ * is normalised and shown; a sibling-domain account (owner@calaba.test for .ru) adds the yellow
+ * hint with «Изменить адрес» (docs/09 #137).
+ */
 test('auth-forgot', async ({ open, win, shot }) => {
   await open({ auth: 'out' });
   await win.getByRole('button', { name: 'Забыли пароль?' }).click();
-  await win.getByLabel('Email').fill('owner@calaba.test');
+  await win.getByLabel('Email').fill('  Owner@Calaba.ru ');
   await win.getByRole('button', { name: 'Отправить код' }).click();
   await expect(win.getByTestId('forgot-code')).toBeVisible();
-  await expect(win.getByText('Если owner@calaba.test зарегистрирован, мы отправили на него код.')).toBeVisible();
+  await expect(win.getByText('Если аккаунт существует, мы отправили код на owner@calaba.ru.')).toBeVisible();
+  await expect(win.getByTestId('forgot-similar')).toContainText('есть похожий на другом домене');
   await win.getByRole('textbox', { name: 'Код из письма' }).fill('123456');
   await checkpoint(shot, 'auth-forgot');
+  // «Изменить адрес» → back to the field with the sent address; the exact one gets no hint.
+  await win.getByRole('button', { name: 'Изменить адрес' }).click();
+  await expect(win.getByLabel('Email')).toHaveValue('owner@calaba.ru');
+  await win.getByLabel('Email').fill('owner@calaba.test');
+  await win.getByRole('button', { name: 'Отправить код' }).click();
+  await expect(win.getByText('Если аккаунт существует, мы отправили код на owner@calaba.test.')).toBeVisible();
+  await expect(win.getByTestId('forgot-similar')).toHaveCount(0);
 });
 
 /** The unverified account: the bar over the main window, a wrong code answered inline. */
@@ -1342,11 +1367,14 @@ test('sidebar-create-menu', async ({ open, win, mock, shot }) => {
   const menu = win.getByRole('menu');
   await expect(menu.getByRole('menuitem', { name: 'Создать комнату' })).toBeVisible();
   await expect(menu.getByRole('menuitem', { name: 'Создать категорию' })).toBeVisible();
+  // docs/09 #135: the header's only «+» also adds a meeting and, last, invites to the workspace.
+  await expect(menu.getByRole('menuitem')).toHaveText(['Создать комнату', 'Создать категорию', 'Добавить встречу', 'Пригласить в пространство']);
+  await expect(win.locator('aside').getByRole('button', { name: 'Пригласить людей' })).toHaveCount(0);
   await checkpoint(shot, 'sidebar-create-menu');
 });
 
 /** Settings windows: one test per section (left list = role «tab»), numbered like the snapshots. */
-const TABS = { 'workspace-settings': 6, 'room-settings': 3, settings: 8, 'voice-room-settings': 4 } as const;
+const TABS = { 'workspace-settings': 6, 'room-settings': 3, settings: 9, 'voice-room-settings': 4 } as const;
 
 for (let i = 1; i <= TABS['workspace-settings']; i++) {
   test(`workspace-settings-${i}`, async ({ open, win, mock, shot }) => {
@@ -1628,6 +1656,8 @@ const openAppSettings = (page: Page) => async (): Promise<void> => {
 };
 
 SETTINGS_TABS.forEach((id, i) => {
+  // «Календарь» loads its CalDAV state first: its own test below.
+  if (id === 'calendar') return;
   test(`settings-${id}`, async ({ open, win, mock, shot }) => {
     await open();
     await mainWindow(win, mock);
@@ -3311,6 +3341,16 @@ test('chat-bot-commands', async ({ open, win, mock, shot }) => {
 
 // ---------------------------------------------------------------- calendar (ADR-0038 §7)
 
+/**
+ * Free / busy of the calendar screens (ADR-0041): Борис's meeting with Григорий (no room — Анна
+ * cannot see it) 16:00–17:00, Вера's external calendar 17:00–18:00 MSK.
+ */
+function freeBusyDay(mock: MockServer): void {
+  const at = (iso: string): number => Date.parse(iso);
+  mock.addEvent({ workspaceId: IDS.workspaces.main, organizerId: IDS.users.boris, title: 'Секрет', startMs: at('2026-01-15T13:00:00Z'), endMs: at('2026-01-15T14:00:00Z'), attendees: [{ userId: IDS.users.grigory }] });
+  mock.setBusy(IDS.users.vera, [{ startMs: at('2026-01-15T14:00:00Z'), endMs: at('2026-01-15T15:00:00Z') }]);
+}
+
 /** The calendar screens: a full day of meetings (calendarWeb.seedDay), the mock's clock at NOW. */
 async function calendarDay(win: Page, mock: MockServer): Promise<void> {
   mock.setClock(NOW.getTime());
@@ -3319,11 +3359,12 @@ async function calendarDay(win: Page, mock: MockServer): Promise<void> {
   await expect(win.getByTestId('mini-calendar')).toBeVisible();
 }
 
-/** The header icon with today's count and the mini month under it (dots, today, the chat beside). */
+/** The header icon with today's count: today's day view at once, the mini month under the header (ADR-0041 §3). */
 test('calendar-mini', async ({ open, win, mock, shot }) => {
   await open();
   await mainWindow(win, mock);
   await calendarDay(win, mock);
+  await expect(win.getByTestId('day-view')).toBeVisible();
   await expect(win.getByTestId('calendar-count')).toHaveText('3');
   await expect(win.locator('[data-cal-day="2026-01-20"]')).toHaveAccessibleName(/есть встречи/);
   await checkpoint(shot, 'calendar-mini');
@@ -3342,6 +3383,59 @@ test('calendar-day', async ({ open, win, mock, shot }) => {
   await expect(card.getByTestId('event-title')).toHaveText('Планёрка');
   await expect(card.getByTestId('event-attendee')).toHaveCount(5);
   await checkpoint(shot, 'calendar-day');
+});
+
+/**
+ * «Люди» (ADR-0041 §3): Борис and Вера chosen — their meetings, grey «Занято · Борис Петров» for his
+ * meeting Анна cannot see, Вера's external calendar hatched; my own meetings without them hidden.
+ */
+test('calendar-filter', async ({ open, win, mock, shot }) => {
+  await open();
+  await mainWindow(win, mock);
+  freeBusyDay(mock);
+  await calendarDay(win, mock);
+  await win.getByTestId('people-filter-add').click();
+  const picker = win.getByTestId('people-filter-picker');
+  await picker.getByRole('option', { name: /Борис/ }).click();
+  await picker.getByRole('option', { name: /Вера/ }).click();
+  await win.keyboard.press('Escape');
+  await expect(win.getByTestId('person-chip')).toHaveCount(2);
+  await expect(win.getByTestId('busy-block')).toHaveCount(2);
+  await win.evaluate(() => (document.activeElement as HTMLElement | null)?.blur());
+  await checkpoint(shot, 'calendar-filter');
+});
+
+/** «Подобрать время»: columns of Анна, Борис, Вера (work hours grey, external hatched), green windows, «Ближайшие окна». */
+test('calendar-findtime', async ({ open, win, mock, shot }) => {
+  await open();
+  await mainWindow(win, mock);
+  freeBusyDay(mock);
+  await calendarDay(win, mock);
+  await win.getByTestId('day-find').click();
+  const pane = win.getByTestId('find-time');
+  await pane.getByTestId('find-people-add').click();
+  const picker = win.getByTestId('find-people-picker');
+  await picker.getByRole('option', { name: /Борис/ }).click();
+  await picker.getByRole('option', { name: /Вера/ }).click();
+  await win.keyboard.press('Escape');
+  await expect(pane.getByTestId('busy-column')).toHaveCount(3);
+  // 960: «Ближайшие окна» is the toolbar's popover (the grid keeps the width); «Следующее окно» outlines one.
+  await pane.getByTestId('find-slots-toggle').click();
+  await expect(win.getByTestId('find-slot')).not.toHaveCount(0);
+  await win.getByTestId('find-next').click();
+  await expect(pane.getByTestId('find-selection')).toBeVisible();
+  // No focus ring from the mouse: the toolbar's last pressed control loses the focus before the shot.
+  await win.evaluate(() => (document.activeElement as HTMLElement | null)?.blur());
+  await checkpoint(shot, 'calendar-findtime');
+});
+
+/** Settings → Календарь: work hours, the reminders link, the CalDAV connect form with the providers' addresses. */
+test('settings-calendar', async ({ open, win, mock, shot }) => {
+  await open();
+  await mainWindow(win, mock);
+  await openSettingsTab(win, openAppSettings(win), appTab('calendar'));
+  await expect(win.getByTestId('caldav-connect')).toBeVisible();
+  await checkpoint(shot, 'settings-calendar');
 });
 
 /** «+ Встреча»: the dialog filled in — attendee chips (one optional, one external), a room, a repeat. */
@@ -3366,4 +3460,103 @@ test('calendar-dialog', async ({ open, win, mock, shot }) => {
   await expect(dialog.getByTestId('event-chip')).toHaveCount(3);
   await dialog.getByTestId('event-title-input').blur();
   await checkpoint(shot, 'calendar-dialog');
+});
+
+// ---------------------------------------------------------------- task boards (ADR-0042 §5)
+
+/** Boards mode on «Разработка» (CAL, the mock's seeded board), the clock at NOW. */
+async function boardsMode(win: Page, mock: MockServer): Promise<void> {
+  mock.setClock(NOW.getTime());
+  await win.getByTestId('boards-button').click();
+  await expect(win.getByTestId('kanban')).toBeVisible();
+  await expect(win.getByTestId('task-card').filter({ hasText: 'CAL-3' })).toBeVisible();
+}
+
+/** The kanban: the boards column, statuses with counts, cards with every chip (overdue CAL-3). */
+test('boards-kanban', async ({ open, win, mock, shot }) => {
+  await open();
+  await mainWindow(win, mock);
+  await boardsMode(win, mock);
+  await checkpoint(shot, 'boards-kanban');
+});
+
+/** The task panel over the board (960: floating): properties, two assignees, relations, comments. */
+test('boards-task', async ({ open, win, mock, shot }) => {
+  await open();
+  await mainWindow(win, mock);
+  await boardsMode(win, mock);
+  await win.getByTestId('task-card').filter({ hasText: 'CAL-3' }).getByTestId('card-title').click();
+  const panel = win.getByTestId('task-panel');
+  await expect(panel.getByTestId('assignee-row')).toHaveCount(2);
+  await expect(panel.locator('[data-message-id]')).toHaveCount(2);
+  await checkpoint(shot, 'boards-task');
+});
+
+/** The list grouped by status, two rows selected: the bulk actions bar. */
+test('boards-list', async ({ open, win, mock, shot }) => {
+  await open();
+  await mainWindow(win, mock);
+  await boardsMode(win, mock);
+  await win.getByTestId('view-list').click();
+  const rows = win.getByTestId('list-row');
+  await rows.filter({ hasText: 'CAL-2' }).getByTestId('row-select').click();
+  await rows.filter({ hasText: 'CAL-4' }).getByTestId('row-select').click();
+  await expect(win.getByTestId('bulk-bar')).toBeVisible();
+  await checkpoint(shot, 'boards-list');
+});
+
+/** «Фильтр» open over a filtered board: the «Мои» chip on, a label condition, the field list. */
+test('boards-filter', async ({ open, win, mock, shot }) => {
+  await open();
+  await mainWindow(win, mock);
+  await boardsMode(win, mock);
+  await win.getByTestId('quick-mine').click();
+  await win.getByTestId('filter-button').click();
+  await win.getByTestId('filter-fields').getByRole('option', { name: 'Лейблы' }).click();
+  await win.getByTestId('filter-values').getByRole('option', { name: /Фича/ }).click();
+  await win.keyboard.press('Escape');
+  await expect(win.getByTestId('filter-chip')).toHaveCount(2);
+  await win.getByTestId('filter-button').click();
+  await expect(win.getByTestId('filter-fields')).toBeVisible();
+  await checkpoint(shot, 'boards-filter');
+});
+
+/** Board settings → «Статусы»: the development template's six statuses. */
+test('boards-settings', async ({ open, win, mock, shot }) => {
+  await open();
+  await mainWindow(win, mock);
+  await boardsMode(win, mock);
+  await win.getByTestId('board-more').click();
+  await win.getByTestId('board-settings').click();
+  await win.getByRole('tab', { name: 'Статусы' }).click();
+  await expect(win.getByTestId('statuses-editor').locator('[data-settings-row]')).toHaveCount(6);
+  await checkpoint(shot, 'boards-settings');
+});
+
+/** The timeline (3), month scale: today line, weekends, CAL-3 → CAL-4 late-blocker marker, «Без дат». */
+test('boards-timeline', async ({ open, win, mock, shot }) => {
+  await open();
+  await mainWindow(win, mock);
+  await boardsMode(win, mock);
+  await win.keyboard.press('3');
+  const tl = win.getByTestId('timeline');
+  await expect(tl.getByTestId('timeline-row')).toHaveCount(4);
+  await expect(tl.locator('[data-testid=timeline-row]').filter({ hasText: 'CAL-4' }).getByTestId('bar-blocked')).toBeVisible();
+  await expect(tl.getByTestId('timeline-today-line')).toBeVisible();
+  await checkpoint(shot, 'boards-timeline');
+});
+
+/** A /t/CAL-3 link in chat: the task card (key, title, status, assignees, overdue due date). */
+test('chat-task-card', async ({ open, win, mock, shot }) => {
+  await open();
+  await mainWindow(win, mock);
+  mock.setClock(NOW.getTime());
+  mock.injectMessage({ roomId: IDS.rooms.general, authorId: IDS.users.boris, content: 'Кто возьмёт? https://calab.test/t/CAL-3' });
+  const card = win.getByTestId('task-link-card');
+  await expect(card).toContainText('CAL-3');
+  await expect(card).toContainText('В работе');
+  await settle(win);
+  await win.locator('[data-virtuoso-scroller]').first().evaluate((el) => el.scrollTo({ top: el.scrollHeight }));
+  await settle(win);
+  await checkpoint(shot, 'chat-task-card');
 });

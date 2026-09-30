@@ -42,13 +42,13 @@ export const EMAIL_RE = /^[^\s@<>"]+@[^\s@<>"]+\.[^\s@<>"]+$/;
 const snapDown = (m: number): number => Math.floor(m / STEP_MIN) * STEP_MIN;
 
 /** A new meeting: the given range (a grid selection, «+ Встреча»), else the next half hour for 30 minutes. */
-export function newDraft(init: { start?: number; end?: number; allDay?: boolean; roomId?: string }, now = Date.now()): EventDraft {
+export function newDraft(init: { start?: number; end?: number; allDay?: boolean; roomId?: string; attendees?: readonly string[] }, now = Date.now()): EventDraft {
   const s = new Date(init.start ?? Math.ceil((now + 60_000) / 1_800_000) * 1_800_000);
   const day = dayKey(s);
   const start = snapDown(minutesOf(s));
   const endMs = init.end ?? s.getTime() + 30 * 60_000;
   const end = Math.max(start + STEP_MIN, snapDown(Math.round((endMs - dayStart(day)) / 60_000)));
-  return { title: '', description: '', day, start, end, allDay: init.allDay ?? false, roomId: init.roomId ?? '', attendees: [], repeat: EventRepeat.UNSPECIFIED, until: '', record: false };
+  return { title: '', description: '', day, start, end, allDay: init.allDay ?? false, roomId: init.roomId ?? '', attendees: (init.attendees ?? []).reduce<DraftAttendee[]>((l, id) => addMember(l, id), []), repeat: EventRepeat.UNSPECIFIED, until: '', record: false };
 }
 
 /** The form of an existing occurrence (its own date and times). */

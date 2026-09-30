@@ -23,6 +23,7 @@ import {
   Bell,
   BellOff,
   Check,
+  CalendarPlus,
   CheckCheck,
   ChevronDown,
   CircleDot,
@@ -55,8 +56,8 @@ import { plural, t, useLocale } from '../../i18n';
 import { api } from '../../lib/api/endpoints';
 import { can, mayArrangeRooms, mayManageWorkspace, mayMoveMembersIn, mayMoveVoice, roomPerms } from '../../lib/permissions';
 import { voice } from '../../services/voice';
-import { groupRooms, isUnread, isVoice, roomNotify, roomsOfWorkspace, showsUnread, useRooms, workspaceNotify } from '../../stores/rooms';
-import { setRoomNotifications, setWorkspaceNotifications } from '../../services/mentions';
+import { groupRooms, isUnread, isVoice, roomNotify, roomsOfWorkspace, showsUnread, useRooms, workspaceNotify, workspaceTaskLevel } from '../../stores/rooms';
+import { setRoomNotifications, setWorkspaceNotifications, setWorkspaceTaskLevel } from '../../services/mentions';
 import { KnockBadge } from '../guests/KnockBadge';
 import { LEVEL_LABEL, NotifyMenuItems, type LevelOption } from '../chat/NotifyMenu';
 import { useSession } from '../../stores/session';
@@ -67,7 +68,8 @@ import { memberName, rolesOf, useMemberRoles, useWorkspaces } from '../../stores
 import { useConnectingRing, useVoiceStates } from '../../stores/voicePending';
 import { joinOutcome } from '../../lib/voiceEntry';
 import { formatDuration, pad2, useNow } from './voiceFormat';
-import { menuBox, menuItem, menuSeparator } from './menu';
+import { menuBox, menuItem, menuLabel, menuSeparator } from './menu';
+import { useBoards } from '../../stores/boards';
 import { MemberContextMenu } from '../people/MemberContextMenu';
 import { JustJoinedDot } from '../voice/JustJoinedDot';
 import { joinedAtMs } from '../../lib/justJoined';
@@ -88,7 +90,11 @@ import { RoomRecBadge } from '../voice/Recording';
 import { useRecordings } from '../../stores/recordings';
 import { startRecording, stopRecording } from '../../services/recording';
 import { CalendarButton, MiniCalendar } from '../calendar/MiniCalendar';
+import { BoardsButton } from '../boards/BoardsButton';
+import { BoardsList } from '../boards/BoardsList';
+import { useBoardsUi } from '../../stores/boardsUi';
 import { RoomEventBadge } from '../calendar/RoomEvent';
+import { newEvent } from '../calendar/actions';
 import { DRAG_ROOM, dropRoomAt, hoverRoomAt } from '../calendar/dragState';
 
 export { menuBox, menuItem };
@@ -121,7 +127,7 @@ interface DropRoom {
 }
 
 /**
- * Room column (docs/09 #4, P1 #19): workspace header with ▾ menu and «invite»; rooms as one flat
+ * Room column (docs/09 #4, P1 #19): workspace header with ▾ menu, the calendar and «+» (#135); rooms as one flat
  * list in `position` order, then user categories (collapsible) — no built-in sections. Rooms and
  * categories are dragged to a new place with MANAGE_ROOM (accent line, Esc cancels); voice
  * participants between voice rooms with MOVE_MEMBERS. Then the voice panel and the self panel.
@@ -145,6 +151,8 @@ export function Sidebar({ workspaceId }: { workspaceId: string }): ReactNode {
   // The mini calendar under the header (ADR-0038 §7); guests see no calendar.
   const miniCal = useUi((s) => s.miniCal);
   const guest = useWorkspaces((s) => s.byId[workspaceId]?.role === WorkspaceRole.GUEST);
+  // Boards mode (ADR-0042 §5): the column lists the boards instead of the rooms.
+  const boards = useBoardsUi((s) => s.active) && !guest;
   // Workspace invites (rows' «Пригласить»): MANAGE_WORKSPACE, a custom role's included.
   const admin = mayManageWorkspace(myRoles);
   const manageRooms = mayArrangeRooms(myRoles);
@@ -164,7 +172,9 @@ export function Sidebar({ workspaceId }: { workspaceId: string }): ReactNode {
   return (
     <aside className="mat-sidebar island-fade flex w-[var(--sidebar-width)] shrink-0 flex-col" aria-label={t('room.list')}>
       <WorkspaceHeader workspaceId={workspaceId} onCreateCategory={() => setCatDialog(true)} />
-      {miniCal && !guest ? <MiniCalendar workspaceId={workspaceId} /> : null}
+      {miniCal && !guest && !boards ? <MiniCalendar workspaceId={workspaceId} /> : null}
+      {boards ? <BoardsList workspaceId={workspaceId} /> : null}
+      {boards ? null : (
       <SidebarDnd workspaceId={workspaceId} listRef={listRef}>
         <SidebarMenu workspaceId={workspaceId} onCreateCategory={() => setCatDialog(true)}>
           {/* The bottom island (AppShell) floats over the column's foot: the list ends above it. */}
@@ -226,6 +236,7 @@ export function Sidebar({ workspaceId }: { workspaceId: string }): ReactNode {
           </div>
         </SidebarMenu>
       </SidebarDnd>
+      )}
       {catDialog ? <CategoryDialog workspaceId={workspaceId} onClose={() => setCatDialog(false)} /> : null}
     </aside>
   );
@@ -368,28 +379,34 @@ function WorkspaceHeader({ workspaceId, onCreateCategory }: { workspaceId: strin
         </Dropdown.Portal>
       </Dropdown.Root>
       <CalendarButton workspaceId={workspaceId} />
-      {manageRooms ? <CreateMenu workspaceId={workspaceId} onCreateCategory={onCreateCategory} /> : null}
-      {admin ? (
-        <Tip label={t('shell.invite')}>
-          <button
-            type="button"
-            aria-label={t('ws.invite')}
-            onClick={() => open({ kind: 'workspace-settings', workspaceId, tab: 'invites' })}
-            className="grid size-8 shrink-0 place-items-center rounded-[var(--radius-icon)] text-muted transition-colors duration-[var(--motion-fast)] hover:bg-hover hover:text-fg"
-          >
-            <UserPlus className="size-[18px]" aria-hidden />
-          </button>
-        </Tip>
+      <BoardsButton workspaceId={workspaceId} />
+      {manageRooms || admin || role !== WorkspaceRole.GUEST ? (
+        <CreateMenu workspaceId={workspaceId} onCreateCategory={onCreateCategory} rooms={manageRooms} invite={admin} meeting={role !== WorkspaceRole.GUEST} />
       ) : null}
     </div>
   );
 }
 
 /**
- * «+» in the column header (owner, 28.09), MANAGE_ROOM only: «Создать комнату» (the room dialog,
- * text by default — it has the voice switch) and «Создать категорию» (goes on top).
+ * «+» in the column header (owner, 28.09 / 29.09, docs/09 #135) — the header's only action button:
+ * «Создать комнату» (the room dialog, text by default — it has the voice switch) and «Создать
+ * категорию» (goes on top) with MANAGE_ROOM; after a separator «Добавить встречу» (members, not
+ * guests: the meeting dialog for today, the next quarter hour) and, last, «Пригласить в
+ * пространство» (MANAGE_WORKSPACE) — the former separate «Пригласить» icon.
  */
-function CreateMenu({ workspaceId, onCreateCategory }: { workspaceId: string; onCreateCategory: () => void }): ReactNode {
+function CreateMenu({
+  workspaceId,
+  onCreateCategory,
+  rooms,
+  invite,
+  meeting,
+}: {
+  workspaceId: string;
+  onCreateCategory: () => void;
+  rooms: boolean;
+  invite: boolean;
+  meeting: boolean;
+}): ReactNode {
   const open = useUi((s) => s.openDialog);
   return (
     <Dropdown.Root modal={false}>
@@ -406,17 +423,39 @@ function CreateMenu({ workspaceId, onCreateCategory }: { workspaceId: string; on
         </Dropdown.Trigger>
       </Tip>
       <Dropdown.Portal>
-        <Dropdown.Content className={cx(menuBox, 'w-56')} sideOffset={4} align="end" collisionPadding={16}>
-          <Dropdown.Item className={menuItem} onSelect={() => open({ kind: 'room-create', workspaceId, voice: false })}>
-            <Hash className="size-4" /> {t('room.create')}
-          </Dropdown.Item>
-          <Dropdown.Item className={menuItem} onSelect={onCreateCategory}>
-            <FolderPlus className="size-4" /> {t('shell.categoryCreate')}
-          </Dropdown.Item>
+        <Dropdown.Content className={cx(menuBox, 'w-64')} sideOffset={4} align="end" collisionPadding={16}>
+          {rooms ? (
+            <>
+              <Dropdown.Item className={menuItem} onSelect={() => open({ kind: 'room-create', workspaceId, voice: false })}>
+                <Hash className="size-4" /> {t('room.create')}
+              </Dropdown.Item>
+              <Dropdown.Item className={menuItem} onSelect={onCreateCategory}>
+                <FolderPlus className="size-4" /> {t('shell.categoryCreate')}
+              </Dropdown.Item>
+            </>
+          ) : null}
+          {rooms && (meeting || invite) ? <Dropdown.Separator className={menuSeparator} /> : null}
+          {meeting ? (
+            <Dropdown.Item className={menuItem} onSelect={() => newEvent(workspaceId, nextQuarter())} data-testid="sidebar-new-event">
+              <CalendarPlus className="size-4" /> {t('shell.addMeeting')}
+            </Dropdown.Item>
+          ) : null}
+          {invite ? (
+            <Dropdown.Item className={menuItem} onSelect={() => open({ kind: 'workspace-settings', workspaceId, tab: 'invites' })} data-testid="sidebar-invite">
+              <UserPlus className="size-4" /> {t('shell.inviteToWorkspace')}
+            </Dropdown.Item>
+          ) : null}
         </Dropdown.Content>
       </Dropdown.Portal>
     </Dropdown.Root>
   );
+}
+
+/** «Добавить встречу»: today, from the next quarter hour, 30 minutes (the dialog's default length). */
+function nextQuarter(): { start: number; end: number } {
+  const q = 15 * 60_000;
+  const start = Math.ceil((Date.now() + 60_000) / q) * q;
+  return { start, end: start + 30 * 60_000 };
 }
 
 /**
@@ -449,9 +488,45 @@ function WorkspaceNotifyMenu({ workspaceId }: { workspaceId: string }): ReactNod
             defaultLevel={NotificationLevel.MENTIONS}
             onChange={(level, until) => void setWorkspaceNotifications(workspaceId, level, until)}
           />
+          <TaskNotifyItems workspaceId={workspaceId} />
         </Dropdown.SubContent>
       </Dropdown.Portal>
     </Dropdown.Sub>
+  );
+}
+
+const TASK_LEVELS: ReadonlyArray<{ level: NotificationLevel; label: 'boards.notifyAll' | 'boards.notifyMentions' | 'boards.notifyNone' }> = [
+  { level: NotificationLevel.ALL, label: 'boards.notifyAll' },
+  { level: NotificationLevel.MENTIONS, label: 'boards.notifyMentions' },
+  { level: NotificationLevel.NONE, label: 'boards.notifyNone' },
+];
+
+/**
+ * «Задачи» (ADR-0042 §4) under the workspace's levels: task notifications of its boards —
+ * everything (assigned, @me, comments, status of my tasks), only assigned / @me, or nothing.
+ * Shown once the workspace has a board the viewer sees.
+ */
+function TaskNotifyItems({ workspaceId }: { workspaceId: string }): ReactNode {
+  const level = useRooms((s) => workspaceTaskLevel(s.wsNotify[workspaceId]));
+  const any = useBoards((s) => Object.values(s.boards).some((b) => b.workspaceId === workspaceId && !b.archivedAt));
+  if (!any) return null;
+  return (
+    <>
+      <Dropdown.Separator className={menuSeparator} />
+      <Dropdown.Label className={menuLabel}>{t('boards.notifyTasks')}</Dropdown.Label>
+      <Dropdown.RadioGroup value={String(level)} onValueChange={(v) => void setWorkspaceTaskLevel(workspaceId, Number(v))}>
+        {TASK_LEVELS.map((o) => (
+          <Dropdown.RadioItem key={o.level} value={String(o.level)} className={menuItem} data-testid={`task-level-${o.level}`}>
+            <span className="grid w-4 place-items-center">
+              <Dropdown.ItemIndicator>
+                <Check className="size-4" aria-hidden />
+              </Dropdown.ItemIndicator>
+            </span>
+            <span className="truncate">{t(o.label)}</span>
+          </Dropdown.RadioItem>
+        ))}
+      </Dropdown.RadioGroup>
+    </>
   );
 }
 

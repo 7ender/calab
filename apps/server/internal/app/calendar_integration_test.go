@@ -436,7 +436,7 @@ func TestEventMailOwnBucket(t *testing.T) {
 			EndsAt: ts(start.Add(time.Hour)), Tz: "UTC", Attendees: []*v1.CalendarEventAttendeeInput{att(c.carol.id, true)}})
 	}
 	waitMail(t, c.carol.email, mail.TemplateEventInvite, 4)
-	newClient(t).must(204, "POST", "/api/auth/password/forgot", &v1.ForgotPasswordRequest{Email: c.carol.email}, nil)
+	newClient(t).must(200, "POST", "/api/auth/password/forgot", &v1.ForgotPasswordRequest{Email: c.carol.email}, nil)
 	nthMail(t, 1, mail.TemplatePasswordReset, c.carol.email)
 }
 

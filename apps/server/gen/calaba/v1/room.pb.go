@@ -30,6 +30,7 @@ const (
 	RoomType_ROOM_TYPE_TEXT        RoomType = 2
 	RoomType_ROOM_TYPE_DM          RoomType = 3 // direct message (ADR-0020): no workspace, two participants
 	RoomType_ROOM_TYPE_NOTES       RoomType = 4 // notes shelf (ADR-0039): no workspace, only its owner
+	RoomType_ROOM_TYPE_TASK        RoomType = 5 // comments of a task (ADR-0042): hidden, access from the task's board
 )
 
 // Enum value maps for RoomType.
@@ -40,6 +41,7 @@ var (
 		2: "ROOM_TYPE_TEXT",
 		3: "ROOM_TYPE_DM",
 		4: "ROOM_TYPE_NOTES",
+		5: "ROOM_TYPE_TASK",
 	}
 	RoomType_value = map[string]int32{
 		"ROOM_TYPE_UNSPECIFIED": 0,
@@ -47,6 +49,7 @@ var (
 		"ROOM_TYPE_TEXT":        2,
 		"ROOM_TYPE_DM":          3,
 		"ROOM_TYPE_NOTES":       4,
+		"ROOM_TYPE_TASK":        5,
 	}
 )
 
@@ -703,10 +706,13 @@ func (x *UpdateRoomNotificationSettingsResponse) GetSettings() *RoomNotification
 // Workspaces without a stored row use the default (MENTIONS, not muted). Sent in READY
 // (workspace_notification_settings) and WORKSPACE_NOTIFICATION_UPDATE.
 type WorkspaceNotificationSettings struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	WorkspaceId   string                 `protobuf:"bytes,1,opt,name=workspace_id,json=workspaceId,proto3" json:"workspace_id,omitempty"`
-	Level         NotificationLevel      `protobuf:"varint,2,opt,name=level,proto3,enum=calaba.v1.NotificationLevel" json:"level,omitempty"` // ALL | MENTIONS | NONE
-	MutedUntil    *timestamppb.Timestamp `protobuf:"bytes,3,opt,name=muted_until,json=mutedUntil,proto3" json:"muted_until,omitempty"`       // unset = not muted; in the past = no longer muted
+	state       protoimpl.MessageState `protogen:"open.v1"`
+	WorkspaceId string                 `protobuf:"bytes,1,opt,name=workspace_id,json=workspaceId,proto3" json:"workspace_id,omitempty"`
+	Level       NotificationLevel      `protobuf:"varint,2,opt,name=level,proto3,enum=calaba.v1.NotificationLevel" json:"level,omitempty"` // ALL | MENTIONS | NONE
+	MutedUntil  *timestamppb.Timestamp `protobuf:"bytes,3,opt,name=muted_until,json=mutedUntil,proto3" json:"muted_until,omitempty"`       // unset = not muted; in the past = no longer muted
+	// Task notifications of the workspace's boards (ADR-0042 §4, «Задачи»): ALL (default) |
+	// MENTIONS (assigned to me, @me) | NONE. The workspace mute silences them too.
+	TaskLevel     NotificationLevel `protobuf:"varint,4,opt,name=task_level,json=taskLevel,proto3,enum=calaba.v1.NotificationLevel" json:"task_level,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -762,13 +768,22 @@ func (x *WorkspaceNotificationSettings) GetMutedUntil() *timestamppb.Timestamp {
 	return nil
 }
 
+func (x *WorkspaceNotificationSettings) GetTaskLevel() NotificationLevel {
+	if x != nil {
+		return x.TaskLevel
+	}
+	return NotificationLevel_NOTIFICATION_LEVEL_UNSPECIFIED
+}
+
 // PUT /api/workspaces/{id}/notifications (member). Replaces the caller's settings for the
 // workspace; level MENTIONS (or UNSPECIFIED) without muted_until resets to the default.
 // INHERIT is rejected (422).
 type UpdateWorkspaceNotificationSettingsRequest struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	Level         NotificationLevel      `protobuf:"varint,1,opt,name=level,proto3,enum=calaba.v1.NotificationLevel" json:"level,omitempty"`
-	MutedUntil    *timestamppb.Timestamp `protobuf:"bytes,2,opt,name=muted_until,json=mutedUntil,proto3" json:"muted_until,omitempty"` // at most 1 year ahead
+	state      protoimpl.MessageState `protogen:"open.v1"`
+	Level      NotificationLevel      `protobuf:"varint,1,opt,name=level,proto3,enum=calaba.v1.NotificationLevel" json:"level,omitempty"`
+	MutedUntil *timestamppb.Timestamp `protobuf:"bytes,2,opt,name=muted_until,json=mutedUntil,proto3" json:"muted_until,omitempty"` // at most 1 year ahead
+	// ALL | MENTIONS | NONE; unset = keep the stored task level (older clients).
+	TaskLevel     *NotificationLevel `protobuf:"varint,3,opt,name=task_level,json=taskLevel,proto3,enum=calaba.v1.NotificationLevel,oneof" json:"task_level,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -815,6 +830,13 @@ func (x *UpdateWorkspaceNotificationSettingsRequest) GetMutedUntil() *timestampp
 		return x.MutedUntil
 	}
 	return nil
+}
+
+func (x *UpdateWorkspaceNotificationSettingsRequest) GetTaskLevel() NotificationLevel {
+	if x != nil && x.TaskLevel != nil {
+		return *x.TaskLevel
+	}
+	return NotificationLevel_NOTIFICATION_LEVEL_UNSPECIFIED
 }
 
 type UpdateWorkspaceNotificationSettingsResponse struct {
@@ -1984,16 +2006,21 @@ const file_calaba_v1_room_proto_rawDesc = "" +
 	"\vmuted_until\x18\x02 \x01(\v2\x1a.google.protobuf.TimestampR\n" +
 	"mutedUntil\"i\n" +
 	"&UpdateRoomNotificationSettingsResponse\x12?\n" +
-	"\bsettings\x18\x01 \x01(\v2#.calaba.v1.RoomNotificationSettingsR\bsettings\"\xb3\x01\n" +
+	"\bsettings\x18\x01 \x01(\v2#.calaba.v1.RoomNotificationSettingsR\bsettings\"\xf0\x01\n" +
 	"\x1dWorkspaceNotificationSettings\x12!\n" +
 	"\fworkspace_id\x18\x01 \x01(\tR\vworkspaceId\x122\n" +
 	"\x05level\x18\x02 \x01(\x0e2\x1c.calaba.v1.NotificationLevelR\x05level\x12;\n" +
 	"\vmuted_until\x18\x03 \x01(\v2\x1a.google.protobuf.TimestampR\n" +
-	"mutedUntil\"\x9d\x01\n" +
+	"mutedUntil\x12;\n" +
+	"\n" +
+	"task_level\x18\x04 \x01(\x0e2\x1c.calaba.v1.NotificationLevelR\ttaskLevel\"\xee\x01\n" +
 	"*UpdateWorkspaceNotificationSettingsRequest\x122\n" +
 	"\x05level\x18\x01 \x01(\x0e2\x1c.calaba.v1.NotificationLevelR\x05level\x12;\n" +
 	"\vmuted_until\x18\x02 \x01(\v2\x1a.google.protobuf.TimestampR\n" +
-	"mutedUntil\"s\n" +
+	"mutedUntil\x12@\n" +
+	"\n" +
+	"task_level\x18\x03 \x01(\x0e2\x1c.calaba.v1.NotificationLevelH\x00R\ttaskLevel\x88\x01\x01B\r\n" +
+	"\v_task_level\"s\n" +
 	"+UpdateWorkspaceNotificationSettingsResponse\x12D\n" +
 	"\bsettings\x18\x01 \x01(\v2(.calaba.v1.WorkspaceNotificationSettingsR\bsettings\"q\n" +
 	"\fRoomCategory\x12\x0e\n" +
@@ -2087,13 +2114,14 @@ const file_calaba_v1_room_proto_rawDesc = "" +
 	"\x19SetRoomPermissionsRequest\x12?\n" +
 	"\toverrides\x18\x01 \x03(\v2!.calaba.v1.RoomPermissionOverrideR\toverrides\"A\n" +
 	"\x1aSetRoomPermissionsResponse\x12#\n" +
-	"\x04room\x18\x01 \x01(\v2\x0f.calaba.v1.RoomR\x04room*u\n" +
+	"\x04room\x18\x01 \x01(\v2\x0f.calaba.v1.RoomR\x04room*\x89\x01\n" +
 	"\bRoomType\x12\x19\n" +
 	"\x15ROOM_TYPE_UNSPECIFIED\x10\x00\x12\x13\n" +
 	"\x0fROOM_TYPE_VOICE\x10\x01\x12\x12\n" +
 	"\x0eROOM_TYPE_TEXT\x10\x02\x12\x10\n" +
 	"\fROOM_TYPE_DM\x10\x03\x12\x13\n" +
-	"\x0fROOM_TYPE_NOTES\x10\x04*\x80\x01\n" +
+	"\x0fROOM_TYPE_NOTES\x10\x04\x12\x12\n" +
+	"\x0eROOM_TYPE_TASK\x10\x05*\x80\x01\n" +
 	"\x14PermissionTargetType\x12&\n" +
 	"\"PERMISSION_TARGET_TYPE_UNSPECIFIED\x10\x00\x12\x1f\n" +
 	"\x1bPERMISSION_TARGET_TYPE_ROLE\x10\x01\x12\x1f\n" +
@@ -2174,30 +2202,32 @@ var file_calaba_v1_room_proto_depIdxs = []int32{
 	6,  // 13: calaba.v1.UpdateRoomNotificationSettingsResponse.settings:type_name -> calaba.v1.RoomNotificationSettings
 	2,  // 14: calaba.v1.WorkspaceNotificationSettings.level:type_name -> calaba.v1.NotificationLevel
 	33, // 15: calaba.v1.WorkspaceNotificationSettings.muted_until:type_name -> google.protobuf.Timestamp
-	2,  // 16: calaba.v1.UpdateWorkspaceNotificationSettingsRequest.level:type_name -> calaba.v1.NotificationLevel
-	33, // 17: calaba.v1.UpdateWorkspaceNotificationSettingsRequest.muted_until:type_name -> google.protobuf.Timestamp
-	9,  // 18: calaba.v1.UpdateWorkspaceNotificationSettingsResponse.settings:type_name -> calaba.v1.WorkspaceNotificationSettings
-	12, // 19: calaba.v1.CreateCategoryResponse.category:type_name -> calaba.v1.RoomCategory
-	12, // 20: calaba.v1.ListCategoriesResponse.categories:type_name -> calaba.v1.RoomCategory
-	12, // 21: calaba.v1.UpdateCategoryResponse.category:type_name -> calaba.v1.RoomCategory
-	29, // 22: calaba.v1.SetRoomOrderRequest.rooms:type_name -> calaba.v1.SetRoomOrderRequest.RoomPosition
-	30, // 23: calaba.v1.SetRoomOrderRequest.categories:type_name -> calaba.v1.SetRoomOrderRequest.CategoryPosition
-	5,  // 24: calaba.v1.SetRoomOrderResponse.rooms:type_name -> calaba.v1.Room
-	12, // 25: calaba.v1.SetRoomOrderResponse.categories:type_name -> calaba.v1.RoomCategory
-	0,  // 26: calaba.v1.CreateRoomRequest.type:type_name -> calaba.v1.RoomType
-	4,  // 27: calaba.v1.CreateRoomRequest.media_override:type_name -> calaba.v1.RoomMediaOverride
-	5,  // 28: calaba.v1.CreateRoomResponse.room:type_name -> calaba.v1.Room
-	5,  // 29: calaba.v1.ListRoomsResponse.rooms:type_name -> calaba.v1.Room
-	5,  // 30: calaba.v1.GetRoomResponse.room:type_name -> calaba.v1.Room
-	4,  // 31: calaba.v1.UpdateRoomRequest.media_override:type_name -> calaba.v1.RoomMediaOverride
-	5,  // 32: calaba.v1.UpdateRoomResponse.room:type_name -> calaba.v1.Room
-	3,  // 33: calaba.v1.SetRoomPermissionsRequest.overrides:type_name -> calaba.v1.RoomPermissionOverride
-	5,  // 34: calaba.v1.SetRoomPermissionsResponse.room:type_name -> calaba.v1.Room
-	35, // [35:35] is the sub-list for method output_type
-	35, // [35:35] is the sub-list for method input_type
-	35, // [35:35] is the sub-list for extension type_name
-	35, // [35:35] is the sub-list for extension extendee
-	0,  // [0:35] is the sub-list for field type_name
+	2,  // 16: calaba.v1.WorkspaceNotificationSettings.task_level:type_name -> calaba.v1.NotificationLevel
+	2,  // 17: calaba.v1.UpdateWorkspaceNotificationSettingsRequest.level:type_name -> calaba.v1.NotificationLevel
+	33, // 18: calaba.v1.UpdateWorkspaceNotificationSettingsRequest.muted_until:type_name -> google.protobuf.Timestamp
+	2,  // 19: calaba.v1.UpdateWorkspaceNotificationSettingsRequest.task_level:type_name -> calaba.v1.NotificationLevel
+	9,  // 20: calaba.v1.UpdateWorkspaceNotificationSettingsResponse.settings:type_name -> calaba.v1.WorkspaceNotificationSettings
+	12, // 21: calaba.v1.CreateCategoryResponse.category:type_name -> calaba.v1.RoomCategory
+	12, // 22: calaba.v1.ListCategoriesResponse.categories:type_name -> calaba.v1.RoomCategory
+	12, // 23: calaba.v1.UpdateCategoryResponse.category:type_name -> calaba.v1.RoomCategory
+	29, // 24: calaba.v1.SetRoomOrderRequest.rooms:type_name -> calaba.v1.SetRoomOrderRequest.RoomPosition
+	30, // 25: calaba.v1.SetRoomOrderRequest.categories:type_name -> calaba.v1.SetRoomOrderRequest.CategoryPosition
+	5,  // 26: calaba.v1.SetRoomOrderResponse.rooms:type_name -> calaba.v1.Room
+	12, // 27: calaba.v1.SetRoomOrderResponse.categories:type_name -> calaba.v1.RoomCategory
+	0,  // 28: calaba.v1.CreateRoomRequest.type:type_name -> calaba.v1.RoomType
+	4,  // 29: calaba.v1.CreateRoomRequest.media_override:type_name -> calaba.v1.RoomMediaOverride
+	5,  // 30: calaba.v1.CreateRoomResponse.room:type_name -> calaba.v1.Room
+	5,  // 31: calaba.v1.ListRoomsResponse.rooms:type_name -> calaba.v1.Room
+	5,  // 32: calaba.v1.GetRoomResponse.room:type_name -> calaba.v1.Room
+	4,  // 33: calaba.v1.UpdateRoomRequest.media_override:type_name -> calaba.v1.RoomMediaOverride
+	5,  // 34: calaba.v1.UpdateRoomResponse.room:type_name -> calaba.v1.Room
+	3,  // 35: calaba.v1.SetRoomPermissionsRequest.overrides:type_name -> calaba.v1.RoomPermissionOverride
+	5,  // 36: calaba.v1.SetRoomPermissionsResponse.room:type_name -> calaba.v1.Room
+	37, // [37:37] is the sub-list for method output_type
+	37, // [37:37] is the sub-list for method input_type
+	37, // [37:37] is the sub-list for extension type_name
+	37, // [37:37] is the sub-list for extension extendee
+	0,  // [0:37] is the sub-list for field type_name
 }
 
 func init() { file_calaba_v1_room_proto_init() }
@@ -2207,6 +2237,7 @@ func file_calaba_v1_room_proto_init() {
 	}
 	file_calaba_v1_media_proto_init()
 	file_calaba_v1_room_proto_msgTypes[1].OneofWrappers = []any{}
+	file_calaba_v1_room_proto_msgTypes[7].OneofWrappers = []any{}
 	file_calaba_v1_room_proto_msgTypes[10].OneofWrappers = []any{}
 	file_calaba_v1_room_proto_msgTypes[13].OneofWrappers = []any{}
 	file_calaba_v1_room_proto_msgTypes[17].OneofWrappers = []any{}

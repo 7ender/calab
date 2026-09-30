@@ -28,7 +28,12 @@ type vector struct {
 	Restricted  bool `json:"restricted"`
 	Owner       bool `json:"owner"`
 	Participant bool `json:"participant"`
-	Expected    Bits `json:"expected"`
+	// ADR-0042: a board vector (ComputeBoard with the board's overrides).
+	Board *struct {
+		Private bool `json:"private"`
+		Guest   bool `json:"guest"`
+	} `json:"board"`
+	Expected Bits `json:"expected"`
 }
 
 func loadVectors(t *testing.T) []vector {
@@ -45,9 +50,34 @@ func loadVectors(t *testing.T) []vector {
 }
 
 func TestComputeVectors(t *testing.T) {
-	n := 0
+	n, boards := 0, 0
 	for _, v := range loadVectors(t) {
 		switch {
+		case v.Board != nil:
+			boards++
+			roles := make([]RoleBits, len(v.Roles))
+			for i, r := range v.Roles {
+				roles[i] = RoleBits(r)
+			}
+			sc := BoardScope{Private: v.Board.Private, Guest: v.Board.Guest}
+			if got := ComputeBoardRoles(roles, sc, v.RoleOverrides, v.UserOverride); got != v.Expected {
+				t.Errorf("%s: ComputeBoardRoles got %d want %d", v.Name, got, v.Expected)
+			}
+			const uid = "u1"
+			var ovs []OverrideTarget
+			for id, o := range v.RoleOverrides {
+				ovs = append(ovs, OverrideTarget{TargetType: "role", TargetID: id, Override: o})
+			}
+			if v.UserOverride != nil {
+				ovs = append(ovs, OverrideTarget{TargetType: "user", TargetID: uid, Override: *v.UserOverride})
+			}
+			role := RoleMember
+			if v.Board.Guest {
+				role = RoleGuest
+			}
+			if got := ComputeBoardIn(NewMember(uid, role, roles), v.Board.Private, ovs); got != v.Expected {
+				t.Errorf("%s: ComputeBoardIn got %d want %d", v.Name, got, v.Expected)
+			}
 		case v.RoomType == "dm":
 			if got := ComputeDM(v.Participant); got != v.Expected {
 				t.Errorf("%s: got %d want %d", v.Name, got, v.Expected)
@@ -87,8 +117,8 @@ func TestComputeVectors(t *testing.T) {
 			}
 		}
 	}
-	if n < 12 {
-		t.Fatalf("only %d multi-role vectors", n)
+	if n < 12 || boards < 15 {
+		t.Fatalf("only %d multi-role vectors, %d board vectors", n, boards)
 	}
 }
 
@@ -100,7 +130,7 @@ func TestMemberTopAndRoomOnly(t *testing.T) {
 	if (Member{}).Top() != -1 {
 		t.Fatal("no roles: top -1")
 	}
-	if RoomOnly&(ManageRoles|ManageWorkspace|Administrator|ManageNicknames|ManageStickers) != 0 || All != 1<<17-1 {
+	if RoomOnly&(ManageRoles|ManageWorkspace|Administrator|ManageNicknames|ManageStickers) != 0 || All != 1<<21-1 || RoomOnly&BoardOnly != 0 {
 		t.Fatal("workspace-level bits must not be settable per room")
 	}
 	if GuestMax&^RoleDefaults[RoleMember] != 0 || RoleDefaults[RoleGuest]&^GuestMax != 0 {

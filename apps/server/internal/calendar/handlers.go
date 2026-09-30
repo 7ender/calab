@@ -244,6 +244,7 @@ func (s *Service) create(w http.ResponseWriter, r *http.Request) error {
 	s.ev.Workspace(ctx, wsID, &v1.DispatchEvent{Event: &v1.DispatchEvent_EventCreate{EventCreate: &v1.CalendarEventCreate{Event: b.proto(nil, nil)}}})
 	s.roomSignals(ctx, nil, b)
 	s.sendMails(ctx, b, mail.TemplateEventInvite, MethodRequest, b.att)
+	s.changed(ctx, b)
 	httpx.Write(w, http.StatusCreated, &v1.CalendarEventResponse{Event: b.proto(nil, v)})
 	return nil
 }
@@ -472,6 +473,7 @@ func (s *Service) update(w http.ResponseWriter, r *http.Request) error {
 		gone.att = removed
 		s.sendMails(ctx, &gone, mail.TemplateEventCancel, MethodCancel, removed)
 	}
+	s.changed(ctx, before, after)
 	httpx.Write(w, http.StatusOK, &v1.CalendarEventResponse{Event: after.proto(nil, v)})
 	return nil
 }
@@ -562,6 +564,7 @@ func (s *Service) remove(w http.ResponseWriter, r *http.Request) error {
 			s.ev.Workspace(ctx, wsID, &v1.DispatchEvent{Event: &v1.DispatchEvent_EventUpdate{EventUpdate: &v1.CalendarEventUpdate{Event: after.proto(nil, nil)}}})
 			s.roomSignals(ctx, before, after)
 			s.sendMails(ctx, after, mail.TemplateEventUpdate, MethodRequest, after.att)
+			s.changed(ctx, after)
 		}
 		httpx.NoContent(w)
 		return nil
@@ -587,6 +590,7 @@ func (s *Service) remove(w http.ResponseWriter, r *http.Request) error {
 	s.ev.Workspace(ctx, wsID, &v1.DispatchEvent{Event: &v1.DispatchEvent_EventDelete{EventDelete: &v1.CalendarEventDelete{Event: after.proto(nil, nil)}}})
 	s.roomSignals(ctx, before, nil)
 	s.sendMails(ctx, after, mail.TemplateEventCancel, MethodCancel, after.att)
+	s.changed(ctx, after)
 	httpx.NoContent(w)
 	return nil
 }
@@ -610,7 +614,8 @@ func (s *Service) rsvp(w http.ResponseWriter, r *http.Request) error {
 	if status == "" {
 		return httpx.Validation("status", "status must be ACCEPTED, DECLINED or MAYBE")
 	}
-	if _, ok := b.attendee(me); !ok {
+	prev, ok := b.attendee(me)
+	if !ok {
 		return httpx.Forbidden("only attendees answer")
 	}
 	if err := s.writes.Take(ctx, me.String()); err != nil { // every answer is a workspace broadcast
@@ -624,6 +629,9 @@ func (s *Service) rsvp(w http.ResponseWriter, r *http.Request) error {
 		return err
 	}
 	s.publishRSVP(ctx, b, a)
+	if (prev.Status == StatusDeclined) != (status == StatusDeclined) && s.Changed != nil {
+		s.Changed(ctx, b.ev.ID, []uuid.UUID{me}) // a declined meeting leaves the user's calendar
+	}
 	httpx.Write(w, http.StatusOK, &v1.CalendarEventResponse{Event: b.proto(nil, v)})
 	return nil
 }

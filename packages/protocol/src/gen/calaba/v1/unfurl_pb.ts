@@ -4,13 +4,15 @@
 
 import type { GenFile, GenMessage } from "@bufbuild/protobuf/codegenv2";
 import { fileDesc, messageDesc } from "@bufbuild/protobuf/codegenv2";
+import type { Board, Task } from "./boards_pb.js";
+import { file_calaba_v1_boards } from "./boards_pb.js";
 import type { Message } from "@bufbuild/protobuf";
 
 /**
  * Describes the file calaba/v1/unfurl.proto.
  */
 export const file_calaba_v1_unfurl: GenFile = /*@__PURE__*/
-  fileDesc("ChZjYWxhYmEvdjEvdW5mdXJsLnByb3RvEgljYWxhYmEudjEifAoOVW5mdXJsUmVzcG9uc2USCwoDdXJsGAEgASgJEg0KBXRpdGxlGAIgASgJEhMKC2Rlc2NyaXB0aW9uGAMgASgJEhEKCXNpdGVfbmFtZRgEIAEoCRIRCglpbWFnZV91cmwYBSABKAkSEwoLZmF2aWNvbl91cmwYBiABKAlCmQEKDWNvbS5jYWxhYmEudjFCC1VuZnVybFByb3RvUAFaNmdpdGh1Yi5jb20vY2FsYWJhL2NhbGFiYS9zZXJ2ZXIvZ2VuL2NhbGFiYS92MTtjYWxhYmF2MaICA0NYWKoCCUNhbGFiYS5WMcoCCUNhbGFiYVxWMeICFUNhbGFiYVxWMVxHUEJNZXRhZGF0YeoCCkNhbGFiYTo6VjFiBnByb3RvMw");
+  fileDesc("ChZjYWxhYmEvdjEvdW5mdXJsLnByb3RvEgljYWxhYmEudjEivAEKDlVuZnVybFJlc3BvbnNlEgsKA3VybBgBIAEoCRINCgV0aXRsZRgCIAEoCRITCgtkZXNjcmlwdGlvbhgDIAEoCRIRCglzaXRlX25hbWUYBCABKAkSEQoJaW1hZ2VfdXJsGAUgASgJEhMKC2Zhdmljb25fdXJsGAYgASgJEh0KBHRhc2sYByABKAsyDy5jYWxhYmEudjEuVGFzaxIfCgVib2FyZBgIIAEoCzIQLmNhbGFiYS52MS5Cb2FyZEKZAQoNY29tLmNhbGFiYS52MUILVW5mdXJsUHJvdG9QAVo2Z2l0aHViLmNvbS9jYWxhYmEvY2FsYWJhL3NlcnZlci9nZW4vY2FsYWJhL3YxO2NhbGFiYXYxogIDQ1hYqgIJQ2FsYWJhLlYxygIJQ2FsYWJhXFYx4gIVQ2FsYWJhXFYxXEdQQk1ldGFkYXRh6gIKQ2FsYWJhOjpWMWIGcHJvdG8z", [file_calaba_v1_boards]);
 
 /**
  * GET /api/unfurl?url= — link preview (OpenGraph / Twitter card). Image URLs point to the
@@ -55,6 +57,20 @@ export type UnfurlResponse = Message<"calaba.v1.UnfurlResponse"> & {
    * @generated from field: string favicon_url = 6;
    */
   faviconUrl: string;
+
+  /**
+   * Own links (ADR-0042): an https://<app host>/t/<KEY-N> or /b/<board id> link is answered from
+   * the database by the caller's rights, never fetched: task (with board: key, name, statuses) or
+   * board only; 404 when the caller cannot see it. title / description are filled as for any card.
+   *
+   * @generated from field: calaba.v1.Task task = 7;
+   */
+  task?: Task | undefined;
+
+  /**
+   * @generated from field: calaba.v1.Board board = 8;
+   */
+  board?: Board | undefined;
 };
 
 /**

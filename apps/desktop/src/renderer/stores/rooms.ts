@@ -202,7 +202,14 @@ const isDefaultNotify = (n: RoomNotificationSettings): boolean =>
   (n.level === NotificationLevel.INHERIT || n.level === NotificationLevel.UNSPECIFIED) && !n.mutedUntil;
 
 const isDefaultWsNotify = (n: WorkspaceNotificationSettings): boolean =>
-  (n.level === NotificationLevel.MENTIONS || n.level === NotificationLevel.UNSPECIFIED) && !n.mutedUntil;
+  (n.level === NotificationLevel.MENTIONS || n.level === NotificationLevel.UNSPECIFIED) &&
+  !n.mutedUntil &&
+  (n.taskLevel === NotificationLevel.ALL || n.taskLevel === NotificationLevel.UNSPECIFIED);
+
+/** The workspace's «Задачи» level (ADR-0042 §4): ALL unless set. */
+export function workspaceTaskLevel(n: WorkspaceNotificationSettings | undefined): NotificationLevel {
+  return !n || n.taskLevel === NotificationLevel.UNSPECIFIED ? NotificationLevel.ALL : n.taskLevel;
+}
 
 export interface RoomNotify {
   /** The stored level: a room's INHERIT / ALL / MENTIONS / NONE, a workspace's ALL / MENTIONS / NONE. */
@@ -320,7 +327,7 @@ const cmpKey = (a: readonly number[], b: readonly number[]): number => {
 
 export function roomsOfWorkspace(byId: Record<string, Room>, wsId: string): Room[] {
   return Object.values(byId)
-    .filter((r) => r.workspaceId === wsId)
+    .filter((r) => r.workspaceId === wsId && r.type !== RoomType.TASK)
     .sort((a, b) => a.position - b.position || a.name.localeCompare(b.name));
 }
 
@@ -359,3 +366,6 @@ export function badgeCount(s: Pick<RoomsState, 'byId' | 'mentions'>): number {
 }
 
 export const isVoice = (r: Room | undefined): boolean => r?.type === RoomType.VOICE;
+
+/** A task's hidden comment room (ADR-0042): never in room lists, switchers or the rail's counts. */
+export const isTaskRoom = (r: Pick<Room, 'type'> | undefined): boolean => r?.type === RoomType.TASK;

@@ -13,6 +13,7 @@ import { ruModeration } from './moderation';
 import { ruPicker } from './picker';
 import { ruRoles } from './roles';
 import { ruCalendar } from './calendar';
+import { ruBoards } from './boards';
 import { ruPlan } from './plan';
 import { ruShell } from './shell';
 import { ruVideo } from './video';
@@ -45,6 +46,7 @@ export const ru = {
   ...ruPicker,
   ...ruRoles,
   ...ruCalendar,
+  ...ruBoards,
   // common
   'common.cancel': 'Отмена',
   'common.create': 'Создать',
@@ -266,6 +268,10 @@ export const ru = {
   'perm.MANAGE_WORKSPACE': 'Управлять пространством',
   'perm.MANAGE_ROLES': 'Управлять ролями',
   'perm.MANAGE_STICKERS': 'Управлять стикерами',
+  'perm.VIEW_BOARD': 'Видеть доску',
+  'perm.CREATE_TASKS': 'Создавать задачи',
+  'perm.EDIT_TASKS': 'Править любые задачи',
+  'perm.MANAGE_BOARD': 'Управлять доской',
   'perm.ADMINISTRATOR': 'Администратор',
   'perm.allow': 'разрешено',
   'perm.deny': 'запрещено',

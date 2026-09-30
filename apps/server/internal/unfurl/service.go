@@ -40,6 +40,9 @@ type Service struct {
 	page, img *http.Client
 	key       []byte // HMAC key for image proxy URLs
 	limiter   *redisx.RateLimiter
+	// Internal answers own links (ADR-0042: /t/<KEY-N>, /b/<id> on the app hosts) from the
+	// database by the caller's rights; ok=false = not an own link. nil = none.
+	Internal func(r *http.Request, u *url.URL) (resp *v1.UnfurlResponse, ok bool, err error)
 }
 
 // Options tune the service. AllowAddr overrides the address policy (tests only; nil = PublicAddr).
@@ -93,6 +96,16 @@ func (s *Service) unfurl(w http.ResponseWriter, r *http.Request) error {
 	u, err := CheckURL(r.URL.Query().Get("url"))
 	if err != nil {
 		return httpx.Validation("url", "must be an http(s) URL")
+	}
+	if s.Internal != nil {
+		if resp, ok, err := s.Internal(r, u); ok {
+			if err != nil {
+				return err
+			}
+			w.Header().Set("Cache-Control", "private, no-store")
+			httpx.Write(w, http.StatusOK, resp)
+			return nil
+		}
 	}
 	key := cacheKey(u.String())
 	if b, err := s.redis.Do(r.Context(), s.redis.B().Get().Key(key).Build()).AsBytes(); err == nil {

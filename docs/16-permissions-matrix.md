@@ -44,6 +44,8 @@
 | Календарь (ADR-0038): видеть встречу | не гость; организатор, участник встречи или `VIEW_ROOM` в её комнате; бот — только чтение, без адресов внешних | `calendar.viewer.sees` | — |
 | Создать встречу | не гость, не бот; комната — голосовая, видимая; внешние адреса — подтверждённая почта | `calendar.create`, `checkRoom` | — |
 | Изменить / отменить встречу (и вхождение) | организатор; иначе `MANAGE_ROOM` room встречи, без комнаты — `MANAGE_WORKSPACE` ws; бот — 403 | `calendar.viewer.canEdit` | `event.can_edit` |
+| Свободно/занято, подбор времени (ADR-0041) | не гость, не бот; о ком спрашивают — участники (не гости, не боты) того же пространства; `event_id` — только видимой встречи этого пространства | `calendar.busyViewer`, `calendar.people`, `viewer.sees` | — |
+| Внешний календарь CalDAV (ADR-0041) | свой аккаунт; не гость, не бот | `caldav.person` | — |
 | Ответить на встречу | участник встречи; внешний — подписанной ссылкой без входа | `calendar.rsvp`, `calendar.publicAnswer` | — |
 | Гостевая ссылка встречи для внешнего | делается от имени организатора, если у него `MANAGE_ROOM` room (не шире его прав) | `calendar.linkBits` | `event.guest_links` |
 | Саммари, аудио, транскрипт записи (docs/09 #47) | `VIEW_ROOM` room (карточка — сообщение комнаты; аудио — вложение; ограниченная — только допущенные) | `files.CanRead`, `recording.transcript` | — |
@@ -58,6 +60,14 @@
 | Бот: любое действие | те же биты, что у человека (роли + переопределения; встроенная роль всегда `member`) + маршрут `allow` в `internal/app/botroutes.go`, иначе `403 BOT_NOT_ALLOWED` | `botGate` (`auth.NoBots`) + обработчик | — |
 | Бот: писать в DM | общее пространство (не гость) и не заблокирован собеседником (`403 BOT_BLOCKED`) | `dms.create`, `messages.create` (`CheckBotBlocked`) | — |
 | Команды бота в комнате (подсказки) | `VIEW_ROOM` room у запрашивающего и у бота | `bots.roomCommands`, `messages.resolveCommand` | — |
+| Доски (ADR-0042): видеть доску, задачи, ленту; комментировать, подписаться, загрузить вложение | `VIEW_BOARD` board (приватная — только по переопределению); гость — никогда (404, список — 403) | `boards.board`, `perm.Resolver.Board`, комната задачи — `perm.TaskRoom` | `computeMemberBoardPermissions` |
+| Создать доску | `MANAGE_WORKSPACE` ws + тариф `boards` (Free 3), ≤ 50; создатель получает все биты доски лично | `boards.createBoard`, `plans.Check(KindBoards)` | — (клиент доски) |
+| Создать задачу; править свои и назначенные на себя, архивировать свои | `CREATE_TASKS` board | `boards.createTask`, `canEdit` | — |
+| Править / двигать / архивировать любые задачи; закрепы и удаление чужих комментариев | `EDIT_TASKS` board (в комнате задачи → `MANAGE_MESSAGES`) | `boards.requireEdit`, `setArchived`, `messages.delete` | — |
+| Статусы, лейблы (правка / удаление), вехи, настройки, общие виды, порядок, архив доски; журнал и CSV (или `EDIT_TASKS`) | `MANAGE_BOARD` board; создать лейбл — ещё и `CREATE_TASKS` | `boards.manageBoard` | — |
+| Доступ к доске (переопределения) | `MANAGE_BOARD` board; только биты доски; не-админ — только свои биты; бот-токен — 403 | `boards.validateOverrides` | — |
+| Перенести задачу на другую доску · удалить доску навсегда (`?purge=1`, бот — 403) | `MANAGE_BOARD` на обеих · `MANAGE_BOARD` | `boards.moveBoard`, `deleteBoard` | — |
+| «Создать задачу из сообщения» | `CREATE_TASKS` board + `VIEW_ROOM` в комнате сообщения (иначе 404) | `boards.quoteMessage` | — |
 | Позвонить (`POST /api/dms/{id}/call`, ADR-0034) | участник DM, не гость; собеседник — человек (не бот, не гость, не отключён) с общим пространством (оба полные участники); бот-токен — 403; занят → `409 BUSY`, сам в звонке → `409 IN_CALL` | `calls.start` (`mayCall`) | `useCanDm` (клиент — в работе) |
 | Принять / отклонить · отменить · завершить звонок (`POST /api/calls/{id}/accept · decline · cancel · hangup`) | участник звонка (иначе 404): accept/decline — вызываемый, cancel — звонящий (иначе 403), hangup — любой; состояние RINGING / ACTIVE (иначе 409); бот-токен — 403 | `calls.action` (`Record.Apply`) | — |
 | Голос звонка DM (`POST /api/rooms/{dm}/join`) | участник ACTIVE-звонка этой DM, иначе `409 CALL_NOT_ACTIVE` (перепроверка на `participant_joined`); grant фиксированный: `microphone`, `screen_share(+audio)`, `camera`; без модерации | `rtc.joinDM`, `dmParticipantJoined` | — |

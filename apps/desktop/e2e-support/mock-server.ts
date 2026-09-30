@@ -26,6 +26,42 @@ import {
 } from '@bufbuild/protobuf';
 import { timestampFromMs, timestampMs, type Timestamp } from '@bufbuild/protobuf/wkt';
 import {
+  BoardPermissionsResponseSchema,
+  BoardResponseSchema,
+  BoardViewResponseSchema,
+  CreateBoardLabelRequestSchema,
+  CreateBoardMilestoneRequestSchema,
+  CreateBoardRequestSchema,
+  CreateBoardStatusRequestSchema,
+  CreateBoardViewRequestSchema,
+  CreateTaskRequestSchema,
+  ListBoardViewsResponseSchema,
+  ListBoardsResponseSchema,
+  ListTasksResponseSchema,
+  MyTasksResponseSchema,
+  SearchTasksResponseSchema,
+  SetAssigneesRequestSchema,
+  SetBoardPermissionsRequestSchema,
+  SetBoardPositionRequestSchema,
+  SetTaskRelationRequestSchema,
+  SetTaskSubscriptionRequestSchema,
+  TaskActivityPageSchema,
+  TaskFilterSchema,
+  TaskResponseSchema,
+  TaskSchema,
+  UpdateBoardLabelRequestSchema,
+  UpdateBoardMilestoneRequestSchema,
+  UpdateBoardRequestSchema,
+  UpdateBoardStatusRequestSchema,
+  UpdateBoardViewRequestSchema,
+  UpdateTaskRequestSchema,
+  type Task,
+  type TaskActivity,
+  type TaskFilter,
+  type TaskRelationKind,
+} from '@calaba/protocol';
+import { BoardError, BoardsMock, MANAGE_BOARD } from './mock-boards';
+import {
   AdminGetWorkspaceResponseSchema,
   CallActionResponseSchema,
   CallOutcome,
@@ -88,6 +124,7 @@ import {
   CreateEmailInviteResponseSchema,
   EmailInviteSchema,
   ForgotPasswordRequestSchema,
+  ForgotPasswordResponseSchema,
   InviteLookupRequestSchema,
   InviteLookupResponseSchema,
   ListEmailInvitesResponseSchema,
@@ -267,6 +304,7 @@ import {
   VoiceInfoSchema,
   UserSchema,
   UserSettingsSchema,
+  WorkHoursSchema,
   VoiceStateSchema,
   VoiceDisconnectReason,
   VoiceStreamStopReason,
@@ -342,6 +380,7 @@ import {
   defaultSettings,
   effectiveMedia,
   fileMeta,
+  mockId,
   nextId,
   sha256,
   tick,
@@ -359,7 +398,14 @@ import {
 import { MARKETING_UNFURLS } from './fixtures-marketing';
 import {
   ACTIVE_BEFORE_MS,
+  DEFAULT_WORK_HOURS,
   REMINDER_CHOICES,
+  davOut,
+  meetingBusy,
+  slotsOf,
+  type CalDavRec,
+  type Span,
+  type WorkHoursRec,
   activeOccurrence,
   counts,
   eventForGuest,
@@ -374,6 +420,7 @@ import {
   type Occurrence,
 } from './mock-calendar';
 import { cardPicture, encodePng, pngSize } from './png';
+import { freeWindows, intersectIntervals, workIntervals } from '../src/renderer/lib/calendar/freebusy';
 import { admissionKey, admissionOutcome, deciderView, guestView, requiresApproval, type AdmissionRec } from './mock-admissions';
 
 export {
@@ -585,6 +632,12 @@ export interface MockServer {
   setEventActive(eventId: string, active: boolean, occurrenceAtMs?: number): void;
   /** ADR-0038 §6: an occurrence's recording (shown in lists / the card; no event is sent). */
   setEventRecording(eventId: string, occurrenceAtMs: number, recordingId: string): void;
+  /** ADR-0041: `userId`'s busy time from an external calendar (free / busy kind EXTERNAL), replacing it. */
+  setBusy(userId: string, intervals: readonly Span[]): void;
+  /** ADR-0041: `userId`'s work hours (default 10:00–19:00 Mon–Fri in their zone; the mock's default zone is Moscow). */
+  setWorkHours(userId: string, wh: WorkHoursRec): void;
+  /** ADR-0041 §4: what the fake CalDAV server holds for `userId`: a sync with import on copies it to their external busy time (default: 11:00–12:00 MSK of the clock's day). */
+  setCalDavRemote(userId: string, intervals: readonly Span[]): void;
   /** The answer link token of an external attendee (the page /e/<id>/rsvp?t=…). */
   eventRsvpToken(eventId: string, email: string, status: AttendeeStatus): string;
   /** ADR-0040: the room's «Подтверждение входа гостей» (ROOM_UPDATE), as PATCH /api/rooms/{id}. */
@@ -610,6 +663,10 @@ export interface MockServer {
    * Returns the absolute /r/<code> URL; GET /api/event-rsvp then carries it as guest_url.
    */
   eventGuestLink(eventId: string, email: string): string;
+  /** Task boards (ADR-0042, mock-boards.ts): the live domain (tasks, boards, activity). */
+  readonly boards: BoardsMock;
+  /** A task change by another user (e.g. a rename during a call): TASK_UPDATE to the board's viewers. */
+  updateTaskAs(actorId: string, taskId: string, patch: { title?: string; statusId?: string }): Task;
 }
 
 export async function startMockServer(opts: MockServerOptions = {}): Promise<MockServer> {
@@ -658,6 +715,9 @@ export async function startMockServer(opts: MockServerOptions = {}): Promise<Moc
     rsvp: (id, u, st) => impl.rsvpEvent(id, u, st),
     emitReminder: (id, u, min, at) => impl.emitReminder(id, u, min, at),
     setEventActive: (id, active, at) => impl.setEventActive(id, active, at),
+    setBusy: (u, list) => impl.calExternal.set(u, [...list]),
+    setWorkHours: (u, wh) => impl.calWorkHours.set(u, { ...wh, days: [...wh.days] }),
+    setCalDavRemote: (u, list) => impl.calDavRemote.set(u, [...list]),
     setEventRecording: (id, at, rec) => impl.setEventRecording(id, at, rec),
     eventRsvpToken: (id, email, st) => rsvpToken(id, email, st),
     setGuestApproval: (roomId, on) => impl.setGuestApproval(roomId, on),
@@ -665,6 +725,10 @@ export async function startMockServer(opts: MockServerOptions = {}): Promise<Moc
     decideAdmission: (roomId, userId, status, by) => impl.decideAdmission(roomId, userId, status, by),
     eventViewToken: (id, email) => viewToken(id, email),
     eventGuestLink: (id, email) => impl.eventGuestLink(id, email),
+    get boards() {
+      return impl.boards;
+    },
+    updateTaskAs: (actor, taskId, patch) => impl.updateTaskAs(actor, taskId, patch),
   };
 }
 
@@ -964,9 +1028,17 @@ class MockImpl {
   private callSeq = 0;
   /** Meetings (ADR-0038) by id; cancelled ones stay (cancelled_at). */
   private readonly calEvents = new Map<string, CalEventRec>();
+  /** Task boards (ADR-0042); rebuilt with the state. */
+  boards: BoardsMock;
+  /** Free / busy (ADR-0041): work hours, external busy time, CalDAV accounts and the fake remote calendars, by user. */
+  readonly calWorkHours = new Map<string, WorkHoursRec>();
+  readonly calExternal = new Map<string, Span[]>();
+  readonly calDav = new Map<string, CalDavRec>();
+  readonly calDavRemote = new Map<string, Span[]>();
 
   constructor(opts: MockServerOptions) {
     this.state = buildState(opts.scenario ?? 'data');
+    this.boards = this.newBoards();
     this.lk = {
       url: opts.livekitUrl ?? 'ws://127.0.0.1:7880',
       key: opts.livekitKey ?? 'devkey',
@@ -977,7 +1049,10 @@ class MockImpl {
     this.registerRoutes();
     this.registerCallRoutes();
     this.calendarRoutes();
+    this.freeBusyRoutes();
     this.admissionRoutes();
+    this.boardRoutes();
+    this.seedBoards();
     this.http.on('upgrade', (req, socket, head) => {
       const path = new URL(req.url ?? '/', 'http://mock').pathname;
       if (path !== '/gateway' || Date.now() < this.gatewayDownUntil) {
@@ -1019,11 +1094,17 @@ class MockImpl {
     this.timers.clear();
     this.releaseFiles();
     this.state = buildState(scenario);
+    this.boards = this.newBoards();
+    this.seedBoards();
     this.voiceSessions.clear();
     this.calls.clear();
     this.userCall.clear();
     this.callSeq = 0;
     this.calEvents.clear();
+    this.calWorkHours.clear();
+    this.calExternal.clear();
+    this.calDav.clear();
+    this.calDavRemote.clear();
     this.droppedSessions.clear();
     this.gatewayDownUntil = 0;
     this.clockMs = null;
@@ -1075,6 +1156,8 @@ class MockImpl {
     if (room.type === RoomType.DM) {
       return computePermissions({ role: WorkspaceRole.UNSPECIFIED, dm: { participant: this.dmPeer(room.id, userId) !== null } });
     }
+    // A task's comment room (ADR-0042): rights from the task's board.
+    if (room.type === RoomType.TASK) return this.boards.roomPerms(room.id, userId) ?? 0n;
     // A notes shelf (ADR-0039): the DM set for its owner only.
     if (room.type === RoomType.NOTES) {
       return computePermissions({ role: WorkspaceRole.UNSPECIFIED, dm: { participant: this.state.shelves.get(room.id)?.ownerId === userId } });
@@ -1293,7 +1376,7 @@ class MockImpl {
 
   /** Runs `fn`; then ROOM_CREATE / ROOM_DELETE to each member whose room visibility changed (docs/05). */
   private withVisibility(wsId: string, fn: () => void): void {
-    const rooms = [...this.state.rooms.values()].filter((r) => r.workspaceId === wsId);
+    const rooms = [...this.state.rooms.values()].filter((r) => r.workspaceId === wsId && r.type !== RoomType.TASK);
     const before = new Map(this.membersOf(wsId).map((m) => [m.userId, new Set(rooms.filter((r) => this.canView(r, m.userId)).map((r) => r.id))]));
     fn();
     for (const m of this.membersOf(wsId)) {
@@ -1312,7 +1395,8 @@ class MockImpl {
     return create(MeSchema, {
       user: u.user,
       email: u.email,
-      settings: u.settings,
+      // ADR-0041: work hours are kept apart (calWorkHours), like the reminders on the server.
+      settings: { ...clone(UserSettingsSchema, u.settings), workHours: create(WorkHoursSchema, this.workHoursOf(u.user.id)) },
       isSuperadmin: this.state.superadmins.has(u.user.id),
       // Guests have no email: always «verified» (user.proto).
       emailVerified: u.user.isGuest || u.emailVerified,
@@ -1369,9 +1453,10 @@ class MockImpl {
     const ws = this.state.workspaces.get(wsId);
     const m = this.member(wsId, userId);
     const rooms = [...this.state.rooms.values()]
-      .filter((r) => r.workspaceId === wsId && this.canView(r, userId))
+      .filter((r) => r.workspaceId === wsId && r.type !== RoomType.TASK && this.canView(r, userId))
       .sort((a, b) => a.position - b.position || a.id.localeCompare(b.id));
     const members = this.membersOf(wsId);
+    const boards = m && m.role !== WorkspaceRole.GUEST ? this.boards.snapshot(wsId, userId) : { boards: [], unreadTaskIds: [] };
     return create(WorkspaceSnapshotSchema, {
       ...(ws ? { workspace: ws } : {}),
       role: m?.role ?? WorkspaceRole.UNSPECIFIED,
@@ -1392,6 +1477,8 @@ class MockImpl {
       backgrounds: this.backgroundsOf(wsId),
       sounds: this.soundsOf(wsId),
       activeEvents: m ? this.activeEvents(wsId, userId) : [],
+      boards: boards.boards,
+      unreadTaskIds: boards.unreadTaskIds,
     });
   }
 
@@ -1422,7 +1509,7 @@ class MockImpl {
           pendingAdmissions: this.ownAdmissions(u.user.id),
           // Every visible room (server contract): never read → empty marker.
           readStates: [...this.state.rooms.values()]
-            .filter((r) => (wsIds.includes(r.workspaceId) || r.type === RoomType.DM || r.type === RoomType.NOTES) && this.canView(r, u.user.id))
+            .filter((r) => r.type !== RoomType.TASK && (wsIds.includes(r.workspaceId) || r.type === RoomType.DM || r.type === RoomType.NOTES) && this.canView(r, u.user.id))
             .map((r): [string, string] => [r.id, reads.get(r.id) ?? ''])
             .sort(([a], [b]) => a.localeCompare(b))
             .map(([roomId, lastReadMessageId]) => create(ReadStateSchema, { roomId, lastReadMessageId, ...this.readCounts(roomId, u.user.id, lastReadMessageId) })),
@@ -1437,7 +1524,7 @@ class MockImpl {
             .sort((a, b) => a.workspaceId.localeCompare(b.workspaceId)),
           // Read receipts of workspace rooms (docs/09 #92); DMs carry theirs in dms[].
           peerReads: [...this.state.rooms.values()]
-            .filter((r) => r.type !== RoomType.DM && wsIds.includes(r.workspaceId) && this.canView(r, u.user.id))
+            .filter((r) => r.type !== RoomType.DM && r.type !== RoomType.TASK && wsIds.includes(r.workspaceId) && this.canView(r, u.user.id))
             .map((r) => ({ roomId: r.id, lastReadMessageId: this.peerRead(r.id, u.user.id) }))
             .filter((pr) => pr.lastReadMessageId !== '')
             .sort((a, b) => a.roomId.localeCompare(b.roomId)),
@@ -2270,6 +2357,7 @@ class MockImpl {
     const peer = room.type === RoomType.DM ? this.dmPeer(room.id, authorId) : null;
     if (peer && this.dmStateOf(peer, room.id).archivedAt) this.setDmState(peer, room.id, { archived: false });
     this.toWorkspace(room.workspaceId, { event: { case: 'messageCreate', value: { workspaceId: room.workspaceId, message: msg } } }, room.id);
+    if (room.type === RoomType.TASK) this.boards.onComment(room.id, authorId, msg, parseMentions(content).users);
     return msg;
   }
 
@@ -2561,6 +2649,14 @@ class MockImpl {
     this.route('PATCH', '/api/me', (c) => {
       const u = this.auth(c).user;
       const b = parseBody(c, UpdateMeRequestSchema);
+      // ADR-0041: work_hours (validated like the server; guests and bots 403).
+      if (b.workHours) {
+        if (u.user.isGuest || u.user.isBot) throw forbidden('work hours are not for guests and bots');
+        const wh = { startMin: b.workHours.startMin, endMin: b.workHours.endMin, days: [...new Set(b.workHours.days)].sort((x, y) => x - y) };
+        if (wh.startMin % 15 || wh.endMin % 15 || wh.startMin < 0 || wh.endMin > 1440 || wh.endMin <= wh.startMin) throw invalid('workHours', 'work hours are 15-minute steps, end after start');
+        if (!wh.days.length || wh.days.some((d) => d < 1 || d > 7)) throw invalid('workHours.days', 'days are 1..7, at least one');
+        this.calWorkHours.set(u.user.id, wh);
+      }
       if (b.displayName !== undefined) {
         if (!b.displayName.trim()) throw invalid('displayName', 'display name required');
         u.user.displayName = b.displayName.trim();
@@ -3778,6 +3874,7 @@ class MockImpl {
         { event: { case: 'messageDelete', value: { workspaceId: room.workspaceId, roomId: room.id, messageId: msg.id } } },
         room.id,
       );
+      if (room.type === RoomType.TASK) this.boards.onCommentDeleted(room.id);
       noContent(c.res);
     });
 
@@ -3927,8 +4024,28 @@ class MockImpl {
     });
 
     this.route('GET', '/api/unfurl', (c) => {
-      this.uid(c);
+      const me = this.uid(c);
       const url = c.url.searchParams.get('url') ?? '';
+      // Own links (ADR-0042): /t/<KEY-N> and /b/<id> from the boards, 404 when not visible.
+      const ownTask = /\/t\/([A-Za-z][A-Za-z0-9]{1,5}-[0-9]+)\/?$/.exec(url);
+      const ownBoard = /\/b\/([0-9a-f-]{36})\/?$/.exec(url);
+      if (ownTask?.[1] || ownBoard?.[1]) {
+        try {
+          if (ownTask?.[1]) {
+            const rec = this.boards.tasks.get(this.boards.byKey(ownTask[1], me));
+            if (!rec) throw new Error('gone');
+            const task = this.boards.taskOut(rec, me, false);
+            const board = this.boards.getBoard(task.boardId, me);
+            sendMsg(c.res, 200, UnfurlResponseSchema, { url, title: `${task.key} ${task.title}`, siteName: board.name, task, board });
+          } else {
+            const board = this.boards.getBoard(ownBoard?.[1] ?? '', me);
+            sendMsg(c.res, 200, UnfurlResponseSchema, { url, title: board.name, board });
+          }
+        } catch {
+          throw notFound('preview not found');
+        }
+        return;
+      }
       const card = UNFURLS[url] ?? MARKETING_UNFURLS[url];
       if (!card) throw notFound('preview not found');
       sendMsg(c.res, 200, UnfurlResponseSchema, {
@@ -5471,9 +5588,17 @@ class MockImpl {
     this.route('POST', '/api/auth/password/forgot', (c) => {
       const email = parseBody(c, ForgotPasswordRequestSchema).email.trim().toLowerCase();
       if (!EMAIL_RE.test(email)) throw invalid('email', 'invalid email address');
-      const u = [...s().users.values()].find((x) => x.email === email && !x.user.isGuest);
+      const users = [...s().users.values()];
+      const u = users.find((x) => x.email === email && !x.user.isGuest);
       if (u) s().emailCodes.set(`reset:${email}`, { attempts: 0, sentAtMs: Date.now() });
-      noContent(c.res); // always 204: no account enumeration
+      // Same answer whether or not the address has an account, except the hint (docs/09 #137):
+      // no exact account, but the same login at a sibling domain (owner@calaba.ru ↔ owner@calaba.test).
+      const at = email.lastIndexOf('@');
+      const name = (e: string): string => e.slice(e.lastIndexOf('@') + 1).replace(/\.[^.]*$/, '');
+      const similarAccount =
+        !users.some((x) => x.email === email) &&
+        users.some((x) => !x.user.isGuest && x.email.slice(0, x.email.lastIndexOf('@')) === email.slice(0, at) && name(x.email) === name(email));
+      sendMsg(c.res, 200, ForgotPasswordResponseSchema, { similarAccount });
     });
 
     this.route('POST', '/api/auth/password/reset', (c) => {
@@ -5807,6 +5932,151 @@ class MockImpl {
     });
   }
 
+  // ------------------------------------------------ free / busy, find a time, CalDAV (ADR-0041)
+
+  private workHoursOf(userId: string): WorkHoursRec {
+    return this.calWorkHours.get(userId) ?? DEFAULT_WORK_HOURS;
+  }
+
+  /** The mock's zone of a user: User.timezone, else Moscow (the visual tests' zone). */
+  private zoneOf(userId: string): string {
+    return this.state.users.get(userId)?.user.timezone || 'Europe/Moscow';
+  }
+
+  /** One person's busy time for `viewer` (ADR-0041 §1): event_id only for meetings the viewer sees. */
+  private busyOf(wsId: string, userId: string, viewer: string, fromMs: number, toMs: number): Array<{ startsAt: string; endsAt: string; eventId?: string; kind: string; allDay: boolean }> {
+    const iso = (t: number): string => new Date(t).toISOString();
+    const out: Array<{ startsAt: string; endsAt: string; eventId?: string; kind: string; allDay: boolean }> = [];
+    for (const o of meetingBusy(this.calEvents.values(), wsId, userId, fromMs, toMs)) {
+      const seen = !!this.calView(o.rec, viewer);
+      out.push({ startsAt: iso(o.startMs), endsAt: iso(o.endMs), ...(seen ? { eventId: o.rec.ev.id } : {}), kind: 'BUSY_KIND_MEETING', allDay: o.rec.ev.allDay });
+    }
+    for (const x of this.calExternal.get(userId) ?? []) {
+      if (x.endMs > fromMs && x.startMs < toMs) out.push({ startsAt: iso(x.startMs), endsAt: iso(x.endMs), kind: 'BUSY_KIND_EXTERNAL', allDay: false });
+    }
+    return out.sort((a, b) => Date.parse(a.startsAt) - Date.parse(b.startsAt));
+  }
+
+  private freeBusyRoutes(): void {
+    const DAY = 86_400_000;
+    const asker = (wsId: string, me: string): void => {
+      const { m } = this.workspaceFor(wsId, me);
+      if (m.role === WorkspaceRole.GUEST || this.state.users.get(me)?.user.isBot) throw forbidden('free / busy is not available for guests and bots');
+    };
+    const people = (wsId: string, ids: readonly string[]): string[] => {
+      const list = [...new Set(ids.filter(Boolean))];
+      if (!list.length || list.length > 20) throw invalid('users', '1..20 users');
+      for (const u of list) {
+        const m = this.member(wsId, u);
+        if (!m || m.role === WorkspaceRole.GUEST || this.state.users.get(u)?.user.isBot) throw invalid('users', 'users must be members of the workspace');
+      }
+      return list;
+    };
+    const span = (from: number, to: number): void => {
+      if (Number.isNaN(from) || Number.isNaN(to) || to <= from || to - from > 14 * DAY) throw invalid('to', 'from / to: RFC 3339, to after from, at most 14 days');
+    };
+
+    this.route('GET', '/api/workspaces/:id/freebusy', (c) => {
+      const me = this.uid(c);
+      const wsId = c.params[0] ?? '';
+      asker(wsId, me);
+      const list = people(wsId, (c.url.searchParams.get('users') ?? '').split(','));
+      const from = Date.parse(c.url.searchParams.get('from') ?? '');
+      const to = Date.parse(c.url.searchParams.get('to') ?? '');
+      span(from, to);
+      const users = list.map((u) => ({ userId: u, timezone: this.zoneOf(u), workHours: this.workHoursOf(u), busy: this.busyOf(wsId, u, me, from, to) }));
+      send(c.res, 200, JSON.stringify({ users }), 'application/json');
+    });
+
+    this.route('POST', '/api/workspaces/:id/freebusy/suggest', (c) => {
+      const me = this.uid(c);
+      const wsId = c.params[0] ?? '';
+      asker(wsId, me);
+      const b = JSON.parse(c.raw.toString('utf8') || '{}') as { users?: string[]; durationMin?: unknown; from?: string; to?: string; withinWorkHours?: boolean; roomId?: string };
+      const list = people(wsId, b.users ?? []);
+      const dur = Number(b.durationMin ?? 0);
+      if (!(dur >= 15 && dur <= 480) || dur % 15) throw invalid('durationMin', 'duration is 15..480 minutes in 15-minute steps');
+      const from = Date.parse(b.from ?? '');
+      const to = Date.parse(b.to ?? '');
+      span(from, to);
+      const toSpans = (x: ReturnType<MockImpl['busyOf']>): Array<{ start: number; end: number }> => x.map((i) => ({ start: Date.parse(i.startsAt), end: Date.parse(i.endsAt) }));
+      const busy = list.map((u) => toSpans(this.busyOf(wsId, u, me, from, to)));
+      if (b.roomId) {
+        const roomBusy: Array<{ start: number; end: number }> = [];
+        for (const rec of this.calEvents.values()) {
+          if (rec.ev.roomId !== b.roomId || rec.ev.cancelledAt) continue;
+          for (const o of occurrences(rec, from, to)) roomBusy.push({ start: o.startMs, end: o.endMs });
+        }
+        busy.push(roomBusy);
+      }
+      let work: Array<Array<{ start: number; end: number }>> | null = null;
+      if (b.withinWorkHours) {
+        work = list.map((u) => workIntervals(this.workHoursOf(u), this.zoneOf(u), from, to));
+        let common: Array<{ start: number; end: number }> = [{ start: from, end: to }];
+        for (const w of work) common = intersectIntervals(common, w);
+        if (!common.length) throw new HttpError(409, ErrorCode.NO_COMMON_HOURS, 'the work hours of these people never overlap');
+      }
+      const slots = slotsOf(freeWindows({ from, to, busy, work, minMinutes: dur }), dur);
+      send(c.res, 200, JSON.stringify({ slots: slots.map((x) => ({ startsAt: new Date(x.startMs).toISOString(), endsAt: new Date(x.endMs).toISOString() })) }), 'application/json');
+    });
+
+    // CalDAV (ADR-0041 §4): one fake account per user; any https address «discovers» two calendars,
+    // an address with «fail» answers 422 like a server that refused the login.
+    const davUser = (c: Ctx): string => {
+      const u = this.auth(c).user;
+      if (u.user.isGuest || u.user.isBot) throw forbidden('CalDAV is not for guests and bots');
+      return u.user.id;
+    };
+    const syncDav = (userId: string, a: CalDavRec): void => {
+      a.lastSyncAt = this.calNow();
+      a.lastError = '';
+      if (!a.import) return;
+      const clock = this.calNow();
+      const day = new Date(clock);
+      day.setUTCHours(8, 0, 0, 0); // 11:00 MSK
+      this.calExternal.set(userId, [...(this.calDavRemote.get(userId) ?? [{ startMs: day.getTime(), endMs: day.getTime() + 3_600_000 }])]);
+    };
+    this.route('GET', '/api/me/caldav', (c) => {
+      send(c.res, 200, JSON.stringify(davOut(this.calDav.get(davUser(c)))), 'application/json');
+    });
+    this.route('POST', '/api/me/caldav', (c) => {
+      const me = davUser(c);
+      const b = JSON.parse(c.raw.toString('utf8') || '{}') as { url?: string; username?: string; password?: string };
+      const url = (b.url ?? '').trim();
+      if (!/^https:\/\/[^\s/]+/.test(url)) throw invalid('url', 'the address must be https');
+      if (!b.username || !b.password) throw invalid('username', 'login and password are required');
+      if (url.includes('fail')) throw invalid('password', 'the server refused the login');
+      const a: CalDavRec = { url, username: b.username, calendarHref: '', import: false, push: false, lastSyncAt: null, lastError: '' };
+      this.calDav.set(me, a);
+      send(c.res, 200, JSON.stringify(davOut(a)), 'application/json');
+    });
+    this.route('PUT', '/api/me/caldav', (c) => {
+      const me = davUser(c);
+      const a = this.calDav.get(me);
+      if (!a) throw notFound('no CalDAV account');
+      const b = JSON.parse(c.raw.toString('utf8') || '{}') as { calendarHref?: string; import?: boolean; push?: boolean };
+      if (b.calendarHref !== undefined) a.calendarHref = b.calendarHref;
+      a.import = !!b.import;
+      a.push = !!b.push;
+      if (!a.import) this.calExternal.delete(me);
+      else if (a.calendarHref) syncDav(me, a);
+      send(c.res, 200, JSON.stringify(davOut(a)), 'application/json');
+    });
+    this.route('POST', '/api/me/caldav/sync', (c) => {
+      const me = davUser(c);
+      const a = this.calDav.get(me);
+      if (!a) throw notFound('no CalDAV account');
+      syncDav(me, a);
+      send(c.res, 200, JSON.stringify(davOut(a)), 'application/json');
+    });
+    this.route('DELETE', '/api/me/caldav', (c) => {
+      const me = davUser(c);
+      this.calDav.delete(me);
+      this.calExternal.delete(me);
+      noContent(c.res);
+    });
+  }
+
   // ------------------------------------------------ calendar (ADR-0038)
 
   /** How `userId` sees `rec` in its workspace: null = not at all (guests, strangers, other rooms). */
@@ -6038,6 +6308,242 @@ class MockImpl {
       else if (v && occ && room && this.canView(room, userId)) out.push(eventOut(rec, occ, v.view, userId, v.canEdit));
     }
     return out;
+  }
+
+  // ------------------------------------------------ task boards (ADR-0042, mock-boards.ts)
+
+  /** A board route: BoardError → the HTTP error the server would send. */
+  private boardRoute(method: string, pattern: string, h: (c: Ctx, me: string) => void | Promise<void>): void {
+    this.route(method, pattern, async (c) => {
+      const me = this.uid(c);
+      try {
+        await h(c, me);
+      } catch (e) {
+        if (e instanceof BoardError) throw new HttpError(e.status, e.code, e.message, e.field, e.reason ? { reason: e.reason } : {});
+        throw e;
+      }
+    });
+  }
+
+  private boardRoutes(): void {
+    const b = (): BoardsMock => this.boards;
+    const q = (c: Ctx, k: string): string => c.url.searchParams.get(k) ?? '';
+    const taskRes = (id: string, me: string, full = false): MessageInitShape<typeof TaskResponseSchema> => {
+      if (!full) {
+        const t = b().tasks.get(id);
+        return t ? { task: b().taskOut(t, me, true) } : {};
+      }
+      const g = b().getTask(id, me);
+      return { task: g.task, subtasks: g.subtasks, related: g.related, ...(g.parent ? { parent: g.parent } : {}), ...(g.room ? { room: this.roomOut(g.room) } : {}), board: g.board };
+    };
+    const filterOf = (c: Ctx): TaskFilter | undefined => {
+      const raw = q(c, 'filter');
+      if (!raw) return undefined;
+      try {
+        return fromJson(TaskFilterSchema, JSON.parse(raw) as JsonValue, JSON_READ);
+      } catch {
+        throw invalid('filter', 'malformed filter');
+      }
+    };
+
+    this.boardRoute('GET', '/api/workspaces/:id/boards', (c, me) => {
+      sendMsg(c.res, 200, ListBoardsResponseSchema, { boards: b().listBoards(c.params[0] ?? '', me, q(c, 'archived') === '1') });
+    });
+    this.boardRoute('POST', '/api/workspaces/:id/boards', (c, me) => {
+      const r = parseBody(c, CreateBoardRequestSchema);
+      const rec = b().createBoard(c.params[0] ?? '', me, r);
+      sendMsg(c.res, 201, BoardResponseSchema, { board: b().boardOut(rec, me, { personal: true }) });
+    });
+    this.boardRoute('GET', '/api/boards/:id', (c, me) => sendMsg(c.res, 200, BoardResponseSchema, { board: b().getBoard(c.params[0] ?? '', me) }));
+    this.boardRoute('PATCH', '/api/boards/:id', (c, me) => {
+      const r = parseBody(c, UpdateBoardRequestSchema);
+      sendMsg(c.res, 200, BoardResponseSchema, { board: b().updateBoard(c.params[0] ?? '', me, r) });
+    });
+    this.boardRoute('DELETE', '/api/boards/:id', (c, me) => {
+      b().removeBoard(c.params[0] ?? '', me, q(c, 'purge') === '1');
+      noContent(c.res);
+    });
+    this.boardRoute('POST', '/api/boards/:id/restore', (c, me) => sendMsg(c.res, 200, BoardResponseSchema, { board: b().restoreBoard(c.params[0] ?? '', me) }));
+    this.boardRoute('PUT', '/api/boards/:id/position', (c, me) => {
+      const r = parseBody(c, SetBoardPositionRequestSchema);
+      sendMsg(c.res, 200, BoardResponseSchema, { board: b().moveBoard(c.params[0] ?? '', me, r.position) });
+    });
+    this.boardRoute('GET', '/api/boards/:id/permissions', (c, me) => {
+      const board = b().getBoard(c.params[0] ?? '', me);
+      if (!(board.permissions & MANAGE_BOARD)) throw forbidden('MANAGE_BOARD required');
+      sendMsg(c.res, 200, BoardPermissionsResponseSchema, { overrides: board.permissionOverrides, board });
+    });
+    this.boardRoute('PUT', '/api/boards/:id/permissions', (c, me) => {
+      const r = parseBody(c, SetBoardPermissionsRequestSchema);
+      const board = b().setPermissions(c.params[0] ?? '', me, r.overrides);
+      sendMsg(c.res, 200, BoardPermissionsResponseSchema, { overrides: board.permissionOverrides, board });
+    });
+    // statuses / labels / milestones
+    this.boardRoute('POST', '/api/boards/:id/statuses', (c, me) => {
+      const r = parseBody(c, CreateBoardStatusRequestSchema);
+      sendMsg(c.res, 201, BoardResponseSchema, { board: b().createStatus(c.params[0] ?? '', me, r) });
+    });
+    this.boardRoute('PATCH', '/api/boards/:id/statuses/:sid', (c, me) => {
+      const r = parseBody(c, UpdateBoardStatusRequestSchema);
+      sendMsg(c.res, 200, BoardResponseSchema, { board: b().updateStatus(c.params[0] ?? '', me, c.params[1] ?? '', r) });
+    });
+    this.boardRoute('DELETE', '/api/boards/:id/statuses/:sid', (c, me) => {
+      b().deleteStatus(c.params[0] ?? '', me, c.params[1] ?? '', q(c, 'move_to'));
+      noContent(c.res);
+    });
+    this.boardRoute('POST', '/api/boards/:id/labels', (c, me) => {
+      const r = parseBody(c, CreateBoardLabelRequestSchema);
+      sendMsg(c.res, 201, BoardResponseSchema, { board: b().createLabel(c.params[0] ?? '', me, r) });
+    });
+    this.boardRoute('PATCH', '/api/boards/:id/labels/:lid', (c, me) => {
+      const r = parseBody(c, UpdateBoardLabelRequestSchema);
+      sendMsg(c.res, 200, BoardResponseSchema, { board: b().updateLabel(c.params[0] ?? '', me, c.params[1] ?? '', r) });
+    });
+    this.boardRoute('DELETE', '/api/boards/:id/labels/:lid', (c, me) => {
+      b().deleteLabel(c.params[0] ?? '', me, c.params[1] ?? '');
+      noContent(c.res);
+    });
+    this.boardRoute('POST', '/api/boards/:id/milestones', (c, me) => {
+      const r = parseBody(c, CreateBoardMilestoneRequestSchema);
+      sendMsg(c.res, 201, BoardResponseSchema, { board: b().createMilestone(c.params[0] ?? '', me, r) });
+    });
+    this.boardRoute('PATCH', '/api/boards/:id/milestones/:mid', (c, me) => {
+      const r = parseBody(c, UpdateBoardMilestoneRequestSchema);
+      sendMsg(c.res, 200, BoardResponseSchema, { board: b().updateMilestone(c.params[0] ?? '', me, c.params[1] ?? '', r) });
+    });
+    this.boardRoute('DELETE', '/api/boards/:id/milestones/:mid', (c, me) => {
+      b().deleteMilestone(c.params[0] ?? '', me, c.params[1] ?? '');
+      noContent(c.res);
+    });
+    // views
+    this.boardRoute('GET', '/api/boards/:id/views', (c, me) => sendMsg(c.res, 200, ListBoardViewsResponseSchema, { views: b().getBoard(c.params[0] ?? '', me).views }));
+    this.boardRoute('POST', '/api/boards/:id/views', (c, me) => {
+      const r = parseBody(c, CreateBoardViewRequestSchema);
+      sendMsg(c.res, 201, BoardViewResponseSchema, { view: b().createView(c.params[0] ?? '', me, r) });
+    });
+    this.boardRoute('PATCH', '/api/boards/:id/views/:vid', (c, me) => {
+      const r = parseBody(c, UpdateBoardViewRequestSchema);
+      sendMsg(c.res, 200, BoardViewResponseSchema, { view: b().updateView(c.params[0] ?? '', me, c.params[1] ?? '', r) });
+    });
+    this.boardRoute('DELETE', '/api/boards/:id/views/:vid', (c, me) => {
+      b().deleteView(c.params[0] ?? '', me, c.params[1] ?? '');
+      noContent(c.res);
+    });
+    // files of task descriptions and comments (quota of the workspace)
+    this.boardRoute('POST', '/api/boards/:id/files', async (c, me) => {
+      const board = b().getBoard(c.params[0] ?? '', me);
+      const ws = this.state.workspaces.get(board.workspaceId);
+      if (!ws) throw notFound('board not found');
+      const f = await parseMultipartFile(c);
+      if (f.bytes.length > 50 * 1024 * 1024) throw new HttpError(413, ErrorCode.FILE_TOO_LARGE, 'file too large');
+      const id = this.storeFile(ws.id, me, f, parseVoice(c, f));
+      ws.storageUsedBytes += BigInt(f.bytes.length);
+      sendMsg(c.res, 201, UploadFileResponseSchema, { file: this.state.files.get(id)?.meta });
+    });
+    // tasks
+    this.boardRoute('GET', '/api/boards/:id/tasks', (c, me) => {
+      const r = b().listTasks(c.params[0] ?? '', me, {
+        filter: filterOf(c),
+        archived: q(c, 'archived') === '1',
+        cursor: q(c, 'cursor'),
+        limit: Number(q(c, 'limit')) || 500,
+        nowMs: timestampMs(this.callNow()),
+      });
+      sendMsg(c.res, 200, ListTasksResponseSchema, r);
+    });
+    this.boardRoute('POST', '/api/boards/:id/tasks', (c, me) => {
+      const r = parseBody(c, CreateTaskRequestSchema);
+      const t = b().createTask(c.params[0] ?? '', me, r);
+      sendMsg(c.res, 201, TaskResponseSchema, taskRes(t.task.id, me));
+    });
+    this.boardRoute('GET', '/api/tasks/:id', (c, me) => sendMsg(c.res, 200, TaskResponseSchema, taskRes(c.params[0] ?? '', me, true)));
+    this.boardRoute('GET', '/api/t/:key', (c, me) => sendMsg(c.res, 200, TaskResponseSchema, taskRes(b().byKey(c.params[0] ?? '', me), me, true)));
+    this.boardRoute('PATCH', '/api/tasks/:id', (c, me) => {
+      const r = parseBody(c, UpdateTaskRequestSchema);
+      const t = b().updateTask(c.params[0] ?? '', me, r);
+      sendMsg(c.res, 200, TaskResponseSchema, taskRes(t.task.id, me));
+    });
+    this.boardRoute('POST', '/api/tasks/:id/archive', (c, me) => sendMsg(c.res, 200, TaskResponseSchema, taskRes(b().archiveTask(c.params[0] ?? '', me, true).task.id, me)));
+    this.boardRoute('POST', '/api/tasks/:id/restore', (c, me) => sendMsg(c.res, 200, TaskResponseSchema, taskRes(b().archiveTask(c.params[0] ?? '', me, false).task.id, me)));
+    this.boardRoute('PUT', '/api/tasks/:id/assignees', (c, me) => {
+      const r = parseBody(c, SetAssigneesRequestSchema);
+      sendMsg(c.res, 200, TaskResponseSchema, taskRes(b().setAssignees(c.params[0] ?? '', me, r.assignees).task.id, me));
+    });
+    this.boardRoute('PUT', '/api/tasks/:id/relations', (c, me) => {
+      const r = parseBody(c, SetTaskRelationRequestSchema);
+      sendMsg(c.res, 200, TaskResponseSchema, taskRes(b().setRelation(c.params[0] ?? '', me, r.relatedId, r.kind, true).task.id, me, true));
+    });
+    this.boardRoute('DELETE', '/api/tasks/:id/relations', (c, me) => {
+      const kind: TaskRelationKind = Number(q(c, 'kind'));
+      sendMsg(c.res, 200, TaskResponseSchema, taskRes(b().setRelation(c.params[0] ?? '', me, q(c, 'related_id'), kind, false).task.id, me, true));
+    });
+    this.boardRoute('PUT', '/api/tasks/:id/subscription', (c, me) => {
+      const r = parseBody(c, SetTaskSubscriptionRequestSchema);
+      sendMsg(c.res, 200, TaskResponseSchema, taskRes(b().setSubscription(c.params[0] ?? '', me, r.muted).task.id, me));
+    });
+    this.boardRoute('PUT', '/api/tasks/:id/read', (c, me) => {
+      b().markRead(c.params[0] ?? '', me);
+      noContent(c.res);
+    });
+    this.boardRoute('GET', '/api/tasks/:id/activity', (c, me) => {
+      const r = b().feed(c.params[0] ?? '', me, q(c, 'before'), Number(q(c, 'limit')) || 50);
+      sendMsg(c.res, 200, TaskActivityPageSchema, {
+        items: r.items.map((x) => (x.message ? { item: { case: 'message' as const, value: this.msgOut(x.message, me) } } : { item: { case: 'activity' as const, value: x.activity as TaskActivity } })),
+        hasMore: r.hasMore,
+      });
+    });
+    this.boardRoute('GET', '/api/me/tasks', (c, me) => {
+      sendMsg(c.res, 200, MyTasksResponseSchema, { tasks: b().mine(q(c, 'workspace_id'), me, q(c, 'scope') || 'assigned', q(c, 'open') === '1'), nextCursor: '' });
+    });
+    this.boardRoute('GET', '/api/workspaces/:id/tasks/search', (c, me) => {
+      sendMsg(c.res, 200, SearchTasksResponseSchema, { tasks: b().search(c.params[0] ?? '', me, q(c, 'q'), Number(q(c, 'limit')) || 20) });
+    });
+    // Test control: an update of a task by another user (TASK_UPDATE fan-out as the server would).
+    this.route('POST', '/__mock/task', (c) => {
+      const body = JSON.parse(c.raw.toString('utf8') || '{}') as { taskId?: string; key?: string; actorId?: string; title?: string; statusId?: string };
+      const id = body.taskId ?? this.boards.taskByKey(body.key ?? '')?.task.id ?? '';
+      const task = this.updateTaskAs(body.actorId ?? IDS.users.boris, id, { ...(body.title ? { title: body.title } : {}), ...(body.statusId ? { statusId: body.statusId } : {}) });
+      send(c.res, 200, JSON.stringify(toJson(TaskSchema, task, JSON_WRITE)), 'application/json');
+    });
+  }
+
+  /** A task change by `actorId` (tests: «someone else edits a task»); fans out TASK_UPDATE. */
+  updateTaskAs(actorId: string, taskId: string, patch: { title?: string; statusId?: string }): Task {
+    return this.boards.updateAs(actorId, taskId, patch);
+  }
+
+  /** Scenario `data`: comments on CAL-3 in its task room (Борис, Анна, a reaction). */
+  private seedBoards(): void {
+    if (this.state.scenario !== 'data') return;
+    this.boards.seed();
+    const t3 = this.boards.taskByKey('CAL-3');
+    if (!t3) return;
+    const room = this.state.rooms.get(t3.task.roomId);
+    if (!room) return;
+    const list: Message[] = [];
+    // Own id range: the fixture message counter (runtime messages) is not shifted.
+    const add = (authorId: string, content: string, at: string): Message => {
+      const m = create(MessageSchema, { id: mockId('message', 0xb000 + list.length), roomId: room.id, authorId, content, createdAt: ts(at) });
+      list.push(m);
+      return m;
+    };
+    add(IDS.users.boris, 'Воспроизвёл: Windows 11, колонки Logitech, эхо появляется через ~10 секунд после входа.', '2026-01-14T09:10:00Z');
+    const m2 = add(IDS.users.anna, `@${IDS.users.boris} проверю на Mac со встроенными динамиками сегодня.`, '2026-01-14T09:25:00Z');
+    this.state.messages.set(room.id, list);
+    this.state.reactions.set(m2.id, new Map([['👍', new Set([IDS.users.boris])]]));
+    m2.reactions = [create(ReactionSchema, { emoji: '👍', count: 1, me: false })];
+    t3.task.commentCount = list.length;
+  }
+
+  private newBoards(): BoardsMock {
+    return new BoardsMock({
+      state: this.state,
+      member: (w, u) => this.member(w, u),
+      rolesOf: (m) => this.memberRoles(m),
+      ownerOf: (w) => this.state.workspaces.get(w)?.ownerId ?? '',
+      fanout: (pick) => this.fanout(pick),
+      tick: () => tick(this.state),
+    });
   }
 
   private calendarRoutes(): void {

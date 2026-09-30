@@ -1,0 +1,187 @@
+import type { Board, Task, TaskActivity } from '@calaba/protocol';
+import { byPosition } from './position';
+
+/**
+ * The boards store's data and its pure transitions (ADR-0042 §5 «Производительность»: the store
+ * is normalized — tasks by id, the order of each status column as an id list). Transitions keep
+ * every untouched object and array by reference, so a TASK_UPDATE that changes a title replaces
+ * one task object and nothing else: one card re-renders, the columns' id lists stay as they were.
+ * Used by stores/boards.ts; unit-tested in reducers.test.ts.
+ */
+export interface BoardsData {
+  boards: Readonly<Record<string, Board>>;
+  tasks: Readonly<Record<string, Task>>;
+  /** Board id → status id → live (not archived) task ids in board order; only loaded boards. */
+  columns: Readonly<Record<string, Readonly<Record<string, readonly string[]>>>>;
+  /** Task room id → task id (comments are messages of that room). */
+  roomTask: Readonly<Record<string, string>>;
+  /** Tasks with something unseen → their workspace (the boards icon badge). */
+  unread: Readonly<Record<string, string>>;
+  /** Journal entries that arrived live, per task (the panel merges them with its loaded page). */
+  activity: Readonly<Record<string, readonly TaskActivity[]>>;
+}
+
+export const EMPTY_DATA: BoardsData = { boards: {}, tasks: {}, columns: {}, roomTask: {}, unread: {}, activity: {} };
+
+const EMPTY_IDS: readonly string[] = [];
+
+function without<T>(rec: Readonly<Record<string, T>>, key: string): Record<string, T> {
+  const out = { ...rec };
+  delete out[key];
+  return out;
+}
+
+/** Inserts `id` into an ordered column by (position, id). */
+function insertOrdered(ids: readonly string[], id: string, tasks: Readonly<Record<string, Task>>): string[] {
+  const me = tasks[id];
+  if (!me) return [...ids];
+  const out = ids.filter((x) => x !== id);
+  let lo = 0;
+  let hi = out.length;
+  while (lo < hi) {
+    const mid = (lo + hi) >> 1;
+    const other = tasks[out[mid] as string];
+    if (other && byPosition(other, me) < 0) lo = mid + 1;
+    else hi = mid;
+  }
+  out.splice(lo, 0, id);
+  return out;
+}
+
+// ------------------------------------------------------------------ boards
+
+/**
+ * A board from READY / REST / BOARD_CREATE / BOARD_UPDATE. `event`: BOARD_* events carry 0 for
+ * my_open_tasks and only the shared views — the known count and my personal views stay.
+ */
+export function upsertBoard(d: BoardsData, board: Board, event = false): Partial<BoardsData> {
+  const prev = d.boards[board.id];
+  let next = board;
+  if (prev && event) {
+    const mine = prev.views.filter((v) => !v.shared);
+    next = { ...board, myOpenTasks: prev.myOpenTasks, views: [...board.views.filter((v) => v.shared), ...mine] };
+  }
+  return { boards: { ...d.boards, [board.id]: next } };
+}
+
+/** A workspace's boards from READY: others of that workspace go (not visible any more). */
+export function setWorkspaceBoards(d: BoardsData, workspaceId: string, boards: readonly Board[]): Partial<BoardsData> {
+  let data: BoardsData = d;
+  const keep = new Set(boards.map((b) => b.id));
+  for (const b of Object.values(d.boards)) if (b.workspaceId === workspaceId && !keep.has(b.id)) data = { ...data, ...removeBoard(data, b.id) };
+  const next = { ...data.boards };
+  for (const b of boards) {
+    const prev = next[b.id];
+    // READY has shared views only: my personal ones (fetched with the board) stay.
+    next[b.id] = prev ? { ...b, views: [...b.views, ...prev.views.filter((v) => !v.shared)] } : b;
+  }
+  return { ...data, boards: next };
+}
+
+export function removeBoard(d: BoardsData, boardId: string): Partial<BoardsData> {
+  if (!d.boards[boardId] && !d.columns[boardId]) return {};
+  const tasks: Record<string, Task> = {};
+  const roomTask: Record<string, string> = {};
+  for (const [id, t] of Object.entries(d.tasks)) if (t.boardId !== boardId) tasks[id] = t;
+  for (const [room, id] of Object.entries(d.roomTask)) if (tasks[id]) roomTask[room] = id;
+  return { boards: without(d.boards, boardId), columns: without(d.columns, boardId), tasks, roomTask };
+}
+
+// ------------------------------------------------------------------ tasks
+
+/** A board's live tasks (the full list loaded page by page): its columns are rebuilt. */
+export function setBoardTasks(d: BoardsData, boardId: string, list: readonly Task[]): Partial<BoardsData> {
+  const tasks: Record<string, Task> = {};
+  for (const [id, t] of Object.entries(d.tasks)) if (t.boardId !== boardId) tasks[id] = t;
+  const roomTask = { ...d.roomTask };
+  const cols: Record<string, string[]> = {};
+  const sorted = [...list].filter((t) => !t.archivedAt).sort(byPosition);
+  for (const t of sorted) {
+    tasks[t.id] = keepViewer(d.tasks[t.id], t);
+    if (t.roomId) roomTask[t.roomId] = t.id;
+    (cols[t.statusId] ??= []).push(t.id);
+  }
+  return { tasks, roomTask, columns: { ...d.columns, [boardId]: cols } };
+}
+
+/** subscribed / muted / unread are meaningful only with viewer_state (boards.proto). */
+function keepViewer(prev: Task | undefined, t: Task): Task {
+  if (t.viewerState || !prev) return t;
+  if (prev.subscribed === t.subscribed && prev.muted === t.muted && prev.unread === t.unread) return t;
+  return { ...t, subscribed: prev.subscribed, muted: prev.muted, unread: prev.unread };
+}
+
+/**
+ * TASK_CREATE / TASK_UPDATE / a REST answer / an optimistic change. The column lists change only
+ * when the status or the position did; an archived task leaves the board.
+ */
+export function upsertTask(d: BoardsData, task: Task): Partial<BoardsData> {
+  if (task.archivedAt) return removeTask(d, task.id, task);
+  const prev = d.tasks[task.id];
+  const next = keepViewer(prev, task);
+  const out: Partial<BoardsData> = { tasks: { ...d.tasks, [task.id]: next } };
+  if (next.roomId && d.roomTask[next.roomId] !== next.id) out.roomTask = { ...d.roomTask, [next.roomId]: next.id };
+  if (task.viewerState) {
+    const was = !!d.unread[task.id];
+    if (was !== next.unread) out.unread = next.unread ? { ...d.unread, [task.id]: next.workspaceId } : without(d.unread, task.id);
+  }
+  const cols = d.columns[next.boardId];
+  const moved = !prev || prev.statusId !== next.statusId || prev.position !== next.position || prev.boardId !== next.boardId;
+  if (moved) {
+    const columns: Record<string, Readonly<Record<string, readonly string[]>>> = { ...d.columns };
+    // Left its old column (another status or another board).
+    if (prev) {
+      const old = d.columns[prev.boardId];
+      const oldIds = old?.[prev.statusId];
+      if (old && oldIds?.includes(prev.id) && (prev.statusId !== next.statusId || prev.boardId !== next.boardId)) {
+        columns[prev.boardId] = { ...old, [prev.statusId]: oldIds.filter((x) => x !== prev.id) };
+      }
+    }
+    if (cols) {
+      const base = columns[next.boardId] ?? cols;
+      const tasks = out.tasks as Record<string, Task>;
+      columns[next.boardId] = { ...base, [next.statusId]: insertOrdered(base[next.statusId] ?? EMPTY_IDS, next.id, tasks) };
+    }
+    out.columns = columns;
+  }
+  return out;
+}
+
+/** TASK_DELETE (archived / purged) or an archive answer: out of the board and its column. */
+export function removeTask(d: BoardsData, taskId: string, archived?: Task): Partial<BoardsData> {
+  const prev = d.tasks[taskId];
+  if (!prev) return {};
+  const out: Partial<BoardsData> = {};
+  // An archived task stays known (an open panel shows it read-only) but leaves the columns.
+  out.tasks = archived ? { ...d.tasks, [taskId]: archived } : without(d.tasks, taskId);
+  const cols = d.columns[prev.boardId];
+  const ids = cols?.[prev.statusId];
+  if (cols && ids?.includes(taskId)) out.columns = { ...d.columns, [prev.boardId]: { ...cols, [prev.statusId]: ids.filter((x) => x !== taskId) } };
+  if (d.unread[taskId]) out.unread = without(d.unread, taskId);
+  return out;
+}
+
+/** Positions of several tasks at once (a renumbered column after a tight drop). */
+export function setPositions(d: BoardsData, positions: Readonly<Record<string, number>>): Partial<BoardsData> {
+  let data: BoardsData = d;
+  for (const [id, position] of Object.entries(positions)) {
+    const t = data.tasks[id];
+    if (t && t.position !== position) data = { ...data, ...upsertTask(data, { ...t, position }) };
+  }
+  return data;
+}
+
+/** READY: a workspace's unread task ids replace what was known for it. */
+export function setUnread(d: BoardsData, workspaceId: string, ids: readonly string[]): Partial<BoardsData> {
+  const unread: Record<string, string> = {};
+  for (const [id, ws] of Object.entries(d.unread)) if (ws !== workspaceId) unread[id] = ws;
+  for (const id of ids) unread[id] = workspaceId;
+  return { unread };
+}
+
+/** TASK_ACTIVITY: one journal row (dedup by id). */
+export function appendActivity(d: BoardsData, a: TaskActivity): Partial<BoardsData> {
+  const list = d.activity[a.taskId] ?? [];
+  if (list.some((x) => x.id === a.id)) return {};
+  return { activity: { ...d.activity, [a.taskId]: [...list, a] } };
+}

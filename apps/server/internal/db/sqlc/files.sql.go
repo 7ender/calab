@@ -28,9 +28,12 @@ const fileRooms = `-- name: FileRooms :many
 SELECT DISTINCT m.room_id FROM message_attachments ma
 JOIN messages m ON m.id = ma.message_id AND m.deleted_at IS NULL
 WHERE ma.file_id = $1
+UNION
+SELECT t.room_id FROM task_attachments ta JOIN tasks t ON t.id = ta.task_id WHERE ta.file_id = $1
 `
 
-// Rooms where the file is attached to a live message.
+// Rooms where the file is attached to a live message, and the room of a task whose description
+// shows it (ADR-0042).
 func (q *Queries) FileRooms(ctx context.Context, fileID uuid.UUID) ([]uuid.UUID, error) {
 	rows, err := q.db.Query(ctx, fileRooms, fileID)
 	if err != nil {
@@ -78,7 +81,8 @@ func (q *Queries) GetFile(ctx context.Context, id uuid.UUID) (File, error) {
 }
 
 const getFilesWithUsage = `-- name: GetFilesWithUsage :many
-SELECT f.id, f.workspace_id, f.uploader_id, f.key, f.thumbnail_key, f.name, f.mime, f.size, f.width, f.height, f.sha256, f.created_at, f.voice_duration_ms, f.voice_waveform, EXISTS (SELECT 1 FROM message_attachments ma WHERE ma.file_id = f.id) AS attached
+SELECT f.id, f.workspace_id, f.uploader_id, f.key, f.thumbnail_key, f.name, f.mime, f.size, f.width, f.height, f.sha256, f.created_at, f.voice_duration_ms, f.voice_waveform, (EXISTS (SELECT 1 FROM message_attachments ma WHERE ma.file_id = f.id)
+    OR EXISTS (SELECT 1 FROM task_attachments ta WHERE ta.file_id = f.id))::boolean AS attached
 FROM files f WHERE f.id = ANY($1::uuid[])
 `
 
@@ -196,14 +200,14 @@ func (q *Queries) InsertFile(ctx context.Context, arg InsertFileParams) (File, e
 }
 
 const isWorkspaceIcon = `-- name: IsWorkspaceIcon :one
-SELECT EXISTS (SELECT 1 FROM workspaces WHERE icon_file_id = $1)
+SELECT (EXISTS (SELECT 1 FROM workspaces w WHERE w.icon_file_id = $1) OR EXISTS (SELECT 1 FROM boards b WHERE b.icon_file_id = $1))::boolean
 `
 
 func (q *Queries) IsWorkspaceIcon(ctx context.Context, iconFileID *uuid.UUID) (bool, error) {
 	row := q.db.QueryRow(ctx, isWorkspaceIcon, iconFileID)
-	var exists bool
-	err := row.Scan(&exists)
-	return exists, err
+	var column_1 bool
+	err := row.Scan(&column_1)
+	return column_1, err
 }
 
 const listOrphanFiles = `-- name: ListOrphanFiles :many
@@ -216,6 +220,8 @@ WHERE f.created_at < $1
   AND NOT EXISTS (SELECT 1 FROM workspace_badges b WHERE b.file_id = f.id)
   AND NOT EXISTS (SELECT 1 FROM workspace_backgrounds wb WHERE wb.file_id = f.id)
   AND NOT EXISTS (SELECT 1 FROM workspace_sounds ss WHERE ss.file_id = f.id)
+  AND NOT EXISTS (SELECT 1 FROM task_attachments ta WHERE ta.file_id = f.id)
+  AND NOT EXISTS (SELECT 1 FROM boards bi WHERE bi.icon_file_id = f.id)
 ORDER BY f.created_at
 LIMIT 500
 `
@@ -361,6 +367,7 @@ const unattachedBytesByUploader = `-- name: UnattachedBytesByUploader :one
 SELECT coalesce(sum(f.size), 0)::bigint FROM files f
 WHERE f.uploader_id = $1 AND f.workspace_id = $2
   AND NOT EXISTS (SELECT 1 FROM message_attachments ma WHERE ma.file_id = f.id)
+  AND NOT EXISTS (SELECT 1 FROM task_attachments ta WHERE ta.file_id = f.id)
   AND NOT EXISTS (SELECT 1 FROM stickers s WHERE s.file_id = f.id)
   AND NOT EXISTS (SELECT 1 FROM workspace_badges b WHERE b.file_id = f.id)
   AND NOT EXISTS (SELECT 1 FROM workspace_backgrounds wb WHERE wb.file_id = f.id)

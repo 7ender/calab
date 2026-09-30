@@ -192,7 +192,7 @@ export function ProfileDialog({
                       aria-label={t('call.call')}
                       data-testid="profile-call"
                       onClick={() => leave(() => void startCall(userId))}
-                      className="inline-grid size-8 shrink-0 place-items-center rounded-full bg-[var(--color-fill-hover)] text-fg transition-[filter] duration-[var(--motion-fast)] hover:brightness-125 focus-visible:outline-2 focus-visible:outline-accent"
+                      className="inline-grid size-8 shrink-0 place-items-center rounded-full bg-[var(--color-fill-hover)] text-fg transition-[filter] duration-[var(--motion-fast)] hover:brightness-125"
                     >
                       <Phone className="size-4" aria-hidden />
                     </button>
@@ -245,7 +245,7 @@ export function ProfileDialog({
           </div>
           <DialogP.Close
             aria-label={t('common.close')}
-            className={cx(CLOSE_HIT, 'absolute right-3 top-3 grid size-7 place-items-center rounded-full bg-scrim text-white transition-[filter] duration-[var(--motion-fast)] hover:brightness-125 focus-visible:outline-2 focus-visible:outline-accent')}
+            className={cx(CLOSE_HIT, 'absolute right-3 top-3 grid size-7 place-items-center rounded-full bg-scrim text-white transition-[filter] duration-[var(--motion-fast)] hover:brightness-125')}
           >
             <X className="size-4" strokeWidth={1.75} aria-hidden />
           </DialogP.Close>
@@ -274,7 +274,7 @@ function EditBirthday({ workspaceId, userId }: { workspaceId: string; userId: st
       <button
         type="button"
         data-testid="profile-edit-birthday"
-        className="mt-1 flex items-center gap-1.5 rounded-[var(--radius-control)] text-caption text-muted transition-colors duration-[var(--motion-fast)] hover:text-fg focus-visible:outline-2 focus-visible:outline-accent"
+        className="mt-1 flex items-center gap-1.5 rounded-[var(--radius-control)] text-caption text-muted transition-colors duration-[var(--motion-fast)] hover:text-fg"
         onClick={() => setOpen(true)}
       >
         <Cake className="size-3.5" aria-hidden />
@@ -306,7 +306,7 @@ function MoreButton({ workspaceId, userId }: { workspaceId: string; userId: stri
         aria-label={t('people.profile.more')}
         aria-haspopup="menu"
         data-testid="profile-more"
-        className="inline-grid size-8 shrink-0 place-items-center rounded-full bg-[var(--color-fill-hover)] text-fg transition-[filter] duration-[var(--motion-fast)] hover:brightness-125 focus-visible:outline-2 focus-visible:outline-accent"
+        className="inline-grid size-8 shrink-0 place-items-center rounded-full bg-[var(--color-fill-hover)] text-fg transition-[filter] duration-[var(--motion-fast)] hover:brightness-125"
         onClick={(e) => {
           // Radix opens a context menu at the pointer: a synthetic contextmenu under the button.
           const r = e.currentTarget.getBoundingClientRect();
@@ -362,7 +362,7 @@ function RoleChips({ workspaceId, userId }: { workspaceId: string; userId: strin
               <button
                 type="button"
                 aria-label={t('people.profile.removeRole', { role: label })}
-                className={cx(CLOSE_HIT, '-mr-1 grid size-5 shrink-0 place-items-center rounded-full text-muted hover:bg-hover hover:text-fg focus-visible:outline-2 focus-visible:outline-accent')}
+                className={cx(CLOSE_HIT, '-mr-1 grid size-5 shrink-0 place-items-center rounded-full text-muted hover:bg-hover hover:text-fg')}
                 onClick={() => void toggleMemberRole(workspaceId, userId, r, false)}
               >
                 <X className="size-3.5" aria-hidden />
@@ -386,7 +386,7 @@ function RoleChips({ workspaceId, userId }: { workspaceId: string; userId: strin
           <button
             type="button"
             aria-label={t('people.profile.addRole')}
-            className="grid size-7 place-items-center rounded-full text-muted hover:bg-hover hover:text-fg focus-visible:outline-2 focus-visible:outline-accent"
+            className="grid size-7 place-items-center rounded-full text-muted hover:bg-hover hover:text-fg"
           >
             <Plus className="size-4" aria-hidden />
           </button>
@@ -464,7 +464,7 @@ function NoteEditor({ userId, textareaRef }: { userId: string; textareaRef: RefO
         aria-busy={text === null || undefined}
         value={text ?? ''}
         placeholder={t('people.profile.notePlaceholder')}
-        className="selectable -ml-1.5 block w-[calc(100%+6px)] resize-none rounded-[6px] bg-transparent px-1.5 py-1 text-body leading-5 text-fg outline-none transition-colors duration-[var(--motion-fast)] placeholder:italic placeholder:text-faint hover:bg-hover focus:bg-hover focus-visible:outline-2 focus-visible:outline-accent"
+        className="selectable -ml-1.5 block w-[calc(100%+6px)] resize-none rounded-[6px] bg-transparent px-1.5 py-1 text-body leading-5 text-fg outline-none transition-colors duration-[var(--motion-fast)] placeholder:italic placeholder:text-faint hover:bg-hover focus:bg-hover"
         onChange={(e) => {
           setText(e.target.value);
           saver.current?.change(e.target.value);

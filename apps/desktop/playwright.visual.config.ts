@@ -55,6 +55,8 @@ export default defineConfig<VisualOptions>({
     { name: 'selection', testMatch: /selection\.spec\.ts/ },
     // A dialog's «×» hit at its icon centre, clear of window drag regions (docs/09 #105): behaviour only.
     { name: 'modal-close', testMatch: /modal-close\.spec\.ts/, use: { theme: 'dark', size: { width: 960, height: 600 } } },
+    // A mouse click leaves no focus outline, Tab shows the ring (docs/08 «Фокус», docs/09 #138): behaviour only.
+    { name: 'focus-pointer', testMatch: /focus-pointer\.spec\.ts/, use: { theme: 'dark', size: { width: 960, height: 600 } } },
     // «Поздравить» → the greeting room with a ready mention (docs/09 #120): behaviour only.
     { name: 'birthday-congratulate', testMatch: /birthday-congratulate\.spec\.ts/, use: { theme: 'dark', size: { width: 1440, height: 800 } } },
     // The emoji picker's list scrolls in the composer and inside a modal sheet (docs/09 #118): behaviour only.
@@ -68,6 +70,13 @@ export default defineConfig<VisualOptions>({
     {
       name: 'calendar',
       testMatch: /calendar-[a-z-]+\.spec\.ts/,
+      use: { browserName: 'chromium', timezoneId: 'Europe/Moscow', colorScheme: 'dark', viewport: { width: 1280, height: 800 } },
+    },
+    // Task boards (ADR-0042, docs/21): kanban, d&d, the panel, filter, views, list — behaviour
+    // only, the web build in Chromium.
+    {
+      name: 'boards',
+      testMatch: /boards-[a-z-]+\.spec\.ts/,
       use: { browserName: 'chromium', timezoneId: 'Europe/Moscow', colorScheme: 'dark', viewport: { width: 1280, height: 800 } },
     },
     // A room switch never hangs in «Подключение…» (docs/09 #131): behaviour only, web build + dev LiveKit.

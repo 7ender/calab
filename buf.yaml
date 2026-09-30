@@ -3,5 +3,9 @@ modules:
   - path: proto
 lint:
   use: [STANDARD]
+  ignore_only:
+    # TaskPriority: NONE is the zero value on purpose (ADR-0042, «No priority»).
+    ENUM_ZERO_VALUE_SUFFIX:
+      - proto/calaba/v1/boards.proto
 breaking:
   use: [FILE]

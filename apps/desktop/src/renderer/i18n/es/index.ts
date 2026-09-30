@@ -14,6 +14,7 @@ import { esModeration } from './moderation';
 import { esPicker } from './picker';
 import { esRoles } from './roles';
 import { esCalendar } from './calendar';
+import { esBoards } from './boards';
 import { esPlan } from './plan';
 import { esShell } from './shell';
 import { esVideo } from './video';
@@ -46,6 +47,7 @@ export const es: Dict = {
   ...esPicker,
   ...esRoles,
   ...esCalendar,
+  ...esBoards,
   'voice.pendingMember': 'Conectando…',
   // common
   'common.cancel': 'Cancelar',
@@ -268,6 +270,10 @@ export const es: Dict = {
   'perm.MANAGE_WORKSPACE': 'Gestionar espacio',
   'perm.MANAGE_ROLES': 'Gestionar roles',
   'perm.MANAGE_STICKERS': 'Gestionar stickers',
+  'perm.VIEW_BOARD': 'Ver el tablero',
+  'perm.CREATE_TASKS': 'Crear tareas',
+  'perm.EDIT_TASKS': 'Editar cualquier tarea',
+  'perm.MANAGE_BOARD': 'Gestionar el tablero',
   'perm.ADMINISTRATOR': 'Administrador',
   'perm.allow': 'permitido',
   'perm.deny': 'denegado',

@@ -8,6 +8,9 @@ import {
   PERMISSION_BITS,
   ROLE_DEFAULTS,
   ROOM_ONLY_PERMISSIONS,
+  BOARD_ONLY_PERMISSIONS,
+  taskRoomPermissions,
+  computeMemberBoardPermissions,
   computeMemberRoomPermissions,
   computePermissions,
   computeRoomPermissions,
@@ -30,6 +33,8 @@ interface Vector {
   // ADR-0029: a restricted room and whether the member is the workspace owner.
   restricted?: boolean;
   owner?: boolean;
+  // ADR-0042: a board vector.
+  board?: { private: boolean; guest?: boolean };
   expected: number;
 }
 
@@ -49,18 +54,66 @@ const vectors = JSON.parse(
 ) as Vector[];
 
 const toRoles = (rs: NonNullable<Vector['roles']>) =>
-  rs.map((r) => ({ id: r.id, position: r.position, permissions: BigInt(r.permissions) }));
+  rs.map((r) => ({
+    id: r.id,
+    position: r.position,
+    permissions: BigInt(r.permissions),
+  }));
 
 describe('computePermissions (shared vectors)', () => {
   for (const v of vectors) {
     it(v.name, () => {
+      if (v.board) {
+        const roles = toRoles(v.roles ?? []);
+        const roleOverrides = Object.fromEntries(
+          Object.entries(v.roleOverrides ?? {}).map(([id, o]) => [id, toOv(o) as OverrideBits]),
+        );
+        expect(
+          computePermissions({
+            roles,
+            roleOverrides,
+            userOverride: toOv(v.userOverride),
+            board: v.board,
+          }),
+        ).toBe(BigInt(v.expected));
+        const overrides = [
+          ...Object.entries(v.roleOverrides ?? {}).map(([id, o]) =>
+            create(RoomPermissionOverrideSchema, {
+              targetType: PermissionTargetType.ROLE,
+              targetId: id,
+              allow: BigInt(o.allow),
+              deny: BigInt(o.deny),
+            }),
+          ),
+          ...(v.userOverride
+            ? [
+                create(RoomPermissionOverrideSchema, {
+                  targetType: PermissionTargetType.USER,
+                  targetId: 'u1',
+                  allow: BigInt(v.userOverride.allow),
+                  deny: BigInt(v.userOverride.deny),
+                }),
+              ]
+            : []),
+        ];
+        expect(computeMemberBoardPermissions(roles, 'u1', overrides, v.board.private, v.board.guest ?? false)).toBe(
+          BigInt(v.expected),
+        );
+        return;
+      }
       if (v.roles) {
         const roles = toRoles(v.roles);
         const roleOverrides = Object.fromEntries(
           Object.entries(v.roleOverrides ?? {}).map(([id, o]) => [id, toOv(o) as OverrideBits]),
         );
         expect(
-          computePermissions({ roles, roleOverrides, userOverride: toOv(v.userOverride), restricted: v.restricted, owner: v.owner }),
+          computePermissions({
+            roles,
+            roleOverrides,
+            userOverride: toOv(v.userOverride),
+            restricted: v.restricted,
+            owner: v.owner,
+          }),
         ).toBe(BigInt(v.expected));
         // The same through Room.permissionOverrides.
         const overrides = [
@@ -83,9 +136,13 @@ describe('computePermissions (shared vectors)', () => {
               ]
             : []),
         ];
-        expect(computeMemberRoomPermissions(roles, 'u1', overrides, v.restricted, v.owner ?? false)).toBe(BigInt(v.expected));
+        expect(computeMemberRoomPermissions(roles, 'u1', overrides, v.restricted, v.owner ?? false)).toBe(
+          BigInt(v.expected),
+        );
         // The owner is recognized by the built-in owner role as well.
-        const withBuiltin = roles.map((r) => (r.id === 'owner' && v.owner ? { ...r, builtin: WorkspaceRole.OWNER } : r));
+        const withBuiltin = roles.map((r) =>
+          r.id === 'owner' && v.owner ? { ...r, builtin: WorkspaceRole.OWNER } : r,
+        );
         expect(computeMemberRoomPermissions(withBuiltin, 'u1', overrides, v.restricted)).toBe(BigInt(v.expected));
         if (v.expectedWorkspace !== undefined) expect(workspacePermissions(roles)).toBe(BigInt(v.expectedWorkspace));
         return;
@@ -126,12 +183,26 @@ describe('roles (ADR-0026)', () => {
   it('memberRoles picks the member roles; MANAGE_ROLES is part of ALL_PERMISSIONS', () => {
     const all = [
       { id: 'a', position: 1000, permissions: PERMISSION_BITS.ADMINISTRATOR },
-      { id: 'm', position: 1, permissions: ROLE_DEFAULTS[WorkspaceRole.MEMBER] },
+      {
+        id: 'm',
+        position: 1,
+        permissions: ROLE_DEFAULTS[WorkspaceRole.MEMBER],
+      },
     ];
     expect(memberRoles(all, ['m']).map((r) => r.id)).toEqual(['m']);
     expect(workspacePermissions(memberRoles(all, ['m', 'a']))).toBe(ALL_PERMISSIONS);
     expect(ALL_PERMISSIONS & PERMISSION_BITS.MANAGE_ROLES).toBe(PERMISSION_BITS.MANAGE_ROLES);
-    expect(ALL_PERMISSIONS).toBe(131071n);
+    expect(ALL_PERMISSIONS).toBe(2097151n);
     expect(ROOM_ONLY_PERMISSIONS & PERMISSION_BITS.MANAGE_STICKERS).toBe(0n);
+    expect(ROOM_ONLY_PERMISSIONS & BOARD_ONLY_PERMISSIONS).toBe(0n);
+  });
+  it('task rooms follow the board (ADR-0042)', () => {
+    const { VIEW_BOARD, EDIT_TASKS, VIEW_ROOM, SEND_MESSAGES, ATTACH_FILES, MANAGE_MESSAGES } = PERMISSION_BITS;
+    expect(taskRoomPermissions(0n)).toBe(0n);
+    expect(taskRoomPermissions(VIEW_BOARD)).toBe(VIEW_ROOM | SEND_MESSAGES | ATTACH_FILES);
+    expect(taskRoomPermissions(VIEW_BOARD | EDIT_TASKS)).toBe(
+      VIEW_ROOM | SEND_MESSAGES | ATTACH_FILES | MANAGE_MESSAGES,
+    );
+    expect(taskRoomPermissions(VIEW_BOARD, true)).toBe(VIEW_ROOM);
   });
 });

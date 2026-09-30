@@ -250,8 +250,11 @@ export async function layoutProblems(page: Page): Promise<LayoutProblem[]> {
       let p = el.parentElement;
       let scrolled = false;
       while (p) {
-        const o = getComputedStyle(p).overflowY;
+        const cs = getComputedStyle(p);
+        const o = cs.overflowY;
         if ((o === 'auto' || o === 'scroll') && p.scrollHeight > p.clientHeight) scrolled = true;
+        // Horizontal scrollers too (a kanban's columns).
+        if ((cs.overflowX === 'auto' || cs.overflowX === 'scroll') && p.scrollWidth > p.clientWidth) scrolled = true;
         p = p.parentElement;
       }
       if (scrolled) continue;

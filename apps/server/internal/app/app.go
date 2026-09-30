@@ -16,8 +16,10 @@ import (
 	"github.com/calaba/calaba/server/internal/auth"
 	"github.com/calaba/calaba/server/internal/birthdays"
 	"github.com/calaba/calaba/server/internal/blob"
+	"github.com/calaba/calaba/server/internal/boards"
 	"github.com/calaba/calaba/server/internal/bots"
 	"github.com/calaba/calaba/server/internal/buildinfo"
+	"github.com/calaba/calaba/server/internal/caldav"
 	"github.com/calaba/calaba/server/internal/calendar"
 	"github.com/calaba/calaba/server/internal/calls"
 	"github.com/calaba/calaba/server/internal/config"
@@ -70,6 +72,9 @@ type Deps struct {
 	// BotWebhooks tunes bot webhook delivery (tests: TLS roots of a test server, short
 	// backoff); the zero value is production. The address policy is UnfurlAllowAddr's.
 	BotWebhooks bots.WebhookOptions
+	// CalDAV tunes the CalDAV client and workers (tests: TLS roots, short polls); the zero
+	// value is production. The address policy is UnfurlAllowAddr's.
+	CalDAV caldav.Options
 }
 
 // App is the assembled server.
@@ -92,6 +97,11 @@ type App struct {
 	Calls *calls.Service
 	// Calendar: meetings (ADR-0038) with the reminder / room badge sweeper.
 	Calendar *calendar.Service
+	// CalDAV: the users' CalDAV calendars (ADR-0041) with the import sweeper and push worker.
+	CalDAV *caldav.Service
+	// Boards: task boards (ADR-0042) with the auto-archive sweeper.
+	Boards *boards.Service
+	redis  rueidis.Client
 	// Routes: every registered route pattern (the bot route table test).
 	Routes []string
 }
@@ -114,6 +124,8 @@ func (a *App) Run(ctx context.Context) {
 	go a.Birthdays.Run(ctx, time.Hour)
 	go a.Calls.Run(ctx)
 	go a.Calendar.Run(ctx, calendar.Tick)
+	go a.CalDAV.Run(ctx)
+	go a.Boards.Run(ctx, a.redis, boards.SweepInterval)
 }
 
 // mailSender: the test override, else SMTP from config, else nil (mail disabled).
@@ -286,7 +298,13 @@ func New(d Deps) *App {
 	msgHandlers := messages.NewHandlers(d.DB, pub, msgLimiter)
 	msgHandlers.BotLimiter = redisx.NewRateLimiter(d.Redis, "rl:bot:msg:", botMsgsPerMin, float64(botMsgsPerMin))
 	msgHandlers.Receipts = messages.NewReceipts(d.DB, pub, d.Redis)
+	boardSvc := boards.New(d.DB, pub, planSvc, filesSvc)
+	boardSvc.PublicURL = d.Config.PublicAppURL
+	boardSvc.CreateLimit = redisx.NewRateLimiter(d.Redis, "rl:task-create:", 60, 60) // 60 at once, one per second
+	boardSvc.SearchLimit = redisx.NewRateLimiter(d.Redis, "rl:task-search:", 30, 60) // ⌘K: 30 at once, one per second
+	msgHandlers.TaskHook = boardSvc.TaskHook
 	msgHandlers.Routes(mux, private)
+	boardSvc.Routes(mux, private)
 	dms.NewHandlers(d.DB, pub, redisx.NewRateLimiter(d.Redis, "rl:dm-create:", 10, 0.5)).Routes(mux, private) // 10 at once, 30 per hour
 	notes.NewHandlers(d.DB, pub, d.Config.DefaultPersonalQuotaBytes).Routes(mux, private)
 	filesSvc.Routes(mux, private)
@@ -303,8 +321,10 @@ func New(d Deps) *App {
 		return qt.Proto(), err
 	}
 	admin.Routes(mux, private)
-	unfurl.NewService(d.Redis, []byte(d.Config.JWTSecret),
-		redisx.NewRateLimiter(d.Redis, "rl:unfurl:", 30, 120), unfurl.Options{AllowAddr: unfurlPolicy(d)}).Routes(mux, private)
+	unfurlSvc := unfurl.NewService(d.Redis, []byte(d.Config.JWTSecret),
+		redisx.NewRateLimiter(d.Redis, "rl:unfurl:", 30, 120), unfurl.Options{AllowAddr: unfurlPolicy(d)})
+	unfurlSvc.Internal = boardSvc.Unfurl(d.Config.AllowedOrigins()) // own /t/ and /b/ links (ADR-0042)
+	unfurlSvc.Routes(mux, private)
 	recSvc.Routes(mux, private)
 	botSvc.Routes(mux, private)
 	bdSvc := birthdays.New(d.DB, pub)
@@ -316,7 +336,21 @@ func New(d Deps) *App {
 		redisx.NewRateLimiter(d.Redis, "rl:event-rsvp:", 30, 30)) // signed answer links: 30 per minute per IP
 	calSvc.Presence = hub.Statuses
 	recSvc.OnStarted = calSvc.RecordingStarted
+	calSvc.FreeBusyLimit = redisx.NewRateLimiter(d.Redis, "rl:freebusy:", 60, 60) // ADR-0041 §5: 60 per minute
+	calSvc.SuggestLimit = redisx.NewRateLimiter(d.Redis, "rl:suggest:", 30, 30)   // 30 per minute
 	calSvc.Routes(mux, private)
+	cdOpts := d.CalDAV
+	if cdOpts.AllowAddr == nil {
+		cdOpts.AllowAddr = unfurlPolicy(d)
+	}
+	if cdOpts.SyncInterval == 0 {
+		cdOpts.SyncInterval = d.Config.CalDAVSyncInterval
+	}
+	cdSvc := caldav.New(d.DB, d.Redis, calSvc, []byte(d.Config.JWTSecret), cdOpts,
+		redisx.NewRateLimiter(d.Redis, "rl:caldav-connect:", 5, 5.0/60), // 5 per hour
+		redisx.NewRateLimiter(d.Redis, "rl:caldav-sync:", 1, 1))         // once per minute
+	calSvc.Changed = cdSvc.EventChanged
+	cdSvc.Routes(mux, private)
 	if rtcSvc != nil {
 		rtcSvc.Routes(mux, private)
 	} else {
@@ -335,5 +369,5 @@ func New(d Deps) *App {
 		events.Middleware, // one post-commit publish budget per request
 	)
 	return &App{Handler: h, Auth: authSvc, Gateway: hub, Files: filesSvc, Guests: guestSvc, RTC: rtcSvc, Plans: planSvc, Mail: mailSvc,
-		Recording: recSvc, Bots: botSvc, Birthdays: bdSvc, Calls: callSvc, Calendar: calSvc, Routes: mux.patterns}
+		Recording: recSvc, Bots: botSvc, Birthdays: bdSvc, Calls: callSvc, Calendar: calSvc, CalDAV: cdSvc, Boards: boardSvc, redis: d.Redis, Routes: mux.patterns}
 }

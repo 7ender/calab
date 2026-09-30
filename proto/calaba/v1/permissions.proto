@@ -27,6 +27,16 @@ enum Permission {
   // 1 << 16: workspace-level, create / edit / delete the workspace's sticker packs (ADR-0030).
   // Not settable per room.
   PERMISSION_MANAGE_STICKERS = 65536;
+  // Task boards (ADR-0042). Board bits: they apply to boards only (room overrides ignore them,
+  // board overrides touch only them). Member default: VIEW_BOARD | CREATE_TASKS.
+  // 1 << 17: see a board, its tasks and comments; comment; subscribe.
+  PERMISSION_VIEW_BOARD = 131072;
+  // 1 << 18: create tasks; edit the ones one created or is assigned to.
+  PERMISSION_CREATE_TASKS = 262144;
+  // 1 << 19: edit, move and archive any task; moderate comments.
+  PERMISSION_EDIT_TASKS = 524288;
+  // 1 << 20: statuses, labels, milestones, settings, access and archive of the board.
+  PERMISSION_MANAGE_BOARD = 1048576;
 }
 
 // Built-in workspace roles. Since ADR-0026 a member holds several roles (WorkspaceMember.

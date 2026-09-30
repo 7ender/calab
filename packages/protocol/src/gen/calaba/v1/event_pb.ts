@@ -6,13 +6,15 @@ import type { GenEnum, GenFile, GenMessage } from "@bufbuild/protobuf/codegenv2"
 import { enumDesc, fileDesc, messageDesc } from "@bufbuild/protobuf/codegenv2";
 import type { Timestamp } from "@bufbuild/protobuf/wkt";
 import { file_google_protobuf_timestamp } from "@bufbuild/protobuf/wkt";
+import type { WorkHours } from "./user_pb.js";
+import { file_calaba_v1_user } from "./user_pb.js";
 import type { Message } from "@bufbuild/protobuf";
 
 /**
  * Describes the file calaba/v1/event.proto.
  */
 export const file_calaba_v1_event: GenFile = /*@__PURE__*/
-  fileDesc("ChVjYWxhYmEvdjEvZXZlbnQucHJvdG8SCWNhbGFiYS52MSKmAQoVQ2FsZW5kYXJFdmVudEF0dGVuZGVlEg8KB3VzZXJfaWQYASABKAkSEAoIcmVxdWlyZWQYAiABKAgSKQoGc3RhdHVzGAMgASgOMhkuY2FsYWJhLnYxLkF0dGVuZGVlU3RhdHVzEjAKDHJlc3BvbmRlZF9hdBgEIAEoCzIaLmdvb2dsZS5wcm90b2J1Zi5UaW1lc3RhbXASDQoFZW1haWwYBSABKAkiWQoTQ2FsZW5kYXJFdmVudENvdW50cxIQCghhY2NlcHRlZBgBIAEoDRIQCghkZWNsaW5lZBgCIAEoDRINCgVtYXliZRgDIAEoDRIPCgdwZW5kaW5nGAQgASgNIsEGCg1DYWxlbmRhckV2ZW50EgoKAmlkGAEgASgJEhQKDHdvcmtzcGFjZV9pZBgCIAEoCRIPCgdyb29tX2lkGAMgASgJEg0KBXRpdGxlGAQgASgJEhMKC2Rlc2NyaXB0aW9uGAUgASgJEi0KCXN0YXJ0c19hdBgGIAEoCzIaLmdvb2dsZS5wcm90b2J1Zi5UaW1lc3RhbXASKwoHZW5kc19hdBgHIAEoCzIaLmdvb2dsZS5wcm90b2J1Zi5UaW1lc3RhbXASDwoHYWxsX2RheRgIIAEoCBIKCgJ0ehgJIAEoCRIUCgxvcmdhbml6ZXJfaWQYCiABKAkSDgoGcmVjb3JkGAsgASgIEiYKBnJlcGVhdBgMIAEoDjIWLmNhbGFiYS52MS5FdmVudFJlcGVhdBIwCgxyZXBlYXRfdW50aWwYDSABKAsyGi5nb29nbGUucHJvdG9idWYuVGltZXN0YW1wEjEKDW9jY3VycmVuY2VfYXQYDiABKAsyGi5nb29nbGUucHJvdG9idWYuVGltZXN0YW1wEjAKDGNhbmNlbGxlZF9hdBgPIAEoCzIaLmdvb2dsZS5wcm90b2J1Zi5UaW1lc3RhbXASFAoMcmVjb3JkaW5nX2lkGBAgASgJEiwKCW15X3N0YXR1cxgRIAEoDjIZLmNhbGFiYS52MS5BdHRlbmRlZVN0YXR1cxIuCgZjb3VudHMYEiABKAsyHi5jYWxhYmEudjEuQ2FsZW5kYXJFdmVudENvdW50cxIzCglhdHRlbmRlZXMYEyADKAsyIC5jYWxhYmEudjEuQ2FsZW5kYXJFdmVudEF0dGVuZGVlEjkKFWNhbmNlbGxlZF9vY2N1cnJlbmNlcxgUIAMoCzIaLmdvb2dsZS5wcm90b2J1Zi5UaW1lc3RhbXASLgoKY3JlYXRlZF9hdBgVIAEoCzIaLmdvb2dsZS5wcm90b2J1Zi5UaW1lc3RhbXASLgoKdXBkYXRlZF9hdBgWIAEoCzIaLmdvb2dsZS5wcm90b2J1Zi5UaW1lc3RhbXASEAoIc2VxdWVuY2UYFyABKA0SEwoLZ3Vlc3RfbGlua3MYGCABKAgSEAoIY2FuX2VkaXQYGSABKAgiTgoaQ2FsZW5kYXJFdmVudEF0dGVuZGVlSW5wdXQSDwoHdXNlcl9pZBgBIAEoCRINCgVlbWFpbBgCIAEoCRIQCghyZXF1aXJlZBgDIAEoCCJGChpMaXN0Q2FsZW5kYXJFdmVudHNSZXNwb25zZRIoCgZldmVudHMYASADKAsyGC5jYWxhYmEudjEuQ2FsZW5kYXJFdmVudCLuAgoaQ3JlYXRlQ2FsZW5kYXJFdmVudFJlcXVlc3QSDwoHcm9vbV9pZBgBIAEoCRINCgV0aXRsZRgCIAEoCRITCgtkZXNjcmlwdGlvbhgDIAEoCRItCglzdGFydHNfYXQYBCABKAsyGi5nb29nbGUucHJvdG9idWYuVGltZXN0YW1wEisKB2VuZHNfYXQYBSABKAsyGi5nb29nbGUucHJvdG9idWYuVGltZXN0YW1wEg8KB2FsbF9kYXkYBiABKAgSCgoCdHoYByABKAkSDgoGcmVjb3JkGAggASgIEiYKBnJlcGVhdBgJIAEoDjIWLmNhbGFiYS52MS5FdmVudFJlcGVhdBIwCgxyZXBlYXRfdW50aWwYCiABKAsyGi5nb29nbGUucHJvdG9idWYuVGltZXN0YW1wEjgKCWF0dGVuZGVlcxgLIAMoCzIlLmNhbGFiYS52MS5DYWxlbmRhckV2ZW50QXR0ZW5kZWVJbnB1dCKTBAoaVXBkYXRlQ2FsZW5kYXJFdmVudFJlcXVlc3QSFAoHcm9vbV9pZBgBIAEoCUgAiAEBEhIKBXRpdGxlGAIgASgJSAGIAQESGAoLZGVzY3JpcHRpb24YAyABKAlIAogBARItCglzdGFydHNfYXQYBCABKAsyGi5nb29nbGUucHJvdG9idWYuVGltZXN0YW1wEisKB2VuZHNfYXQYBSABKAsyGi5nb29nbGUucHJvdG9idWYuVGltZXN0YW1wEhQKB2FsbF9kYXkYBiABKAhIA4gBARIPCgJ0ehgHIAEoCUgEiAEBEhMKBnJlY29yZBgIIAEoCEgFiAEBEisKBnJlcGVhdBgJIAEoDjIWLmNhbGFiYS52MS5FdmVudFJlcGVhdEgGiAEBEjAKDHJlcGVhdF91bnRpbBgKIAEoCzIaLmdvb2dsZS5wcm90b2J1Zi5UaW1lc3RhbXASGgoSY2xlYXJfcmVwZWF0X3VudGlsGAsgASgIEhUKDXNldF9hdHRlbmRlZXMYDCABKAgSOAoJYXR0ZW5kZWVzGA0gAygLMiUuY2FsYWJhLnYxLkNhbGVuZGFyRXZlbnRBdHRlbmRlZUlucHV0QgoKCF9yb29tX2lkQggKBl90aXRsZUIOCgxfZGVzY3JpcHRpb25CCgoIX2FsbF9kYXlCBQoDX3R6QgkKB19yZWNvcmRCCQoHX3JlcGVhdCJAChVDYWxlbmRhckV2ZW50UmVzcG9uc2USJwoFZXZlbnQYASABKAsyGC5jYWxhYmEudjEuQ2FsZW5kYXJFdmVudCJFChhSc3ZwQ2FsZW5kYXJFdmVudFJlcXVlc3QSKQoGc3RhdHVzGAEgASgOMhkuY2FsYWJhLnYxLkF0dGVuZGVlU3RhdHVzIlYKG1RvZGF5Q2FsZW5kYXJFdmVudHNSZXNwb25zZRINCgVjb3VudBgBIAEoDRIoCgZldmVudHMYAiADKAsyGC5jYWxhYmEudjEuQ2FsZW5kYXJFdmVudCImChVFdmVudFJzdnBUb2tlblJlcXVlc3QSDQoFdG9rZW4YASABKAkirgUKFkV2ZW50UnN2cFRva2VuUmVzcG9uc2USEAoIZXZlbnRfaWQYASABKAkSDQoFdGl0bGUYAiABKAkSLQoJc3RhcnRzX2F0GAMgASgLMhouZ29vZ2xlLnByb3RvYnVmLlRpbWVzdGFtcBIrCgdlbmRzX2F0GAQgASgLMhouZ29vZ2xlLnByb3RvYnVmLlRpbWVzdGFtcBIPCgdhbGxfZGF5GAUgASgIEgoKAnR6GAYgASgJEhYKDm9yZ2FuaXplcl9uYW1lGAcgASgJEhYKDndvcmtzcGFjZV9uYW1lGAggASgJEikKBnN0YXR1cxgJIAEoDjIZLmNhbGFiYS52MS5BdHRlbmRlZVN0YXR1cxINCgVlbWFpbBgKIAEoCRIRCgljYW5jZWxsZWQYCyABKAgSEwoLZGVzY3JpcHRpb24YDCABKAkSEQoJcm9vbV9uYW1lGA0gASgJEiwKCW15X3N0YXR1cxgOIAEoDjIZLmNhbGFiYS52MS5BdHRlbmRlZVN0YXR1cxIUCgxhY2NlcHRfdG9rZW4YDyABKAkSEwoLbWF5YmVfdG9rZW4YECABKAkSFQoNZGVjbGluZV90b2tlbhgRIAEoCRIRCglndWVzdF91cmwYEiABKAkSLgoKZ3Vlc3RfZnJvbRgTIAEoCzIaLmdvb2dsZS5wcm90b2J1Zi5UaW1lc3RhbXASLwoLZ3Vlc3RfdW50aWwYFCABKAsyGi5nb29nbGUucHJvdG9idWYuVGltZXN0YW1wEiYKBnJlcGVhdBgVIAEoDjIWLmNhbGFiYS52MS5FdmVudFJlcGVhdBIwCgxyZXBlYXRfdW50aWwYFiABKAsyGi5nb29nbGUucHJvdG9idWYuVGltZXN0YW1wEhcKD29yZ2FuaXplcl9lbWFpbBgXIAEoCSI+ChNDYWxlbmRhckV2ZW50Q3JlYXRlEicKBWV2ZW50GAEgASgLMhguY2FsYWJhLnYxLkNhbGVuZGFyRXZlbnQiPgoTQ2FsZW5kYXJFdmVudFVwZGF0ZRInCgVldmVudBgBIAEoCzIYLmNhbGFiYS52MS5DYWxlbmRhckV2ZW50Ij4KE0NhbGVuZGFyRXZlbnREZWxldGUSJwoFZXZlbnQYASABKAsyGC5jYWxhYmEudjEuQ2FsZW5kYXJFdmVudCLIAQoRQ2FsZW5kYXJFdmVudFJzdnASFAoMd29ya3NwYWNlX2lkGAEgASgJEhAKCGV2ZW50X2lkGAIgASgJEjIKCGF0dGVuZGVlGAMgASgLMiAuY2FsYWJhLnYxLkNhbGVuZGFyRXZlbnRBdHRlbmRlZRIuCgZjb3VudHMYBCABKAsyHi5jYWxhYmEudjEuQ2FsZW5kYXJFdmVudENvdW50cxInCgVldmVudBgFIAEoCzIYLmNhbGFiYS52MS5DYWxlbmRhckV2ZW50IoQBChVDYWxlbmRhckV2ZW50UmVtaW5kZXISJwoFZXZlbnQYASABKAsyGC5jYWxhYmEudjEuQ2FsZW5kYXJFdmVudBIxCg1vY2N1cnJlbmNlX2F0GAIgASgLMhouZ29vZ2xlLnByb3RvYnVmLlRpbWVzdGFtcBIPCgdtaW51dGVzGAMgASgNImEKD1Jvb21FdmVudEFjdGl2ZRIUCgx3b3Jrc3BhY2VfaWQYASABKAkSDwoHcm9vbV9pZBgCIAEoCRInCgVldmVudBgDIAEoCzIYLmNhbGFiYS52MS5DYWxlbmRhckV2ZW50InwKDlJvb21FdmVudEVuZGVkEhQKDHdvcmtzcGFjZV9pZBgBIAEoCRIPCgdyb29tX2lkGAIgASgJEhAKCGV2ZW50X2lkGAMgASgJEjEKDW9jY3VycmVuY2VfYXQYBCABKAsyGi5nb29nbGUucHJvdG9idWYuVGltZXN0YW1wKqUBCg5BdHRlbmRlZVN0YXR1cxIfChtBVFRFTkRFRV9TVEFUVVNfVU5TUEVDSUZJRUQQABIbChdBVFRFTkRFRV9TVEFUVVNfUEVORElORxABEhwKGEFUVEVOREVFX1NUQVRVU19BQ0NFUFRFRBACEhwKGEFUVEVOREVFX1NUQVRVU19ERUNMSU5FRBADEhkKFUFUVEVOREVFX1NUQVRVU19NQVlCRRAEKpEBCgtFdmVudFJlcGVhdBIcChhFVkVOVF9SRVBFQVRfVU5TUEVDSUZJRUQQABIWChJFVkVOVF9SRVBFQVRfREFJTFkQARIXChNFVkVOVF9SRVBFQVRfV0VFS0xZEAISGQoVRVZFTlRfUkVQRUFUX0JJV0VFS0xZEAMSGAoURVZFTlRfUkVQRUFUX01PTlRITFkQBEKYAQoNY29tLmNhbGFiYS52MUIKRXZlbnRQcm90b1ABWjZnaXRodWIuY29tL2NhbGFiYS9jYWxhYmEvc2VydmVyL2dlbi9jYWxhYmEvdjE7Y2FsYWJhdjGiAgNDWFiqAglDYWxhYmEuVjHKAglDYWxhYmFcVjHiAhVDYWxhYmFcVjFcR1BCTWV0YWRhdGHqAgpDYWxhYmE6OlYxYgZwcm90bzM", [file_google_protobuf_timestamp]);
+  fileDesc("ChVjYWxhYmEvdjEvZXZlbnQucHJvdG8SCWNhbGFiYS52MSKmAQoVQ2FsZW5kYXJFdmVudEF0dGVuZGVlEg8KB3VzZXJfaWQYASABKAkSEAoIcmVxdWlyZWQYAiABKAgSKQoGc3RhdHVzGAMgASgOMhkuY2FsYWJhLnYxLkF0dGVuZGVlU3RhdHVzEjAKDHJlc3BvbmRlZF9hdBgEIAEoCzIaLmdvb2dsZS5wcm90b2J1Zi5UaW1lc3RhbXASDQoFZW1haWwYBSABKAkiWQoTQ2FsZW5kYXJFdmVudENvdW50cxIQCghhY2NlcHRlZBgBIAEoDRIQCghkZWNsaW5lZBgCIAEoDRINCgVtYXliZRgDIAEoDRIPCgdwZW5kaW5nGAQgASgNIsEGCg1DYWxlbmRhckV2ZW50EgoKAmlkGAEgASgJEhQKDHdvcmtzcGFjZV9pZBgCIAEoCRIPCgdyb29tX2lkGAMgASgJEg0KBXRpdGxlGAQgASgJEhMKC2Rlc2NyaXB0aW9uGAUgASgJEi0KCXN0YXJ0c19hdBgGIAEoCzIaLmdvb2dsZS5wcm90b2J1Zi5UaW1lc3RhbXASKwoHZW5kc19hdBgHIAEoCzIaLmdvb2dsZS5wcm90b2J1Zi5UaW1lc3RhbXASDwoHYWxsX2RheRgIIAEoCBIKCgJ0ehgJIAEoCRIUCgxvcmdhbml6ZXJfaWQYCiABKAkSDgoGcmVjb3JkGAsgASgIEiYKBnJlcGVhdBgMIAEoDjIWLmNhbGFiYS52MS5FdmVudFJlcGVhdBIwCgxyZXBlYXRfdW50aWwYDSABKAsyGi5nb29nbGUucHJvdG9idWYuVGltZXN0YW1wEjEKDW9jY3VycmVuY2VfYXQYDiABKAsyGi5nb29nbGUucHJvdG9idWYuVGltZXN0YW1wEjAKDGNhbmNlbGxlZF9hdBgPIAEoCzIaLmdvb2dsZS5wcm90b2J1Zi5UaW1lc3RhbXASFAoMcmVjb3JkaW5nX2lkGBAgASgJEiwKCW15X3N0YXR1cxgRIAEoDjIZLmNhbGFiYS52MS5BdHRlbmRlZVN0YXR1cxIuCgZjb3VudHMYEiABKAsyHi5jYWxhYmEudjEuQ2FsZW5kYXJFdmVudENvdW50cxIzCglhdHRlbmRlZXMYEyADKAsyIC5jYWxhYmEudjEuQ2FsZW5kYXJFdmVudEF0dGVuZGVlEjkKFWNhbmNlbGxlZF9vY2N1cnJlbmNlcxgUIAMoCzIaLmdvb2dsZS5wcm90b2J1Zi5UaW1lc3RhbXASLgoKY3JlYXRlZF9hdBgVIAEoCzIaLmdvb2dsZS5wcm90b2J1Zi5UaW1lc3RhbXASLgoKdXBkYXRlZF9hdBgWIAEoCzIaLmdvb2dsZS5wcm90b2J1Zi5UaW1lc3RhbXASEAoIc2VxdWVuY2UYFyABKA0SEwoLZ3Vlc3RfbGlua3MYGCABKAgSEAoIY2FuX2VkaXQYGSABKAgiTgoaQ2FsZW5kYXJFdmVudEF0dGVuZGVlSW5wdXQSDwoHdXNlcl9pZBgBIAEoCRINCgVlbWFpbBgCIAEoCRIQCghyZXF1aXJlZBgDIAEoCCJGChpMaXN0Q2FsZW5kYXJFdmVudHNSZXNwb25zZRIoCgZldmVudHMYASADKAsyGC5jYWxhYmEudjEuQ2FsZW5kYXJFdmVudCLuAgoaQ3JlYXRlQ2FsZW5kYXJFdmVudFJlcXVlc3QSDwoHcm9vbV9pZBgBIAEoCRINCgV0aXRsZRgCIAEoCRITCgtkZXNjcmlwdGlvbhgDIAEoCRItCglzdGFydHNfYXQYBCABKAsyGi5nb29nbGUucHJvdG9idWYuVGltZXN0YW1wEisKB2VuZHNfYXQYBSABKAsyGi5nb29nbGUucHJvdG9idWYuVGltZXN0YW1wEg8KB2FsbF9kYXkYBiABKAgSCgoCdHoYByABKAkSDgoGcmVjb3JkGAggASgIEiYKBnJlcGVhdBgJIAEoDjIWLmNhbGFiYS52MS5FdmVudFJlcGVhdBIwCgxyZXBlYXRfdW50aWwYCiABKAsyGi5nb29nbGUucHJvdG9idWYuVGltZXN0YW1wEjgKCWF0dGVuZGVlcxgLIAMoCzIlLmNhbGFiYS52MS5DYWxlbmRhckV2ZW50QXR0ZW5kZWVJbnB1dCKTBAoaVXBkYXRlQ2FsZW5kYXJFdmVudFJlcXVlc3QSFAoHcm9vbV9pZBgBIAEoCUgAiAEBEhIKBXRpdGxlGAIgASgJSAGIAQESGAoLZGVzY3JpcHRpb24YAyABKAlIAogBARItCglzdGFydHNfYXQYBCABKAsyGi5nb29nbGUucHJvdG9idWYuVGltZXN0YW1wEisKB2VuZHNfYXQYBSABKAsyGi5nb29nbGUucHJvdG9idWYuVGltZXN0YW1wEhQKB2FsbF9kYXkYBiABKAhIA4gBARIPCgJ0ehgHIAEoCUgEiAEBEhMKBnJlY29yZBgIIAEoCEgFiAEBEisKBnJlcGVhdBgJIAEoDjIWLmNhbGFiYS52MS5FdmVudFJlcGVhdEgGiAEBEjAKDHJlcGVhdF91bnRpbBgKIAEoCzIaLmdvb2dsZS5wcm90b2J1Zi5UaW1lc3RhbXASGgoSY2xlYXJfcmVwZWF0X3VudGlsGAsgASgIEhUKDXNldF9hdHRlbmRlZXMYDCABKAgSOAoJYXR0ZW5kZWVzGA0gAygLMiUuY2FsYWJhLnYxLkNhbGVuZGFyRXZlbnRBdHRlbmRlZUlucHV0QgoKCF9yb29tX2lkQggKBl90aXRsZUIOCgxfZGVzY3JpcHRpb25CCgoIX2FsbF9kYXlCBQoDX3R6QgkKB19yZWNvcmRCCQoHX3JlcGVhdCJAChVDYWxlbmRhckV2ZW50UmVzcG9uc2USJwoFZXZlbnQYASABKAsyGC5jYWxhYmEudjEuQ2FsZW5kYXJFdmVudCJFChhSc3ZwQ2FsZW5kYXJFdmVudFJlcXVlc3QSKQoGc3RhdHVzGAEgASgOMhkuY2FsYWJhLnYxLkF0dGVuZGVlU3RhdHVzIlYKG1RvZGF5Q2FsZW5kYXJFdmVudHNSZXNwb25zZRINCgVjb3VudBgBIAEoDRIoCgZldmVudHMYAiADKAsyGC5jYWxhYmEudjEuQ2FsZW5kYXJFdmVudCImChVFdmVudFJzdnBUb2tlblJlcXVlc3QSDQoFdG9rZW4YASABKAkirgUKFkV2ZW50UnN2cFRva2VuUmVzcG9uc2USEAoIZXZlbnRfaWQYASABKAkSDQoFdGl0bGUYAiABKAkSLQoJc3RhcnRzX2F0GAMgASgLMhouZ29vZ2xlLnByb3RvYnVmLlRpbWVzdGFtcBIrCgdlbmRzX2F0GAQgASgLMhouZ29vZ2xlLnByb3RvYnVmLlRpbWVzdGFtcBIPCgdhbGxfZGF5GAUgASgIEgoKAnR6GAYgASgJEhYKDm9yZ2FuaXplcl9uYW1lGAcgASgJEhYKDndvcmtzcGFjZV9uYW1lGAggASgJEikKBnN0YXR1cxgJIAEoDjIZLmNhbGFiYS52MS5BdHRlbmRlZVN0YXR1cxINCgVlbWFpbBgKIAEoCRIRCgljYW5jZWxsZWQYCyABKAgSEwoLZGVzY3JpcHRpb24YDCABKAkSEQoJcm9vbV9uYW1lGA0gASgJEiwKCW15X3N0YXR1cxgOIAEoDjIZLmNhbGFiYS52MS5BdHRlbmRlZVN0YXR1cxIUCgxhY2NlcHRfdG9rZW4YDyABKAkSEwoLbWF5YmVfdG9rZW4YECABKAkSFQoNZGVjbGluZV90b2tlbhgRIAEoCRIRCglndWVzdF91cmwYEiABKAkSLgoKZ3Vlc3RfZnJvbRgTIAEoCzIaLmdvb2dsZS5wcm90b2J1Zi5UaW1lc3RhbXASLwoLZ3Vlc3RfdW50aWwYFCABKAsyGi5nb29nbGUucHJvdG9idWYuVGltZXN0YW1wEiYKBnJlcGVhdBgVIAEoDjIWLmNhbGFiYS52MS5FdmVudFJlcGVhdBIwCgxyZXBlYXRfdW50aWwYFiABKAsyGi5nb29nbGUucHJvdG9idWYuVGltZXN0YW1wEhcKD29yZ2FuaXplcl9lbWFpbBgXIAEoCSKwAQoMQnVzeUludGVydmFsEi0KCXN0YXJ0c19hdBgBIAEoCzIaLmdvb2dsZS5wcm90b2J1Zi5UaW1lc3RhbXASKwoHZW5kc19hdBgCIAEoCzIaLmdvb2dsZS5wcm90b2J1Zi5UaW1lc3RhbXASEAoIZXZlbnRfaWQYAyABKAkSIQoEa2luZBgEIAEoDjITLmNhbGFiYS52MS5CdXN5S2luZBIPCgdhbGxfZGF5GAUgASgIIoIBCgxGcmVlQnVzeVVzZXISDwoHdXNlcl9pZBgBIAEoCRIQCgh0aW1lem9uZRgCIAEoCRIoCgp3b3JrX2hvdXJzGAMgASgLMhQuY2FsYWJhLnYxLldvcmtIb3VycxIlCgRidXN5GAQgAygLMhcuY2FsYWJhLnYxLkJ1c3lJbnRlcnZhbCI6ChBGcmVlQnVzeVJlc3BvbnNlEiYKBXVzZXJzGAEgAygLMhcuY2FsYWJhLnYxLkZyZWVCdXN5VXNlciK4AQoTU3VnZ2VzdFNsb3RzUmVxdWVzdBINCgV1c2VycxgBIAMoCRIUCgxkdXJhdGlvbl9taW4YAiABKA0SKAoEZnJvbRgDIAEoCzIaLmdvb2dsZS5wcm90b2J1Zi5UaW1lc3RhbXASJgoCdG8YBCABKAsyGi5nb29nbGUucHJvdG9idWYuVGltZXN0YW1wEhkKEXdpdGhpbl93b3JrX2hvdXJzGAUgASgIEg8KB3Jvb21faWQYBiABKAkiYgoEU2xvdBItCglzdGFydHNfYXQYASABKAsyGi5nb29nbGUucHJvdG9idWYuVGltZXN0YW1wEisKB2VuZHNfYXQYAiABKAsyGi5nb29nbGUucHJvdG9idWYuVGltZXN0YW1wIjYKFFN1Z2dlc3RTbG90c1Jlc3BvbnNlEh4KBXNsb3RzGAEgAygLMg8uY2FsYWJhLnYxLlNsb3QiOwoOQ2FsRGF2Q2FsZW5kYXISDAoEaHJlZhgBIAEoCRIMCgRuYW1lGAIgASgJEg0KBWNvbG9yGAMgASgJItcBCg1DYWxEYXZBY2NvdW50EgsKA3VybBgBIAEoCRIQCgh1c2VybmFtZRgCIAEoCRIVCg1jYWxlbmRhcl9ocmVmGAMgASgJEg4KBmltcG9ydBgEIAEoCBIMCgRwdXNoGAUgASgIEjAKDGxhc3Rfc3luY19hdBgGIAEoCzIaLmdvb2dsZS5wcm90b2J1Zi5UaW1lc3RhbXASEgoKbGFzdF9lcnJvchgHIAEoCRIsCgljYWxlbmRhcnMYCCADKAsyGS5jYWxhYmEudjEuQ2FsRGF2Q2FsZW5kYXIiQgoVQ2FsRGF2QWNjb3VudFJlc3BvbnNlEikKB2FjY291bnQYASABKAsyGC5jYWxhYmEudjEuQ2FsRGF2QWNjb3VudCJHChRDb25uZWN0Q2FsRGF2UmVxdWVzdBILCgN1cmwYASABKAkSEAoIdXNlcm5hbWUYAiABKAkSEAoIcGFzc3dvcmQYAyABKAkiSgoTVXBkYXRlQ2FsRGF2UmVxdWVzdBIVCg1jYWxlbmRhcl9ocmVmGAEgASgJEg4KBmltcG9ydBgCIAEoCBIMCgRwdXNoGAMgASgIIj4KE0NhbGVuZGFyRXZlbnRDcmVhdGUSJwoFZXZlbnQYASABKAsyGC5jYWxhYmEudjEuQ2FsZW5kYXJFdmVudCI+ChNDYWxlbmRhckV2ZW50VXBkYXRlEicKBWV2ZW50GAEgASgLMhguY2FsYWJhLnYxLkNhbGVuZGFyRXZlbnQiPgoTQ2FsZW5kYXJFdmVudERlbGV0ZRInCgVldmVudBgBIAEoCzIYLmNhbGFiYS52MS5DYWxlbmRhckV2ZW50IsgBChFDYWxlbmRhckV2ZW50UnN2cBIUCgx3b3Jrc3BhY2VfaWQYASABKAkSEAoIZXZlbnRfaWQYAiABKAkSMgoIYXR0ZW5kZWUYAyABKAsyIC5jYWxhYmEudjEuQ2FsZW5kYXJFdmVudEF0dGVuZGVlEi4KBmNvdW50cxgEIAEoCzIeLmNhbGFiYS52MS5DYWxlbmRhckV2ZW50Q291bnRzEicKBWV2ZW50GAUgASgLMhguY2FsYWJhLnYxLkNhbGVuZGFyRXZlbnQihAEKFUNhbGVuZGFyRXZlbnRSZW1pbmRlchInCgVldmVudBgBIAEoCzIYLmNhbGFiYS52MS5DYWxlbmRhckV2ZW50EjEKDW9jY3VycmVuY2VfYXQYAiABKAsyGi5nb29nbGUucHJvdG9idWYuVGltZXN0YW1wEg8KB21pbnV0ZXMYAyABKA0iYQoPUm9vbUV2ZW50QWN0aXZlEhQKDHdvcmtzcGFjZV9pZBgBIAEoCRIPCgdyb29tX2lkGAIgASgJEicKBWV2ZW50GAMgASgLMhguY2FsYWJhLnYxLkNhbGVuZGFyRXZlbnQifAoOUm9vbUV2ZW50RW5kZWQSFAoMd29ya3NwYWNlX2lkGAEgASgJEg8KB3Jvb21faWQYAiABKAkSEAoIZXZlbnRfaWQYAyABKAkSMQoNb2NjdXJyZW5jZV9hdBgEIAEoCzIaLmdvb2dsZS5wcm90b2J1Zi5UaW1lc3RhbXAqpQEKDkF0dGVuZGVlU3RhdHVzEh8KG0FUVEVOREVFX1NUQVRVU19VTlNQRUNJRklFRBAAEhsKF0FUVEVOREVFX1NUQVRVU19QRU5ESU5HEAESHAoYQVRURU5ERUVfU1RBVFVTX0FDQ0VQVEVEEAISHAoYQVRURU5ERUVfU1RBVFVTX0RFQ0xJTkVEEAMSGQoVQVRURU5ERUVfU1RBVFVTX01BWUJFEAQqkQEKC0V2ZW50UmVwZWF0EhwKGEVWRU5UX1JFUEVBVF9VTlNQRUNJRklFRBAAEhYKEkVWRU5UX1JFUEVBVF9EQUlMWRABEhcKE0VWRU5UX1JFUEVBVF9XRUVLTFkQAhIZChVFVkVOVF9SRVBFQVRfQklXRUVLTFkQAxIYChRFVkVOVF9SRVBFQVRfTU9OVEhMWRAEKlQKCEJ1c3lLaW5kEhkKFUJVU1lfS0lORF9VTlNQRUNJRklFRBAAEhUKEUJVU1lfS0lORF9NRUVUSU5HEAESFgoSQlVTWV9LSU5EX0VYVEVSTkFMEAJCmAEKDWNvbS5jYWxhYmEudjFCCkV2ZW50UHJvdG9QAVo2Z2l0aHViLmNvbS9jYWxhYmEvY2FsYWJhL3NlcnZlci9nZW4vY2FsYWJhL3YxO2NhbGFiYXYxogIDQ1hYqgIJQ2FsYWJhLlYxygIJQ2FsYWJhXFYx4gIVQ2FsYWJhXFYxXEdQQk1ldGFkYXRh6gIKQ2FsYWJhOjpWMWIGcHJvdG8z", [file_google_protobuf_timestamp, file_calaba_v1_user]);
 
 /**
  * One attendee: a member of the workspace (user_id) or an external address (email,
@@ -727,6 +729,369 @@ export const EventRsvpTokenResponseSchema: GenMessage<EventRsvpTokenResponse> = 
   messageDesc(file_calaba_v1_event, 11);
 
 /**
+ * One busy interval (an occurrence; intervals of a person may overlap).
+ *
+ * @generated from message calaba.v1.BusyInterval
+ */
+export type BusyInterval = Message<"calaba.v1.BusyInterval"> & {
+  /**
+   * @generated from field: google.protobuf.Timestamp starts_at = 1;
+   */
+  startsAt?: Timestamp | undefined;
+
+  /**
+   * @generated from field: google.protobuf.Timestamp ends_at = 2;
+   */
+  endsAt?: Timestamp | undefined;
+
+  /**
+   * The meeting, only when the caller may see it in this workspace (ADR-0038 §2); empty =
+   * just «busy».
+   *
+   * @generated from field: string event_id = 3;
+   */
+  eventId: string;
+
+  /**
+   * @generated from field: calaba.v1.BusyKind kind = 4;
+   */
+  kind: BusyKind;
+
+  /**
+   * An all-day meeting / external event: busy from midnight to midnight of the person's zone.
+   *
+   * @generated from field: bool all_day = 5;
+   */
+  allDay: boolean;
+};
+
+/**
+ * Describes the message calaba.v1.BusyInterval.
+ * Use `create(BusyIntervalSchema)` to create a new message.
+ */
+export const BusyIntervalSchema: GenMessage<BusyInterval> = /*@__PURE__*/
+  messageDesc(file_calaba_v1_event, 12);
+
+/**
+ * @generated from message calaba.v1.FreeBusyUser
+ */
+export type FreeBusyUser = Message<"calaba.v1.FreeBusyUser"> & {
+  /**
+   * @generated from field: string user_id = 1;
+   */
+  userId: string;
+
+  /**
+   * IANA zone of the person, "UTC" without one
+   *
+   * @generated from field: string timezone = 2;
+   */
+  timezone: string;
+
+  /**
+   * @generated from field: calaba.v1.WorkHours work_hours = 3;
+   */
+  workHours?: WorkHours | undefined;
+
+  /**
+   * overlapping [from, to), earliest first
+   *
+   * @generated from field: repeated calaba.v1.BusyInterval busy = 4;
+   */
+  busy: BusyInterval[];
+};
+
+/**
+ * Describes the message calaba.v1.FreeBusyUser.
+ * Use `create(FreeBusyUserSchema)` to create a new message.
+ */
+export const FreeBusyUserSchema: GenMessage<FreeBusyUser> = /*@__PURE__*/
+  messageDesc(file_calaba_v1_event, 13);
+
+/**
+ * GET /api/workspaces/{id}/freebusy?users=<id,id,…>&from=<RFC 3339>&to=<RFC 3339> — busy
+ * intervals of ≤ 20 members of the workspace (not guests or bots) in a window of ≤ 14 days.
+ * Members only: guests and bots → 403; a user who is not a member → 422 (field users).
+ * Meetings of every workspace of the person count (no id outside this one). 60 per minute.
+ *
+ * @generated from message calaba.v1.FreeBusyResponse
+ */
+export type FreeBusyResponse = Message<"calaba.v1.FreeBusyResponse"> & {
+  /**
+   * in the order asked
+   *
+   * @generated from field: repeated calaba.v1.FreeBusyUser users = 1;
+   */
+  users: FreeBusyUser[];
+};
+
+/**
+ * Describes the message calaba.v1.FreeBusyResponse.
+ * Use `create(FreeBusyResponseSchema)` to create a new message.
+ */
+export const FreeBusyResponseSchema: GenMessage<FreeBusyResponse> = /*@__PURE__*/
+  messageDesc(file_calaba_v1_event, 14);
+
+/**
+ * POST /api/workspaces/{id}/freebusy/suggest → SuggestSlotsResponse: up to 10 earliest
+ * windows of duration_min (5..1440) on a 15-minute grid inside [from, to) (≤ 14 days; not
+ * before now) where every person is free and, with room_id, the room has no other meeting.
+ * within_work_hours: only where the working hours of all of them intersect; 409
+ * NO_COMMON_HOURS when they do not intersect in the window at all. 30 per minute.
+ *
+ * @generated from message calaba.v1.SuggestSlotsRequest
+ */
+export type SuggestSlotsRequest = Message<"calaba.v1.SuggestSlotsRequest"> & {
+  /**
+   * 1..20 members, as in freebusy
+   *
+   * @generated from field: repeated string users = 1;
+   */
+  users: string[];
+
+  /**
+   * @generated from field: uint32 duration_min = 2;
+   */
+  durationMin: number;
+
+  /**
+   * @generated from field: google.protobuf.Timestamp from = 3;
+   */
+  from?: Timestamp | undefined;
+
+  /**
+   * @generated from field: google.protobuf.Timestamp to = 4;
+   */
+  to?: Timestamp | undefined;
+
+  /**
+   * @generated from field: bool within_work_hours = 5;
+   */
+  withinWorkHours: boolean;
+
+  /**
+   * a voice room of the workspace the caller can see; empty = none
+   *
+   * @generated from field: string room_id = 6;
+   */
+  roomId: string;
+};
+
+/**
+ * Describes the message calaba.v1.SuggestSlotsRequest.
+ * Use `create(SuggestSlotsRequestSchema)` to create a new message.
+ */
+export const SuggestSlotsRequestSchema: GenMessage<SuggestSlotsRequest> = /*@__PURE__*/
+  messageDesc(file_calaba_v1_event, 15);
+
+/**
+ * @generated from message calaba.v1.Slot
+ */
+export type Slot = Message<"calaba.v1.Slot"> & {
+  /**
+   * @generated from field: google.protobuf.Timestamp starts_at = 1;
+   */
+  startsAt?: Timestamp | undefined;
+
+  /**
+   * @generated from field: google.protobuf.Timestamp ends_at = 2;
+   */
+  endsAt?: Timestamp | undefined;
+};
+
+/**
+ * Describes the message calaba.v1.Slot.
+ * Use `create(SlotSchema)` to create a new message.
+ */
+export const SlotSchema: GenMessage<Slot> = /*@__PURE__*/
+  messageDesc(file_calaba_v1_event, 16);
+
+/**
+ * @generated from message calaba.v1.SuggestSlotsResponse
+ */
+export type SuggestSlotsResponse = Message<"calaba.v1.SuggestSlotsResponse"> & {
+  /**
+   * earliest first; empty = no common free window
+   *
+   * @generated from field: repeated calaba.v1.Slot slots = 1;
+   */
+  slots: Slot[];
+};
+
+/**
+ * Describes the message calaba.v1.SuggestSlotsResponse.
+ * Use `create(SuggestSlotsResponseSchema)` to create a new message.
+ */
+export const SuggestSlotsResponseSchema: GenMessage<SuggestSlotsResponse> = /*@__PURE__*/
+  messageDesc(file_calaba_v1_event, 17);
+
+/**
+ * @generated from message calaba.v1.CalDavCalendar
+ */
+export type CalDavCalendar = Message<"calaba.v1.CalDavCalendar"> & {
+  /**
+   * absolute URL of the collection
+   *
+   * @generated from field: string href = 1;
+   */
+  href: string;
+
+  /**
+   * @generated from field: string name = 2;
+   */
+  name: string;
+
+  /**
+   * "#RRGGBB" or empty
+   *
+   * @generated from field: string color = 3;
+   */
+  color: string;
+};
+
+/**
+ * Describes the message calaba.v1.CalDavCalendar.
+ * Use `create(CalDavCalendarSchema)` to create a new message.
+ */
+export const CalDavCalendarSchema: GenMessage<CalDavCalendar> = /*@__PURE__*/
+  messageDesc(file_calaba_v1_event, 18);
+
+/**
+ * @generated from message calaba.v1.CalDavAccount
+ */
+export type CalDavAccount = Message<"calaba.v1.CalDavAccount"> & {
+  /**
+   * @generated from field: string url = 1;
+   */
+  url: string;
+
+  /**
+   * @generated from field: string username = 2;
+   */
+  username: string;
+
+  /**
+   * the chosen calendar (one of calendars); empty = none yet
+   *
+   * @generated from field: string calendar_href = 3;
+   */
+  calendarHref: string;
+
+  /**
+   * import busy time (default true)
+   *
+   * @generated from field: bool import = 4;
+   */
+  import: boolean;
+
+  /**
+   * put the user's meetings into the calendar (default false)
+   *
+   * @generated from field: bool push = 5;
+   */
+  push: boolean;
+
+  /**
+   * @generated from field: google.protobuf.Timestamp last_sync_at = 6;
+   */
+  lastSyncAt?: Timestamp | undefined;
+
+  /**
+   * of the last import or push; empty = fine
+   *
+   * @generated from field: string last_error = 7;
+   */
+  lastError: string;
+
+  /**
+   * event calendars found at connection
+   *
+   * @generated from field: repeated calaba.v1.CalDavCalendar calendars = 8;
+   */
+  calendars: CalDavCalendar[];
+};
+
+/**
+ * Describes the message calaba.v1.CalDavAccount.
+ * Use `create(CalDavAccountSchema)` to create a new message.
+ */
+export const CalDavAccountSchema: GenMessage<CalDavAccount> = /*@__PURE__*/
+  messageDesc(file_calaba_v1_event, 19);
+
+/**
+ * @generated from message calaba.v1.CalDavAccountResponse
+ */
+export type CalDavAccountResponse = Message<"calaba.v1.CalDavAccountResponse"> & {
+  /**
+   * @generated from field: calaba.v1.CalDavAccount account = 1;
+   */
+  account?: CalDavAccount | undefined;
+};
+
+/**
+ * Describes the message calaba.v1.CalDavAccountResponse.
+ * Use `create(CalDavAccountResponseSchema)` to create a new message.
+ */
+export const CalDavAccountResponseSchema: GenMessage<CalDavAccountResponse> = /*@__PURE__*/
+  messageDesc(file_calaba_v1_event, 20);
+
+/**
+ * @generated from message calaba.v1.ConnectCalDavRequest
+ */
+export type ConnectCalDavRequest = Message<"calaba.v1.ConnectCalDavRequest"> & {
+  /**
+   * https URL of the server or the principal
+   *
+   * @generated from field: string url = 1;
+   */
+  url: string;
+
+  /**
+   * @generated from field: string username = 2;
+   */
+  username: string;
+
+  /**
+   * @generated from field: string password = 3;
+   */
+  password: string;
+};
+
+/**
+ * Describes the message calaba.v1.ConnectCalDavRequest.
+ * Use `create(ConnectCalDavRequestSchema)` to create a new message.
+ */
+export const ConnectCalDavRequestSchema: GenMessage<ConnectCalDavRequest> = /*@__PURE__*/
+  messageDesc(file_calaba_v1_event, 21);
+
+/**
+ * @generated from message calaba.v1.UpdateCalDavRequest
+ */
+export type UpdateCalDavRequest = Message<"calaba.v1.UpdateCalDavRequest"> & {
+  /**
+   * @generated from field: string calendar_href = 1;
+   */
+  calendarHref: string;
+
+  /**
+   * @generated from field: bool import = 2;
+   */
+  import: boolean;
+
+  /**
+   * @generated from field: bool push = 3;
+   */
+  push: boolean;
+};
+
+/**
+ * Describes the message calaba.v1.UpdateCalDavRequest.
+ * Use `create(UpdateCalDavRequestSchema)` to create a new message.
+ */
+export const UpdateCalDavRequestSchema: GenMessage<UpdateCalDavRequest> = /*@__PURE__*/
+  messageDesc(file_calaba_v1_event, 22);
+
+/**
  * EVENT_CREATE / EVENT_UPDATE / EVENT_DELETE: the series (occurrence_at unset, my_status
  * UNSPECIFIED), to everyone who may see the event (see above). EVENT_DELETE carries the
  * cancelled event (cancelled_at set) and also goes to attendees who lost the event (removed
@@ -746,7 +1111,7 @@ export type CalendarEventCreate = Message<"calaba.v1.CalendarEventCreate"> & {
  * Use `create(CalendarEventCreateSchema)` to create a new message.
  */
 export const CalendarEventCreateSchema: GenMessage<CalendarEventCreate> = /*@__PURE__*/
-  messageDesc(file_calaba_v1_event, 12);
+  messageDesc(file_calaba_v1_event, 23);
 
 /**
  * @generated from message calaba.v1.CalendarEventUpdate
@@ -763,7 +1128,7 @@ export type CalendarEventUpdate = Message<"calaba.v1.CalendarEventUpdate"> & {
  * Use `create(CalendarEventUpdateSchema)` to create a new message.
  */
 export const CalendarEventUpdateSchema: GenMessage<CalendarEventUpdate> = /*@__PURE__*/
-  messageDesc(file_calaba_v1_event, 13);
+  messageDesc(file_calaba_v1_event, 24);
 
 /**
  * @generated from message calaba.v1.CalendarEventDelete
@@ -780,7 +1145,7 @@ export type CalendarEventDelete = Message<"calaba.v1.CalendarEventDelete"> & {
  * Use `create(CalendarEventDeleteSchema)` to create a new message.
  */
 export const CalendarEventDeleteSchema: GenMessage<CalendarEventDelete> = /*@__PURE__*/
-  messageDesc(file_calaba_v1_event, 14);
+  messageDesc(file_calaba_v1_event, 25);
 
 /**
  * EVENT_RSVP: an attendee answered; to everyone who may see the event.
@@ -821,7 +1186,7 @@ export type CalendarEventRsvp = Message<"calaba.v1.CalendarEventRsvp"> & {
  * Use `create(CalendarEventRsvpSchema)` to create a new message.
  */
 export const CalendarEventRsvpSchema: GenMessage<CalendarEventRsvp> = /*@__PURE__*/
-  messageDesc(file_calaba_v1_event, 15);
+  messageDesc(file_calaba_v1_event, 26);
 
 /**
  * EVENT_REMINDER: to one attendee's devices (user channel), `minutes` before the occurrence
@@ -853,7 +1218,7 @@ export type CalendarEventReminder = Message<"calaba.v1.CalendarEventReminder"> &
  * Use `create(CalendarEventReminderSchema)` to create a new message.
  */
 export const CalendarEventReminderSchema: GenMessage<CalendarEventReminder> = /*@__PURE__*/
-  messageDesc(file_calaba_v1_event, 16);
+  messageDesc(file_calaba_v1_event, 27);
 
 /**
  * ROOM_EVENT_ACTIVE: 15 minutes before an occurrence with a room starts (and at once for one
@@ -887,7 +1252,7 @@ export type RoomEventActive = Message<"calaba.v1.RoomEventActive"> & {
  * Use `create(RoomEventActiveSchema)` to create a new message.
  */
 export const RoomEventActiveSchema: GenMessage<RoomEventActive> = /*@__PURE__*/
-  messageDesc(file_calaba_v1_event, 17);
+  messageDesc(file_calaba_v1_event, 28);
 
 /**
  * ROOM_EVENT_ENDED: the occurrence ended, was cancelled or moved away from the room / window.
@@ -921,7 +1286,7 @@ export type RoomEventEnded = Message<"calaba.v1.RoomEventEnded"> & {
  * Use `create(RoomEventEndedSchema)` to create a new message.
  */
 export const RoomEventEndedSchema: GenMessage<RoomEventEnded> = /*@__PURE__*/
-  messageDesc(file_calaba_v1_event, 18);
+  messageDesc(file_calaba_v1_event, 29);
 
 /**
  * An attendee's answer (informational, ADR-0038 §3).
@@ -1002,4 +1367,36 @@ export enum EventRepeat {
  */
 export const EventRepeatSchema: GenEnum<EventRepeat> = /*@__PURE__*/
   enumDesc(file_calaba_v1_event, 1);
+
+/**
+ * What makes a person busy.
+ *
+ * @generated from enum calaba.v1.BusyKind
+ */
+export enum BusyKind {
+  /**
+   * @generated from enum value: BUSY_KIND_UNSPECIFIED = 0;
+   */
+  UNSPECIFIED = 0,
+
+  /**
+   * a Calab meeting they organize or attend (answer not «declined»)
+   *
+   * @generated from enum value: BUSY_KIND_MEETING = 1;
+   */
+  MEETING = 1,
+
+  /**
+   * their connected CalDAV calendar (never with a title or an id)
+   *
+   * @generated from enum value: BUSY_KIND_EXTERNAL = 2;
+   */
+  EXTERNAL = 2,
+}
+
+/**
+ * Describes the enum calaba.v1.BusyKind.
+ */
+export const BusyKindSchema: GenEnum<BusyKind> = /*@__PURE__*/
+  enumDesc(file_calaba_v1_event, 2);
 

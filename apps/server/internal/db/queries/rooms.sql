@@ -4,7 +4,7 @@ INSERT INTO rooms (workspace_id, type, name, topic, position, is_private,
 VALUES (sqlc.arg('workspace_id')::uuid, sqlc.arg('type'), sqlc.arg('name'), sqlc.arg('topic'),
         coalesce(sqlc.narg('position')::integer,
                  (SELECT coalesce(max(position) + 1, 0) FROM rooms
-                  WHERE workspace_id = sqlc.arg('workspace_id')::uuid AND archived_at IS NULL)),
+                  WHERE workspace_id = sqlc.arg('workspace_id')::uuid AND archived_at IS NULL AND type <> 'task')),
         sqlc.arg('is_private'), sqlc.narg('audio_bitrate_kbps'), sqlc.narg('max_stream_preset'),
         sqlc.narg('max_streams'), sqlc.narg('category_id'), sqlc.arg('user_limit'), sqlc.narg('camera_limit'))
 RETURNING *;
@@ -18,7 +18,7 @@ SELECT * FROM rooms WHERE id = $1 AND archived_at IS NULL FOR UPDATE;
 
 -- name: ListRooms :many
 SELECT * FROM rooms
-WHERE workspace_id = sqlc.arg('workspace_id')::uuid AND archived_at IS NULL
+WHERE workspace_id = sqlc.arg('workspace_id')::uuid AND archived_at IS NULL AND type <> 'task'
 ORDER BY position, id;
 
 -- name: UpdateRoom :one

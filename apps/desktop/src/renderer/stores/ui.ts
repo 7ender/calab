@@ -5,6 +5,7 @@ import { HOME } from './dms';
 import { RoomType } from '@calaba/protocol';
 import { useRooms } from './rooms';
 import type { LightboxImage } from '../lib/lightbox';
+import { useBoardsUi } from './boardsUi';
 
 export type Dialog =
   | { kind: 'create-workspace' }
@@ -42,6 +43,8 @@ export interface EventDraftInit {
   end?: number;
   allDay?: boolean;
   roomId?: string;
+  /** Attendees (members) prefilled: «Подобрать время», a slot picked (ADR-0041 §3); me left out. */
+  attendees?: readonly string[];
   /** Copy everything else from this occurrence («Дублировать»). */
   copyOf?: string;
 }
@@ -139,7 +142,10 @@ export const useUi = create<UiState>()(
       toggleMiniCal: (open) => set((s) => ({ miniCal: open ?? !s.miniCal })),
       setCalMonth: (calMonth) => set({ calMonth }),
       openCalendarDay: (day, eventKey) =>
-        set((s) => ({ calDay: day, calEvent: eventKey === undefined ? s.calEvent : eventKey, calMonth: day.slice(0, 7), navDrawer: false, membersOverlay: false, editing: null })),
+        set((s) => {
+          if (useBoardsUi.getState().active) useBoardsUi.getState().setActive(false);
+          return { calDay: day, calEvent: eventKey === undefined ? s.calEvent : eventKey, calMonth: day.slice(0, 7), navDrawer: false, membersOverlay: false, editing: null };
+        }),
       selectCalEvent: (calEvent) => set({ calEvent }),
       closeCalendar: () => set({ calDay: null, calEvent: null }),
       setWorkspace: (id) =>
@@ -150,7 +156,10 @@ export const useUi = create<UiState>()(
           history: id ? pushLoc(s.history, here(s), { ws: id, room: s.lastRoom[id] ?? null }) : s.history,
         })),
       openRoom: (wsId, roomId) =>
-        set((s) => ({
+        set((s) => {
+          // A room opened from anywhere (⌘K, a notification, a link) leaves the boards mode.
+          if (useBoardsUi.getState().active) useBoardsUi.getState().setActive(false);
+          return {
           calDay: null,
           calEvent: null,
           activeWorkspaceId: wsId,
@@ -159,7 +168,8 @@ export const useUi = create<UiState>()(
           membersOverlay: false,
           navDrawer: false,
           history: pushLoc(s.history, here(s), { ws: wsId, room: roomId }),
-        })),
+          };
+        }),
       selectDefaultRoom: (wsId, roomId) => set((s) => ({ lastRoom: { ...s.lastRoom, [wsId]: roomId } })),
       goBack: () => set((s) => travel(s, -1)),
       goForward: () => set((s) => travel(s, 1)),

@@ -254,6 +254,7 @@ func (h *Hub) loadInto(ctx context.Context, st *wsState, wid uuid.UUID) {
 	}
 	st.ws, st.rooms, st.targets = loaded.ws, loaded.rooms, loaded.targets
 	st.roleDefs, st.roleIDs, st.members = loaded.roleDefs, loaded.roleIDs, loaded.members
+	st.boardState = loaded.boardState
 	for len(st.backlog) > 0 {
 		p := st.backlog[0]
 		st.backlog = st.backlog[1:]
@@ -348,6 +349,9 @@ func (h *Hub) routeLocked(st *wsState, wid, id uuid.UUID, ev *v1.DispatchEvent) 
 			}
 		}
 		defer h.syncGuestMembers(st, wid, guestBefore, subject)
+	}
+	if h.routeBoards(st, wid, id, sessions, ev) {
+		return
 	}
 	switch e := ev.GetEvent().(type) {
 	case *v1.DispatchEvent_RoomCreate, *v1.DispatchEvent_RoomUpdate:
@@ -454,11 +458,14 @@ func (h *Hub) routeLocked(st *wsState, wid, id uuid.UUID, ev *v1.DispatchEvent) 
 		m := e.WorkspaceMemberUpdate.GetMember()
 		uid := parseID(m.GetUser().GetId())
 		// The member's own sessions see rooms appear / disappear with the role change.
-		h.reviewRooms(st, wid, sessions, func(u uuid.UUID) bool { return u == uid }, func() {
-			if r, ok := perm.RoleFromProto(m.GetRole()); ok {
-				st.setMember(uid, r, m.GetRoleIds())
-			}
-			about(uid)
+		who := func(u uuid.UUID) bool { return u == uid }
+		h.reviewRooms(st, wid, sessions, who, func() {
+			h.reviewBoards(st, wid, sessions, who, func() {
+				if r, ok := perm.RoleFromProto(m.GetRole()); ok {
+					st.setMember(uid, r, m.GetRoleIds())
+				}
+				about(uid)
+			})
 		})
 	case *v1.DispatchEvent_RoleCreate, *v1.DispatchEvent_RoleUpdate:
 		r := ev.GetRoleCreate().GetRole()
@@ -466,14 +473,20 @@ func (h *Hub) routeLocked(st *wsState, wid, id uuid.UUID, ev *v1.DispatchEvent) 
 			r = ev.GetRoleUpdate().GetRole()
 		}
 		// A role's permissions / position change what its holders see.
-		h.reviewRooms(st, wid, sessions, func(uuid.UUID) bool { return true }, func() {
-			st.setRoleDef(r)
-			h.toAll(sessions, id, shared)
+		all := func(uuid.UUID) bool { return true }
+		h.reviewRooms(st, wid, sessions, all, func() {
+			h.reviewBoards(st, wid, sessions, all, func() {
+				st.setRoleDef(r)
+				h.toAll(sessions, id, shared)
+			})
 		})
 	case *v1.DispatchEvent_RoleDelete:
-		h.reviewRooms(st, wid, sessions, func(uuid.UUID) bool { return true }, func() {
-			st.delRoleDef(e.RoleDelete.GetRoleId())
-			h.toAll(sessions, id, shared)
+		all := func(uuid.UUID) bool { return true }
+		h.reviewRooms(st, wid, sessions, all, func() {
+			h.reviewBoards(st, wid, sessions, all, func() {
+				st.delRoleDef(e.RoleDelete.GetRoleId())
+				h.toAll(sessions, id, shared)
+			})
 		})
 	case *v1.DispatchEvent_WorkspaceMemberRemove:
 		uid := parseID(e.WorkspaceMemberRemove.GetUserId())

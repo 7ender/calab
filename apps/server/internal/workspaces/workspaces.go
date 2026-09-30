@@ -18,6 +18,7 @@ import (
 	v1 "github.com/calaba/calaba/server/gen/calaba/v1"
 	"github.com/calaba/calaba/server/internal/auth"
 	"github.com/calaba/calaba/server/internal/blob"
+	"github.com/calaba/calaba/server/internal/boards"
 	"github.com/calaba/calaba/server/internal/calendar"
 	"github.com/calaba/calaba/server/internal/db"
 	"github.com/calaba/calaba/server/internal/db/sqlc"
@@ -199,11 +200,17 @@ func Snapshot(ctx context.Context, q *sqlc.Queries, pl *plans.Service, ws sqlc.W
 			recordings = append(recordings, pbconv.RoomRecording(rec))
 		}
 	}
+	// Task boards (ADR-0042 §4): the visible ones with the recipient's bits, and their unread tasks.
+	bs, unread, err := boards.Snapshot(ctx, q, ws.ID, me)
+	if err != nil {
+		return nil, err
+	}
 	// active_events (ADR-0038 §6) are filled by the caller with calendar.FillActive: one query
 	// for all the snapshots of a READY.
 	return &v1.WorkspaceSnapshot{Workspace: pbconv.ForViewer(pw, role), Role: role.Proto(), Rooms: rs, Members: members,
 		Permissions: bits, Categories: pbconv.Categories(cats), Recordings: recordings, Roles: pbconv.Roles(roles),
-		Badges: pbconv.Badges(badges), Backgrounds: pbconv.Backgrounds(backgrounds), Sounds: pbconv.Sounds(sounds)}, nil
+		Badges: pbconv.Badges(badges), Backgrounds: pbconv.Backgrounds(backgrounds), Sounds: pbconv.Sounds(sounds),
+		Boards: bs, UnreadTaskIds: unread}, nil
 }
 
 // MemberPB loads a member's role ids and converts the membership row.

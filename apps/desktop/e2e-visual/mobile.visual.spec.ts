@@ -4,7 +4,7 @@ import { expect, test, type Locator, type Page } from '@playwright/test';
 import { RecordingStatus } from '@calaba/protocol';
 import { CODE_FIXTURE, IDS, MOCK_GPTUNNEL_WEB, startMockServer, type MockServer } from '../e2e-support/mock-server';
 import { expectAccessible, layoutProblems, NOW, PASSWORD, settle } from './harness';
-import { DAY, seedDay } from './calendarWeb';
+import { seedDay } from './calendarWeb';
 
 /**
  * Mobile web (ADR-0021) in Playwright's WebKit — the engine of iOS Safari — on iPhone
@@ -485,8 +485,8 @@ test('m-calendar-day', async ({ page }) => {
   await signedIn(page);
   await page.getByRole('button', { name: 'Комнаты и пространства' }).first().tap();
   const nav = page.getByTestId('mobile-nav');
+  // The icon opens today at once (ADR-0041 §3): the drawer closes.
   await nav.getByTestId('calendar-button').tap();
-  await nav.locator(`[data-cal-day="${DAY}"]`).tap();
   await expect(nav).toHaveCount(0);
   await expect(page.getByTestId('day-view')).toBeVisible();
   await expect(page.getByTestId('now-line')).toBeVisible();
@@ -498,6 +498,27 @@ test('m-calendar-day', async ({ page }) => {
   await expect(page.getByTestId('day-view')).toBeVisible();
 });
 
+// «Подобрать время» on a phone (ADR-0041 §3): the chips, the duration, «в рабочие часы» and the
+// nearest windows as a list — no grid.
+test('m-calendar-findtime', async ({ page }) => {
+  mock.setClock(NOW.getTime());
+  seedDay(mock);
+  await signedIn(page);
+  await page.getByRole('button', { name: 'Комнаты и пространства' }).first().tap();
+  await page.getByTestId('mobile-nav').getByTestId('calendar-button').tap();
+  await expect(page.getByTestId('day-view')).toBeVisible();
+  await page.getByTestId('day-find').tap();
+  const pane = page.getByTestId('find-time');
+  await pane.getByTestId('find-people-add').tap();
+  await page.getByTestId('find-people-picker').getByRole('option', { name: /Борис/ }).tap();
+  await page.keyboard.press('Escape');
+  await expect(pane.getByTestId('person-chip')).toHaveCount(2);
+  await expect(pane.getByTestId('find-slot')).not.toHaveCount(0);
+  await expect(pane.getByTestId('availability')).toHaveCount(0);
+  await page.evaluate(() => (document.activeElement as HTMLElement | null)?.blur());
+  await checkpoint(page, 'm-calendar-findtime');
+});
+
 // The public meeting page of an invited address (ADR-0038 «Диплинки для приглашённых»), no account.
 test('m-calendar-public', async ({ page }) => {
   mock.setClock(NOW.getTime());
@@ -506,6 +527,47 @@ test('m-calendar-public', async ({ page }) => {
   await open(page, `/e/${id}?t=${encodeURIComponent(mock.eventViewToken(id, 'ext@example.com'))}`);
   await expect(page.getByTestId('event-public').getByTestId('event-title')).toHaveText('Планёрка');
   await checkpoint(page, 'm-calendar-public');
+});
+
+// Task boards on a phone (ADR-0042 §5): boards in the drawer, the list by default, the task full screen.
+test('m-boards-list', async ({ page }) => {
+  mock.setClock(NOW.getTime());
+  await signedIn(page);
+  await page.getByRole('button', { name: 'Комнаты и пространства' }).first().tap();
+  const nav = page.getByTestId('mobile-nav');
+  await nav.getByTestId('boards-button').tap();
+  await nav.getByTestId('board-row').filter({ hasText: 'Разработка' }).getByRole('button').first().tap();
+  await expect(nav).toHaveCount(0);
+  await expect(page.getByTestId('list-view')).toBeVisible();
+  await checkpoint(page, 'm-boards-list');
+});
+
+test('m-boards-task', async ({ page }) => {
+  mock.setClock(NOW.getTime());
+  await signedIn(page);
+  await page.getByRole('button', { name: 'Комнаты и пространства' }).first().tap();
+  const nav = page.getByTestId('mobile-nav');
+  await nav.getByTestId('boards-button').tap();
+  await nav.getByTestId('board-row').filter({ hasText: 'Разработка' }).getByRole('button').first().tap();
+  await page.getByTestId('list-row').filter({ hasText: 'CAL-3' }).tap();
+  const panel = page.getByTestId('task-panel');
+  await expect(panel.getByTestId('assignee-row')).toHaveCount(2);
+  await checkpoint(page, 'm-boards-task');
+});
+
+// The kanban on a phone: columns a screen wide, swiped horizontally with snap (ADR-0042 §5).
+test('m-boards-kanban', async ({ page }) => {
+  mock.setClock(NOW.getTime());
+  await signedIn(page);
+  await page.getByRole('button', { name: 'Комнаты и пространства' }).first().tap();
+  const nav = page.getByTestId('mobile-nav');
+  await nav.getByTestId('boards-button').tap();
+  await nav.getByTestId('board-row').filter({ hasText: 'Разработка' }).getByRole('button').first().tap();
+  await page.getByTestId('view-kanban').tap();
+  const kanban = page.getByTestId('kanban');
+  await expect(kanban.getByTestId('kanban-column').first()).toBeVisible();
+  await expect(kanban).toHaveCSS('scroll-snap-type', /x mandatory/);
+  await checkpoint(page, 'm-boards-kanban');
 });
 
 // The composer's «Стикеры» panel as a bottom sheet (ADR-0030): the pack strip, my pack, «Эмоции»

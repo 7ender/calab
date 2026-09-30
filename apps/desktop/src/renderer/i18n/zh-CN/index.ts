@@ -14,6 +14,7 @@ import { zhModeration } from './moderation';
 import { zhPicker } from './picker';
 import { zhRoles } from './roles';
 import { zhCalendar } from './calendar';
+import { zhBoards } from './boards';
 import { zhPlan } from './plan';
 import { zhShell } from './shell';
 import { zhVideo } from './video';
@@ -46,6 +47,7 @@ export const zhCN: Dict = {
   ...zhPicker,
   ...zhRoles,
   ...zhCalendar,
+  ...zhBoards,
   'voice.pendingMember': '连接中…',
   // common
   'common.cancel': '取消',
@@ -268,6 +270,10 @@ export const zhCN: Dict = {
   'perm.MANAGE_WORKSPACE': '管理工作区',
   'perm.MANAGE_ROLES': '管理角色',
   'perm.MANAGE_STICKERS': '管理贴纸',
+  'perm.VIEW_BOARD': '查看看板',
+  'perm.CREATE_TASKS': '创建任务',
+  'perm.EDIT_TASKS': '编辑任何任务',
+  'perm.MANAGE_BOARD': '管理看板',
   'perm.ADMINISTRATOR': '管理员',
   'perm.allow': '允许',
   'perm.deny': '禁止',

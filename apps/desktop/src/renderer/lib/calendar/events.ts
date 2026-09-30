@@ -29,7 +29,16 @@ export function myStatusOf(ev: Pick<CalendarEvent, 'myStatus' | 'attendees'>, me
   return ev.attendees.find((a) => a.userId === me)?.status ?? AttendeeStatus.UNSPECIFIED;
 }
 
-export const isAttendee = (ev: Pick<CalendarEvent, 'attendees'>, me: string): boolean => ev.attendees.some((a) => a.userId === me);
+/**
+ * The «Люди» filter (ADR-0041 §3): a meeting of one of them — organizer, or an attendee who has
+ * not declined.
+ */
+export function involvesAny(ev: Pick<CalendarEvent, 'organizerId' | 'attendees'>, people: ReadonlySet<string>): boolean {
+  if (people.has(ev.organizerId)) return true;
+  return ev.attendees.some((a) => !!a.userId && people.has(a.userId) && a.status !== AttendeeStatus.DECLINED);
+}
+
+export const isAttendee =(ev: Pick<CalendarEvent, 'attendees'>, me: string): boolean => ev.attendees.some((a) => a.userId === me);
 
 const overlaps = (ev: CalendarEvent, from: number, to: number): boolean => {
   const { start, end } = eventSpan(ev);
@@ -162,20 +171,21 @@ export function keysIn(occ: OccMap, workspaceId: string, from: number, to: numbe
  * The occurrences of one day of the viewer's calendar: timed ones overlapping its local
  * [00:00, 24:00), all-day ones on that date of the organizer's calendar. Earliest first.
  */
-export function dayKeys(occ: OccMap, workspaceId: string, day: string): string[] {
+export function dayKeys(occ: OccMap, workspaceId: string, day: string, people?: ReadonlySet<string>): string[] {
   const from = dayStart(day);
   const to = dayEnd(day);
   return Object.entries(occ)
-    .filter(([, ev]) => ev.workspaceId === workspaceId && (ev.allDay ? eventDays(ev).includes(day) : overlaps(ev, from, to)))
+    .filter(([, ev]) => ev.workspaceId === workspaceId && (ev.allDay ? eventDays(ev).includes(day) : overlaps(ev, from, to)) && (!people || involvesAny(ev, people)))
     .sort(([ka, a], [kb, b]) => eventSpan(a).start - eventSpan(b).start || eventSpan(b).end - eventSpan(a).end || (ka < kb ? -1 : 1))
     .map(([k]) => k);
 }
 
 /** Day keys (viewer's zone; all-day meetings — the organizer's dates) with a meeting in [from, to): the mini calendar's dots. */
-export function busyDays(occ: OccMap, workspaceId: string, from: number, to: number, tz?: string): string[] {
+export function busyDays(occ: OccMap, workspaceId: string, from: number, to: number, tz?: string, people?: ReadonlySet<string>): string[] {
   const days = new Set<string>();
   for (const ev of Object.values(occ)) {
     if (ev.workspaceId !== workspaceId || !overlaps(ev, from, to)) continue;
+    if (people && !involvesAny(ev, people)) continue;
     for (const d of eventDays(ev, tz)) days.add(d);
   }
   return [...days].sort();

@@ -198,7 +198,8 @@ func run(m *testing.M) int {
 		UnfurlAllowAddr: func(netip.Addr) bool { return true }, // test pages are served on loopback
 		Mail:            testMail,
 		Egress:          rtc.NewEgress(egressURL, cfg.LiveKitAPIKey, cfg.LiveKitAPISecret),
-		BotWebhooks:     botWebhookOptions})
+		BotWebhooks:     botWebhookOptions,
+		CalDAV:          calDAVOptions})
 	a.Recording.Tick, a.Recording.PollMin = 100*time.Millisecond, 50*time.Millisecond
 	a.Recording.ResultBackoff = []time.Duration{50 * time.Millisecond, 50 * time.Millisecond}
 	a.Mail.Poll = 200 * time.Millisecond
@@ -474,7 +475,7 @@ func TestPermissionsFlow(t *testing.T) {
 		}
 	}
 
-	member := perm.ViewRoom | perm.SendMessages | perm.AttachFiles | perm.Connect | perm.Speak | perm.Stream | perm.Video
+	member := perm.RoleDefaults[perm.RoleMember] // board bits (ADR-0042) pass through room rules like other role bits
 	cases := []struct {
 		who    string
 		u      *user
