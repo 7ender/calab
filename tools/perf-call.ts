@@ -416,7 +416,7 @@ async function main(): Promise<void> {
       const l = await launch(mock.url, userData, wav);
       const p = l.page;
       // F: the stream preset and content hint the picker starts with.
-      const stream = { ...(BENCH === 'F' ? { streamPreset: PRESET === 'eco' ? 1 : PRESET === '720' ? 2 : 3, contentHint: HINT } : {}), ...(MUSICIAN ? { musicianMode: true } : {}) };
+      const stream = BENCH === 'F' ? { streamPreset: PRESET === 'eco' ? 1 : PRESET === '720' ? 2 : 3, contentHint: HINT } : {};
       await p.evaluate(({ stats, stream }) => localStorage.setItem('calaba-prefs', JSON.stringify({ state: { theme: 'dark', onboarded: true, locale: 'ru', devStats: stats, ...stream }, version: 1 })), { stats: STATS, stream });
       await p.reload();
       await p.getByLabel('Email').fill('owner@calaba.test');
@@ -498,6 +498,14 @@ async function main(): Promise<void> {
       await page.getByTestId('task-card').first().waitFor({ timeout: 15_000 });
     }
     await page.getByRole('button', { name: /^Качество связи/ }).first().waitFor({ timeout: 15_000 });
+    // Musician mode is per call (not persisted, ADR-0052): turned on from the voice panel's «…».
+    if (MUSICIAN) {
+      await page.getByRole('button', { name: 'Ещё', exact: true }).last().click();
+      await page.getByRole('menuitemcheckbox', { name: 'Режим музыканта' }).click();
+      await page.keyboard.press('Escape');
+      await page.getByTestId('musician-self').waitFor({ timeout: 15_000 });
+      await page.waitForTimeout(3000); // the capture swap and the renegotiation
+    }
     const membersOpen = await page.getByRole('complementary').filter({ hasText: /В сети|Участники/ }).count();
 
     if (RECORDING) {

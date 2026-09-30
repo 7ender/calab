@@ -539,7 +539,7 @@ export interface MockServer {
    * `joinedAtMs`: VoiceState.joined_at (client clock — a visual test's page clock is fixed); kept
    * within the same room, none by default.
    */
-  setVoiceState(args: { userId: string; roomId: string; muted?: boolean; deafened?: boolean; streaming?: boolean; camera?: boolean; pending?: boolean; joinedAtMs?: number }): void;
+  setVoiceState(args: { userId: string; roomId: string; muted?: boolean; deafened?: boolean; streaming?: boolean; camera?: boolean; pending?: boolean; joinedAtMs?: number; musician?: boolean }): void;
   /** Sets a user's presence and fans out PRESENCE_UPDATE. */
   setPresence(userId: string, status: PresenceStatus): void;
   /**
@@ -2094,7 +2094,7 @@ class MockImpl {
     this.fanout((u) => (u === userId || this.shareWorkspace(u, userId) ? { event: { case: 'presenceUpdate', value: { presence } } } : null));
   }
 
-  setVoice(userId: string, roomId: string, patch: { muted?: boolean; deafened?: boolean; streaming?: boolean; serverMuted?: boolean; camera?: boolean; pending?: boolean; joinedAtMs?: number }): void {
+  setVoice(userId: string, roomId: string, patch: { muted?: boolean; deafened?: boolean; streaming?: boolean; serverMuted?: boolean; camera?: boolean; pending?: boolean; joinedAtMs?: number; musician?: boolean }): void {
     const prev = this.state.voiceStates.get(userId);
     const room = roomId ? this.state.rooms.get(roomId) : undefined;
     // ADR-0034: a DM call's voice session — no workspace; its events go to the two participants.
@@ -2117,6 +2117,7 @@ class MockImpl {
       serverMuted: patch.serverMuted ?? (sameRoom ? prev.serverMuted : false),
       camera: patch.camera ?? (sameRoom ? prev.camera : false),
       pending: patch.pending ?? (sameRoom ? prev.pending : false),
+      musician: patch.musician ?? (sameRoom ? prev.musician : false),
       joinedAt: patch.joinedAtMs !== undefined ? timestampFromMs(patch.joinedAtMs) : sameRoom ? prev.joinedAt : undefined,
     });
     // Moving to another workspace's room: tell the old workspace the user left.
@@ -2348,6 +2349,7 @@ class MockImpl {
       streaming: patch.streaming ?? (sameRoom ? prev.streaming : false),
       camera: patch.camera ?? (sameRoom ? prev.camera : false),
       pending: patch.pending ?? (sameRoom ? prev.pending : false),
+      musician: patch.musician ?? (sameRoom ? prev.musician : false),
     });
     const dmId = room?.id ?? (prevDm ? (prev?.roomId ?? '') : '');
     if (room) this.state.voiceStates.set(userId, v);
@@ -4872,7 +4874,7 @@ class MockImpl {
       const v = s().voiceStates.get(me);
       if (!v?.roomId) throw conflict('device is not in voice');
       const b = parseBody(c, UpdateVoiceSelfRequestSchema);
-      this.setVoice(me, v.roomId, { ...(b.muted !== undefined ? { muted: b.muted } : {}), ...(b.deafened !== undefined ? { deafened: b.deafened } : {}) });
+      this.setVoice(me, v.roomId, { ...(b.muted !== undefined ? { muted: b.muted } : {}), ...(b.deafened !== undefined ? { deafened: b.deafened } : {}), ...(b.musician !== undefined ? { musician: b.musician } : {}) });
       noContent(c.res);
     });
 
