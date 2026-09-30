@@ -444,6 +444,8 @@ POST   /api/rooms/{id}/join                    409 ERROR_CODE_ROOM_FULL, есл�
                                                (MOVE_MEMBERS — вход сверх лимита; второе устройство того же пользователя не считается)
 POST   /api/rooms/{id}/voice/{userId}/move     MoveMemberRequest{targetRoomId} → 204   (MOVE_MEMBERS в обеих комнатах;
                                                у перемещаемого VIEW_ROOM+CONNECT в цели; лимит цели — кроме ADMINISTRATOR)
+GET    /api/workspaces/{id}/members/{userId}   → GetMemberResponse{member, openTasks} (ADR-0051; @me — сам): участник, гость — только
+                                               видимых ему (иначе 404); openTasks — открытые задачи участника на досках, видимых вызывающему, ≤ 50
 PATCH  /api/workspaces/{id}/members/{userId}   nickname: чужой — MANAGE_NICKNAMES; свой — если workspace.allowSelfNickname
 POST   /api/workspaces/{id}/members/{userId}/promote   гость → member (MANAGE_WORKSPACE)
 POST   /api/rooms/{id}/invites                 CreateRoomInviteRequest → 201 RoomInvite   (MANAGE_ROOM)

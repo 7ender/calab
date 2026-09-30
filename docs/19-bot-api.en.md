@@ -60,14 +60,18 @@ Without the SDK — any language with HTTP and WebSocket: REST below, the gatewa
 - One token is one gateway "device": a second process with the same token pushes the first one out (its socket is
   closed with `4000 replaced by a new session`). Run one process per token.
 - Endpoints for people are **closed** to bots (`403 FORBIDDEN`, `reason: "BOT_NOT_ALLOWED"`): sessions, password,
-  email, verification, status and profile settings, notes, creating / discovering / joining workspaces, all
-  invitations and guest links, notification settings, DM archive, link previews, recording controls (start/stop/retry/delete), superadmin,
-  bot management, workspace camera backgrounds (`/api/workspaces/{id}/backgrounds…`, ADR-0035 — bots have no camera).
+  email, verification, status and profile settings, notes, creating / discovering / joining workspaces, account
+  lookup by address and adding an account directly, room guest links, notification settings, DM archive, link
+  previews, recording retry / delete, superadmin, bot management, workspace camera backgrounds
+  (`/api/workspaces/{id}/backgrounds…`, ADR-0035 — bots have no camera). Workspace invitations, the calendar, badges,
+  sounds, guest admission and recording start / stop are open since ADR-0051 by the same bits as for people (see the
+  table below).
 - A bot sees only what `VIEW_ROOM` / `VIEW_BOARD` allow; closed (restricted) rooms and boards (ADR-0029, ADR-0048)
   apply to bots too: a bot gets in only through an override on the object itself (personal or by role), otherwise 404,
   as for people.
 - The workspace bits of ADR-0048 reach a bot, as a person, through its roles: `MANAGE_MEMBERS` — remove and ban,
-  `CREATE_BOARDS` — create boards, `VIEW_JOURNALS` — a board's journal; bot management, telephony settings, GPTunneL
+  `CREATE_BOARDS` — create boards, `VIEW_JOURNALS` — a board's journal, `MANAGE_EVENTS` — others' meetings,
+  `MANAGE_RECORDINGS` — meeting recording; bot management, telephony settings, GPTunneL
   and the call journal stay closed to bots (`403 BOT_NOT_ALLOWED`) even with `MANAGE_BOTS` / `MANAGE_INTEGRATIONS` /
   `VIEW_JOURNALS`.
 - A person can "Block bot" — the bot then cannot write to them in DMs (`403 BOT_BLOCKED`).
@@ -111,7 +115,13 @@ with the decision for bots is `apps/server/internal/app/botroutes.go`.
 | `GET · PUT · DELETE /api/bots/me/webhook` | webhook `{url, secret}` | bots only |
 | `GET /api/workspaces` · `GET /api/workspaces/{id}` | the bot's workspaces | member |
 | `GET /api/workspaces/{id}/members` | members (`WorkspaceMember`; bots have `user.isBot`) | member |
-| `GET /api/workspaces/{id}/badges` | member badges: `WorkspaceMember.badge_id` refers to them; read-only, bots cannot manage badges | member |
+| `GET /api/workspaces/{id}/members/{userId}` | a member's profile (ADR-0051; `@me` = the bot) → `{member, openTasks}`: name, nickname, roles, badge, status, time zone, birthday (a hidden one is not sent), open tasks they are assigned to — only from boards the bot sees (≤ 50). SDK `bot.members.get` | member |
+| `PATCH /api/workspaces/{id}/members/{userId} {nickname}` | rename a member (workspace nickname; `""` clears it). SDK `bot.members.setNickname` | `MANAGE_NICKNAMES` |
+| `GET /api/workspaces/{id}/badges` | member badges: `WorkspaceMember.badge_id` refers to them | member |
+| `POST /api/workspaces/{id}/badges {name, fileId}` · `PATCH · DELETE …/badges/{badgeId}` | the badge library; the picture is the bot's own upload to this workspace (PNG/WebP/JPEG ≤ 128 KB). SDK `bot.badges.create/update/delete` | `MANAGE_MEMBERS` |
+| `PUT /api/workspaces/{id}/members/{userId}/badge {badgeId}` | give / take (`""`) a badge; the target is not a bot and is below the bot's top role. SDK `bot.badges.set` | `MANAGE_NICKNAMES` |
+| `GET · POST /api/workspaces/{id}/invites` · `DELETE …/invites/{inviteId}` | workspace invite links `{maxUses, expiresInSeconds}`. SDK `bot.invites.list/create/delete` | `INVITE_MEMBERS` |
+| `GET · POST /api/workspaces/{id}/invites/email` · `DELETE …/invites/email/{inviteId}` | an invitation by mail `{email}`: the mail says "Workspace (on behalf of bot X)", the same address at most once a day; inviting an admin — the owner only. SDK `bot.invites.email/listEmail/deleteEmail` | `INVITE_MEMBERS` |
 | `GET /api/workspaces/{id}/rooms` · `GET /api/rooms/{id}` | rooms the bot can see | `VIEW_ROOM` |
 | `GET /api/workspaces/{id}/categories` | room categories | member |
 | `GET /api/rooms/{id}/messages?before=&after=&limit=` | history (newest first, `limit ≤ 100`) | `VIEW_ROOM` |
@@ -132,13 +142,31 @@ with the decision for bots is `apps/server/internal/app/botroutes.go`.
 | `POST /api/rooms/{id}/stream/request` · `…/camera/request` · `…/camera/stop` | screen share, camera | `STREAM` / `VIDEO` |
 | `PATCH /api/voice/self` · `PATCH /api/rooms/{id}/voice-status` | own mute/deafen, call status | in the call |
 | `POST /api/rooms/{id}/voice/{userId}/mute · unmute · disconnect · move · stop-stream · stop-camera · allow-camera` | voice moderation | `MUTE_MEMBERS` / `MOVE_MEMBERS` |
-| `GET /api/rooms/{id}/admissions` | guests waiting for approval to enter (ADR-0040); admit/decline — 403 `BOT_NOT_ALLOWED` | `MANAGE_ROOM` |
+| `GET /api/rooms/{id}/admissions` · `POST /api/rooms/{id}/admissions/{userId} {status, displayName?, badgeId?}` | guests waiting for approval to enter (ADR-0040) and the decision: `ROOM_ADMISSION_STATUS_ADMITTED` / `…_DECLINED` (ADR-0051) | `INVITE_GUESTS` in the room |
+| `POST /api/rooms/{id}/recording/start` · `…/recording/stop` | meeting recording (ADR-0025): someone is in the room's call, `allowRecording`, the workspace is paired with GPTunneL. SDK `bot.recording.start/stop` | `VIEW_ROOM` + `CONNECT` and **`MANAGE_RECORDINGS`** (for bots, ADR-0051) |
 | `POST /api/rooms/{id}/calls {number}` · `DELETE /api/rooms/{id}/calls/{callId}` | telephony (ADR-0046): call a phone number from the room's call — the callee joins the room as participant `sip:<callId>`; hang up your own line (someone else's with `MUTE_MEMBERS`). Statuses come as the `sipCallUpdate` event. Limit: 20 calls per hour per workspace (`429 SIP_RATE_LIMITED`). SIP settings and the journal — 403 `BOT_NOT_ALLOWED` | `PLACE_CALLS`, the bot is in the room's call, telephony is on |
-| `GET /api/workspaces/{id}/events?from=&to=` · `GET /api/events/{id}` | calendar (ADR-0038): meetings in rooms the bot can see; read-only (create, change, answer — 403 `BOT_NOT_ALLOWED`); external attendees' addresses are not shown to bots; free/busy, finding a time and CalDAV (ADR-0041) — 403 `BOT_NOT_ALLOWED` | `VIEW_ROOM` |
+| `GET /api/workspaces/{id}/events?from=&to=` · `GET /api/events/{id}` | calendar (ADR-0038): meetings the bot organizes and meetings of rooms it sees; external attendees' addresses only when the bot may change the meeting. SDK `bot.calendar.list/get` | `VIEW_ROOM` |
+| `POST /api/workspaces/{id}/events` | create a meeting (ADR-0051): **the bot organizes it but never attends** (listing itself in `attendees` — 422); invitations and `invite.ics` go from the system address as "Workspace (on behalf of bot X)", without `Reply-To` and without room guest links — outside attendees get the meeting page link. SDK `bot.calendar.create` | not a guest; the room is a visible voice room |
+| `PATCH · DELETE /api/events/{id}[?occurrence=]` | change / cancel a meeting (or one occurrence of a series). SDK `bot.calendar.update/delete` | its own; others' — `MANAGE_ROOM` in its room or `MANAGE_EVENTS` |
+| `GET /api/workspaces/{id}/freebusy?users=&from=&to=` · `POST …/freebusy/suggest` | free/busy and finding a time (ADR-0041): a bot gets the busy time only (no titles or attendees of external events). SDK `bot.calendar.freebusy/suggest` | not a guest |
+| `PUT /api/events/{id}/rsvp`, `GET /api/me/events/today`, CalDAV (`/api/me/caldav…`, `/api/me/external-events`) | 403 `BOT_NOT_ALLOWED`: a bot attends no meetings and has no external calendar | — |
 | task boards (ADR-0042): `GET /api/workspaces/{id}/boards`, `GET /api/boards/{id}`, `GET/POST /api/boards/{id}/tasks`, `GET/PATCH /api/tasks/{id}`, `PUT /api/tasks/{id}/assignees`, `GET /api/workspaces/{id}/tasks/search?q=`, `GET /api/t/{KEY-N}`, `GET /api/me/tasks`, statuses/labels/milestones/views, task archive | the bot works like a person, within the board bits of its roles and overrides (it can be an assignee and be let into a private board personally); a comment is a message in `task.roomId`. Board access (`PUT …/permissions`) and the final delete (`DELETE …?purge=1`) — 403 `BOT_NOT_ALLOWED`. SDK: `bot.boards.list/get`, `bot.tasks.list/search/get/create/update/setAssignees/comment` | `VIEW_BOARD` / `CREATE_TASKS` / `EDIT_TASKS` / `MANAGE_BOARD` |
-| `GET /api/workspaces/{id}/sounds` · `POST /api/rooms/{id}/sounds/play {soundId}` | soundboard (ADR-0036): the workspace's sounds; play one to everyone in the call (`builtin:<name>` or a sound id; 1 per 2 s per bot, 5 per 10 s per room) | the bot is in the room's call; managing sounds — 403 |
+| `GET /api/workspaces/{id}/sounds` · `POST /api/rooms/{id}/sounds/play {soundId}` | soundboard (ADR-0036): the workspace's sounds; play one to everyone in the call (`builtin:<name>` or a sound id; 1 per 2 s per bot, 5 per 10 s per room) | the bot is in the room's call |
+| `POST /api/workspaces/{id}/sounds` · `PATCH · DELETE …/sounds/{soundId}` | the sound library (ADR-0051): the clip is the bot's own upload to this workspace | `MANAGE_STICKERS` |
 | stickers: `GET/POST /api/workspaces/{id}/sticker-packs`, `/api/sticker-packs/{id}…`, `/api/stickers/{id}`, `/api/me/sticker-packs…` | see [Stickers](#stickers-over-the-api) | member / `MANAGE_STICKERS` |
 | rooms, categories, roles, members, bans (`POST/PATCH/DELETE …`) | workspace management | `MANAGE_ROOM`, `MANAGE_ROLES`, `MANAGE_MEMBERS` (remove, ban, built-in role, assign roles — ADR-0048), `MANAGE_WORKSPACE` (settings), … |
+
+**Still for people only** (403 `BOT_NOT_ALLOWED`, ADR-0051): deleting a workspace; bot management (create, tokens,
+avatar — whatever bit the bot has); SIP settings, GPTunneL, workspace web apps; superadmin; voting in task approvals;
+RSVP, CalDAV, "today"; account lookup by address and adding an account directly (`invites/lookup`, `POST …/members`);
+room guest links; the birthday table and setting birthdays; board access; deleting and re-uploading recordings;
+camera backgrounds, notes, DM calls, password, email, sessions.
+
+**A bot with admin permissions is an admin.** A bot token whose roles give `MANAGE_*`, `INVITE_*` or `VIEW_JOURNALS`
+acts as an admin with those permissions: keep it like an admin's password and reissue it when in doubt. The role
+editor warns when such permissions go to a role bots hold. The server logs every administrative bot action
+(`bot action`: route, status, the bot and its owner). Closed rooms and boards (ADR-0048 "without admins") are visible
+to a bot only through an override on them.
 
 ### Reply targets and meeting transcripts
 
@@ -167,7 +195,7 @@ room has neither the original recording nor a live forwarded copy of its card (A
 Use the visible card's `roomId` in the URL, including for a forwarded card. Removing the only
 forwarded copy revokes its transcript access. Granting a bot `VIEW_ROOM` exposes the **whole**
 saved transcript available through that room, including restricted-room access rules; it does
-not grant recording controls.
+not grant recording controls (start / stop need `MANAGE_RECORDINGS`, ADR-0051).
 
 ### Examples
 
@@ -208,6 +236,31 @@ Rooms and members:
 curl -s $CALAB/api/workspaces -H "Authorization: Bearer $TOKEN"              # {"workspaces": [{"id", "name", …}]}
 curl -s $CALAB/api/workspaces/$WS/rooms -H "Authorization: Bearer $TOKEN"    # {"rooms": [{"id", "type": "ROOM_TYPE_TEXT", "name", …}]}
 curl -s $CALAB/api/workspaces/$WS/members -H "Authorization: Bearer $TOKEN"  # {"members": [{"user": {…}, "role": "WORKSPACE_ROLE_MEMBER", "roleIds": […]}]}
+curl -s $CALAB/api/workspaces/$WS/members/$USER -H "Authorization: Bearer $TOKEN"  # {"member": {…}, "openTasks": [{"key": "FNG-12", …}]}
+curl -s -X PATCH $CALAB/api/workspaces/$WS/members/$USER -H "Authorization: Bearer $TOKEN" \
+  -H 'Content-Type: application/json' -d '{"nickname": "Bob (sales)"}'      # MANAGE_NICKNAMES → {"member": {…}}
+```
+
+Calendar and invitations (ADR-0051):
+
+```sh
+# a meeting in a voice room: the bot organizes, Bob and an outside address attend
+curl -s -X POST $CALAB/api/workspaces/$WS/events -H "Authorization: Bearer $TOKEN" -H 'Content-Type: application/json' \
+  -d "{\"title\": \"Stand-up\", \"roomId\": \"$VOICE\", \"startsAt\": \"2026-10-02T09:00:00Z\", \"endsAt\": \"2026-10-02T09:30:00Z\",
+       \"tz\": \"Europe/London\", \"attendees\": [{\"userId\": \"$USER\", \"required\": true}, {\"email\": \"partner@example.com\"}]}"
+# → 201 {"event": {"id": "…", "organizerId": "<bot id>", "canEdit": true, "attendees": [...], …}}
+curl -s "$CALAB/api/workspaces/$WS/freebusy?users=$USER&from=2026-10-02T00:00:00Z&to=2026-10-03T00:00:00Z" \
+  -H "Authorization: Bearer $TOKEN"   # {"users": [{"userId", "timezone", "workHours", "busy": [{"startsAt", "endsAt", "kind"}]}]}
+curl -s -X POST $CALAB/api/workspaces/$WS/invites -H "Authorization: Bearer $TOKEN" -H 'Content-Type: application/json' \
+  -d '{"maxUses": 1, "expiresInSeconds": 86400}'   # INVITE_MEMBERS → 201 {"invite": {"code": "…"}}; link https://<APP_HOST>/join/<code>
+```
+
+```js
+const ev = await bot.calendar.create(wsId, { title: 'Stand-up', roomId, startsAt: timestampFromDate(start), endsAt: timestampFromDate(end),
+  attendees: [{ userId, required: true }] });          // import { timestampFromDate } from '@bufbuild/protobuf/wkt'
+const { member, openTasks } = await bot.members.get(wsId, userId);
+await bot.members.setNickname(wsId, userId, 'Bob');
+const invite = await bot.invites.create(wsId, { maxUses: 1 });
 ```
 
 ## Gateway: realtime events
@@ -248,6 +301,8 @@ JSON frames (`?encoding=json`):
 | `soundCreate/Update/Delete` · `soundPlay` | the workspace's soundboard; `soundPlay` only while the bot is in the room's call |
 | `botCreate/Update/Delete` | the workspace's bots — only with `MANAGE_BOTS` (ADR-0048) |
 | `sipCallUpdate` | a room's phone call was placed or changed status (ADR-0046) |
+| `eventCreate/Update/Delete` · `eventRsvp` | meetings: its own (the bot organizes) and those of rooms it sees; outside addresses only when the bot may change the meeting |
+| `boardCreate/Update/Delete` · `taskCreate/Update/Delete` · `taskActivity` | boards and tasks — by the bot's `VIEW_BOARD` |
 
 A bot can also send `TYPING { roomId }` ("is typing", at most once per 3 s per room), `SUBSCRIBE { roomIds }`
 (≤ 100) and `PRESENCE_UPDATE`.
@@ -300,7 +355,9 @@ Instead of (or together with) the gateway, the server can push events to the bot
   { webhook: {url, enabled, disabledAt, failingSince, lastOkAt, lastError, pending} }`; `GET` — the current state,
   `DELETE` → 204 (the queue is dropped).
 - Delivered: `messageCreate/Update/Delete` and `messageReactionAdd/Remove` of rooms the bot can see and of its DMs —
-  except its own messages and reactions. Commands work as on the gateway (`message.command`).
+  except its own messages and reactions. Commands work as on the gateway (`message.command`). Since ADR-0051 also
+  `taskCreate/Update/Delete` and `taskActivity` of boards it sees, `eventCreate/Update/Delete` and `eventRsvp` (as on
+  the gateway: outside addresses only to a bot that may change the meeting) and `workspaceMemberUpdate`.
 - Request: `POST <url>`, `Content-Type: application/json`, `User-Agent: CalabBot-Webhook/1.0`, the body is
   `BotWebhookUpdate { id, botUserId, createdAt, event: DispatchEvent }` (protojson), headers
   `X-Calab-Delivery: <id>` and `X-Calab-Signature: sha256=<hex HMAC-SHA256(secret, body)>`.

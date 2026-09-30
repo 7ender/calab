@@ -2016,3 +2016,14 @@ CALABA_WEB_URL=http://127.0.0.1:39571 npx playwright test --config playwright.we
 8. Forward keeps text but no active keyboard; ordinary human create/edit still works and cannot forge buttons.
 9. `go test -race -tags integration ./internal/app -run 'TestInline|TestBotRouteTable'`; `pnpm -F @calaba/bot-sdk test`.
 10. Visual: `e2e:visual -g chat-inline-buttons`, `e2e:visual:mobile -g m-chat-inline-buttons --project webkit-iphone-14`; behaviour: visual project `inline-buttons`.
+
+## Расширенный Bot API (ADR-0051, docs/09 #153)
+1. Авто: `cd apps/server && TEST_REDIS_URL=redis://localhost:56379/11 go test -tags integration -count=1 ./internal/app -run 'TestBotAPIv2|TestBotRouteTable|TestEventBots'` — ok; `pnpm -F @calaba/bot-sdk test`.
+2. Руками (`make dev-server`, владелец создаёт бота Echo, `TOKEN=calab_bot_…`, `WS`, голосовая `VOICE`, участник `BOB`): роль «Бот-админ» с `MANAGE_NICKNAMES`, `MANAGE_EVENTS`, `INVITE_MEMBERS` → назначить боту. В карточке роли — жёлтое предупреждение «Роль есть у 1 бота…».
+3. Встреча: `curl -X POST $CALAB/api/workspaces/$WS/events -H "Authorization: Bearer $TOKEN" -H 'Content-Type: application/json' -d '{"title":"Бот-встреча","roomId":"'$VOICE'","startsAt":"2026-10-05T09:00:00Z","endsAt":"2026-10-05T09:30:00Z","attendees":[{"userId":"'$BOB'","required":true},{"email":"x@example.com"}]}'` → 201, `organizerId` = бот, бота нет в `attendees`. В Mailpit (:8025) письмо на x@example.com: «<пространство> (от имени бота Echo) приглашает…», без гостевой ссылки; у Боба встреча в календаре.
+4. `PATCH /api/events/<id> {"title":"Перенесли"}` → 200; `PUT /api/events/<id>/rsvp` → 403 `BOT_NOT_ALLOWED`; `DELETE /api/events/<id>` → 204.
+5. Переименовать: `curl -X PATCH $CALAB/api/workspaces/$WS/members/$BOB -H "Authorization: Bearer $TOKEN" -H 'Content-Type: application/json' -d '{"nickname":"Боря"}'` → 200, ник сменился у всех.
+6. Профиль: `curl $CALAB/api/workspaces/$WS/members/$BOB -H "Authorization: Bearer $TOKEN"` → `member` + `openTasks` (задачи Боба только с досок, видимых боту; задача закрытой доски не видна).
+7. Инвайт: `curl -X POST $CALAB/api/workspaces/$WS/invites -H "Authorization: Bearer $TOKEN" -H 'Content-Type: application/json' -d '{"maxUses":1}'` → 201 с `code`; ссылка `/join/<code>` пускает нового человека. Снять у роли `INVITE_MEMBERS` → тот же запрос 403 (не `BOT_NOT_ALLOWED`).
+8. `GET …/freebusy?users=$BOB&from=…&to=…` → 200, в `busy` нет `title`; `POST …/invites/lookup` → 403 `BOT_NOT_ALLOWED`.
+9. В логе сервера на шаги 3–5 и 7 — строки `bot action` с `bot_id` и `bot_owner`.
