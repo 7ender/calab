@@ -116,6 +116,17 @@ export function onBoardsReady(): void {
   takePendingLink();
 }
 
+/**
+ * After main reset the API connections (docs/09 #146): boards whose tasks failed to load and the
+ * open task (its detail / comments room) load again, without a click.
+ */
+export function retryFailedBoardLoads(): void {
+  const { load } = useBoards.getState();
+  for (const [boardId, st] of Object.entries(load)) if (st === 'error' && useBoards.getState().boards[boardId]) void ensureBoardTasks(boardId, true);
+  const open = useBoardsUi.getState().taskId;
+  if (open && !useTaskDetails.getState().byTask[open]?.loaded) void loadTask(open);
+}
+
 export function dropWorkspaceBoards(workspaceId: string): void {
   const s = useBoards.getState();
   for (const b of Object.values(s.boards)) if (b.workspaceId === workspaceId) s.removeBoard(b.id);

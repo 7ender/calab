@@ -21,6 +21,7 @@ import { useRoomLink } from '../features/people/roomLink';
 import { nagOnStart } from '../features/shell/updateBarModel';
 import { usePrefs } from '../stores/prefs';
 import { queryClient } from '../lib/queryClient';
+import { onApiTransportReset } from './apiReset';
 import { resetChatCaches } from './chat';
 import { resetDmCaches } from './dms';
 import { startMessageRetention } from './retention';
@@ -65,6 +66,7 @@ export async function bootstrap(): Promise<void> {
       recheckTimeZone(); // a laptop may wake up in another zone (docs/09 #48)
     }
   });
+  platform.app.onApiReset(onApiTransportReset);
   window.addEventListener('online', () => {
     // Main has no `online` event: it checks for updates (throttled, desktop only).
     platform.app.networkOnline();
