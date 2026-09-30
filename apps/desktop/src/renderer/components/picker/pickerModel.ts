@@ -16,10 +16,12 @@ export interface PickerGroup<T extends PickerItem> {
   /** Group header («Роли», «Участники»); empty = no header. */
   label: string;
   items: readonly T[];
+  /** Collapsed (header only) until opened, unless a search is active (found items always show). */
+  collapsible?: boolean;
 }
 
 export type PickerRow<T extends PickerItem> =
-  | { kind: 'header'; key: string; label: string }
+  | { kind: 'header'; key: string; label: string; toggle?: { id: string; open: boolean } }
   /** `nav`: index among the choosable rows (keyboard order); -1 for a disabled item. */
   | { kind: 'item'; key: string; item: T; nav: number };
 
@@ -80,7 +82,7 @@ export function filterItems<T extends PickerItem>(items: readonly T[], query: st
 export function buildRows<T extends PickerItem>(
   groups: readonly PickerGroup<T>[],
   query: string,
-  opts: { alwaysHeaders?: boolean; serverFiltered?: boolean } = {},
+  opts: { alwaysHeaders?: boolean; serverFiltered?: boolean; open?: ReadonlySet<string> } = {},
 ): PickerRow<T>[] {
   const visible = groups
     .map((g) => ({ g, items: opts.serverFiltered ? [...g.items] : filterItems(g.items, query) }))
@@ -89,7 +91,10 @@ export function buildRows<T extends PickerItem>(
   const rows: PickerRow<T>[] = [];
   let nav = 0;
   for (const { g, items } of visible) {
-    if (headers && g.label) rows.push({ kind: 'header', key: `h:${g.id}`, label: g.label });
+    const fold = !!g.collapsible && !query.trim();
+    const isOpen = !fold || !!opts.open?.has(g.id);
+    if (headers && g.label) rows.push({ kind: 'header', key: `h:${g.id}`, label: g.label, ...(g.collapsible ? { toggle: { id: g.id, open: isOpen } } : {}) });
+    if (!isOpen) continue;
     for (const item of items) rows.push({ kind: 'item', key: `${g.id}:${item.id}`, item, nav: item.disabled ? -1 : nav++ });
   }
   return rows;

@@ -9,6 +9,7 @@ export const zhPicker: DictShape<typeof ruPicker> = {
   'picker.searchRooms': "查找房间",
   'picker.roles': "角色",
   'picker.members': "成员",
+  'picker.guests': "访客 · {n}",
   'picker.rooms': "房间",
   'picker.fullAccess': "完全权限",
   'picker.alwaysFull': "始终拥有完全权限：房间设置对此角色无效",

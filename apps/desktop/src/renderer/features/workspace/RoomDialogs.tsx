@@ -11,7 +11,7 @@ import {
   type Role,
 } from '@calaba/protocol';
 import { useMutation } from '@tanstack/react-query';
-import { AudioLines, Check, Hash, Link2, Minus, Plus, Settings2, ShieldCheck, Timer, Volume2, X } from 'lucide-react';
+import { AudioLines, Check, ChevronRight, Hash, Link2, Minus, Plus, Settings2, ShieldCheck, Timer, Volume2, X } from 'lucide-react';
 import { useCallback, useMemo, useState, type ReactNode } from 'react';
 import { confirmAction } from '../../components/Confirm';
 import { Button, Card, Field, Input, Modal, Row, Select, Switch, Tip, Toggle, cx } from '../../components/ui';
@@ -30,7 +30,7 @@ import { Avatar } from '../../components/Avatar';
 import type { PickerGroup } from '../../components/picker/pickerModel';
 import { GuestBadge, RoleMark, roleName, roleTextClass, roleTextStyle } from '../people/MemberBits';
 import { MemberPicker } from '../people/MemberPicker';
-import { memberItems, type PeoplePickItem, type RolePickItem } from '../people/memberPickItems';
+import { memberItems, splitGuests, type PeoplePickItem, type RolePickItem } from '../people/memberPickItems';
 import { PRESETS, presetDetail, presetText } from '../voice/StreamPicker';
 import { CommitInput } from '../settings/CommitInput';
 import { SettingsWindow, type SettingsSection } from '../../components/SettingsWindow';
@@ -469,6 +469,12 @@ function PermissionsTab({ roomId }: { roomId: string }): ReactNode {
   }, [drafts, isFixed, room?.workspaceId, wsRoles]);
 
   const current = targets.find((x) => x.key === selected) ?? targets[0];
+  // Guests with a personal override are listed apart, folded (ADR-0040); opens for a selected guest.
+  const isGuestTarget = useCallback((x: { type: PermissionTargetType; id: string }): boolean => x.type === PermissionTargetType.USER && isGuest(members?.[x.id]), [members]);
+  const mainTargets = targets.filter((x) => !isGuestTarget(x));
+  const guestTargets = targets.filter(isGuestTarget);
+  const [guestsOpen, setGuestsOpen] = useState(false);
+  const showGuests = guestsOpen || (!!current && isGuestTarget(current));
   const draft = drafts.find((d) => current && targetKey(d) === current.key);
 
   const save = useMutation({
@@ -523,15 +529,51 @@ function PermissionsTab({ roomId }: { roomId: string }): ReactNode {
       roles: wsRoles,
       decorate: (m) => ((restricted ? m.role === WorkspaceRole.OWNER : isAdminRole(m.role)) ? { note: full, disabled: true } : listed.has(m.user?.id ?? '') ? { note: t('picker.listed') } : undefined),
     });
+    // Guest accounts (ADR-0040) sit apart in a collapsed group; a search still finds them.
+    const { members: permanent, guests } = splitGuests(people);
     return [
       { id: 'roles', label: t('picker.roles'), items: roles },
-      { id: 'members', label: t('picker.members'), items: people },
+      { id: 'members', label: t('picker.members'), items: permanent },
+      ...(guests.length > 0 ? [{ id: 'guests', label: t('picker.guests', { n: guests.length }), items: guests, collapsible: true }] : []),
     ];
   }, [drafts, isFixed, members, restricted, wsRoles]);
   const pick = (item: PeoplePickItem): void => {
     if (item.kind === 'role') setSelected(`${PermissionTargetType.ROLE}:${item.roleId}`);
     else addUser(item.userId);
     setAdding(false);
+  };
+
+  const renderTarget = (x: (typeof targets)[number]): ReactNode => {
+    const on = current?.key === x.key;
+    const m = x.type === PermissionTargetType.USER ? members?.[x.id] : undefined;
+    const look = m ? customLook(rolesOf(entry, x.id)) : undefined;
+    return (
+      <button
+        key={x.key}
+        type="button"
+        aria-pressed={on}
+        title={x.label}
+        onClick={() => setSelected(x.key)}
+        className={cx('flex h-8 shrink-0 items-center gap-1.5 rounded-[var(--radius-row)] px-2 text-left text-body', on ? 'bg-accent-strong text-accent-fg' : 'text-fg hover:bg-hover')}
+      >
+        {x.type === PermissionTargetType.USER ? (
+          <Avatar userId={x.id} name={x.label} {...(m?.user?.avatarFileId ? { fileId: m.user.avatarFileId } : {})} size={20} />
+        ) : x.role && isCustomRole(x.role) ? (
+          <span className="grid size-5 shrink-0 place-items-center" aria-hidden>
+            <span className="size-2.5 rounded-full" style={{ background: x.role.color ? roleColorCss(x.role.color) : 'var(--color-label-tertiary)' }} />
+          </span>
+        ) : null}
+        <span
+          className={cx('min-w-0 truncate', x.type === PermissionTargetType.USER && roleTextClass(m?.role, on ? 'inherit' : 'role', look))}
+          style={x.type === PermissionTargetType.USER ? roleTextStyle(m?.role, on ? 'inherit' : 'role', look) : undefined}
+        >
+          {x.type === PermissionTargetType.ROLE ? '@' : ''}
+          {x.label}
+        </span>
+        {m ? <RoleMark role={m.role} custom={look} tone={on ? 'inherit' : 'role'} /> : null}
+        {m && isGuest(m) ? <GuestBadge /> : null}
+      </button>
+    );
   };
 
   return (
@@ -547,38 +589,22 @@ function PermissionsTab({ roomId }: { roomId: string }): ReactNode {
             <span className="truncate text-micro text-faint first-letter:uppercase">{t('picker.fullAccess')}</span>
           </div>
         ))}
-        {targets.map((x) => {
-          const on = current?.key === x.key;
-          const m = x.type === PermissionTargetType.USER ? members?.[x.id] : undefined;
-          const look = m ? customLook(rolesOf(entry, x.id)) : undefined;
-          return (
+        {mainTargets.map(renderTarget)}
+        {guestTargets.length > 0 ? (
+          <>
             <button
-              key={x.key}
               type="button"
-              aria-pressed={on}
-              title={x.label}
-              onClick={() => setSelected(x.key)}
-              className={cx('flex h-8 shrink-0 items-center gap-1.5 rounded-[var(--radius-row)] px-2 text-left text-body', on ? 'bg-accent-strong text-accent-fg' : 'text-fg hover:bg-hover')}
+              aria-expanded={showGuests}
+              data-testid="perm-guests-toggle"
+              onClick={() => setGuestsOpen(!showGuests)}
+              className="mt-1 flex h-7 shrink-0 items-center gap-1 px-2 text-left text-micro font-semibold text-muted hover:text-fg"
             >
-              {x.type === PermissionTargetType.USER ? (
-                <Avatar userId={x.id} name={x.label} {...(m?.user?.avatarFileId ? { fileId: m.user.avatarFileId } : {})} size={20} />
-              ) : x.role && isCustomRole(x.role) ? (
-                <span className="grid size-5 shrink-0 place-items-center" aria-hidden>
-                  <span className="size-2.5 rounded-full" style={{ background: x.role.color ? roleColorCss(x.role.color) : 'var(--color-label-tertiary)' }} />
-                </span>
-              ) : null}
-              <span
-                className={cx('min-w-0 truncate', x.type === PermissionTargetType.USER && roleTextClass(m?.role, on ? 'inherit' : 'role', look))}
-                style={x.type === PermissionTargetType.USER ? roleTextStyle(m?.role, on ? 'inherit' : 'role', look) : undefined}
-              >
-                {x.type === PermissionTargetType.ROLE ? '@' : ''}
-                {x.label}
-              </span>
-              {m ? <RoleMark role={m.role} custom={look} tone={on ? 'inherit' : 'role'} /> : null}
-              {m && isGuest(m) ? <GuestBadge /> : null}
+              <ChevronRight className={cx('size-3 shrink-0', showGuests && 'rotate-90')} aria-hidden />
+              {t('picker.guests', { n: guestTargets.length })}
             </button>
-          );
-        })}
+            {showGuests ? guestTargets.map(renderTarget) : null}
+          </>
+        ) : null}
         <MemberPicker
           open={adding}
           onOpenChange={setAdding}

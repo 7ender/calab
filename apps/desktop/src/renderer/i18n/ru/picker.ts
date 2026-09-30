@@ -9,6 +9,7 @@ export const ruPicker = {
   'picker.searchRooms': "Найти комнату",
   'picker.roles': "Роли",
   'picker.members': "Участники",
+  'picker.guests': "Гости · {n}",
   'picker.rooms': "Комнаты",
   'picker.fullAccess': "полный доступ",
   'picker.alwaysFull': "Всегда полный доступ: настройки комнаты на эту роль не действуют",
