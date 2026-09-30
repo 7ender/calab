@@ -31,7 +31,7 @@ VALUES (NULL, 'notes', $1, $2,
         (SELECT coalesce(max(r.position) + 1, 0) FROM dm_members d
          JOIN rooms r ON r.id = d.room_id AND r.type = 'notes'
          WHERE d.user_id = $3))
-RETURNING id, workspace_id, type, name, topic, position, is_private, audio_bitrate_kbps, max_stream_preset, max_streams, created_at, archived_at, category_id, user_limit, voice_status, camera_limit, dm_key, allow_recording, restricted, emoji, guest_approval
+RETURNING id, workspace_id, type, name, topic, position, is_private, audio_bitrate_kbps, max_stream_preset, max_streams, created_at, archived_at, category_id, user_limit, voice_status, camera_limit, dm_key, allow_recording, restricted, emoji, guest_approval, expires_at, created_by
 `
 
 type CreateNotesRoomParams struct {
@@ -66,6 +66,8 @@ func (q *Queries) CreateNotesRoom(ctx context.Context, arg CreateNotesRoomParams
 		&i.Restricted,
 		&i.Emoji,
 		&i.GuestApproval,
+		&i.ExpiresAt,
+		&i.CreatedBy,
 	)
 	return i, err
 }
@@ -85,7 +87,7 @@ func (q *Queries) DeleteNotesRoom(ctx context.Context, id uuid.UUID) (int64, err
 }
 
 const getNotesRoom = `-- name: GetNotesRoom :one
-SELECT r.id, r.workspace_id, r.type, r.name, r.topic, r.position, r.is_private, r.audio_bitrate_kbps, r.max_stream_preset, r.max_streams, r.created_at, r.archived_at, r.category_id, r.user_limit, r.voice_status, r.camera_limit, r.dm_key, r.allow_recording, r.restricted, r.emoji, r.guest_approval FROM rooms r
+SELECT r.id, r.workspace_id, r.type, r.name, r.topic, r.position, r.is_private, r.audio_bitrate_kbps, r.max_stream_preset, r.max_streams, r.created_at, r.archived_at, r.category_id, r.user_limit, r.voice_status, r.camera_limit, r.dm_key, r.allow_recording, r.restricted, r.emoji, r.guest_approval, r.expires_at, r.created_by FROM rooms r
 JOIN dm_members d ON d.room_id = r.id AND d.user_id = $1
 WHERE r.id = $2 AND r.type = 'notes' AND r.archived_at IS NULL
 `
@@ -121,12 +123,14 @@ func (q *Queries) GetNotesRoom(ctx context.Context, arg GetNotesRoomParams) (Roo
 		&i.Restricted,
 		&i.Emoji,
 		&i.GuestApproval,
+		&i.ExpiresAt,
+		&i.CreatedBy,
 	)
 	return i, err
 }
 
 const listNotes = `-- name: ListNotes :many
-SELECT r.id, r.workspace_id, r.type, r.name, r.topic, r.position, r.is_private, r.audio_bitrate_kbps, r.max_stream_preset, r.max_streams, r.created_at, r.archived_at, r.category_id, r.user_limit, r.voice_status, r.camera_limit, r.dm_key, r.allow_recording, r.restricted, r.emoji, r.guest_approval,
+SELECT r.id, r.workspace_id, r.type, r.name, r.topic, r.position, r.is_private, r.audio_bitrate_kbps, r.max_stream_preset, r.max_streams, r.created_at, r.archived_at, r.category_id, r.user_limit, r.voice_status, r.camera_limit, r.dm_key, r.allow_recording, r.restricted, r.emoji, r.guest_approval, r.expires_at, r.created_by,
        (lm.id IS NOT NULL)::boolean AS has_messages,
        coalesce(lm.id, r.id)::uuid AS last_message_id,
        coalesce(lm.created_at, r.created_at)::timestamptz AS last_message_at,
@@ -199,6 +203,8 @@ func (q *Queries) ListNotes(ctx context.Context, arg ListNotesParams) ([]ListNot
 			&i.Room.Restricted,
 			&i.Room.Emoji,
 			&i.Room.GuestApproval,
+			&i.Room.ExpiresAt,
+			&i.Room.CreatedBy,
 			&i.HasMessages,
 			&i.LastMessageID,
 			&i.LastMessageAt,
@@ -274,7 +280,7 @@ UPDATE rooms SET
     emoji    = coalesce($2, emoji),
     position = coalesce($3, position)
 WHERE id = $4 AND type = 'notes'
-RETURNING id, workspace_id, type, name, topic, position, is_private, audio_bitrate_kbps, max_stream_preset, max_streams, created_at, archived_at, category_id, user_limit, voice_status, camera_limit, dm_key, allow_recording, restricted, emoji, guest_approval
+RETURNING id, workspace_id, type, name, topic, position, is_private, audio_bitrate_kbps, max_stream_preset, max_streams, created_at, archived_at, category_id, user_limit, voice_status, camera_limit, dm_key, allow_recording, restricted, emoji, guest_approval, expires_at, created_by
 `
 
 type UpdateNotesRoomParams struct {
@@ -314,6 +320,8 @@ func (q *Queries) UpdateNotesRoom(ctx context.Context, arg UpdateNotesRoomParams
 		&i.Restricted,
 		&i.Emoji,
 		&i.GuestApproval,
+		&i.ExpiresAt,
+		&i.CreatedBy,
 	)
 	return i, err
 }

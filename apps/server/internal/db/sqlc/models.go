@@ -366,6 +366,8 @@ type Room struct {
 	Restricted       bool
 	Emoji            string
 	GuestApproval    bool
+	ExpiresAt        *time.Time
+	CreatedBy        *uuid.UUID
 }
 
 type RoomAdmission struct {
