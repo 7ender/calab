@@ -15,7 +15,7 @@
    | Маршрут | Бит / условие |
    |---|---|
    | `POST /api/workspaces/{id}/events` | не гость; комната — видимая голосовая; **бот — организатор, но не участник** |
-   | `PATCH`, `DELETE /api/events/{id}` | организатор, иначе `MANAGE_ROOM` room встречи или `MANAGE_EVENTS` ws (видимая комната) |
+   | `PATCH`, `DELETE /api/events/{id}` | организатор, иначе `MANAGE_ROOM` room встречи или `MANAGE_EVENTS` ws (видимая комната); внешние адреса — только в свою встречу (иначе ссылки комнаты автора и письма от его имени) |
    | `GET …/freebusy`, `POST …/freebusy/suggest` | не гость; боту — только «занято» (без названий и участников внешних событий, ADR-0045) |
    | `GET /api/workspaces/{id}/members/{userId}` (новый, и для людей) | участник; гость — только видимых ему (ADR-0016) |
    | `GET/POST …/invites`, `DELETE …/invites/{inviteId}`, `GET/POST …/invites/email`, `DELETE …/invites/email/{inviteId}` | `INVITE_MEMBERS` ws (ADR-0043); пригласить админом — только владелец |

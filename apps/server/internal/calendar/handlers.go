@@ -424,6 +424,12 @@ func (s *Service) update(w http.ResponseWriter, r *http.Request) error {
 					addWant = append(addWant, a)
 				}
 			}
+			// A bot adds outside addresses only to the meetings it organizes (ADR-0051): on a
+			// person's meeting they would get the person's guest links to the room (links are
+			// made by people only, ADR-0031) and mail in the person's name.
+			if hasExternals(addWant) && v.bot && cur.OrganizerID != me {
+				return httpx.Forbidden("a bot adds outside addresses only to the meetings it organizes")
+			}
 			if hasExternals(addWant) {
 				if _, err := auth.VerifiedUser(ctx, q, me); err != nil {
 					return err

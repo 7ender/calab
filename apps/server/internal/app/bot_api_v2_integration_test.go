@@ -134,6 +134,9 @@ func TestBotAPIv2Calendar(t *testing.T) {
 	b.must(403, "DELETE", "/api/events/"+other.GetId(), nil, nil)
 	giveBot(t, c.o, wsID, b, "Events", perm.ManageEvents)
 	b.must(200, "PATCH", "/api/events/"+other.GetId(), &v1.UpdateCalendarEventRequest{Title: &title}, nil)
+	// No outside address on a person's meeting: it would get the person's guest link to the room.
+	b.must(403, "PATCH", "/api/events/"+other.GetId(), &v1.UpdateCalendarEventRequest{SetAttendees: true,
+		Attendees: []*v1.CalendarEventAttendeeInput{att(c.bob.id, true), ext(uniq("botleak") + "@outside.org")}}, nil)
 	b.must(204, "DELETE", "/api/events/"+other.GetId(), nil, nil)
 
 	// A restricted room: its meetings are invisible to the bot, even with MANAGE_EVENTS; it
