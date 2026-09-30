@@ -280,7 +280,7 @@ function RejectDialog({ task, onClose }: { task: Task; onClose: () => void }): R
         }}
         placeholder={t('boards.rejectComment')}
         aria-label={t('boards.rejectComment')}
-        className="selectable min-h-24 w-full resize-y rounded-[var(--radius-control)] border border-line bg-elev p-2.5 text-body text-fg outline-none placeholder:text-faint focus-visible:border-accent"
+        className="selectable min-h-24 w-full resize-y rounded-[var(--radius-card)] border border-line bg-elev p-2.5 text-body text-fg outline-none placeholder:text-faint focus-visible:border-accent"
         data-testid="reject-comment"
       />
       <div className="pt-1 text-right text-caption tabular-nums text-faint">

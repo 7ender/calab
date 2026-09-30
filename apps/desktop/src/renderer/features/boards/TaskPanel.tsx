@@ -870,7 +870,7 @@ function ActivityRow({ a, task, className }: { a: TaskActivity; task: Task; clas
   const text = activityText(a, board, task.workspaceId);
   const at = a.createdAt ? toDate(a.createdAt) : null;
   return (
-    <div className={cx('flex items-center gap-2 px-5 py-0.5 text-caption text-muted', className)} data-testid="activity-row" data-kind={a.kind}>
+    <div className={cx('flex items-start gap-2 px-5 py-0.5 text-caption text-muted', className)} data-testid="activity-row" data-kind={a.kind}>
       <MemberAvatar workspaceId={task.workspaceId} userId={a.actorId} size={16} />
       <span className="min-w-0 flex-1">
         <span className="font-medium text-fg">{name}</span> {text}
