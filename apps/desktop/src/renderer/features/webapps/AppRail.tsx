@@ -147,6 +147,11 @@ const AppIcon = memo(function AppIcon({ id, manage }: { id: string; manage: bool
           role={undefined}
           aria-roledescription={undefined}
           aria-describedby={undefined}
+          // Nor its tabindex / aria-disabled: a tabindex makes WebKit focus the tile on a tap, that
+          // wakes the lazy Tip (components/ui) mid-tap and the click is lost (a phone opened nothing);
+          // aria-disabled would announce a member's tiles as unavailable. A button is focusable as is.
+          tabIndex={undefined}
+          aria-disabled={undefined}
           onClick={() => openWebApp(id)}
           aria-current={isOpen ? 'page' : undefined}
           aria-label={a.name}
