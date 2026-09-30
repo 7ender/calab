@@ -22,7 +22,7 @@ import (
 // Plans and limits (ADR-0024).
 
 const (
-	unlimitedPlan   = `{"room_members":0,"stream_max_preset":"","stream_max_fps":0,"camera_max_preset":"","camera_max_fps":0,"streams_per_room":0,"storage_mb":0,"members":0,"sticker_packs":0,"stickers":0,"bots":0,"audio_tier_max_kbps":0,"boards":0}`
+	unlimitedPlan   = `{"room_members":0,"stream_max_preset":"","stream_max_fps":0,"camera_max_preset":"","camera_max_fps":0,"streams_per_room":0,"storage_mb":0,"members":0,"sticker_packs":0,"stickers":0,"bots":0,"audio_tier_max_kbps":0,"boards":0,"cameras_per_room":0,"caldav_disabled":false,"telephony_disabled":false,"web_apps_disabled":false,"approvals_disabled":false}`
 	superadminEmail = "it-admin@example.com"
 	// superadminEmail2 belongs to TestAdminGuardAndLimit only (it exhausts its rate limit).
 	superadminEmail2 = "it-admin2@example.com"
@@ -36,8 +36,8 @@ func withFreeLimits(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	testApp.Plans.SetDefaults(plans.DefaultFree, plans.DefaultTeam)
-	t.Cleanup(func() { testApp.Plans.SetDefaults(unlimited, plans.DefaultTeam) })
+	testApp.Plans.SetDefaults(plans.DefaultFree, plans.DefaultTeam, plans.DefaultBusiness)
+	t.Cleanup(func() { testApp.Plans.SetDefaults(unlimited, plans.DefaultTeam, plans.DefaultBusiness) })
 }
 
 // registerEmail registers a user with a given email through an invite.
@@ -133,12 +133,21 @@ func TestPlanRoomMembersLimit(t *testing.T) {
 		t.Fatalf("room user_limit: %d %v", st, e)
 	}
 
-	// team plan (50 in a room) lifts it.
+	// team plan: 15 in a room. Fill the room up to 15 (used must read 15/15 at the next join).
 	admin := superadminUser(t)
 	admin.must(200, "PUT", "/api/admin/workspaces/"+ws.GetId()+"/plan", &v1.AdminSetPlanRequest{Plan: v1.Plan_PLAN_TEAM, Note: "paid"}, nil)
-	m6 := register(t, code)
-	members[4].must(200, "POST", "/api/rooms/"+rid+"/join", nil, nil)
-	m6.must(200, "POST", "/api/rooms/"+rid+"/join", nil, nil)
+	members[4].must(200, "POST", "/api/rooms/"+rid+"/join", nil, nil) // 6
+	code2 := invite(t, o, ws.GetId())                                 // an invite code serves 10 registrations
+	for range 10 {                                                    // up to 15
+		register(t, code2).must(200, "POST", "/api/rooms/"+rid+"/join", nil, nil)
+	}
+	st, e = register(t, invite(t, o, ws.GetId())).apiErr("POST", "/api/rooms/"+rid+"/join")
+	if st != 409 || e.GetCode() != v1.ErrorCode_ERROR_CODE_ROOM_FULL || e.GetReason() != "PLAN_LIMIT" || e.GetUsed() != 15 || e.GetLimit() != 15 {
+		t.Fatalf("16th user on team: %d %v", st, e)
+	}
+	// Business (PLAN_ENTERPRISE): 100 in a room.
+	admin.must(200, "PUT", "/api/admin/workspaces/"+ws.GetId()+"/plan", &v1.AdminSetPlanRequest{Plan: v1.Plan_PLAN_ENTERPRISE, Note: "business"}, nil)
+	register(t, invite(t, o, ws.GetId())).must(200, "POST", "/api/rooms/"+rid+"/join", nil, nil)
 }
 
 // Stream / camera quality is capped by the plan in the answers of /join, /stream/request and
@@ -251,10 +260,10 @@ func TestPlanStorageQuota(t *testing.T) {
 	if gw.GetWorkspace().GetPlan().GetLimits().GetStorageMb() != 1 || gw.GetWorkspace().GetPlan().GetPlan() != v1.Plan_PLAN_CUSTOM {
 		t.Fatalf("workspace plan: %v", gw.GetWorkspace().GetPlan())
 	}
-	// TEAM: 1 TiB (owner, 28.09) — the refused upload now fits; ENTERPRISE: no storage limit.
+	// TEAM: 300 GiB (owner, 30.09) — the refused upload now fits; BUSINESS (ENTERPRISE): 1 TiB.
 	admin.must(200, "PUT", "/api/admin/workspaces/"+ws.GetId()+"/plan", &v1.AdminSetPlanRequest{Plan: v1.Plan_PLAN_TEAM}, nil)
 	o.must(200, "GET", "/api/workspaces/"+ws.GetId(), nil, &gw)
-	if gw.GetWorkspace().GetPlan().GetLimits().GetStorageMb() != 1<<20 {
+	if gw.GetWorkspace().GetPlan().GetLimits().GetStorageMb() != 300<<10 {
 		t.Fatalf("team storage: %v", gw.GetWorkspace().GetPlan())
 	}
 	if st, e := uploadRaw(t, o, ws.GetId(), part); st != 201 {
@@ -262,8 +271,8 @@ func TestPlanStorageQuota(t *testing.T) {
 	}
 	admin.must(200, "PUT", "/api/admin/workspaces/"+ws.GetId()+"/plan", &v1.AdminSetPlanRequest{Plan: v1.Plan_PLAN_ENTERPRISE}, nil)
 	o.must(200, "GET", "/api/workspaces/"+ws.GetId(), nil, &gw)
-	if gw.GetWorkspace().GetPlan().GetLimits().GetStorageMb() != 0 {
-		t.Fatalf("enterprise storage: %v", gw.GetWorkspace().GetPlan())
+	if gw.GetWorkspace().GetPlan().GetLimits().GetStorageMb() != 1<<20 {
+		t.Fatalf("business storage: %v", gw.GetWorkspace().GetPlan())
 	}
 }
 

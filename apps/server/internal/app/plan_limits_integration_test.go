@@ -8,6 +8,7 @@ import (
 	"testing"
 
 	v1 "github.com/calaba/calaba/server/gen/calaba/v1"
+	"github.com/calaba/calaba/server/internal/caldav/caldavtest"
 )
 
 // Free plan limits of 28.09 (ADR-0024 «Пометка 2026-09-28»): 50 members (bots take a seat,
@@ -95,11 +96,27 @@ func TestPlanMembersLimit(t *testing.T) {
 	}
 	outsider.must(200, "POST", "/api/invites/"+code+"/join", nil, nil)
 
-	// TEAM: members unlimited.
+	// TEAM: 100 members. Guests are not counted (the guest above got in at a full workspace),
+	// promoting one needs a seat.
 	setPlan(t, wsID, &v1.AdminSetPlanRequest{Plan: v1.Plan_PLAN_TEAM})
-	fillSeats(t, wsID, 5)
+	fillSeats(t, wsID, 50) // 50 → 100
+	st, e = o.apiErrBody("POST", "/api/workspaces/"+wsID+"/invites", &v1.CreateInviteRequest{})
+	wantPlanLimit(t, "team invite", st, e, 100, 100)
+	st, e = outsider2(t, o).apiErrBody("POST", "/api/invites/"+code+"/join", nil)
+	wantPlanLimit(t, "team join by code", st, e, 100, 100)
+	st, e = o.apiErrBody("POST", "/api/workspaces/"+wsID+"/members/"+gj.GetMe().GetUser().GetId()+"/promote", nil)
+	wantPlanLimit(t, "team promote guest", st, e, 100, 100)
+
+	// BUSINESS (PLAN_ENTERPRISE): 500 members.
+	setPlan(t, wsID, &v1.AdminSetPlanRequest{Plan: v1.Plan_PLAN_ENTERPRISE})
 	o.must(201, "POST", "/api/workspaces/"+wsID+"/invites", &v1.CreateInviteRequest{}, nil)
 	o.must(200, "POST", "/api/workspaces/"+wsID+"/members/"+gj.GetMe().GetUser().GetId()+"/promote", nil, nil)
+}
+
+// outsider2 registers a user of another workspace (someone who is not yet a member).
+func outsider2(t *testing.T, o *user) *user {
+	t.Helper()
+	return register(t, invite(t, o, createWorkspace(t, o, v1.WorkspaceVisibility_WORKSPACE_VISIBILITY_PRIVATE).GetId()))
 }
 
 func TestPlanAudioTier(t *testing.T) {
@@ -175,14 +192,15 @@ func TestPlanFreeCounts(t *testing.T) {
 		t.Fatalf("admin usage: %v", u)
 	}
 
-	// TEAM (20 bots, packs unlimited).
+	// TEAM (5 bots, packs unlimited).
 	setPlan(t, wsID, &v1.AdminSetPlanRequest{Plan: v1.Plan_PLAN_TEAM})
 	createBot(t, o, wsID, "two")
 	createPack(t, o, wsID, "Two")
 }
 
-// ENTERPRISE (owner, 28.09): every check Free fails passes — members, bots, packs, voice tier.
-func TestPlanEnterpriseUnlimited(t *testing.T) {
+// BUSINESS = PLAN_ENTERPRISE (owner, 30.09): 100 in a room, 500 members, 20 bots, 50 boards, 1 TiB;
+// voice tier, sticker packs and video are not limited.
+func TestPlanBusinessLimits(t *testing.T) {
 	withFreeLimits(t)
 	o := owner(t)
 	wsID := createWorkspace(t, o, v1.WorkspaceVisibility_WORKSPACE_VISIBILITY_PRIVATE).GetId()
@@ -192,13 +210,14 @@ func TestPlanEnterpriseUnlimited(t *testing.T) {
 	st, e := o.apiErrBody("POST", "/api/workspaces/"+wsID+"/invites", &v1.CreateInviteRequest{})
 	wantPlanLimit(t, "free invite", st, e, 50, 50)
 
-	setPlan(t, wsID, &v1.AdminSetPlanRequest{Plan: v1.Plan_PLAN_ENTERPRISE, Note: "enterprise"})
+	setPlan(t, wsID, &v1.AdminSetPlanRequest{Plan: v1.Plan_PLAN_ENTERPRISE, Note: "business"})
 	var gw v1.GetWorkspaceResponse
 	o.must(200, "GET", "/api/workspaces/"+wsID, nil, &gw)
-	if p := gw.GetWorkspace().GetPlan(); p.GetPlan() != v1.Plan_PLAN_ENTERPRISE || p.GetLimits().GetRoomMembers() != 0 ||
-		p.GetLimits().GetMembers() != 0 || p.GetLimits().GetBots() != 0 || p.GetLimits().GetStorageMb() != 0 ||
+	if p := gw.GetWorkspace().GetPlan(); p.GetPlan() != v1.Plan_PLAN_ENTERPRISE || p.GetLimits().GetRoomMembers() != 100 ||
+		p.GetLimits().GetMembers() != 500 || p.GetLimits().GetBots() != 20 || p.GetLimits().GetBoards() != 50 ||
+		p.GetLimits().GetStorageMb() != 1<<20 || p.GetLimits().GetAudioTierMaxKbps() != 0 ||
 		p.GetLimits().GetStreamMaxPreset() != v1.ScreenSharePreset_SCREEN_SHARE_PRESET_UNSPECIFIED {
-		t.Fatalf("enterprise plan: %v", p)
+		t.Fatalf("business plan: %v", p)
 	}
 	fillSeats(t, wsID, 5)
 	o.must(201, "POST", "/api/workspaces/"+wsID+"/invites", &v1.CreateInviteRequest{}, nil)
@@ -211,6 +230,112 @@ func TestPlanEnterpriseUnlimited(t *testing.T) {
 	st, e = superadminUser(t).apiErrBody("PUT", "/api/admin/workspaces/"+wsID+"/plan",
 		&v1.AdminSetPlanRequest{Plan: v1.Plan_PLAN_ENTERPRISE, Limits: &v1.PlanLimits{RoomMembers: 3}})
 	if st != 422 {
-		t.Fatalf("enterprise with limits: %d %v", st, e)
+		t.Fatalf("business with limits: %d %v", st, e)
 	}
+}
+
+// CalDAV is not part of Free (owner, 30.09). It belongs to a person: one workspace whose plan
+// has it is enough. A Free-only user keeps the stored account, but nothing syncs or is read.
+func TestPlanCalDAV(t *testing.T) {
+	withFreeLimits(t)
+	// A fresh person: the shared owner belongs to workspaces of other tests, some on paid plans.
+	boss := owner(t)
+	wsID := createWorkspace(t, boss, v1.WorkspaceVisibility_WORKSPACE_VISIBILITY_PRIVATE).GetId()
+	o := register(t, invite(t, boss, wsID))
+	fake := caldavtest.New("anna", "app-pass")
+	defer fake.Close()
+	calDAVCAs.AddCert(fake.Certificate())
+	connect := &v1.ConnectCalDavRequest{Url: fake.URL + "/", Username: "anna", Password: "app-pass"}
+
+	// Free: locked, nothing to connect.
+	var resp v1.CalDavAccountResponse
+	o.must(200, "GET", "/api/me/caldav", nil, &resp)
+	if !resp.GetPlanLocked() || resp.GetAccount() != nil {
+		t.Fatalf("free, no account: %v", &resp)
+	}
+	st, e := o.apiErrBody("POST", "/api/me/caldav", connect)
+	wantPlanLimit(t, "connect on free", st, e, 0, 0)
+
+	// Team: connects, imports.
+	setPlan(t, wsID, &v1.AdminSetPlanRequest{Plan: v1.Plan_PLAN_TEAM})
+	o.must(200, "POST", "/api/me/caldav", connect, &resp)
+	o.must(200, "PUT", "/api/me/caldav", &v1.UpdateCalDavRequest{CalendarHref: fake.URL + fake.Calendar(), Import: true}, nil)
+	o.must(200, "GET", "/api/me/caldav", nil, &resp)
+	if resp.GetPlanLocked() || resp.GetAccount() == nil {
+		t.Fatalf("team: %v", &resp)
+	}
+
+	// Back to Free: the account stays, every call that uses it is refused, sync is stopped.
+	setPlan(t, wsID, &v1.AdminSetPlanRequest{Plan: v1.Plan_PLAN_FREE})
+	o.must(200, "GET", "/api/me/caldav", nil, &resp)
+	if !resp.GetPlanLocked() || resp.GetAccount().GetCalendarHref() == "" || !resp.GetAccount().GetImport() {
+		t.Fatalf("free with an account: %v", &resp)
+	}
+	st, e = o.apiErrBody("POST", "/api/me/caldav/sync", nil)
+	wantPlanLimit(t, "sync on free", st, e, 0, 0)
+	st, e = o.apiErrBody("PUT", "/api/me/caldav", &v1.UpdateCalDavRequest{CalendarHref: fake.URL + fake.Calendar(), Import: true})
+	wantPlanLimit(t, "update on free", st, e, 0, 0)
+	st, e = o.apiErrBody("PATCH", "/api/me/caldav", &v1.SetCalDavShareRequest{ShareLevel: v1.CalDavShareLevel_CAL_DAV_SHARE_LEVEL_DETAILS})
+	wantPlanLimit(t, "share on free", st, e, 0, 0)
+	st, e = o.apiErrBody("GET", "/api/me/external-events?from=2026-10-05T00:00:00Z&to=2026-10-06T00:00:00Z", nil)
+	wantPlanLimit(t, "external events on free", st, e, 0, 0)
+
+	// A second workspace on Team lifts it for the person.
+	ws2 := createWorkspace(t, o, v1.WorkspaceVisibility_WORKSPACE_VISIBILITY_PRIVATE).GetId()
+	setPlan(t, ws2, &v1.AdminSetPlanRequest{Plan: v1.Plan_PLAN_TEAM})
+	o.must(200, "POST", "/api/me/caldav/sync", nil, &resp)
+	if resp.GetPlanLocked() {
+		t.Fatalf("second workspace on team: %v", &resp)
+	}
+
+	// Disconnecting is always allowed.
+	setPlan(t, ws2, &v1.AdminSetPlanRequest{Plan: v1.Plan_PLAN_FREE})
+	o.must(204, "DELETE", "/api/me/caldav", nil, nil)
+}
+
+// Business-only features (owner, 30.09): web apps, task approvals, telephony. Free and Team
+// refuse them (409 PLAN_LIMIT, used = limit = 0); Business has them; a downgrade keeps the data,
+// stops the gate and refuses new approvers / votes.
+func TestPlanBusinessOnlyFeatures(t *testing.T) {
+	withFreeLimits(t)
+	o := owner(t)
+	wsID := createWorkspace(t, o, v1.WorkspaceVisibility_WORKSPACE_VISIBILITY_PRIVATE).GetId()
+	bob := register(t, invite(t, o, wsID))
+	b := createBoard(t, o, wsID, &v1.CreateBoardRequest{Name: "Plans", Key: "PLN", Template: v1.BoardTemplate_BOARD_TEMPLATE_DEVELOPMENT}, 201)
+	todo, done := statusOf(b, v1.BoardStatusType_BOARD_STATUS_TYPE_UNSTARTED), statusOf(b, v1.BoardStatusType_BOARD_STATUS_TYPE_COMPLETED)
+	pw := "s3cret-Пароль" //nolint:gosec // G101: a test fixture
+	sip := &v1.PutSipSettingsRequest{Enabled: true, Provider: "Zadarma", Host: "203.0.113.10:5060",
+		Transport: v1.SipTransport_SIP_TRANSPORT_TCP, Username: "u100", Password: &pw, CallerId: "8 (495) 123-45-67"}
+	app := &v1.CreateWorkspaceAppRequest{Name: "Grafana", Url: "https://grafana.example.com"}
+	refused := func(plan string) {
+		t.Helper()
+		st, e := o.apiErrBody("POST", "/api/workspaces/"+wsID+"/apps", app)
+		wantPlanLimit(t, plan+": web app", st, e, 0, 0)
+		st, e = o.apiErrBody("POST", "/api/boards/"+b.GetId()+"/tasks", &v1.CreateTaskRequest{Title: "x", ApproverIds: []string{bob.id}})
+		wantPlanLimit(t, plan+": approvers on create", st, e, 0, 0)
+		st, e = o.apiErrBody("PUT", "/api/workspaces/"+wsID+"/sip", sip)
+		wantPlanLimit(t, plan+": telephony", st, e, 0, 0)
+	}
+	refused("free")
+	setPlan(t, wsID, &v1.AdminSetPlanRequest{Plan: v1.Plan_PLAN_TEAM})
+	refused("team")
+
+	setPlan(t, wsID, &v1.AdminSetPlanRequest{Plan: v1.Plan_PLAN_ENTERPRISE})
+	newApp(t, o, wsID, "Grafana", "https://grafana.example.com", "")
+	task := createTask(t, o, b.GetId(), &v1.CreateTaskRequest{Title: "Согласовать", StatusId: todo, ApproverIds: []string{bob.id}}, 201)
+	if task.GetApprovalState() != v1.TaskApprovalState_TASK_APPROVAL_STATE_PENDING {
+		t.Fatalf("business approvals: %v", task)
+	}
+	// Forward is blocked while the approval is pending...
+	o.must(409, "PATCH", "/api/tasks/"+task.GetId(), &v1.UpdateTaskRequest{StatusId: &done}, nil)
+
+	// ...a downgrade turns the gate off (nothing is stranded), keeps the approvers, refuses
+	// votes and new approvers, and allows removing them.
+	setPlan(t, wsID, &v1.AdminSetPlanRequest{Plan: v1.Plan_PLAN_TEAM})
+	st, e := bob.apiErrBody("POST", "/api/tasks/"+task.GetId()+"/approval", &v1.TaskApprovalRequest{Decision: approve})
+	wantPlanLimit(t, "team: vote", st, e, 0, 0)
+	st, e = o.apiErrBody("PUT", "/api/tasks/"+task.GetId()+"/approvers", &v1.SetTaskApproversRequest{UserIds: []string{bob.id}, Required: 1})
+	wantPlanLimit(t, "team: set approvers", st, e, 0, 0)
+	o.must(200, "PATCH", "/api/tasks/"+task.GetId(), &v1.UpdateTaskRequest{StatusId: &done}, nil)
+	o.must(200, "PUT", "/api/tasks/"+task.GetId()+"/approvers", &v1.SetTaskApproversRequest{}, nil)
 }

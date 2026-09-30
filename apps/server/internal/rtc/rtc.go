@@ -334,6 +334,9 @@ func (s *Service) requestStream(w http.ResponseWriter, r *http.Request) error {
 		return err
 	}
 	if !free {
+		if p := room.Plan.StreamsPerRoom; p > 0 && media.GetMaxStreams() >= p { // the plan cap is what binds
+			return plans.LimitError("streams in a room", uint64(p), uint64(p))
+		}
 		return httpx.Conflict("stream limit of the room is reached")
 	}
 	preset := ClampPreset(req.GetPreset(), media.GetMaxStreamPreset()) // media is capped by the plan

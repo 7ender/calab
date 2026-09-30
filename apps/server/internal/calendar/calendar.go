@@ -75,6 +75,9 @@ type Service struct {
 	// Changed is told after a meeting changed for the users involved before or after the change
 	// (their CalDAV push, ADR-0041 §4); nil = nobody listens.
 	Changed func(ctx context.Context, eventID uuid.UUID, users []uuid.UUID)
+	// AllowsCalDAV tells whether the plans of a user's workspaces include CalDAV; the external
+	// busy time of a user without it is not shown (ADR-0024, 30.09). nil = always.
+	AllowsCalDAV func(ctx context.Context, user uuid.UUID) (bool, error)
 }
 
 // New creates the service. m may be disabled (no SMTP): no mail is sent then.

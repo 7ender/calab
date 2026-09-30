@@ -17,6 +17,7 @@ import (
 	"github.com/calaba/calaba/server/internal/httpx"
 	"github.com/calaba/calaba/server/internal/pbconv"
 	"github.com/calaba/calaba/server/internal/perm"
+	"github.com/calaba/calaba/server/internal/plans"
 )
 
 // Web apps of a workspace (ADR-0050): sites pinned to the rail under the workspace icon. Every
@@ -121,6 +122,23 @@ func loadApp(r *http.Request, q *sqlc.Queries, manage bool) (sqlc.WorkspaceApp, 
 	return a, nil
 }
 
+// appsAllowed refuses adding web apps on a plan without them (Business and above, ADR-0024
+// 30.09): 409 PLAN_LIMIT. Existing apps stay stored; the client hides them while the plan lacks
+// the feature. Removing one is always allowed.
+func (h *Handlers) appsAllowed(ctx context.Context, wsID uuid.UUID) error {
+	if h.limits.Plans == nil {
+		return nil
+	}
+	lim, err := h.limits.Plans.Effective(ctx, wsID)
+	if err != nil {
+		return err
+	}
+	if lim.WebAppsDisabled {
+		return plans.FeatureError("web apps")
+	}
+	return nil
+}
+
 // requireIntegrations: MANAGE_INTEGRATIONS in the workspace of the path (ADR-0048); guests never.
 func requireIntegrations(r *http.Request) (uuid.UUID, error) {
 	wsID, _, err := requireBit(r, perm.ManageIntegrations, "MANAGE_INTEGRATIONS")
@@ -148,6 +166,9 @@ func (h *Handlers) listApps(w http.ResponseWriter, r *http.Request) error {
 func (h *Handlers) createApp(w http.ResponseWriter, r *http.Request) error {
 	wsID, err := requireIntegrations(r)
 	if err != nil {
+		return err
+	}
+	if err := h.appsAllowed(r.Context(), wsID); err != nil {
 		return err
 	}
 	var req v1.CreateWorkspaceAppRequest
@@ -200,6 +221,9 @@ func (h *Handlers) updateApp(w http.ResponseWriter, r *http.Request) error {
 	}
 	cur, err := loadApp(r, h.db.Q, true)
 	if err != nil {
+		return err
+	}
+	if err := h.appsAllowed(r.Context(), cur.WorkspaceID); err != nil {
 		return err
 	}
 	p := sqlc.UpdateWorkspaceAppParams{ID: cur.ID}

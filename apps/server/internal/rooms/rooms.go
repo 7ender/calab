@@ -235,7 +235,7 @@ const AudioBitrateError = "audio bitrate must be one of 8, 16, 32, 64"
 func ValidAudioBitrate(kbps uint32) bool { return audioBitrates[kbps] }
 
 // MaxCameraLimit caps camera_limit (webcams at once in a voice room; 0 = cameras off).
-const MaxCameraLimit = 25
+const MaxCameraLimit = 30
 
 // mediaDB is a validated media override in its DB form (nil = workspace default).
 type mediaDB struct {
@@ -272,7 +272,7 @@ func mediaParams(o *v1.RoomMediaOverride, field string) (mediaDB, error) {
 	}
 	if o.CameraLimit != nil {
 		if o.GetCameraLimit() > MaxCameraLimit {
-			return m, httpx.Validation(field+".cameraLimit", "camera limit must be 0..25")
+			return m, httpx.Validation(field+".cameraLimit", "camera limit must be 0..30")
 		}
 		v := int32(o.GetCameraLimit()) //nolint:gosec // validated above
 		m.cameras = &v

@@ -20,6 +20,7 @@ import (
 	"github.com/calaba/calaba/server/internal/httpx"
 	"github.com/calaba/calaba/server/internal/notifications"
 	"github.com/calaba/calaba/server/internal/perm"
+	"github.com/calaba/calaba/server/internal/plans"
 )
 
 // Task approvals (ADR-0049): approvers with a quorum; a task not approved cannot move forward.
@@ -114,6 +115,29 @@ func Forward(from, to sqlc.BoardStatus) bool {
 		return to.Type == "completed" && from.Type != "completed"
 	}
 	return to.Type == "completed" || to.Position > from.Position
+}
+
+// approvalsOn tells whether the workspace plan includes approvals (Business and above, ADR-0024
+// 30.09). Without it new approvers and votes are refused and the gate is off (a downgrade must
+// not strand tasks); the stored approvers stay.
+func (s *Service) approvalsOn(ctx context.Context, wsID uuid.UUID) (bool, error) {
+	if s.plans == nil {
+		return true, nil
+	}
+	lim, err := s.plans.Effective(ctx, wsID)
+	return !lim.ApprovalsDisabled, err
+}
+
+// gate is checkApprovalGate when the plan has approvals, nothing otherwise.
+func (s *Service) gate(ctx context.Context, wsID uuid.UUID, t Tally, from, to sqlc.BoardStatus) error {
+	if !t.Blocks() || !Forward(from, to) {
+		return nil
+	}
+	on, err := s.approvalsOn(ctx, wsID)
+	if err != nil || !on {
+		return err
+	}
+	return approvalRequired(t)
 }
 
 // checkApprovalGate is the one approval check of every status change (PATCH incl. kanban
@@ -377,6 +401,13 @@ func (s *Service) setApprovers(w http.ResponseWriter, r *http.Request) error {
 			return err
 		}
 		taskID = t.ID
+		if len(req.GetUserIds()) > 0 { // removing approvers stays possible on any plan
+			if on, err := s.approvalsOn(r.Context(), t.WorkspaceID); err != nil {
+				return err
+			} else if !on {
+				return plans.FeatureError("approvals")
+			}
+		}
 		if err := requireEdit(r.Context(), q, acc, t, me); err != nil {
 			return err
 		}
@@ -458,6 +489,11 @@ func (s *Service) vote(w http.ResponseWriter, r *http.Request) error {
 		}
 		if t.ArchivedAt != nil {
 			return httpx.Conflict("the task is archived; restore it first")
+		}
+		if on, err := s.approvalsOn(r.Context(), t.WorkspaceID); err != nil {
+			return err
+		} else if !on {
+			return plans.FeatureError("approvals")
 		}
 		aps, err := q.ListTaskApprovers(r.Context(), []uuid.UUID{t.ID})
 		if err != nil {

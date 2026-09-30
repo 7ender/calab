@@ -30,6 +30,7 @@ import (
 	"github.com/calaba/calaba/server/internal/db"
 	"github.com/calaba/calaba/server/internal/db/sqlc"
 	"github.com/calaba/calaba/server/internal/httpx"
+	"github.com/calaba/calaba/server/internal/plans"
 	"github.com/calaba/calaba/server/internal/redisx"
 	"github.com/calaba/calaba/server/internal/sealbox"
 	"github.com/calaba/calaba/server/internal/unfurl"
@@ -88,6 +89,9 @@ type Service struct {
 	sync    *redisx.RateLimiter // manual imports per user (1 per minute)
 	wake    chan struct{}
 	token   string
+	// AllowsCalDAV tells whether the plans of the user's workspaces include CalDAV (ADR-0024,
+	// 30.09); nil allows everything (plans.Service.AllowsCalDAV).
+	AllowsCalDAV func(ctx context.Context, user uuid.UUID) (bool, error)
 	// Now is the clock.
 	Now func() time.Time
 }
@@ -159,6 +163,32 @@ func (s *Service) person(r *http.Request) (uuid.UUID, error) {
 	return id.UserID, nil
 }
 
+// allowed reports whether the user's plans include CalDAV.
+func (s *Service) allowed(ctx context.Context, user uuid.UUID) (bool, error) {
+	if s.AllowsCalDAV == nil {
+		return true, nil
+	}
+	return s.AllowsCalDAV(ctx, user)
+}
+
+// paidPerson is person plus the plan check: without CalDAV in any of the user's plans the
+// calls that connect, change, sync or read the calendar are refused (409 PLAN_LIMIT). Reading
+// the account (get) and disconnecting (remove) stay open: nothing stored is deleted.
+func (s *Service) paidPerson(r *http.Request) (uuid.UUID, error) {
+	me, err := s.person(r)
+	if err != nil {
+		return uuid.Nil, err
+	}
+	ok, err := s.allowed(r.Context(), me)
+	if err != nil {
+		return uuid.Nil, err
+	}
+	if !ok {
+		return uuid.Nil, plans.FeatureError("CalDAV")
+	}
+	return me, nil
+}
+
 func calendarsOfRow(acc sqlc.CaldavAccount) []Calendar {
 	var cals []Calendar
 	_ = json.Unmarshal(acc.Calendars, &cals) // written by the server only
@@ -185,15 +215,19 @@ func (s *Service) get(w http.ResponseWriter, r *http.Request) error {
 	if err != nil {
 		return err
 	}
+	ok, err := s.allowed(r.Context(), me)
+	if err != nil {
+		return err
+	}
 	acc, err := s.db.Q.GetCalDavAccount(r.Context(), me)
 	if db.IsNotFound(err) {
-		httpx.Write(w, http.StatusOK, &v1.CalDavAccountResponse{})
+		httpx.Write(w, http.StatusOK, &v1.CalDavAccountResponse{PlanLocked: !ok})
 		return nil
 	}
 	if err != nil {
 		return err
 	}
-	httpx.Write(w, http.StatusOK, &v1.CalDavAccountResponse{Account: accountProto(acc)})
+	httpx.Write(w, http.StatusOK, &v1.CalDavAccountResponse{Account: accountProto(acc), PlanLocked: !ok})
 	return nil
 }
 
@@ -219,7 +253,7 @@ func discoverError(err error) error {
 
 func (s *Service) connectAccount(w http.ResponseWriter, r *http.Request) error {
 	ctx := r.Context()
-	me, err := s.person(r)
+	me, err := s.paidPerson(r)
 	if err != nil {
 		return err
 	}
@@ -280,7 +314,7 @@ func (s *Service) connectAccount(w http.ResponseWriter, r *http.Request) error {
 
 func (s *Service) update(w http.ResponseWriter, r *http.Request) error {
 	ctx := r.Context()
-	me, err := s.person(r)
+	me, err := s.paidPerson(r)
 	if err != nil {
 		return err
 	}
@@ -377,7 +411,7 @@ func (s *Service) remove(w http.ResponseWriter, r *http.Request) error {
 
 func (s *Service) syncNow(w http.ResponseWriter, r *http.Request) error {
 	ctx := r.Context()
-	me, err := s.person(r)
+	me, err := s.paidPerson(r)
 	if err != nil {
 		return err
 	}
@@ -415,6 +449,13 @@ func (s *Service) Import(ctx context.Context, user uuid.UUID) (sqlc.CaldavAccoun
 		return acc, nil
 	}
 	now := s.Now()
+	if ok, err := s.allowed(ctx, user); err != nil {
+		return acc, err
+	} else if !ok {
+		// Stopped, not deleted (the stored config and busy time stay). Stamped as synced, so a
+		// locked account does not stay first in the due list and starve the others.
+		return s.db.Q.SetCalDavSynced(ctx, sqlc.SetCalDavSyncedParams{UserID: user, LastSyncAt: &now, LastError: "CalDAV is not included in the plan"})
+	}
 	busy, fetchErr := s.fetch(ctx, acc, now)
 	if fetchErr != nil {
 		slog.InfoContext(ctx, "caldav: import failed", "user_id", user, "err", fetchErr)
@@ -572,6 +613,10 @@ func (s *Service) push(ctx context.Context, row sqlc.CaldavPush) bool {
 	acc, err := s.db.Q.GetCalDavAccount(ctx, row.UserID)
 	if err != nil || !acc.Push || acc.CalendarHref == nil {
 		drop() // disconnected or turned off meanwhile
+		return false
+	}
+	if ok, err := s.allowed(ctx, row.UserID); err == nil && !ok {
+		drop() // the plan no longer includes CalDAV: nothing is pushed
 		return false
 	}
 	err = s.deliver(ctx, acc, row.EventID)

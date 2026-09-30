@@ -14,7 +14,7 @@ import type { Message } from "@bufbuild/protobuf";
  * Describes the file calaba/v1/plan.proto.
  */
 export const file_calaba_v1_plan: GenFile = /*@__PURE__*/
-  fileDesc("ChRjYWxhYmEvdjEvcGxhbi5wcm90bxIJY2FsYWJhLnYxIucCCgpQbGFuTGltaXRzEhQKDHJvb21fbWVtYmVycxgBIAEoDRI3ChFzdHJlYW1fbWF4X3ByZXNldBgCIAEoDjIcLmNhbGFiYS52MS5TY3JlZW5TaGFyZVByZXNldBIWCg5zdHJlYW1fbWF4X2ZwcxgDIAEoDRI3ChFjYW1lcmFfbWF4X3ByZXNldBgEIAEoDjIcLmNhbGFiYS52MS5TY3JlZW5TaGFyZVByZXNldBIWCg5jYW1lcmFfbWF4X2ZwcxgFIAEoDRIYChBzdHJlYW1zX3Blcl9yb29tGAYgASgNEhIKCnN0b3JhZ2VfbWIYByABKAQSDwoHbWVtYmVycxgIIAEoDRIVCg1zdGlja2VyX3BhY2tzGAkgASgNEhAKCHN0aWNrZXJzGAogASgNEgwKBGJvdHMYFCABKA0SGwoTYXVkaW9fdGllcl9tYXhfa2JwcxgVIAEoDRIOCgZib2FyZHMYFiABKA0ilwEKDVdvcmtzcGFjZVBsYW4SHQoEcGxhbhgBIAEoDjIPLmNhbGFiYS52MS5QbGFuEiUKBmxpbWl0cxgCIAEoCzIVLmNhbGFiYS52MS5QbGFuTGltaXRzEi8KC3ZhbGlkX3VudGlsGAMgASgLMhouZ29vZ2xlLnByb3RvYnVmLlRpbWVzdGFtcBIPCgdleHBpcmVkGAQgASgIKmAKBFBsYW4SFAoQUExBTl9VTlNQRUNJRklFRBAAEg0KCVBMQU5fRlJFRRABEg0KCVBMQU5fVEVBTRACEg8KC1BMQU5fQ1VTVE9NEAMSEwoPUExBTl9FTlRFUlBSSVNFEARClwEKDWNvbS5jYWxhYmEudjFCCVBsYW5Qcm90b1ABWjZnaXRodWIuY29tL2NhbGFiYS9jYWxhYmEvc2VydmVyL2dlbi9jYWxhYmEvdjE7Y2FsYWJhdjGiAgNDWFiqAglDYWxhYmEuVjHKAglDYWxhYmFcVjHiAhVDYWxhYmFcVjFcR1BCTWV0YWRhdGHqAgpDYWxhYmE6OlYxYgZwcm90bzM", [file_google_protobuf_timestamp, file_calaba_v1_media]);
+  fileDesc("ChRjYWxhYmEvdjEvcGxhbi5wcm90bxIJY2FsYWJhLnYxIu0DCgpQbGFuTGltaXRzEhQKDHJvb21fbWVtYmVycxgBIAEoDRI3ChFzdHJlYW1fbWF4X3ByZXNldBgCIAEoDjIcLmNhbGFiYS52MS5TY3JlZW5TaGFyZVByZXNldBIWCg5zdHJlYW1fbWF4X2ZwcxgDIAEoDRI3ChFjYW1lcmFfbWF4X3ByZXNldBgEIAEoDjIcLmNhbGFiYS52MS5TY3JlZW5TaGFyZVByZXNldBIWCg5jYW1lcmFfbWF4X2ZwcxgFIAEoDRIYChBzdHJlYW1zX3Blcl9yb29tGAYgASgNEhIKCnN0b3JhZ2VfbWIYByABKAQSDwoHbWVtYmVycxgIIAEoDRIVCg1zdGlja2VyX3BhY2tzGAkgASgNEhAKCHN0aWNrZXJzGAogASgNEgwKBGJvdHMYFCABKA0SGwoTYXVkaW9fdGllcl9tYXhfa2JwcxgVIAEoDRIOCgZib2FyZHMYFiABKA0SGAoQY2FtZXJhc19wZXJfcm9vbRgbIAEoDRIZChF3ZWJfYXBwc19kaXNhYmxlZBgZIAEoCBIaChJhcHByb3ZhbHNfZGlzYWJsZWQYGiABKAgSGgoSdGVsZXBob255X2Rpc2FibGVkGBggASgIEhcKD2NhbGRhdl9kaXNhYmxlZBgXIAEoCCKXAQoNV29ya3NwYWNlUGxhbhIdCgRwbGFuGAEgASgOMg8uY2FsYWJhLnYxLlBsYW4SJQoGbGltaXRzGAIgASgLMhUuY2FsYWJhLnYxLlBsYW5MaW1pdHMSLwoLdmFsaWRfdW50aWwYAyABKAsyGi5nb29nbGUucHJvdG9idWYuVGltZXN0YW1wEg8KB2V4cGlyZWQYBCABKAgqYAoEUGxhbhIUChBQTEFOX1VOU1BFQ0lGSUVEEAASDQoJUExBTl9GUkVFEAESDQoJUExBTl9URUFNEAISDwoLUExBTl9DVVNUT00QAxITCg9QTEFOX0VOVEVSUFJJU0UQBEKXAQoNY29tLmNhbGFiYS52MUIJUGxhblByb3RvUAFaNmdpdGh1Yi5jb20vY2FsYWJhL2NhbGFiYS9zZXJ2ZXIvZ2VuL2NhbGFiYS92MTtjYWxhYmF2MaICA0NYWKoCCUNhbGFiYS5WMcoCCUNhbGFiYVxWMeICFUNhbGFiYVxWMVxHUEJNZXRhZGF0YeoCCkNhbGFiYTo6VjFiBnByb3RvMw", [file_google_protobuf_timestamp, file_calaba_v1_media]);
 
 /**
  * Effective limits of a workspace. 0 / UNSPECIFIED = no limit.
@@ -58,7 +58,7 @@ export type PlanLimits = Message<"calaba.v1.PlanLimits"> & {
   cameraMaxFps: number;
 
   /**
-   * screen shares at once in one room
+   * screen shares at once in one room (caps max_streams of the room / workspace)
    *
    * @generated from field: uint32 streams_per_room = 6;
    */
@@ -112,6 +112,41 @@ export type PlanLimits = Message<"calaba.v1.PlanLimits"> & {
    * @generated from field: uint32 boards = 22;
    */
   boards: number;
+
+  /**
+   * webcams at once in one voice room (caps camera_limit of the room / workspace); 0 = no plan limit
+   *
+   * @generated from field: uint32 cameras_per_room = 27;
+   */
+  camerasPerRoom: number;
+
+  /**
+   * embedded web apps of the workspace (ADR-0050) are Business only
+   *
+   * @generated from field: bool web_apps_disabled = 25;
+   */
+  webAppsDisabled: boolean;
+
+  /**
+   * task approvals (ADR-0049) are Business only
+   *
+   * @generated from field: bool approvals_disabled = 26;
+   */
+  approvalsDisabled: boolean;
+
+  /**
+   * SIP telephony (ADR-0046) is not part of the plan (Free, Team); Business only
+   *
+   * @generated from field: bool telephony_disabled = 24;
+   */
+  telephonyDisabled: boolean;
+
+  /**
+   * CalDAV sync is not part of the plan (Free); per user it works if any of their workspaces allows it
+   *
+   * @generated from field: bool caldav_disabled = 23;
+   */
+  caldavDisabled: boolean;
 };
 
 /**

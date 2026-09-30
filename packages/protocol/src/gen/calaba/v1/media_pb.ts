@@ -36,7 +36,7 @@ export type RoomMediaSettings = Message<"calaba.v1.RoomMediaSettings"> & {
   maxStreams: number;
 
   /**
-   * webcams at once in the room, 0..25; 0 = cameras off; default 6
+   * webcams at once in the room, 0..30; 0 = cameras off; default 6
    *
    * @generated from field: uint32 camera_limit = 4;
    */

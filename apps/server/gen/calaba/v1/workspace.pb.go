@@ -1025,7 +1025,7 @@ type UpdateWorkspaceRequest struct {
 	DefaultMaxStreamPreset  *ScreenSharePreset     `protobuf:"varint,6,opt,name=default_max_stream_preset,json=defaultMaxStreamPreset,proto3,enum=calaba.v1.ScreenSharePreset,oneof" json:"default_max_stream_preset,omitempty"`
 	DefaultMaxStreams       *uint32                `protobuf:"varint,7,opt,name=default_max_streams,json=defaultMaxStreams,proto3,oneof" json:"default_max_streams,omitempty"` // 0..10
 	AllowSelfNickname       *bool                  `protobuf:"varint,8,opt,name=allow_self_nickname,json=allowSelfNickname,proto3,oneof" json:"allow_self_nickname,omitempty"`
-	DefaultCameraLimit      *uint32                `protobuf:"varint,9,opt,name=default_camera_limit,json=defaultCameraLimit,proto3,oneof" json:"default_camera_limit,omitempty"`  // 0..25 (0 = cameras off)
+	DefaultCameraLimit      *uint32                `protobuf:"varint,9,opt,name=default_camera_limit,json=defaultCameraLimit,proto3,oneof" json:"default_camera_limit,omitempty"`  // 0..30 (0 = cameras off)
 	TimeFormat              *TimeFormat            `protobuf:"varint,10,opt,name=time_format,json=timeFormat,proto3,enum=calaba.v1.TimeFormat,oneof" json:"time_format,omitempty"` // AUTO|H24|H12 (UNSPECIFIED is 422)
 	unknownFields           protoimpl.UnknownFields
 	sizeCache               protoimpl.SizeCache

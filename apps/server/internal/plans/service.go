@@ -52,15 +52,18 @@ type Service struct {
 	redis rueidis.Client                                                         // nil: no cross-instance invalidation
 	free  Limits
 	team  Limits
+	biz   Limits // PLAN_ENTERPRISE, shown to users as «Business»
 	now   func() time.Time
+	// userWorkspaces lists the workspaces a user belongs to (AllowsCalDAV).
+	userWorkspaces func(ctx context.Context, user uuid.UUID) ([]uuid.UUID, error)
 
 	mu    sync.Mutex
 	cache map[uuid.UUID]cached
 	gen   uint64 // bumped by every invalidation: a read that raced one is not cached
 }
 
-// New creates the service with the free / team limits (see Defaults).
-func New(d *db.DB, r rueidis.Client, free, team Limits) *Service {
+// New creates the service with the free / team / business limits (see Defaults).
+func New(d *db.DB, r rueidis.Client, free, team, biz Limits) *Service {
 	load := func(ctx context.Context, wsID uuid.UUID) (*sqlc.WorkspacePlan, error) {
 		row, err := d.Q.GetWorkspacePlan(ctx, wsID)
 		if db.IsNotFound(err) {
@@ -71,25 +74,32 @@ func New(d *db.DB, r rueidis.Client, free, team Limits) *Service {
 		}
 		return &row, nil
 	}
-	return &Service{load: load, redis: r, free: free, team: team, now: time.Now, cache: map[uuid.UUID]cached{}}
+	userWS := func(ctx context.Context, user uuid.UUID) ([]uuid.UUID, error) {
+		return d.Q.ListUserWorkspaceIDs(ctx, user)
+	}
+	return &Service{load: load, userWorkspaces: userWS, redis: r, free: free, team: team, biz: biz, now: time.Now, cache: map[uuid.UUID]cached{}}
 }
 
-// Defaults parses PLAN_FREE_LIMITS / PLAN_TEAM_LIMITS over the built-in defaults.
-func Defaults(freeJSON, teamJSON string) (free, team Limits, err error) {
+// Defaults parses PLAN_FREE_LIMITS / PLAN_TEAM_LIMITS / PLAN_BUSINESS_LIMITS over the built-in
+// defaults.
+func Defaults(freeJSON, teamJSON, bizJSON string) (free, team, biz Limits, err error) {
 	if free, err = ParseLimits(freeJSON, DefaultFree); err != nil {
-		return Limits{}, Limits{}, err
+		return Limits{}, Limits{}, Limits{}, err
 	}
 	if team, err = ParseLimits(teamJSON, DefaultTeam); err != nil {
-		return Limits{}, Limits{}, err
+		return Limits{}, Limits{}, Limits{}, err
 	}
-	return free, team, nil
+	if biz, err = ParseLimits(bizJSON, DefaultBusiness); err != nil {
+		return Limits{}, Limits{}, Limits{}, err
+	}
+	return free, team, biz, nil
 }
 
-// SetDefaults replaces the free / team limits and drops the cache (tests).
-func (s *Service) SetDefaults(free, team Limits) {
+// SetDefaults replaces the free / team / business limits and drops the cache (tests).
+func (s *Service) SetDefaults(free, team, biz Limits) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	s.free, s.team = free, team
+	s.free, s.team, s.biz = free, team, biz
 	s.cache = map[uuid.UUID]cached{}
 	s.gen++
 }
@@ -102,9 +112,32 @@ func (s *Service) PlanLimits(p v1.Plan) Limits {
 	case v1.Plan_PLAN_TEAM:
 		return s.team
 	case v1.Plan_PLAN_ENTERPRISE:
-		return Enterprise
+		return s.biz
 	}
 	return s.free
+}
+
+// AllowsCalDAV reports whether CalDAV works for the user: CalDAV belongs to a person, not to a
+// workspace, so one workspace whose plan includes it is enough (ADR-0024, 30.09). A user
+// without workspaces gets the Free answer. A nil service allows everything.
+func (s *Service) AllowsCalDAV(ctx context.Context, user uuid.UUID) (bool, error) {
+	if s == nil {
+		return true, nil
+	}
+	ids, err := s.userWorkspaces(ctx, user)
+	if err != nil {
+		return false, err
+	}
+	for _, id := range ids {
+		l, err := s.Effective(ctx, id)
+		if err != nil {
+			return false, err
+		}
+		if !l.CalDAVDisabled {
+			return true, nil
+		}
+	}
+	return !s.PlanLimits(v1.Plan_PLAN_FREE).CalDAVDisabled, nil
 }
 
 // Effective returns the effective limits of a workspace.
@@ -160,7 +193,7 @@ func (s *Service) resolveLocked(ctx context.Context, row *sqlc.WorkspacePlan, no
 	case v1.Plan_PLAN_TEAM:
 		info.Limits = s.team
 	case v1.Plan_PLAN_ENTERPRISE:
-		info.Limits = Enterprise
+		info.Limits = s.biz
 	case v1.Plan_PLAN_CUSTOM:
 		l, err := ParseLimits(string(row.Limits), Limits{})
 		if err != nil { // written by us, validated; fail safe to free if it is ever corrupt

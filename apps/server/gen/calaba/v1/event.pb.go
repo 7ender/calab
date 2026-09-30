@@ -2062,6 +2062,7 @@ func (x *SetCalDavShareRequest) GetShareLevel() CalDavShareLevel {
 type CalDavAccountResponse struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	Account       *CalDavAccount         `protobuf:"bytes,1,opt,name=account,proto3" json:"account,omitempty"`
+	PlanLocked    bool                   `protobuf:"varint,2,opt,name=plan_locked,json=planLocked,proto3" json:"plan_locked,omitempty"` // none of the caller's workspace plans includes CalDAV: sync is stopped, the stored account is kept
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -2101,6 +2102,13 @@ func (x *CalDavAccountResponse) GetAccount() *CalDavAccount {
 		return x.Account
 	}
 	return nil
+}
+
+func (x *CalDavAccountResponse) GetPlanLocked() bool {
+	if x != nil {
+		return x.PlanLocked
+	}
+	return false
 }
 
 type ConnectCalDavRequest struct {
@@ -3016,9 +3024,11 @@ const file_calaba_v1_event_proto_rawDesc = "" +
 	"shareLevel\"U\n" +
 	"\x15SetCalDavShareRequest\x12<\n" +
 	"\vshare_level\x18\x01 \x01(\x0e2\x1b.calaba.v1.CalDavShareLevelR\n" +
-	"shareLevel\"K\n" +
+	"shareLevel\"l\n" +
 	"\x15CalDavAccountResponse\x122\n" +
-	"\aaccount\x18\x01 \x01(\v2\x18.calaba.v1.CalDavAccountR\aaccount\"`\n" +
+	"\aaccount\x18\x01 \x01(\v2\x18.calaba.v1.CalDavAccountR\aaccount\x12\x1f\n" +
+	"\vplan_locked\x18\x02 \x01(\bR\n" +
+	"planLocked\"`\n" +
 	"\x14ConnectCalDavRequest\x12\x10\n" +
 	"\x03url\x18\x01 \x01(\tR\x03url\x12\x1a\n" +
 	"\busername\x18\x02 \x01(\tR\busername\x12\x1a\n" +

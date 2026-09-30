@@ -341,6 +341,7 @@ message SetCalDavShareRequest {
 
 message CalDavAccountResponse {
   CalDavAccount account = 1;
+  bool plan_locked = 2; // none of the caller's workspace plans includes CalDAV: sync is stopped, the stored account is kept
 }
 
 message ConnectCalDavRequest {

@@ -24,12 +24,18 @@ const (
 
 func TestParseLimitsEnv(t *testing.T) {
 	// Empty = built-in defaults (ADR-0024: 5 in a room, 720p / 15 fps, 1 stream, 5 GiB; team 1 TiB).
-	free, team, err := Defaults("", "")
-	if err != nil || free != DefaultFree || team != DefaultTeam {
-		t.Fatalf("defaults: %+v %+v %v", free, team, err)
+	free, team, biz, err := Defaults("", "", "")
+	if err != nil || free != DefaultFree || team != DefaultTeam || biz != DefaultBusiness {
+		t.Fatalf("defaults: %+v %+v %+v %v", free, team, biz, err)
 	}
+	if team != (Limits{RoomMembers: 15, Members: 100, Bots: 5, Boards: 30, StorageMB: 300 * 1024,
+		StreamsPerRoom: 5, CamerasPerRoom: 10, TelephonyDisabled: true, WebAppsDisabled: true, ApprovalsDisabled: true}) ||
+		biz != (Limits{RoomMembers: 100, Members: 500, Bots: 20, Boards: 50, StorageMB: 1 << 20, StreamsPerRoom: 10, CamerasPerRoom: 30}) {
+		t.Fatalf("team / business defaults: %+v %+v", team, biz)
+	}
+
 	if free.RoomMembers != 5 || free.StreamMaxPreset != h720 || free.StreamMaxFPS != 15 || free.CameraMaxFPS != 15 ||
-		free.StreamsPerRoom != 1 || free.StorageMB != 5120 || team.StorageMB != 1<<20 || free.Members != 50 || free.AudioMaxKbps != 16 ||
+		free.StreamsPerRoom != 1 || free.StorageMB != 5120 || team.StorageMB != 300<<10 || free.Members != 50 || free.AudioMaxKbps != 16 ||
 		free.Bots != 1 || free.StickerPacks != 1 {
 		t.Fatalf("free defaults: %+v", free)
 	}
@@ -54,8 +60,14 @@ func TestParseLimitsEnv(t *testing.T) {
 			t.Errorf("%s: accepted", bad)
 		}
 	}
-	if _, _, err := Defaults("", `{"room_members":"x"}`); err == nil {
+	if _, _, _, err := Defaults("", `{"room_members":"x"}`, ""); err == nil {
 		t.Error("bad PLAN_TEAM_LIMITS accepted")
+	}
+	if _, _, _, err := Defaults("", "", `{"members":-1}`); err == nil {
+		t.Error("bad PLAN_BUSINESS_LIMITS accepted")
+	}
+	if _, _, b, err := Defaults("", "", `{"members":7,"room_members":0}`); err != nil || b.Members != 7 || b.RoomMembers != 0 || b.Bots != 20 {
+		t.Errorf("business env override: %+v %v", b, err)
 	}
 }
 
@@ -75,7 +87,7 @@ func TestLimitsJSONRoundTrip(t *testing.T) {
 	}
 	// Unlimited limits serialize every key (a stored custom plan is complete).
 	b, _ = json.Marshal(Limits{})
-	if string(b) != `{"room_members":0,"stream_max_preset":"","stream_max_fps":0,"camera_max_preset":"","camera_max_fps":0,"streams_per_room":0,"storage_mb":0,"members":0,"sticker_packs":0,"stickers":0,"bots":0,"audio_tier_max_kbps":0,"boards":0}` {
+	if string(b) != `{"room_members":0,"stream_max_preset":"","stream_max_fps":0,"camera_max_preset":"","camera_max_fps":0,"streams_per_room":0,"cameras_per_room":0,"storage_mb":0,"members":0,"sticker_packs":0,"stickers":0,"bots":0,"audio_tier_max_kbps":0,"boards":0,"caldav_disabled":false,"telephony_disabled":false,"web_apps_disabled":false,"approvals_disabled":false}` {
 		t.Fatalf("zero limits: %s", b)
 	}
 }
@@ -108,8 +120,14 @@ func TestMediaCaps(t *testing.T) {
 		t.Fatalf("camera without caps: %v/%d", p, f)
 	}
 	m := free.CapMedia(&v1.RoomMediaSettings{AudioBitrateKbps: 64, MaxStreamPreset: orig, MaxStreams: 3, CameraLimit: 6})
-	if m.GetMaxStreamPreset() != h720 || m.GetMaxStreams() != 1 || m.GetAudioBitrateKbps() != 16 || m.GetCameraLimit() != 6 {
+	if m.GetMaxStreamPreset() != h720 || m.GetMaxStreams() != 1 || m.GetAudioBitrateKbps() != 16 || m.GetCameraLimit() != 3 {
 		t.Fatalf("capped media: %v", m)
+	}
+	if m := DefaultTeam.CapMedia(&v1.RoomMediaSettings{MaxStreams: 8, CameraLimit: 25}); m.GetMaxStreams() != 5 || m.GetCameraLimit() != 10 {
+		t.Fatalf("team caps: %v", m)
+	}
+	if m := DefaultBusiness.CapMedia(&v1.RoomMediaSettings{MaxStreams: 8, CameraLimit: 30}); m.GetMaxStreams() != 8 || m.GetCameraLimit() != 30 {
+		t.Fatalf("business caps: %v", m)
 	}
 	if m := (Limits{}).CapMedia(&v1.RoomMediaSettings{AudioBitrateKbps: 64, MaxStreamPreset: orig, MaxStreams: 3}); m.GetMaxStreamPreset() != orig || m.GetMaxStreams() != 3 || m.GetAudioBitrateKbps() != 64 {
 		t.Fatalf("uncapped media: %v", m)
@@ -162,7 +180,7 @@ func (f *fakeRows) load(_ context.Context, id uuid.UUID) (*sqlc.WorkspacePlan, e
 }
 
 func testService(f *fakeRows, now *time.Time) *Service {
-	s := &Service{load: f.load, free: DefaultFree, team: DefaultTeam, now: func() time.Time { return *now }, cache: map[uuid.UUID]cached{}}
+	s := &Service{load: f.load, free: DefaultFree, team: DefaultTeam, biz: DefaultBusiness, now: func() time.Time { return *now }, cache: map[uuid.UUID]cached{}}
 	return s
 }
 
@@ -188,8 +206,8 @@ func TestEffectiveAndExpiry(t *testing.T) {
 	if l, _ := s.Effective(ctx, customWS); l != (Limits{RoomMembers: 12, StorageMB: 42}) {
 		t.Fatalf("custom as stored: %+v", l)
 	}
-	// Enterprise: no limits at all, whatever the env defaults are.
-	if i, _ := s.Info(ctx, entWS); i.Plan != v1.Plan_PLAN_ENTERPRISE || i.Limits != (Limits{}) || s.PlanLimits(v1.Plan_PLAN_ENTERPRISE) != (Limits{}) {
+	// PLAN_ENTERPRISE is the cloud Business tier: its own defaults.
+	if i, _ := s.Info(ctx, entWS); i.Plan != v1.Plan_PLAN_ENTERPRISE || i.Limits != DefaultBusiness || s.PlanLimits(v1.Plan_PLAN_ENTERPRISE) != DefaultBusiness {
 		t.Fatalf("enterprise: %+v", i)
 	}
 
@@ -237,7 +255,7 @@ func TestEffectiveAndExpiry(t *testing.T) {
 
 	// SetDefaults applies new env limits at once.
 	f.err = nil
-	s.SetDefaults(Limits{RoomMembers: 3}, DefaultTeam)
+	s.SetDefaults(Limits{RoomMembers: 3}, DefaultTeam, DefaultBusiness)
 	if l, _ := s.Effective(ctx, freeWS); l.RoomMembers != 3 {
 		t.Fatalf("after SetDefaults: %+v", l)
 	}
@@ -275,5 +293,37 @@ func TestSuperadmin(t *testing.T) {
 	em := "it@UNNE.ai"
 	if !superadmin.Is("it@unne.ai") || !superadmin.IsPtr(&em) || superadmin.Is("") || superadmin.IsPtr(nil) || superadmin.Is("other@unne.ai") {
 		t.Fatal("superadmin matching")
+	}
+}
+
+func TestCalDAVFlag(t *testing.T) {
+	ctx := context.Background()
+	now := time.Date(2026, 9, 30, 12, 0, 0, 0, time.UTC)
+	f := &fakeRows{rows: map[uuid.UUID]*sqlc.WorkspacePlan{}}
+	s := testService(f, &now)
+	freeWS, teamWS, user := uuid.New(), uuid.New(), uuid.New()
+	f.rows[teamWS] = &sqlc.WorkspacePlan{WorkspaceID: teamWS, Plan: "team"}
+	mine := []uuid.UUID{freeWS}
+	s.userWorkspaces = func(context.Context, uuid.UUID) ([]uuid.UUID, error) { return mine, nil }
+	if !DefaultFree.CalDAVDisabled || DefaultTeam.CalDAVDisabled || DefaultBusiness.CalDAVDisabled {
+		t.Fatal("CalDAV is only off on Free by default")
+	}
+	if ok, err := s.AllowsCalDAV(ctx, user); err != nil || ok {
+		t.Fatalf("free only: %v %v", ok, err)
+	}
+	mine = []uuid.UUID{freeWS, teamWS} // one workspace with CalDAV is enough
+	if ok, err := s.AllowsCalDAV(ctx, user); err != nil || !ok {
+		t.Fatalf("free + team: %v %v", ok, err)
+	}
+	if ok, _ := (*Service)(nil).AllowsCalDAV(ctx, user); !ok {
+		t.Fatal("nil service allows")
+	}
+	// env / JSON round trip.
+	l, err := ParseLimits(`{"caldav_disabled":false}`, DefaultFree)
+	if err != nil || l.CalDAVDisabled {
+		t.Fatalf("override: %+v %v", l, err)
+	}
+	if FromProto(DefaultFree.Proto()) != DefaultFree {
+		t.Fatal("proto round trip")
 	}
 }

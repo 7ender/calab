@@ -112,6 +112,8 @@ type Config struct {
 	// {"room_members":5,"stream_max_preset":"h720","stream_max_fps":15,"storage_mb":1024}; 0 = no limit.
 	PlanFreeLimits string `env:"PLAN_FREE_LIMITS"`
 	PlanTeamLimits string `env:"PLAN_TEAM_LIMITS"`
+	// Cloud «Business» tier (stored as PLAN_ENTERPRISE).
+	PlanBusinessLimits string `env:"PLAN_BUSINESS_LIMITS"`
 	// Where to ask for a paid plan: PLAN_CONTACT_URL wins, else mailto:PLAN_CONTACT_EMAIL.
 	PlanContactURL   string `env:"PLAN_CONTACT_URL"`
 	PlanContactEmail string `env:"PLAN_CONTACT_EMAIL" envDefault:"it@gptunnel.ai"`

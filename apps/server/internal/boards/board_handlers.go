@@ -881,7 +881,8 @@ func (s *Service) deleteStatus(w http.ResponseWriter, r *http.Request) error {
 	var moved []uuid.UUID
 	var c change
 	err = s.tx(r.Context(), func(q *sqlc.Queries, tx pgx.Tx) error {
-		if _, err := q.GetBoardForUpdate(r.Context(), id); err != nil {
+		brd, err := q.GetBoardForUpdate(r.Context(), id)
+		if err != nil {
 			return err
 		}
 		ss, err := q.ListBoardStatuses(r.Context(), []uuid.UUID{id})
@@ -920,7 +921,7 @@ func (s *Service) deleteStatus(w http.ResponseWriter, r *http.Request) error {
 				return err
 			}
 			for _, x := range rows {
-				if err := checkApprovalGate(tls[x.ID], *from, *dst); err != nil {
+				if err := s.gate(r.Context(), brd.WorkspaceID, tls[x.ID], *from, *dst); err != nil {
 					return err
 				}
 			}

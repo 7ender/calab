@@ -326,6 +326,22 @@ func clip(s string, n int) string {
 	return s
 }
 
+// planAllows refuses telephony in a workspace whose plan does not include it (Business only,
+// ADR-0024 30.09): 409 PLAN_LIMIT, like the other plan limits. A nil plans service allows it.
+func (s *Service) planAllows(ctx context.Context, wsID uuid.UUID) error {
+	if s.plans == nil {
+		return nil
+	}
+	lim, err := s.plans.Effective(ctx, wsID)
+	if err != nil {
+		return err
+	}
+	if lim.TelephonyDisabled {
+		return plans.FeatureError("telephony")
+	}
+	return nil
+}
+
 func (s *Service) putSettings(w http.ResponseWriter, r *http.Request) error {
 	wsID, err := manage(r)
 	if err != nil {
@@ -338,6 +354,12 @@ func (s *Service) putSettings(w http.ResponseWriter, r *http.Request) error {
 	in, err := s.validate(r.Context(), &req)
 	if err != nil {
 		return err
+	}
+	if in.enabled {
+		// Turning it off stays possible on any plan; the stored settings are kept when the plan drops.
+		if err := s.planAllows(r.Context(), wsID); err != nil {
+			return err
+		}
 	}
 	if in.enabled && s.sip == nil {
 		return httpx.Coded(http.StatusConflict, v1.ErrorCode_ERROR_CODE_SIP_DISABLED, "LiveKit is not configured on this server")

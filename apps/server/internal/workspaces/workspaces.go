@@ -538,7 +538,7 @@ func (h *Handlers) update(w http.ResponseWriter, r *http.Request) error {
 	}
 	if req.DefaultCameraLimit != nil {
 		if req.GetDefaultCameraLimit() > rooms.MaxCameraLimit {
-			return httpx.Validation("defaultCameraLimit", "camera limit must be 0..25")
+			return httpx.Validation("defaultCameraLimit", "camera limit must be 0..30")
 		}
 		v := int32(req.GetDefaultCameraLimit()) //nolint:gosec // validated
 		p.DefaultCameraLimit, mediaChanged = &v, true

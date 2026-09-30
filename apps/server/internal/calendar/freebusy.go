@@ -171,11 +171,24 @@ func (s *Service) collectBusy(ctx context.Context, v *viewer, wsID uuid.UUID, pe
 			return err
 		}
 	}
+	allowed := map[uuid.UUID]bool{} // per user, asked once
 	for _, row := range ext {
 		e := row.ExternalBusy
 		p := byID[e.UserID]
 		if p == nil {
 			continue
+		}
+		if s.AllowsCalDAV != nil { // the stored busy time of a plan without CalDAV stays hidden
+			ok, seen := allowed[e.UserID]
+			if !seen {
+				if ok, err = s.AllowsCalDAV(ctx, e.UserID); err != nil {
+					return err
+				}
+				allowed[e.UserID] = ok
+			}
+			if !ok {
+				continue
+			}
 		}
 		it := busyItem{occ: Occurrence{e.StartsAt, e.EndsAt}, kind: v1.BusyKind_BUSY_KIND_EXTERNAL, allDay: e.AllDay}
 		if details && (row.ShareLevel == shareTitle || row.ShareLevel == shareDetails) {
