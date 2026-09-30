@@ -14,9 +14,11 @@ import (
 
 const issuer = "calaba"
 
-// Claims of the access JWT: sub = user id, sid = session id.
+// Claims of the access JWT: sub = user id, sid = session id, rg = the session's refresh
+// generation the token was minted for (replay.go; absent in tokens from before migration 00040).
 type Claims struct {
-	SessionID string `json:"sid"`
+	SessionID  string `json:"sid"`
+	RefreshGen int64  `json:"rg,omitempty"`
 	jwt.RegisteredClaims
 }
 
@@ -32,12 +34,14 @@ func NewTokens(secret []byte, ttl time.Duration) *Tokens {
 	return &Tokens{secret: secret, ttl: ttl, now: time.Now}
 }
 
-// Issue returns a signed access token and its expiry.
-func (t *Tokens) Issue(userID, sessionID uuid.UUID) (string, time.Time, error) {
+// Issue returns a signed access token and its expiry. refreshGen is the session's current
+// refresh generation (0 = none).
+func (t *Tokens) Issue(userID, sessionID uuid.UUID, refreshGen int64) (string, time.Time, error) {
 	now := t.now()
 	exp := now.Add(t.ttl)
 	tok := jwt.NewWithClaims(jwt.SigningMethodHS256, Claims{
-		SessionID: sessionID.String(),
+		SessionID:  sessionID.String(),
+		RefreshGen: refreshGen,
 		RegisteredClaims: jwt.RegisteredClaims{
 			Issuer:    issuer,
 			Subject:   userID.String(),
@@ -58,6 +62,8 @@ type Identity struct {
 	// IsBot: authenticated with a bot token (ADR-0031); routes decide whether bots may call
 	// them (app route table, NoBots).
 	IsBot bool
+	// RefreshGen: the refresh generation the access token was minted for (0 = unknown / bot).
+	RefreshGen int64
 }
 
 // ErrInvalidToken covers every access-token failure (bad signature, expired, malformed).
@@ -82,13 +88,14 @@ func (t *Tokens) Parse(token string) (Identity, error) {
 	if err1 != nil || err2 != nil {
 		return Identity{}, ErrInvalidToken
 	}
-	return Identity{UserID: uid, SessionID: sid}, nil
+	return Identity{UserID: uid, SessionID: sid, RefreshGen: c.RefreshGen}, nil
 }
 
 // Refresh tokens are "<session_id>.<secret>", secret = 32 random bytes (base64url).
 // Only sha256(secret) is stored. Binding the session id into the token makes reuse
-// detection O(1): a well-formed token for a live session whose secret is not the current
-// one is a replay of a rotated token (or a forgery), and the session is revoked.
+// detection O(1): a well-formed token for a live session whose secret is neither the current
+// one nor the previous one while the current is unused (replay.go) is a replay of a rotated
+// token (or a forgery), and the session is revoked.
 
 // NewRefreshSecret returns a fresh secret and its hash.
 func NewRefreshSecret() (secret string, hash []byte, err error) {

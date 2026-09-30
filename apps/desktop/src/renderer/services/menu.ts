@@ -1,6 +1,6 @@
 import { isMenuAction, type MenuAction, type MenuState } from '../../shared/menu';
 import { cameraBlock } from '../lib/media/cameraLogic';
-import { mayArrangeRooms, mayManageWorkspace } from '../lib/permissions';
+import { mayArrangeRooms, mayInviteMembers } from '../lib/permissions';
 import { comboAccelerator, effectiveHotkeys } from '../lib/shortcuts';
 import { platform } from '../platform';
 import { HOME } from '../stores/dms';
@@ -54,7 +54,7 @@ export function menuSummary(): MenuState {
     }),
     activeWorkspaceId: entry ? active : null,
     canCreateRoom: !!entry && mayArrangeRooms(roles),
-    canInvite: !!entry && mayManageWorkspace(roles),
+    canInvite: !!entry && mayInviteMembers(roles),
     hotkeys: {
       search: comboAccelerator(keys.search, IS_MAC),
       mute: comboAccelerator(keys.mute, IS_MAC),

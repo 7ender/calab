@@ -75,7 +75,8 @@ type pauseMark struct{ _ byte }
 // up to resumeWindow.
 type Session struct {
 	id, user, asess uuid.UUID
-	bot             bool // a bot token (ADR-0031): no read receipts (docs/09 #92)
+	bot             bool       // a bot token (ADR-0031): no read receipts (docs/09 #92)
+	client          clientInfo // Identify.device (docs/09 #143); set before register, then read-only
 	hub             *Hub
 
 	mu         sync.Mutex

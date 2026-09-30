@@ -19,7 +19,8 @@ import { api, thumbnailPath, uploadFile, uploadPath } from '../../lib/api/endpoi
 import { fmt, type TimeFormatPref } from '../../lib/format';
 import { ICON_SIDE, IMAGE_ACCEPT, avatarFile } from '../../lib/image';
 import { workspaceInitials } from '../../lib/initials';
-import { can, mayManageWorkspace, workspacePerms } from '../../lib/permissions';
+import { can, mayArrangeRooms, mayInviteMembers, mayManageWorkspace, workspacePerms } from '../../lib/permissions';
+import { TempRoomsCards } from './TempRoomsCards';
 import { inviteUrl } from '../../services/links';
 import { useSession } from '../../stores/session';
 import { toast } from '../../stores/toasts';
@@ -82,10 +83,17 @@ export function WorkspaceSettingsDialog({
   const manageRoles = can(workspacePerms(myRoles), 'MANAGE_ROLES');
   // «Стикеры» (ADR-0030): MANAGE_STICKERS — admins, or a custom role with it.
   const manageStickers = can(workspacePerms(myRoles), 'MANAGE_STICKERS');
+  // «Приглашения»: INVITE_MEMBERS (ADR-0043), like the server's invite endpoints.
+  const inviter = mayInviteMembers(myRoles);
   const sections: SettingsSection[] = [
     ...(admin
       ? [
-          { id: 'general', label: t('ws.tabGeneral'), icon: Settings2, content: <GeneralTab workspaceId={workspaceId} /> },
+          {
+            id: 'general',
+            label: t('ws.tabGeneral'),
+            icon: Settings2,
+            content: <GeneralTab workspaceId={workspaceId} manageRoles={manageRoles} manageRooms={mayArrangeRooms(myRoles)} />,
+          },
           { id: 'media', label: t('ws.tabMedia'), icon: AudioLines, content: <MediaTab workspaceId={workspaceId} /> },
         ]
       : []),
@@ -106,7 +114,7 @@ export function WorkspaceSettingsDialog({
     ...(entry.role !== WorkspaceRole.GUEST
       ? [{ id: 'gptunnel', label: t('gpt.tab'), icon: CircleDot, content: <GptunnelTab workspaceId={workspaceId} canManage={admin} /> }]
       : []),
-    ...(admin ? [{ id: 'invites', label: t('ws.tabInvites'), icon: UserPlus, content: <InvitesTab workspaceId={workspaceId} roomId={roomId} /> }] : []),
+    ...(inviter ? [{ id: 'invites', label: t('ws.tabInvites'), icon: UserPlus, content: <InvitesTab workspaceId={workspaceId} roomId={roomId} /> }] : []),
     // «Забаненные» (docs/09 #32): the same right as kicking (MANAGE_WORKSPACE).
     ...(admin ? [{ id: 'bans', label: t('bans.tab'), icon: Ban, content: <BansTab workspaceId={workspaceId} /> }] : []),
     ...(owner
@@ -137,7 +145,7 @@ function WorkspaceGlyph({ name, iconFileId, size }: { name: string; iconFileId: 
   );
 }
 
-function GeneralTab({ workspaceId }: { workspaceId: string }): ReactNode {
+function GeneralTab({ workspaceId, manageRoles, manageRooms }: { workspaceId: string; manageRoles: boolean; manageRooms: boolean }): ReactNode {
   const ws = useWorkspaces((s) => s.byId[workspaceId]?.ws);
   const [uploading, setUploading] = useState(false);
   const input = useRef<HTMLInputElement>(null);
@@ -210,6 +218,8 @@ function GeneralTab({ workspaceId }: { workspaceId: string }): ReactNode {
           />
         </Row>
       </Card>
+      {/* Temporary rooms (ADR-0044): the members' right (MANAGE_ROLES) and the archive (MANAGE_ROOM). */}
+      <TempRoomsCards workspaceId={workspaceId} manageRoles={manageRoles} manageRooms={manageRooms} />
     </>
   );
 }

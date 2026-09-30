@@ -14,6 +14,8 @@ import (
 type fakeStore struct {
 	members     map[key]sqlc.GetMemberAccessRow
 	access      map[key]sqlc.GetRoomAccessRow
+	boards      map[key]sqlc.GetBoardAccessRow
+	taskRooms   map[uuid.UUID]sqlc.GetTaskRoomRefRow
 	memberCalls int
 	accessCalls int
 	err         error
@@ -38,6 +40,67 @@ func (f *fakeStore) GetRoomAccess(_ context.Context, a sqlc.GetRoomAccessParams)
 		return sqlc.GetRoomAccessRow{}, pgx.ErrNoRows
 	}
 	return row, nil
+}
+
+func (f *fakeStore) GetBoardAccess(_ context.Context, a sqlc.GetBoardAccessParams) (sqlc.GetBoardAccessRow, error) {
+	row, ok := f.boards[key{a.BoardID, a.UserID}]
+	if !ok {
+		return sqlc.GetBoardAccessRow{}, pgx.ErrNoRows
+	}
+	return row, nil
+}
+
+func (f *fakeStore) GetTaskRoomRef(_ context.Context, roomID uuid.UUID) (sqlc.GetTaskRoomRefRow, error) {
+	row, ok := f.taskRooms[roomID]
+	if !ok {
+		return sqlc.GetTaskRoomRefRow{}, pgx.ErrNoRows
+	}
+	return row, nil
+}
+
+// ADR-0042: a task room's bits come from its board; a private board hides it; archived tasks
+// are read-only.
+func TestResolverTaskRoom(t *testing.T) {
+	ws, board, room, u, other, memberR := uuid.New(), uuid.New(), uuid.New(), uuid.New(), uuid.New(), uuid.New()
+	task := uuid.New()
+	access := func(private bool, allowUser bool) sqlc.GetBoardAccessRow {
+		row := sqlc.GetBoardAccessRow{WorkspaceID: ws, IsPrivate: private, Role: ptr("member"),
+			RoleIds: []uuid.UUID{memberR}, RolePositions: []int32{PosMember},
+			RolePermissions: []int64{i64(RoleDefaults[RoleMember])}, RoleAllows: []int64{0}, RoleDenies: []int64{0}}
+		if allowUser {
+			row.UserAllow, row.UserDeny = ptr(int64(ViewBoard|EditTasks)), ptr(int64(0))
+		}
+		return row
+	}
+	s := &fakeStore{
+		access:    map[key]sqlc.GetRoomAccessRow{{room, u}: {WorkspaceID: &ws, Type: "task", Role: ptr("member")}, {room, other}: {WorkspaceID: &ws, Type: "task", Role: ptr("member")}},
+		boards:    map[key]sqlc.GetBoardAccessRow{{board, u}: access(true, true), {board, other}: access(true, false)},
+		taskRooms: map[uuid.UUID]sqlc.GetTaskRoomRefRow{room: {TaskID: task, BoardID: board}},
+	}
+	r := NewResolver(s)
+	ctx := context.Background()
+	acc, err := r.Room(ctx, room, u)
+	if err != nil || !acc.Task || acc.TaskID != task || acc.BoardID != board || acc.Bits != ViewRoom|SendMessages|AttachFiles|ManageMessages {
+		t.Fatalf("allowed user: %+v %v", acc, err)
+	}
+	if acc, err := r.Room(ctx, room, other); err != nil || acc.Bits != 0 {
+		t.Fatalf("private board, no allow: %+v %v", acc, err)
+	}
+	b, err := r.Board(ctx, board, other)
+	if err != nil || b.Bits != 0 || !b.Private {
+		t.Fatalf("board of other: %+v %v", b, err)
+	}
+	if _, err := r.Board(ctx, uuid.New(), u); !errors.Is(err, ErrNoBoard) {
+		t.Fatalf("unknown board: %v", err)
+	}
+	s.taskRooms[room] = sqlc.GetTaskRoomRefRow{TaskID: task, BoardID: board, TaskArchived: true}
+	r = NewResolver(s)
+	if acc, _ := r.Room(ctx, room, u); acc.Bits != ViewRoom|ManageMessages {
+		t.Fatalf("archived task room must be read-only: %d", acc.Bits)
+	}
+	if TaskRoom(ViewBoard, false) != ViewRoom|SendMessages|AttachFiles || TaskRoom(CreateTasks, false) != 0 {
+		t.Fatal("TaskRoom")
+	}
 }
 
 func ptr[T any](v T) *T { return &v }

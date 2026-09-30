@@ -49,7 +49,7 @@ import { useMemberRoles, useWorkspaces } from '../../stores/workspaces';
 import { roleName } from '../people/MemberBits';
 import { MemberPicker } from '../people/MemberPicker';
 import { memberItems, type PeoplePickItem } from '../people/memberPickItems';
-import { PERM_LABEL } from './RoomDialogs';
+import { PERM_HINT, PERM_LABEL } from './RoomDialogs';
 import { toggleMemberRole } from '../people/actions';
 import { nameOf } from '../people/members';
 
@@ -62,6 +62,7 @@ import { nameOf } from '../people/members';
 
 const GROUP_LABEL: Record<PermGroupId, MessageKey> = {
   general: 'roles.group.general',
+  invites: 'roles.group.invites',
   rooms: 'roles.group.rooms',
   voice: 'roles.group.voice',
   moderation: 'roles.group.moderation',
@@ -204,7 +205,7 @@ function RoleRow({ role, count, draggable, onOpen }: { role: Role; count: number
         <button
           type="button"
           aria-label={t('roles.drag', { name })}
-          className="grid size-7 shrink-0 cursor-grab place-items-center rounded-[6px] text-faint hover:bg-hover hover:text-fg focus-visible:outline-2 focus-visible:outline-accent active:cursor-grabbing"
+          className="grid size-7 shrink-0 cursor-grab place-items-center rounded-[6px] text-faint hover:bg-hover hover:text-fg active:cursor-grabbing"
           {...drag.listeners}
           {...drag.attributes}
         >
@@ -213,7 +214,7 @@ function RoleRow({ role, count, draggable, onOpen }: { role: Role; count: number
       ) : (
         <span className="w-7 shrink-0" aria-hidden />
       )}
-      <button type="button" onClick={onOpen} className="flex min-h-11 min-w-0 flex-1 items-center gap-2.5 rounded-[6px] pr-1 text-left focus-visible:outline-2 focus-visible:outline-accent" aria-label={name}>
+      <button type="button" onClick={onOpen} className="flex min-h-11 min-w-0 flex-1 items-center gap-2.5 rounded-[6px] pr-1 text-left" aria-label={name}>
         <RoleIcon role={role} />
         <span className="min-w-0 truncate text-body font-medium">
           {name}
@@ -375,7 +376,7 @@ function ColorPicker({ value, disabled, onChange }: { value: number; disabled: b
           disabled={disabled}
           onClick={() => onChange(c)}
           className={cx(
-            'size-7 rounded-full outline-offset-2 transition-transform duration-[var(--motion-fast)] focus-visible:outline-2 focus-visible:outline-accent enabled:hover:scale-110 disabled:opacity-50',
+            'size-7 rounded-full outline-offset-2 transition-transform duration-[var(--motion-fast)] enabled:hover:scale-110 disabled:opacity-50',
             value === c && 'ring-2 ring-fg ring-offset-2 ring-offset-[var(--color-card)]',
           )}
           style={{ background: roleColorCss(c) }}
@@ -424,7 +425,7 @@ function PermissionMatrix({ role, editable, onChange }: { role: Role; editable: 
               const can = (editable & bit) !== 0n;
               const id = `perm-${role.id}-${p}`;
               return (
-                <Row key={p} label={t(PERM_LABEL[p])} htmlFor={id}>
+                <Row key={p} label={t(PERM_LABEL[p])} hint={PERM_HINT[p] ? t(PERM_HINT[p]) : undefined} htmlFor={id}>
                   <input
                     id={id}
                     type="checkbox"

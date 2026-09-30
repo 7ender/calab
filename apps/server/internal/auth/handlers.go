@@ -136,6 +136,11 @@ func (h *Handlers) register(w http.ResponseWriter, r *http.Request) error {
 	if err != nil {
 		return err
 	}
+	if resp.GetSimilarAccount() {
+		// Only the hint: nothing was created (check_similar_account, docs/09 #119).
+		httpx.Write(w, http.StatusOK, resp)
+		return nil
+	}
 	if isWeb(r) {
 		setRefreshCookie(w, resp.GetTokens())
 	}
@@ -186,7 +191,7 @@ func (h *Handlers) refresh(w http.ResponseWriter, r *http.Request) error {
 	}
 	resp, err := h.svc.Refresh(r.Context(), &v1.RefreshRequest{RefreshToken: tok}, client(r, ""))
 	if err != nil {
-		if cookie && errors.Is(err, errInvalidRefresh) {
+		if cookie && (errors.Is(err, errInvalidRefresh) || errors.Is(err, errSessionRevoked)) {
 			clearRefreshCookie(w) // dead token: stop the browser from resending it
 		}
 		// errRefreshRace keeps the cookie: a parallel request already stored the new token.

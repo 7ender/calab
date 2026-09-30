@@ -118,6 +118,57 @@ func Effective(room, workspace v1.NotificationLevel, dm bool) v1.NotificationLev
 	return room
 }
 
+// TaskLevelToDB maps a requested «Задачи» level (ADR-0042 §4) to its DB text; UNSPECIFIED is
+// the default ALL, INHERIT has nothing to inherit from.
+func TaskLevelToDB(l v1.NotificationLevel) (string, bool) {
+	switch l {
+	case v1.NotificationLevel_NOTIFICATION_LEVEL_UNSPECIFIED:
+		return DBAll, true
+	case v1.NotificationLevel_NOTIFICATION_LEVEL_INHERIT:
+		return "", false
+	}
+	s, ok := toDB[l]
+	return s, ok
+}
+
+// TaskKind is what happened in a task, as far as notifications are concerned.
+type TaskKind string
+
+// Task notification kinds (ADR-0042 §4).
+const (
+	TaskAssigned  TaskKind = "assigned"  // the recipient was added to the assignees or made the lead
+	TaskMentioned TaskKind = "mentioned" // @<recipient> in the description or a comment
+	TaskComment   TaskKind = "comment"   // a comment in a task the recipient is subscribed to
+	TaskStatus    TaskKind = "status"    // the status of a task the recipient is subscribed to changed
+)
+
+// TaskFacts are one task change by someone else, as seen by one recipient.
+type TaskFacts struct {
+	Kind       TaskKind
+	Level      v1.NotificationLevel // the workspace's task level; UNSPECIFIED = ALL
+	Subscribed bool                 // the recipient has a subscription row
+	Muted      bool                 // «Отписаться»
+	Workspace  bool                 // the workspace is muted (muted_until in the future)
+}
+
+// TaskNotifies reports whether a task change notifies the recipient (the unread badge of the
+// boards icon and a system notification): nothing with level NONE or a muted workspace;
+// assignments and mentions with ALL and MENTIONS, even when unsubscribed; comments and
+// status changes with ALL only, to subscribers who did not mute the task.
+func TaskNotifies(f TaskFacts) bool {
+	level := orDefault(f.Level, v1.NotificationLevel_NOTIFICATION_LEVEL_ALL)
+	if f.Workspace || level == v1.NotificationLevel_NOTIFICATION_LEVEL_NONE {
+		return false
+	}
+	switch f.Kind {
+	case TaskAssigned, TaskMentioned:
+		return level == v1.NotificationLevel_NOTIFICATION_LEVEL_ALL || level == v1.NotificationLevel_NOTIFICATION_LEVEL_MENTIONS
+	case TaskComment, TaskStatus:
+		return level == v1.NotificationLevel_NOTIFICATION_LEVEL_ALL && f.Subscribed && !f.Muted
+	}
+	return false
+}
+
 // Facts about one incoming message from someone else, as seen by one recipient.
 type Facts struct {
 	DM             bool

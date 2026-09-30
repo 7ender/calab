@@ -2,10 +2,10 @@ import type { Dict } from './ru';
 
 const es: Dict = {
   meta: {
-    title: 'Calab — voz, chat y llamadas para tu equipo, en tu propio servidor',
+    title: 'Calab — voz, chat, reuniones y tareas para tu equipo, en tu propio servidor',
     description:
-      'Salas de voz, chat, llamadas y pantalla compartida para tu equipo, en tu propio servidor. Grabaciones de reuniones con transcripción y resumen, bots y API, funciona detrás de VPN y cortafuegos. macOS, Windows, Linux y navegador.',
-    ogAlt: 'Calab — ventana de la aplicación con el chat de un equipo',
+      'Salas de voz, chat como Telegram, calendario con reuniones, tableros de tareas, notas y enlaces para invitados, en tu propio servidor. Grabaciones de reuniones con resumen, bots y API, funciona detrás de VPN. macOS, Windows, Linux y navegador.',
+    ogAlt: 'Calab — la ventana de la aplicación en una reunión de planificación: una diapositiva compartida y las cámaras de los participantes',
   },
   header: {
     skip: 'Ir al contenido',
@@ -13,7 +13,8 @@ const es: Dict = {
     navLabel: 'Secciones',
     nav: {
       features: 'Funciones',
-      how: 'Cómo empezar',
+      calendar: 'Calendario',
+      boards: 'Tableros',
       download: 'Descargar',
       pricing: 'Precios',
       faq: 'Preguntas',
@@ -24,19 +25,20 @@ const es: Dict = {
     language: 'Idioma',
   },
   hero: {
-    title: 'Voz, chat y llamadas para tu equipo, en tu propio servidor',
-    benefits: ['Ligero como Discord', 'Tu servidor en un minuto', 'Reuniones grabadas con resumen'],
+    badge: 'Novedad en la 1.1: tableros de tareas y Buscar hora',
+    title: 'Todo el equipo en una ventana',
+    lead: 'Salas de voz, chat, reuniones y tareas en tu propio servidor. Ligero como Discord, cómodo como Telegram.',
     download: 'Descargar',
     openWeb: 'Abrir en el navegador',
     trust: 'Código abierto (BSL 1.1) · macOS · Windows · Linux · web',
-    shotAlt: 'Ventana de Calab: el espacio «Команда Calab», la sala «общий» con mensajes, una sala de voz y miembros conectados',
+    shotAlt: 'La ventana de Calab durante una reunión de planificación: la diapositiva «Versión 1.1» en el escenario, las cámaras de los participantes debajo y las salas del espacio a la izquierda',
   },
   why: {
     title: 'Por qué Calab',
     items: {
       light: {
         title: 'Ligero',
-        text: '0,05 % de CPU fuera de llamada y ≈ 7 % en voz (MacBook Air M4). Con la ventana oculta no decodifica vídeo.',
+        text: '0,05 % de CPU sin llamada, ≈ 7 % en voz (MacBook Air M4). Con la ventana oculta no se decodifica vídeo.',
       },
       server: {
         title: 'Tu propio servidor',
@@ -47,75 +49,90 @@ const es: Dict = {
         text: '¿UDP bloqueado? TURN/TLS por el puerto 443, como HTTPS normal.',
       },
       recording: {
-        title: 'Grabación de reuniones',
+        title: 'Grabaciones de reuniones',
         text: 'La transcripción y el resumen llegan como tarjeta al chat de la sala.',
       },
     },
   },
   features: {
-    eyebrow: 'Funciones',
-    title: 'Voz, pantalla y chat en una sola ventana',
-    lead: 'Un clic para entrar en una sala y ya estás hablando. Todo lo demás, a mano.',
-    items: {
-      voice: {
-        title: 'Voz sin eco ni ruido',
-        text: 'Activación por voz o pulsar para hablar, también en segundo plano. Supresión de ruido RNNoise y cancelación de eco AEC3: se oye limpio incluso sin auriculares.',
-        points: ['Niveles de calidad de Baja a Excelente', 'Opus a 16–64 kbit/s, unos 1 kbit/s en silencio', 'Reconexión sin salir de la sala'],
-        alt: 'Sala de voz «Переговорка»: habla Boris Petrov, está abierto el panel de supresión de ruido con RNNoise',
-      },
-      stream: {
-        title: 'Pantalla compartida y cámara',
-        text: 'Comparte pantalla en AV1 o H.264 por hardware: codifica la tarjeta gráfica, no el procesador. Los espectadores pueden dibujar y señalar sobre la pantalla.',
-        points: ['720p, 1080p o resolución original', 'Una pantalla estática, 20–300 kbit/s', 'Cada espectador recibe la calidad de su conexión'],
-        alt: 'Vera Kim comparte pantalla con la etiqueta EN VIVO: una diapositiva «Релиз 0.2» con una lista de comprobación',
-        insetAlt: 'Prueba de la cámara antes de activarla: fondo desenfocado («Suave»), debajo los fondos del espacio y los comunes',
-      },
-      chat: {
-        title: 'Chat como en Telegram',
-        text: 'Cada sala de voz tiene su chat. Respuestas, reacciones, reenvío, stickers, mensajes de voz, archivos con vista previa, fijados y búsqueda.',
-        points: ['Reenvío a varios chats a la vez', 'Paquetes de stickers del espacio, también animados', 'Mensajes de voz, música y vídeo con reproductor integrado'],
-        alt: 'El canal con un mensaje reenviado de Борис Петров y el campo de texto',
-      },
-      dm: {
-        title: 'Mensajes directos y llamadas',
-        text: 'Conversaciones uno a uno y llamadas con un clic: desde el menú del miembro, su perfil o la cabecera del chat. Las llamadas entrantes suenan y avisan.',
-        points: ['Cámara y pantalla compartida en la llamada', 'Llamadas perdidas y rechazadas en el chat', 'Archivo de conversaciones'],
-        alt: 'Una llamada en mensajes directos con Boris Petrov: el contador de la llamada y el botón «Colgar» en la cabecera',
-      },
-      recording: {
-        title: 'Reuniones grabadas con resumen',
-        text: 'Graba en una sala de voz: al terminar llega al chat una tarjeta con el resumen, el audio y la transcripción completa. La transcripción la hace GPTunneL.',
-        points: ['Búsqueda por frases y salto con un clic', 'Temas y decisiones de la reunión en el resumen', 'Puedes reenviar la grabación o responder a ella'],
-        alt: 'Tarjeta de una reunión grabada: botón de reproducción con progreso, resumen con temas y decisiones, botones «Responder» y «Transcripción completa»',
-      },
-      bots: {
-        title: 'Bots y API',
-        text: 'Un bot es un miembro con token: escribe en el chat, responde a /comandos y habla en salas de voz. SDK en TypeScript, eventos por WebSocket o webhook.',
-        link: 'Más sobre la Bot API',
-      },
-      mobile: {
-        title: 'En el teléfono',
-        text: 'La versión web se adapta a la pantalla: salas en un panel lateral, voz y pulsar para hablar abajo. Se instala en la pantalla de inicio como una app.',
-        alt: 'Calab en un iPhone: la sala «общий» con mensajes y el campo de texto',
-      },
+    voice: {
+      eyebrow: 'Voz y vídeo',
+      title: 'Entra en la sala y habla',
+      text: 'Las salas de voz están siempre abiertas: un clic y ya estás en la conversación. Cámaras, pantalla compartida y llamadas uno a uno, en el mismo sitio, sin enlaces ni aplicaciones aparte.',
+      points: [
+        'Supresión de ruido RNNoise y cancelación de eco AEC3: se oye limpio incluso sin auriculares',
+        'Pulsar para hablar y activación por voz, también en segundo plano',
+        'Pantalla compartida en AV1 o H.264 por hardware, con puntero y dibujo encima',
+        'Cámara con fondo desenfocado o una imagen',
+        'Grabación de reuniones con transcripción y resumen en el chat',
+      ],
+      alt: 'Una llamada uno a uno en mensajes directos: «Llamada · 00:00» y el botón «Colgar» en la cabecera, el panel de voz abajo',
     },
-  },
-  how: {
-    eyebrow: 'Cómo funciona',
-    title: 'Tres pasos hasta tu primera llamada',
-    step: 'Paso {n}.',
-    steps: {
-      server: {
-        title: 'Monta el servidor',
-        text: 'Un host Linux con Docker y un dominio. Un solo comando y en un minuto todo funciona; los certificados de Let’s Encrypt se emiten solos.',
+    chat: {
+      eyebrow: 'Chat',
+      title: 'Un chat como Telegram',
+      text: 'Cada sala tiene su propio chat: respuestas, reacciones, reenvíos, stickers, mensajes de voz, archivos con vista previa, mensajes fijados y búsqueda. Marcas de lectura, como estás acostumbrado.',
+      points: ['Reenvía a varios chats a la vez', 'Paquetes de stickers del espacio', 'Mensajes de voz, música y vídeo con reproductor integrado', 'Menciones, notificaciones por sala, búsqueda en el espacio'],
+      alt: 'La sala «general»: una maqueta con reacciones, una respuesta, un sticker y los miembros conectados',
+    },
+    calendar: {
+      eyebrow: 'Calendario y reuniones',
+      title: 'Reuniones donde está la conversación',
+      text: 'El calendario está dentro de la aplicación: tu día de reuniones, invitaciones, respuestas de los asistentes, la sala de la reunión con el botón «Ir» y recordatorios 15 minutos antes.',
+      cards: {
+        invites: { title: 'Invitaciones .ics', text: 'Un correo con invite.ics añade la reunión al calendario de Apple, Google, Outlook o Yandex. Los asistentes externos responden por enlace y entran como invitados.' },
+        find: { title: 'Buscar hora', text: 'Columnas de ocupación de tus compañeros, huecos libres comunes y las franjas más cercanas: un clic crea la reunión.' },
+        caldav: { title: 'CalDAV', text: 'Conecta Yandex, iCloud, Fastmail o Nextcloud: tu ocupación cuenta y las reuniones de Calab aparecen allí solas.' },
       },
-      install: {
-        title: 'Instala la aplicación',
-        text: 'macOS, Windows o Linux. O simplemente abre Calab en el navegador, sin instalar nada.',
+      alt: 'La vista del día: reuniones en paralelo, la línea roja de «ahora» y la tarjeta de la reunión «Planificación de la versión» con asistentes',
+      findAlt: '«Buscar hora» para cuatro personas: columnas de ocupación, el hueco libre común en verde y la franja elegida',
+    },
+    boards: {
+      eyebrow: 'Tableros de tareas',
+      title: 'Las tareas junto a la conversación',
+      text: 'Kanban, lista y cronograma al estilo de Linear, sin otro servicio. Crea una tarea desde cualquier mensaje; su enlace se despliega como tarjeta en el chat.',
+      points: ['Estados, prioridades, etiquetas, hitos y fechas límite', 'Varios responsables, subtareas y relaciones', 'Comentarios como en el chat: reacciones, stickers, mensajes de voz', 'Filtros, vistas guardadas y atajos de teclado'],
+      free: 'Free incluye 3 tableros; Team y Enterprise, sin límite.',
+      alt: 'El tablero «Producto» en kanban: columnas de estado con tarjetas, etiquetas, fechas y responsables',
+      timelineAlt: 'El cronograma del tablero: barras de tareas por fecha, la línea de «hoy» y el hito «Versión 1.1»',
+      taskAlt: 'El panel de la tarea: subtareas, una relación «bloquea», historial y comentarios como en el chat',
+    },
+    notes: {
+      eyebrow: 'Notas',
+      title: 'Estantes privados para lo importante',
+      text: 'Hasta 20 estantes con tus nombres y emoji, como «Mensajes guardados» de Telegram, pero varios. Solo tú ves cada estante.',
+      points: ['Arrastra un mensaje a un estante o reenvíalo', 'Suelta archivos desde Finder o el Explorador', 'Mensajes fijados y búsqueda, como en cualquier chat'],
+      alt: 'Notas: los estantes «Ideas», «Enlaces» y «Para la versión» y un estante abierto con notas y un mensaje reenviado',
+    },
+    guests: {
+      eyebrow: 'Invitados',
+      title: 'Invitados sin registro, con tu permiso',
+      text: 'Un enlace de invitado lleva directo a la sala: el invitado escribe su nombre y entra en la conversación. ¿Quieres control? Activa la aprobación: el organizador ve «pide entrar» y pulsa «Dejar entrar».',
+      points: ['El invitado solo ve su sala', 'Aprobación por sala o por enlace', 'Un sonido y un contador de espera para el organizador'],
+      alt: 'La pantalla del invitado: «Esperando la aprobación del organizador…» con el nombre de la sala y el botón «Cancelar»',
+    },
+    bots: {
+      eyebrow: 'Bots y SDK',
+      title: 'Un bot es un miembro más',
+      text: 'Un bot usa la misma API que la aplicación: escribe en el chat, responde a /comandos, habla en las salas de voz y trabaja con los tableros según sus permisos.',
+      points: ['SDK en TypeScript, ejemplos en Node y Python', 'Eventos por WebSocket o webhook firmado con HMAC', 'Permisos por roles, como las personas'],
+      link: 'Más sobre la Bot API',
+    },
+    selfhost: {
+      eyebrow: 'Servidor propio y seguridad',
+      title: 'Tu servidor, tus datos',
+      text: 'Calab se instala en tu servidor Linux con un comando y no depende de servicios externos.',
+      step: 'Paso {n}.',
+      steps: {
+        server: { title: 'Prepara el servidor', text: 'Un host Linux con Docker y un dominio. Un comando y en un minuto está funcionando; los certificados de Let’s Encrypt se emiten solos.' },
+        install: { title: 'Instala la aplicación', text: 'macOS, Windows o Linux. O simplemente abre Calab en el navegador, sin instalar nada.' },
+        invite: { title: 'Invita a tu equipo', text: 'Envía un enlace de invitación. Los invitados a una sola reunión no necesitan cuenta.' },
       },
-      invite: {
-        title: 'Invita a tu equipo',
-        text: 'Envía un enlace de invitación. Los invitados a una sola reunión no necesitan cuenta.',
+      security: {
+        tls: { title: 'Cifrado en tránsito', text: 'La API y la señalización van por TLS; la voz y el vídeo, por DTLS-SRTP.' },
+        data: { title: 'Tus datos, contigo', text: 'Mensajes, archivos y grabaciones se guardan solo en tu servidor.' },
+        network: { title: 'Funciona tras una VPN', text: '¿UDP bloqueado? TURN/TLS por el 443: para la red es HTTPS normal.' },
+        roles: { title: 'Permisos para todo', text: 'Los roles y los permisos por sala y por tablero los comprueba el servidor.' },
       },
     },
   },
@@ -187,6 +204,9 @@ const es: Dict = {
         files: 'Archivos',
         bots: 'Bots',
         stickers: 'Paquetes de stickers',
+        boards: 'Tableros de tareas',
+        calendar: 'Calendario',
+        caldav: 'CalDAV',
         support: 'Soporte',
         price: 'Precio',
       },
@@ -199,6 +219,9 @@ const es: Dict = {
         files: ['5 GB', '1 TB', '∞', '∞'],
         bots: ['1', '20', '∞', '∞'],
         stickers: ['1', '∞', '∞', '∞'],
+        boards: ['3', '∞', '∞', '∞'],
+        calendar: ['✓', '✓', '✓', '✓'],
+        caldav: ['✓', '✓', '✓', '✓'],
         support: ['—', '✓', 'prioritario', '—'],
         price: ['gratis', 'bajo consulta', 'bajo consulta', 'BSL 1.1; comercial bajo consulta'],
       },
@@ -228,8 +251,8 @@ const es: Dict = {
         a: 'La aplicación de escritorio se actualiza sola al iniciarse. La versión para macOS está firmada y notarizada por Apple; la de Windows aún no está firmada, por lo que SmartScreen puede mostrar una advertencia. La versión web siempre está al día.',
       },
       whatsNew: {
-        q: '¿Qué hay de nuevo en 0.8.0?',
-        a: 'Llamadas uno a uno en mensajes directos, niveles de calidad de audio, confirmaciones de lectura como en Telegram, el plan Enterprise y respuestas a la tarjeta de una reunión grabada. La lista completa, en el {changelog}.',
+        q: '¿Qué hay de nuevo en la 1.1?',
+        a: 'Tableros de tareas: kanban, lista y cronograma, tareas desde mensajes y comentarios como en el chat; «Buscar hora» según la ocupación de tus compañeros y calendario externo por CalDAV. La 1.0 trajo el calendario y las reuniones, las Notas y la aprobación de invitados. La lista completa está en el {changelog}.',
       },
       security: {
         q: '¿Cómo se protege la conexión?',

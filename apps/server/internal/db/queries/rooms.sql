@@ -1,12 +1,15 @@
 -- name: CreateRoom :one
+-- expires_at set = a temporary room (ADR-0044); created_by: the creator (NULL: not recorded).
 INSERT INTO rooms (workspace_id, type, name, topic, position, is_private,
-                   audio_bitrate_kbps, max_stream_preset, max_streams, category_id, user_limit, camera_limit)
+                   audio_bitrate_kbps, max_stream_preset, max_streams, category_id, user_limit, camera_limit,
+                   expires_at, created_by)
 VALUES (sqlc.arg('workspace_id')::uuid, sqlc.arg('type'), sqlc.arg('name'), sqlc.arg('topic'),
         coalesce(sqlc.narg('position')::integer,
                  (SELECT coalesce(max(position) + 1, 0) FROM rooms
-                  WHERE workspace_id = sqlc.arg('workspace_id')::uuid AND archived_at IS NULL)),
+                  WHERE workspace_id = sqlc.arg('workspace_id')::uuid AND archived_at IS NULL AND type <> 'task')),
         sqlc.arg('is_private'), sqlc.narg('audio_bitrate_kbps'), sqlc.narg('max_stream_preset'),
-        sqlc.narg('max_streams'), sqlc.narg('category_id'), sqlc.arg('user_limit'), sqlc.narg('camera_limit'))
+        sqlc.narg('max_streams'), sqlc.narg('category_id'), sqlc.arg('user_limit'), sqlc.narg('camera_limit'),
+        sqlc.narg('expires_at'), sqlc.narg('created_by'))
 RETURNING *;
 
 -- name: GetRoom :one
@@ -18,7 +21,7 @@ SELECT * FROM rooms WHERE id = $1 AND archived_at IS NULL FOR UPDATE;
 
 -- name: ListRooms :many
 SELECT * FROM rooms
-WHERE workspace_id = sqlc.arg('workspace_id')::uuid AND archived_at IS NULL
+WHERE workspace_id = sqlc.arg('workspace_id')::uuid AND archived_at IS NULL AND type <> 'task'
 ORDER BY position, id;
 
 -- name: UpdateRoom :one
@@ -29,6 +32,7 @@ UPDATE rooms SET
     user_limit = coalesce(sqlc.narg('user_limit'), user_limit),
     allow_recording = coalesce(sqlc.narg('allow_recording'), allow_recording),
     restricted = coalesce(sqlc.narg('restricted'), restricted),
+    guest_approval = coalesce(sqlc.narg('guest_approval'), guest_approval),
     audio_bitrate_kbps = CASE WHEN sqlc.arg('set_media')::boolean THEN sqlc.narg('audio_bitrate_kbps')::integer ELSE audio_bitrate_kbps END,
     max_stream_preset  = CASE WHEN sqlc.arg('set_media')::boolean THEN sqlc.narg('max_stream_preset')::text ELSE max_stream_preset END,
     max_streams        = CASE WHEN sqlc.arg('set_media')::boolean THEN sqlc.narg('max_streams')::integer ELSE max_streams END,
@@ -59,8 +63,10 @@ VALUES ($1, $2, $3, $4, $5);
 -- name: GetRoomAccess :one
 -- Everything needed to compute a user's permissions in a room, in one round trip. Workspace
 -- rooms: the membership (role NULL = not a member), the member's roles lowest position first
--- (ADR-0026) with each role's override in this room (0/0 = none) and the user override. DMs
--- (workspace_id NULL): the two participants. suspended: the workspace is suspended (item 32).
+-- (ADR-0026) with each role's override in this room (0/0 = none) and the user override. An
+-- archived room is found only when it is temporary (ADR-0044: its history stays readable);
+-- archived / temp / created_by say so. DMs
+-- and notes shelves (workspace_id NULL): the participants (a shelf: its owner). suspended: the workspace is suspended (item 32).
 -- restricted: ADMINISTRATOR gives no bypass in the room (ADR-0029).
 SELECT r.workspace_id,
        r.type,
@@ -72,9 +78,12 @@ SELECT r.workspace_id,
        coalesce(mr.allows, '{}')::bigint[] AS role_allows,
        coalesce(mr.denies, '{}')::bigint[] AS role_denies,
        uo.allow AS user_allow, uo.deny AS user_deny,
-       (CASE WHEN r.type = 'dm' THEN ARRAY(SELECT d.user_id FROM dm_members d WHERE d.room_id = r.id ORDER BY d.user_id)
+       (CASE WHEN r.type IN ('dm', 'notes') THEN ARRAY(SELECT d.user_id FROM dm_members d WHERE d.room_id = r.id ORDER BY d.user_id)
              ELSE '{}'::uuid[] END)::uuid[] AS dm_members,
-       (w.suspended_at IS NOT NULL)::boolean AS suspended
+       (w.suspended_at IS NOT NULL)::boolean AS suspended,
+       (r.archived_at IS NOT NULL)::boolean AS archived,
+       (r.expires_at IS NOT NULL)::boolean AS temp,
+       r.created_by
 FROM rooms r
 LEFT JOIN workspaces w ON w.id = r.workspace_id
 LEFT JOIN workspace_members m ON m.workspace_id = r.workspace_id AND m.user_id = sqlc.arg('user_id')
@@ -90,7 +99,7 @@ LEFT JOIN LATERAL (
     WHERE x.workspace_id = m.workspace_id AND x.user_id = m.user_id
 ) mr ON true
 LEFT JOIN room_permissions uo ON uo.room_id = r.id AND uo.target_type = 'user' AND uo.target_id = sqlc.arg('user_id')::text
-WHERE r.id = sqlc.arg('room_id') AND r.archived_at IS NULL;
+WHERE r.id = sqlc.arg('room_id') AND (r.archived_at IS NULL OR r.expires_at IS NOT NULL);
 
 -- name: CreateCategory :one
 INSERT INTO room_categories (workspace_id, name, position)
@@ -149,3 +158,98 @@ RETURNING *;
 -- name: ClearVoiceStatus :execrows
 -- The call ended: the status goes with it.
 UPDATE rooms SET voice_status = NULL WHERE id = $1 AND voice_status IS NOT NULL;
+
+-- ---- temporary rooms (ADR-0044) ----
+
+-- name: LockTempRooms :exec
+-- Serializes temporary room creation in a workspace (the live caps) for the transaction.
+SELECT pg_advisory_xact_lock(hashtextextended('temp-rooms:' || sqlc.arg('workspace_id')::uuid::text, 0));
+
+-- name: CountLiveTempRooms :one
+SELECT count(*)::integer AS total,
+       (count(*) FILTER (WHERE created_by = sqlc.arg('user_id')::uuid))::integer AS mine
+FROM rooms
+WHERE workspace_id = sqlc.arg('workspace_id')::uuid AND expires_at IS NOT NULL AND archived_at IS NULL;
+
+-- name: SetRoomExpiry :one
+-- A temporary room's new end, or NULL = permanent (make_permanent). Live temporary rooms only.
+UPDATE rooms SET expires_at = sqlc.narg('expires_at')
+WHERE id = sqlc.arg('id') AND archived_at IS NULL AND expires_at IS NOT NULL
+RETURNING *;
+
+-- name: FollowRoomExpiry :exec
+-- The room's own links that ended with the room follow its new end (not meeting guest links).
+UPDATE room_invites SET expires_at = sqlc.arg('expires_at')
+WHERE room_id = sqlc.arg('room_id') AND revoked_at IS NULL AND event_id IS NULL
+  AND expires_at = sqlc.arg('old_expires_at');
+
+-- name: SetRoomPrivate :one
+UPDATE rooms SET is_private = sqlc.arg('is_private')
+WHERE id = sqlc.arg('id') AND archived_at IS NULL
+RETURNING *;
+
+-- name: RemoveRoleDeny :exec
+-- Removes deny bits from one role override; an override left empty is dropped.
+UPDATE room_permissions SET deny = deny & ~sqlc.arg('bits')::bigint
+WHERE room_id = sqlc.arg('room_id') AND target_type = 'role' AND target_id = sqlc.arg('target_id')::text;
+
+-- name: DropEmptyRoleOverride :exec
+DELETE FROM room_permissions
+WHERE room_id = sqlc.arg('room_id') AND target_type = 'role' AND target_id = sqlc.arg('target_id')::text
+  AND allow = 0 AND deny = 0;
+
+-- name: AddRoleDeny :exec
+INSERT INTO room_permissions (room_id, target_type, target_id, allow, deny)
+VALUES (sqlc.arg('room_id'), 'role', sqlc.arg('target_id')::text, 0, sqlc.arg('deny'))
+ON CONFLICT (room_id, target_type, target_id) DO UPDATE
+    SET deny = room_permissions.deny | EXCLUDED.deny, allow = room_permissions.allow & ~EXCLUDED.deny;
+
+-- name: GrantUserOverride :exec
+-- A personal allow for a private temporary room (creator, chosen people): added to an
+-- existing override, never lifting its denies.
+INSERT INTO room_permissions (room_id, target_type, target_id, allow, deny)
+VALUES (sqlc.arg('room_id'), 'user', sqlc.arg('user_id')::text, sqlc.arg('allow'), 0)
+ON CONFLICT (room_id, target_type, target_id) DO UPDATE
+    SET allow = room_permissions.allow | (EXCLUDED.allow & ~room_permissions.deny);
+
+-- name: RevokeAllRoomInvites :exec
+UPDATE room_invites SET revoked_at = now() WHERE room_id = $1 AND revoked_at IS NULL;
+
+-- name: ArchiveTempRoom :one
+-- Archives a live temporary room: now (DELETE), or only when it has expired (the sweeper; a
+-- concurrent extension wins).
+UPDATE rooms SET archived_at = now()
+WHERE id = sqlc.arg('id') AND archived_at IS NULL AND expires_at IS NOT NULL
+  AND (NOT sqlc.arg('only_expired')::boolean OR expires_at <= now())
+RETURNING *;
+
+-- name: DueTempRooms :many
+SELECT id FROM rooms
+WHERE expires_at <= now() AND archived_at IS NULL
+ORDER BY expires_at
+LIMIT $1;
+
+-- name: ListArchivedTempRooms :many
+-- The archive of temporary rooms, newest first, with their live message count.
+SELECT sqlc.embed(r),
+       (SELECT count(*) FROM messages m WHERE m.room_id = r.id AND m.deleted_at IS NULL)::integer AS message_count
+FROM rooms r
+WHERE r.workspace_id = sqlc.arg('workspace_id')::uuid AND r.expires_at IS NOT NULL AND r.archived_at IS NOT NULL
+ORDER BY r.archived_at DESC, r.id
+LIMIT 500;
+
+-- name: ListRoomOverridesIn :many
+SELECT * FROM room_permissions WHERE room_id = ANY(sqlc.arg('room_ids')::uuid[])
+ORDER BY room_id, target_type, target_id;
+
+-- name: PurgeableTempRooms :many
+-- Archived temporary rooms past the retention (TEMP_ROOM_RETENTION_DAYS).
+SELECT id FROM rooms
+WHERE expires_at IS NOT NULL AND archived_at IS NOT NULL AND archived_at < sqlc.arg('before')
+ORDER BY archived_at
+LIMIT sqlc.arg('lim');
+
+-- name: DeleteArchivedTempRoom :execrows
+-- Messages, reactions, pins, read state, overrides and links go by cascade (as a deleted notes
+-- shelf); the room's uploads become orphans for the file cleanup; meetings keep no room.
+DELETE FROM rooms WHERE id = $1 AND expires_at IS NOT NULL AND archived_at IS NOT NULL;

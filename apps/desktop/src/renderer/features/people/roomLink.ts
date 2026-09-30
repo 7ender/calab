@@ -14,6 +14,7 @@ import { useSession } from '../../stores/session';
 import { toast } from '../../stores/toasts';
 import { useUi } from '../../stores/ui';
 import { reusableInvite } from './inviteChoice';
+import { knockError, waitFor } from '../guests/services/admissions';
 
 /**
  * Room links (ADR-0016): shared as `https://<server>/r/<code>`; `calab://r/<code>` is the internal
@@ -33,8 +34,9 @@ export const useRoomLink = create<RoomLinkState>()(() => ({ code: null, preferLo
 
 export function roomLinkError(e: unknown): string {
   if (e instanceof ApiError) {
+    if (e.reason === 'INVITE_MEMBERS_ONLY') return t('people.link.membersOnly');
     if (e.is('ERROR_CODE_INVITE_INVALID') || e.status === 404 || e.status === 410) return t('people.link.invalid');
-    if (e.is('ERROR_CODE_RATE_LIMITED')) return t('auth.err.rate');
+    if (e.is('ERROR_CODE_RATE_LIMITED')) return e.reason === 'ADMISSION_DECLINED' || e.reason === 'ADMISSION_QUEUE_FULL' ? knockError(e) : t('auth.err.rate');
     if (e.is('ERROR_CODE_UNAUTHENTICATED')) return t('people.link.needAccount');
     if (e.is('ERROR_CODE_UNAVAILABLE')) return t('people.link.unreachable');
   }
@@ -63,7 +65,7 @@ export async function confirmAndJoinRoomLink(code: string): Promise<boolean> {
   }
   const ok = await confirmAction(
     t('core.link.title', { room: preview.roomName, workspace: preview.workspaceName }),
-    t(preview.roomType === RoomType.VOICE ? 'core.link.textVoice' : 'core.link.text'),
+    t(preview.requiresApproval ? 'adm.confirmText' : preview.roomType === RoomType.VOICE ? 'core.link.textVoice' : 'core.link.text'),
     t('core.link.join'),
     'primary',
   );
@@ -74,6 +76,8 @@ export async function confirmAndJoinRoomLink(code: string): Promise<boolean> {
 export async function joinRoomLink(code: string): Promise<boolean> {
   try {
     const r = await api.roomInvites.join(code);
+    // ADR-0040: the room waits for the organizer's approval — the waiting screen, not the room.
+    if (r.admission && waitFor(r.admission, code)) return true;
     openWhenReady(r.workspaceId, r.roomId);
     return true;
   } catch (e) {
@@ -104,11 +108,15 @@ export async function copyRoomInviteLink(roomId: string): Promise<void> {
  * The room's shareable link (https only, docs/09 #53): an existing usable link, else a new one with
  * the server defaults (ADR-0016). Throws when the server refuses (no MANAGE_ROOM) or there is no URL.
  */
-export async function roomInviteLink(roomId: string): Promise<string> {
+/**
+ * The room link to hand out: an existing usable one, else a new one. `membersOnly` (INVITE_MEMBERS
+ * without INVITE_GUESTS in the room, ADR-0043): only members-only links, a new one made as such.
+ */
+export async function roomInviteLink(roomId: string, membersOnly = false): Promise<string> {
   const list = await api.roomInvites.list(roomId);
-  let invite = reusableInvite(list.invites, Date.now());
+  let invite = reusableInvite(membersOnly ? list.invites.filter((i) => i.membersOnly) : list.invites, Date.now());
   if (!invite) {
-    invite = (await api.roomInvites.create(roomId, {})).invite ?? null;
+    invite = (await api.roomInvites.create(roomId, membersOnly ? { membersOnly: true } : {})).invite ?? null;
     void queryClient.invalidateQueries({ queryKey: ['roomInvites', roomId] });
   }
   if (!invite) throw new Error('no invite in the answer');

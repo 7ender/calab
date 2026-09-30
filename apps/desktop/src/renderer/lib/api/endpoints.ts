@@ -1,4 +1,19 @@
 import {
+  CreateNotesRequestSchema,
+  CreateNotesResponseSchema,
+  ListNotesResponseSchema,
+  UpdateNotesRequestSchema,
+  UpdateNotesResponseSchema,
+  GetVersionResponseSchema,
+  CalendarEventResponseSchema,
+  CreateCalendarEventRequestSchema,
+  EventRsvpTokenRequestSchema,
+  EventRsvpTokenResponseSchema,
+  ListCalendarEventsResponseSchema,
+  RsvpCalendarEventRequestSchema,
+  TodayCalendarEventsResponseSchema,
+  UpdateCalendarEventRequestSchema,
+  type AttendeeStatus,
   CreateSoundRequestSchema,
   ListSoundsResponseSchema,
   PlaySoundRequestSchema,
@@ -42,6 +57,9 @@ import {
   CreateMessageResponseSchema,
   CreateRoomRequestSchema,
   CreateRoomResponseSchema,
+  CreateTempRoomRequestSchema,
+  TempRoomResponseSchema,
+  ListRoomsResponseSchema,
   SetRoomOrderRequestSchema,
   SetRoomOrderResponseSchema,
   CreateWorkspaceRequestSchema,
@@ -114,6 +132,7 @@ import {
   VerifyEmailRequestSchema,
   VerifyEmailResponseSchema,
   ForgotPasswordRequestSchema,
+  ForgotPasswordResponseSchema,
   ResetPasswordRequestSchema,
   InviteLookupRequestSchema,
   InviteLookupResponseSchema,
@@ -161,14 +180,17 @@ import { fromJson, type JsonValue } from '@bufbuild/protobuf';
 // Every REST endpoint the client uses, typed by the generated contract (docs/05, "REST").
 
 export const api = {
+  /** Public build info; the web compares its bundle with it (docs/09 #125, «Обновить страницу»). */
+  version: () => call('GET', '/api/version', GetVersionResponseSchema),
   /** Email verification and password reset (ADR-0023). */
   auth: {
     /** 204: a code to me.pendingEmail or me.email; 409 = already verified; 429 + Retry-After. */
     sendVerification: () => callEmpty('POST', '/api/auth/verify/send'),
     /** 422 CODE_INVALID (message: attempts left) | CODE_EXPIRED. */
     verify: (code: string) => call('POST', '/api/auth/verify', VerifyEmailResponseSchema, body(VerifyEmailRequestSchema, { code })),
-    /** No session needed; always 204 (503 = the server sends no mail). */
-    forgotPassword: (email: string) => callEmpty('POST', '/api/auth/password/forgot', body(ForgotPasswordRequestSchema, { email })),
+    /** No session needed; same answer whether or not the address has an account, except similarAccount (docs/09 #137). 503 = no mail. */
+    forgotPassword: (email: string) =>
+      call('POST', '/api/auth/password/forgot', ForgotPasswordResponseSchema, body(ForgotPasswordRequestSchema, { email })),
     /** 204, every session revoked (sign in again); 422 CODE_INVALID for a wrong code or address. */
     resetPassword: (init: MessageInitShape<typeof ResetPasswordRequestSchema>) =>
       callEmpty('POST', '/api/auth/password/reset', body(ResetPasswordRequestSchema, init)),
@@ -290,6 +312,29 @@ export const api = {
     /** 204 → BACKGROUND_DELETE. */
     remove: (workspaceId: string, backgroundId: string) => callEmpty('DELETE', `/api/workspaces/${workspaceId}/backgrounds/${backgroundId}`),
   },
+  /** Workspace calendar (ADR-0038); guests → 403, bots read only. */
+  calendar: {
+    /** Occurrences overlapping [from, to) (≤ 62 days), earliest first, with my_status / can_edit. */
+    list: (workspaceId: string, from: Date, to: Date, signal?: AbortSignal) =>
+      call('GET', `/api/workspaces/${workspaceId}/events${qs({ from: from.toISOString(), to: to.toISOString() })}`, ListCalendarEventsResponseSchema, undefined, signal),
+    /** 201 → EVENT_CREATE; 422 with `field` on a bad value; 403 EMAIL_NOT_VERIFIED for external attendees. */
+    create: (workspaceId: string, init: MessageInitShape<typeof CreateCalendarEventRequestSchema>) =>
+      call('POST', `/api/workspaces/${workspaceId}/events`, CalendarEventResponseSchema, body(CreateCalendarEventRequestSchema, init)),
+    /** The series (occurrence_at unset); 404 for an event I may not see. */
+    get: (id: string, signal?: AbortSignal) => call('GET', `/api/events/${id}`, CalendarEventResponseSchema, undefined, signal),
+    /** Unset fields unchanged; a series changes every occurrence (v1). */
+    update: (id: string, init: MessageInitShape<typeof UpdateCalendarEventRequestSchema>) =>
+      call('PATCH', `/api/events/${id}`, CalendarEventResponseSchema, body(UpdateCalendarEventRequestSchema, init)),
+    /** 204: cancels the meeting (EVENT_DELETE), or with `occurrence` (its start) that occurrence of a series only. */
+    cancel: (id: string, occurrence?: Date) => callEmpty('DELETE', `/api/events/${id}${qs({ occurrence: occurrence?.toISOString() })}`),
+    rsvp: (id: string, status: AttendeeStatus) =>
+      call('PUT', `/api/events/${id}/rsvp`, CalendarEventResponseSchema, body(RsvpCalendarEventRequestSchema, { status })),
+    /** My upcoming meetings of today in `tz`, across workspaces (the calendar icon's number). */
+    today: (tz: string) => call('GET', `/api/me/events/today${qs({ tz })}`, TodayCalendarEventsResponseSchema),
+    /** External attendee's answer page (public, no login): preview and answer by the signed token. */
+    rsvpPreview: (token: string) => call('GET', `/api/event-rsvp${qs({ t: token })}`, EventRsvpTokenResponseSchema),
+    rsvpAnswer: (token: string) => call('POST', '/api/event-rsvp', EventRsvpTokenResponseSchema, body(EventRsvpTokenRequestSchema, { token })),
+  },
   /** Soundboard (ADR-0036): the library for any member; managing needs MANAGE_STICKERS. */
   sounds: {
     list: (workspaceId: string) => call('GET', `/api/workspaces/${workspaceId}/sounds`, ListSoundsResponseSchema),
@@ -344,6 +389,15 @@ export const api = {
   rooms: {
     create: (workspaceId: string, init: MessageInitShape<typeof CreateRoomRequestSchema>) =>
       call('POST', `/api/workspaces/${workspaceId}/rooms`, CreateRoomResponseSchema, body(CreateRoomRequestSchema, init)),
+    /**
+     * A temporary room with its link (ADR-0044): 201; 403 (no CREATE_TEMP_ROOMS; `guests` without
+     * INVITE_GUESTS), 409 TEMP_ROOM_LIMIT (`reason: PER_USER` — the creator's cap), 422.
+     */
+    createTemp: (workspaceId: string, init: MessageInitShape<typeof CreateTempRoomRequestSchema>) =>
+      call('POST', `/api/workspaces/${workspaceId}/rooms/temp`, TempRoomResponseSchema, body(CreateTempRoomRequestSchema, init)),
+    /** Closed temporary rooms (ADR-0044), newest first: MANAGE_ROOM at workspace level. */
+    archived: (workspaceId: string, signal?: AbortSignal) =>
+      call('GET', `/api/workspaces/${workspaceId}/rooms?archived=1`, ListRoomsResponseSchema, undefined, signal),
     get: (id: string) => call('GET', `/api/rooms/${id}`, GetRoomResponseSchema),
     /** Drag & drop result (docs/09 P1 #19): positions + categories of the changed rooms and categories, one batch (MANAGE_ROOM). */
     setOrder: (workspaceId: string, init: MessageInitShape<typeof SetRoomOrderRequestSchema>) =>
@@ -463,6 +517,18 @@ export const api = {
     /** My own state of a DM (docs/09 #51): archive / «Удалить чат» (for me only); 404 not a participant. */
     setState: (roomId: string, state: { archived?: boolean; cleared?: boolean }) =>
       call('PATCH', `/api/dms/${roomId}/state`, UpdateDmStateResponseSchema, body(UpdateDmStateRequestSchema, state)),
+  },
+  /**
+   * Notes shelves (ADR-0039): personal rooms; messages use the room endpoints, uploads go to
+   * `/api/dms/{id}/files` (uploadPath) and count against the personal quota. 409 NOTES_LIMIT
+   * at 20; 404 not mine; 403 bots / guest accounts.
+   */
+  notes: {
+    list: () => call('GET', '/api/notes', ListNotesResponseSchema),
+    create: (name: string, emoji: string) => call('POST', '/api/notes', CreateNotesResponseSchema, body(CreateNotesRequestSchema, { name, emoji })),
+    update: (roomId: string, p: { name?: string; emoji?: string; position?: number }) =>
+      call('PATCH', `/api/notes/${roomId}`, UpdateNotesResponseSchema, body(UpdateNotesRequestSchema, p)),
+    remove: (roomId: string) => callEmpty('DELETE', `/api/notes/${roomId}`),
   },
   /**
    * One-to-one calls (ADR-0034, docs/05 «Звонки»): place a call in a DM → RINGING (409 IN_CALL /

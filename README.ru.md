@@ -1,0 +1,181 @@
+<p align="center"><a href="README.md">English</a> · <b>Русский</b> · <a href="README.es.md">Español</a> · <a href="README.zh-CN.md">简体中文</a></p>
+
+<p align="center">
+  <img src="apps/desktop/build/icons/web/icon-192.png" width="96" alt="Calab">
+</p>
+
+<h1 align="center">Calab</h1>
+
+<p align="center">
+  Вся команда — в одном окне: голосовые комнаты, чат, встречи и задачи на вашем сервере.<br>
+  <sub>Self-hosted voice-first мессенджер для команды. macOS · Windows · Linux · веб.</sub>
+</p>
+
+<p align="center">
+  <a href="LICENSE"><img alt="License: BUSL-1.1" src="https://img.shields.io/badge/license-BUSL--1.1-blue"></a>
+  <a href="https://github.com/itrcz/calab/actions/workflows/ci.yml"><img alt="CI" src="https://github.com/itrcz/calab/actions/workflows/ci.yml/badge.svg"></a>
+  <img alt="Electron" src="https://img.shields.io/badge/desktop-Electron-47848F">
+  <img alt="Go" src="https://img.shields.io/badge/server-Go-00ADD8">
+  <img alt="LiveKit" src="https://img.shields.io/badge/media-LiveKit-ff6b35">
+  <a href="https://calab.ru/ru/"><img alt="calab.ru" src="https://img.shields.io/badge/site-calab.ru-0A84FF"></a>
+</p>
+
+<p align="center">
+  <img src="apps/landing/public/screens/ru/voice.webp" width="880" alt="Calab во время планёрки: стрим слайда на сцене, камеры участников, комнаты пространства">
+</p>
+
+---
+
+## Что это
+
+Calab — мессенджер для команды, в котором главное — **голос**. Зашли в комнату — и сразу слышите коллег; рядом чат как в Telegram, календарь со встречами и доски задач в духе Linear. Всё работает на вашем сервере: один `docker compose`, PostgreSQL и LiveKit внутри, никаких внешних сервисов и подписок.
+
+Рассчитан на команды до 20–30 человек одновременно в голосе и до 3 стримов в комнате. Клиент лёгкий: 0,05 % CPU без звонка и ≈ 7 % в голосе на MacBook Air M4.
+
+## Возможности
+
+### 🎙 Голос и видео
+
+<img src="apps/landing/public/screens/ru/call.webp" width="880" alt="Звонок один на один в личных сообщениях">
+
+- **Голосовые комнаты** — вход одним кликом, говорящие видны прямо в списке комнат; статус комнаты, таймер и лимит участников.
+- **Чистый звук** — эхоподавление AEC3 и шумоподавление RNNoise (без внешних сервисов), Opus с DTX; активация голосом или **push-to-talk** на любую клавишу, в том числе в фоне.
+- **Показ экрана** в AV1 или аппаратном H.264 с simulcast — каждый зритель получает качество под свой канал; зрители показывают указкой и рисуют поверх стрима.
+- **Камера** с размытием или картинкой вместо фона (встроенные и фоны пространства).
+- **Звонки один на один** в личных сообщениях — с рингтоном, камерой и показом экрана.
+- **Записи встреч** — запись ведёт сервер, расшифровку делает GPTunneL; в чат комнаты приходит карточка с саммари, аудио и полным транскриптом.
+- **Саундборд**, модерация (серверный mute, отключение, перемещение перетаскиванием), статусы.
+
+### 💬 Чат
+
+<img src="apps/landing/public/screens/ru/chat.webp" width="880" alt="Канал «общий»: макет с реакциями, ответ и стикер">
+
+- Пузыри как в Telegram: ответы, **реакции**, пересылка сразу в несколько чатов, стикеры, голосовые, файлы с превью, закрепы, галочки прочтения.
+- **Упоминания**, уведомления на комнату, поиск по пространству с морфологией, быстрый переход `⌘K`.
+- **Личные сообщения** с архивом; веб-версия подстраивается под телефон и ставится на главный экран.
+
+### 📅 Календарь и встречи
+
+<table>
+  <tr>
+    <td width="50%"><img src="apps/landing/public/screens/ru/calendar.webp" alt="День с карточкой встречи"></td>
+    <td width="50%"><img src="apps/landing/public/screens/ru/findtime.webp" alt="«Подобрать время» для четырёх человек"></td>
+  </tr>
+</table>
+
+- День со встречами бок о бок, карточка встречи с участниками и ответами, комната с кнопкой «Перейти», повторы, напоминания.
+- **Приглашения на почту** с `invite.ics` — встреча попадает в календарь Apple, Google, Outlook или Яндекса; внешние участники отвечают по ссылке и входят гостем.
+- **«Подобрать время»** — колонки занятости коллег, общие свободные окна и ближайшие слоты в рабочие часы всех.
+- **CalDAV** — подключите Яндекс, iCloud, Fastmail или Nextcloud: занятость учитывается, встречи Calab появляются в нём сами.
+
+### ✅ Доски задач
+
+<img src="apps/landing/public/screens/ru/kanban.webp" width="880" alt="Доска «Продукт» канбаном">
+
+<table>
+  <tr>
+    <td width="68%"><img src="apps/landing/public/screens/ru/timeline.webp" alt="Таймлайн доски"></td>
+    <td width="32%"><img src="apps/landing/public/screens/ru/task.webp" alt="Панель задачи с комментариями"></td>
+  </tr>
+</table>
+
+- **Канбан, список и таймлайн** (Гант с вехами и линией «сегодня») в духе Linear, с его горячими клавишами.
+- Статусы, приоритеты, лейблы, вехи, сроки; несколько исполнителей с ответственным, подзадачи и связи.
+- Комментарии как в чате — реакции, стикеры, голосовые — вперемешку с историей изменений.
+- Фильтры, сохранённые виды, массовые действия; **задача из любого сообщения**; ссылка на задачу разворачивается в чате карточкой.
+
+### 📝 Заметки
+
+<img src="apps/landing/public/screens/ru/notes.webp" width="880" alt="Полки «Заметок»">
+
+До 20 личных полок со своими названиями и эмодзи — как «Избранное» в Telegram, только несколько. Перетаскивайте на полку сообщения и файлы, пересылайте, закрепляйте и ищите.
+
+### 🚪 Гости и подтверждение входа
+
+<img src="apps/landing/public/screens/ru/guest.webp" width="360" alt="Гость ждёт подтверждения организатора">
+
+Гостевая ссылка ведёт прямо в комнату — без регистрации. С подтверждением (для комнаты или отдельной ссылки) гость ждёт на этом экране, пока организатор не нажмёт «Пустить».
+
+### 🤖 Боты и SDK
+
+Бот — участник с токеном: тот же REST и gateway, что у приложения, права через роли. Пишет и читает чат, отвечает на `/команды`, говорит в голосовой комнате (LiveKit, Node / Python / Go) и работает с досками по правам; события — по WebSocket или webhook с подписью HMAC.
+
+```ts
+import { Bot } from '@calaba/bot-sdk';
+
+const bot = new Bot(process.env.BOT_TOKEN, { server: 'https://app.calab.ru' });
+bot.on('message', (m) => bot.reply(m, m.content));
+await bot.start();
+```
+
+SDK — [`packages/bot-sdk`](packages/bot-sdk), примеры — [`examples/bots`](examples/bots) (echo, голосовое эхо, TTS, Python), документация — [docs/19-bot-api.md](docs/19-bot-api.md) · [English](docs/19-bot-api.en.md).
+
+### 🔒 Свой сервер и безопасность
+
+- **Работает везде**: UDP → ICE/TCP → TURN/UDP 443 → TURN/TLS 443 автоматически; один публичный IP; проверено из-за VPN.
+- Медиа — DTLS-SRTP; API — HTTPS/WSS, HSTS, строгая CSP, cookie `HttpOnly/SameSite=Strict` для веба, argon2id, ротация refresh-токенов с детекцией повторного использования, rate-limit. Сквозного шифрования пока нет: медиа идёт через ваш медиасервер.
+- Все права (комнаты, доски, календарь) проверяет сервер; LiveKit-grant повторяет права.
+- **Docker Compose** с харднингом контейнеров, автоматические сертификаты Let’s Encrypt, ежедневные бэкапы с проверенным восстановлением, Prometheus-метрики; PostgreSQL 17 или 18.
+
+## Быстрый старт
+
+### Свой сервер
+
+Нужны: Linux-хост с публичным IP, Docker + Compose, домен с A-записями `app`, `rtc`, `turn` (и `@` для сайта).
+
+```bash
+git clone https://github.com/itrcz/calab.git && cd calab
+cp infra/docker/.env.example infra/docker/.env   # DOMAIN, секреты — см. комментарии
+infra/docker/deploy.sh                            # Caddy, LiveKit, API, Postgres, Valkey
+```
+
+Порты: `80/443` TCP, `443/UDP`, `7881/TCP`, `7882/UDP`. Первый зарегистрированный пользователь становится владельцем сервера; дальше — по приглашениям. Полная инструкция, бэкапы и харднинг — [docs/06-deployment.md](docs/06-deployment.md).
+
+### Приложение
+
+Сборки для macOS, Windows и Linux — на [calab.ru](https://calab.ru/ru/#download) и на вашем сервере по адресу `https://app.<домен>/download/`; веб-версия — `https://app.<домен>`. Что нового в каждой версии — [CHANGELOG.md](CHANGELOG.md) (тот же текст попадает в [GitHub Releases](https://github.com/itrcz/calab/releases)).
+
+### Разработка
+
+```bash
+corepack enable && pnpm install && make gen       # protobuf → Go + TS
+pnpm infra:dev                                    # Postgres, Valkey, LiveKit --dev
+cd apps/server && go run ./cmd/server serve       # API на :3000
+pnpm -F @calaba/desktop dev                       # Electron
+```
+
+Проверки: `make test` (Go + TS), `make test-integration`, визуальные тесты по экранам (`pnpm -F @calaba/desktop e2e:visual -g "<экран>"`). Архитектура: [обзор](docs/01-architecture.md) · [медиа](docs/02-media.md) · [сеть](docs/03-network.md) · [модель данных и права](docs/04-data-model.md) · [realtime-протокол](docs/05-realtime-protocol.md) · [дизайн-система](docs/08-design.md) · [ADR](docs/adr/). Сценарии ручного тестирования — [TESTING.md](TESTING.md).
+
+## Тарифы
+
+| | Free | Team | Enterprise | Self-hosted |
+|---|---|---|---|---|
+| Голосовая комната | до 5 человек | до 50 человек | без ограничения | без ограничения |
+| Участники пространства | до 50 | без ограничения | без ограничения | без ограничения |
+| Качество звука | до «Нормальное» | любое, до «Отличное» | любое | любое |
+| Стрим и камера | до 720p / 15 fps, 1 стрим на комнату | без ограничений качества | без ограничений качества | без ограничений качества |
+| Файлы | 5 ГБ на пространство | до 1 ТБ на пространство | без ограничения | без ограничения |
+| Боты | 1 | 20 | без ограничения | без ограничения |
+| Стикерпаки | 1 | без ограничения | без ограничения | без ограничения |
+| Доски задач | 3 | без ограничения | без ограничения | без ограничения |
+| Календарь и CalDAV | ✓ | ✓ | ✓ | ✓ |
+| Поддержка | — | поддержка | приоритетная | — |
+| Цена | бесплатно | по запросу (**it@gptunnel.ai**) | по запросу (**it@gptunnel.ai**) | бесплатно для некоммерческого использования (BSL 1.1, «Powered by GPTunneL»); коммерческая лицензия — по запросу |
+
+Free, Team и Enterprise — облачные тарифы пространства ([ADR-0024](docs/adr/0024-plans-and-limits.md)); Enterprise — облако без ограничений, как свой сервер. Подробности — [calab.ru/ru/#pricing](https://calab.ru/ru/#pricing) и [COMMERCIAL-LICENSE.md](COMMERCIAL-LICENSE.md).
+
+## Лицензия
+
+**Business Source License 1.1** — [LICENSE](LICENSE).
+
+- Некоммерческое использование (личное, НКО, образование, оценка до 30 дней) — **бесплатно**, с упоминанием «Powered by GPTunneL» в интерфейсе и сохранением [NOTICE](NOTICE).
+- Коммерческое использование — по лицензии GPTunneL: [COMMERCIAL-LICENSE.md](COMMERCIAL-LICENSE.md), **it@gptunnel.ai**.
+- Каждая версия становится Apache-2.0 через четыре года после выпуска.
+
+Названия и логотипы Calab и GPTunneL — товарные знаки, см. [TRADEMARKS.md](TRADEMARKS.md).
+
+## Участие и безопасность
+
+Правки принимаются через pull request с CLA — [CONTRIBUTING.md](CONTRIBUTING.md). Уязвимости — приватно на **it@gptunnel.ai**, см. [SECURITY.md](SECURITY.md).
+
+<p align="center"><sub>© 2026 GPTunneL · Powered by <a href="https://gptunnel.ai">GPTunneL</a></sub></p>

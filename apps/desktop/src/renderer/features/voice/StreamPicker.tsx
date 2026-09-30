@@ -349,7 +349,7 @@ export function StreamPicker({ onClose }: { onClose: () => void }): ReactNode {
               {systemAudio && loopback === 'experimental' ? (
                 <p className="flex items-start gap-2 rounded-[var(--radius-row)] bg-mention px-3 py-2 text-[12px]" role="note">
                   <TriangleAlert className="mt-px size-4 shrink-0 text-warn" aria-hidden />
-                  {t('stream.systemAudioMac')}
+                  {t(info?.platform === 'win32' ? 'stream.systemAudioWin10' : 'stream.systemAudioMac')}
                 </p>
               ) : null}
               <div className="flex flex-wrap items-center gap-x-5 gap-y-2">

@@ -14,6 +14,7 @@ import { alwaysOpenInApp, continueInBrowser, setAlwaysOpenInApp, type LinkLandin
 import { useSession } from '../../stores/session';
 import { AuthLegalFooter } from '../legal/Legal';
 import { roomLinkError } from '../people/roomLink';
+import { ApprovalNote } from '../guests/ApprovalNote';
 
 /**
  * Web link page (docs/09 #53): `https://<server>/join/<code>` / `/r/<code>` → a card with the
@@ -240,6 +241,7 @@ function RoomPreview({ code, authed }: { code: string; authed: boolean }): React
           {t('guest.in', { ws: p.workspaceName })}
         </p>
       </div>
+      {p.requiresApproval ? <ApprovalNote compact /> : null}
     </div>
   );
 }

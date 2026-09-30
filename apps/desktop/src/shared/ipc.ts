@@ -29,12 +29,21 @@ export const IPC = {
   appCheckUpdates: 'app:check-updates',
   /** The current update status (a reloaded renderer does not miss a downloaded update). */
   appGetUpdateStatus: 'app:get-update-status',
-  /** Restart now and install the downloaded update. */
+  /** Restart and install the downloaded update; arg `true` during a call: when the call ends. */
   appInstallUpdate: 'app:install-update',
   /** «Скачать и установить» in «О программе»: download an `installable` available update now. */
   appDownloadUpdate: 'app:download-update',
   /** main → renderer */
   appUpdateStatus: 'app:update-status',
+  /**
+   * main → renderer: the app restarts for an update now — answer with appResumeVoice (the voice
+   * seat to take again after the relaunch, or null; docs/09 #126, main/resumeVoice.ts).
+   */
+  appPrepareRestart: 'app:prepare-restart',
+  /** renderer → main: the answer to appPrepareRestart (ResumeVoiceSeat | null). */
+  appResumeVoice: 'app:resume-voice',
+  /** The seat left by the restart for an update (ResumeVoice | null), once per app run. */
+  appTakeResumeVoice: 'app:take-resume-voice',
   /** renderer → main: the `online` event (main has none) — a throttled update check. */
   appNetworkOnline: 'app:network-online',
   appLog: 'app:log',
@@ -134,6 +143,8 @@ export interface ApiErrorJson {
   code: string;
   message: string;
   field?: string;
+  /** ApiError.reason, when the server gives one (e.g. SESSION_REVOKED: REUSE). */
+  reason?: string;
   status: number;
 }
 
@@ -157,9 +168,25 @@ export interface RegisterArgs extends LoginArgs {
   inviteCode: string;
   /** UI language (BCP 47) → the language of emails (ADR-0023); '' = the server decides. */
   locale?: string;
+  /**
+   * Ask the server whether the address looks like another account's first (docs/09 #119): on a
+   * hit nothing is created and the result is an error with SIMILAR_ACCOUNT_CODE.
+   */
+  checkSimilar?: boolean;
 }
 
-export type LogoutReason = 'logout' | 'expired' | 'revoked';
+/** Register result «an account on a sibling domain exists» (a hint, not a server error). */
+export const SIMILAR_ACCOUNT_CODE = 'ERROR_CODE_SIMILAR_ACCOUNT';
+
+/** A 2xx auth answer without tokens: the similar-account hint, else a broken response. */
+export function noSession(similar: boolean | undefined, status: number): ApiErrorJson {
+  return similar
+    ? { code: SIMILAR_ACCOUNT_CODE, message: 'similar account exists', status }
+    : { code: 'ERROR_CODE_INTERNAL', message: 'no session in the response', status };
+}
+
+/** 'reset' = ended by reuse detection (after a connection loss), shared/logoutReason.ts. */
+export type LogoutReason = 'logout' | 'expired' | 'revoked' | 'reset';
 
 // ---------------------------------------------------------------- app
 
@@ -376,8 +403,11 @@ export type UpdateStatus =
     }
   /** Download in progress; `percent` is an integer 0–100, `bytesPerSecond` once progress is known. */
   | { state: 'downloading'; version: string; percent: number; bytesPerSecond?: number }
-  /** Ready: installs on «Перезапустить» or on quit. */
-  | { state: 'downloaded'; version: string }
+  /**
+   * Ready: installs on «Перезапустить» or on quit. `afterCall`: «Перезапустить после звонка» was
+   * pressed — main installs when the call ends (docs/09 #125).
+   */
+  | { state: 'downloaded'; version: string; afterCall?: true }
   | { state: 'error'; message: string };
 
 export interface TrayState {

@@ -37,7 +37,7 @@ type Publisher interface {
 	// WorkspaceEvents publishes several events to one workspace in order, in one pipeline
 	// (e.g. hundreds of ROOM_UPDATEs after a drag & drop reorder).
 	WorkspaceEvents(ctx context.Context, workspaceID uuid.UUID, evs []*v1.DispatchEvent)
-	SessionRevoked(ctx context.Context, sessionID uuid.UUID)
+	SessionRevoked(ctx context.Context, sessionID uuid.UUID, reason string)
 }
 
 // Redis publishes to Redis pub/sub.
@@ -198,9 +198,10 @@ func (r Redis) User(ctx context.Context, id uuid.UUID, ev *v1.DispatchEvent) {
 	r.event(context.WithoutCancel(ctx), []string{UserChannel(id)}, ev)
 }
 
-// SessionRevoked asks the gateway to close the session's socket with 4010.
-func (r Redis) SessionRevoked(ctx context.Context, id uuid.UUID) {
-	r.publish(context.WithoutCancel(ctx), RevokedChannel(id), nil)
+// SessionRevoked asks the gateway to close the session's socket with 4010; the payload is
+// the reason (auth.Revoke*, "" = unknown), sent on in the close reason.
+func (r Redis) SessionRevoked(ctx context.Context, id uuid.UUID, reason string) {
+	r.publish(context.WithoutCancel(ctx), RevokedChannel(id), []byte(reason))
 }
 
 // Channel kinds: a channel name inside the namespace starts with one of them. The gateway
@@ -236,4 +237,4 @@ func (Nop) Workspaces(context.Context, []uuid.UUID, *v1.DispatchEvent) {}
 func (Nop) WorkspaceEvents(context.Context, uuid.UUID, []*v1.DispatchEvent) {}
 
 // SessionRevoked implements Publisher.
-func (Nop) SessionRevoked(context.Context, uuid.UUID) {}
+func (Nop) SessionRevoked(context.Context, uuid.UUID, string) {}

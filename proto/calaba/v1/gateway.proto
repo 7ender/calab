@@ -2,8 +2,11 @@ syntax = "proto3";
 package calaba.v1;
 
 import "google/protobuf/timestamp.proto";
+import "calaba/v1/boards.proto";
 import "calaba/v1/bot.proto";
 import "calaba/v1/call.proto";
+import "calaba/v1/event.proto";
+import "calaba/v1/invite.proto";
 import "calaba/v1/media.proto";
 import "calaba/v1/message.proto";
 import "calaba/v1/permissions.proto";
@@ -42,7 +45,9 @@ enum GatewayCloseCode {
   GATEWAY_CLOSE_CODE_INVALID_SEQ = 4007;           // new IDENTIFY
   GATEWAY_CLOSE_CODE_RATE_LIMITED = 4008;          // backoff + RESUME; before READY = too many sessions
   GATEWAY_CLOSE_CODE_SESSION_TIMED_OUT = 4009;     // new IDENTIFY
-  GATEWAY_CLOSE_CODE_SESSION_REVOKED = 4010;       // do not reconnect; login screen
+  // Do not reconnect; login screen. The close reason is "session revoked" or "session revoked:
+  // <REASON>" with the ApiError.reason of ERROR_CODE_SESSION_REVOKED (REUSE, LOGOUT_ALL, ...).
+  GATEWAY_CLOSE_CODE_SESSION_REVOKED = 4010;
 }
 
 enum PresenceStatus {
@@ -84,7 +89,7 @@ message Heartbeat {
 
 message DeviceInfo {
   string name = 1;     // e.g. hostname
-  string platform = 2; // darwin | win32 | linux
+  string platform = 2; // darwin | win32 | linux | web
   string app_version = 3;
 }
 
@@ -209,6 +214,34 @@ message DispatchEvent {
     BotCreate bot_create = 60;
     BotUpdate bot_update = 61;
     BotDelete bot_delete = 62;
+    // Workspace calendar (ADR-0038): EVENT_CREATE / UPDATE / DELETE / RSVP to everyone who may
+    // see the event (not guests); EVENT_REMINDER to one attendee's user channel;
+    // ROOM_EVENT_ACTIVE / ENDED to the room's viewers (not guests).
+    CalendarEventCreate event_create = 63;
+    CalendarEventUpdate event_update = 64;
+    CalendarEventDelete event_delete = 65;
+    CalendarEventRsvp event_rsvp = 66;
+    CalendarEventReminder event_reminder = 67;
+    RoomEventActive room_event_active = 68;
+    RoomEventEnded room_event_ended = 69;
+    // Guest admission (ADR-0040): REQUEST to the room's deciders (MANAGE_ROOM there, or the
+    // author of the link); DECIDED to the deciders and, on its user channel, to the guest.
+    RoomAdmissionRequest room_admission_request = 70;
+    RoomAdmissionDecided room_admission_decided = 71;
+    // Notes shelves (ADR-0039); to the owner's user channel only (all their devices).
+    NotesCreate notes_create = 72;
+    NotesUpdate notes_update = 73;
+    NotesDelete notes_delete = 74;
+    // Task boards (ADR-0042): to the board's viewers (BOARD_* per recipient with their
+    // Board.permissions); TASK_UPDATE also on a user channel with the recipient's viewer_state.
+    // Comments are MESSAGE_* / MESSAGE_REACTION_* of the task rooms, to the board's viewers.
+    BoardCreate board_create = 75;
+    BoardUpdate board_update = 76;
+    BoardDelete board_delete = 77;
+    TaskCreate task_create = 78;
+    TaskUpdate task_update = 79;
+    TaskDelete task_delete = 80;
+    TaskActivityAppend task_activity = 81;
   }
 }
 
@@ -256,6 +289,12 @@ message Presence {
   // In a one-to-one call now (ADR-0034, call ACTIVE); with whom is not disclosed. Changes
   // come as PRESENCE_UPDATE to all the user's workspaces.
   bool on_call = 8;
+  // The client of the user's most recently connected live session (docs/09 #143), from its
+  // Identify.device: app version («1.1.0») and platform (web | darwin | win32 | linux). When
+  // offline, the last known ones (the session last active). Empty when unknown, and hidden
+  // like last_seen (invisible).
+  string client_version = 9;
+  string client_platform = 10;
 }
 
 message ReadState {
@@ -291,6 +330,18 @@ message WorkspaceSnapshot {
   repeated WorkspaceBackground backgrounds = 12;
   // The workspace's soundboard (ADR-0036), in library order.
   repeated Sound sounds = 13;
+  // Meetings in visible rooms from 15 minutes before their start until their end (ADR-0038
+  // §6): the room badge after a (re)connect. Guests get them without attendees.
+  repeated CalendarEvent active_events = 14;
+  // Pending guest knocks (ADR-0040) on rooms where the recipient decides: MANAGE_ROOM in the
+  // room, or the author of the link. Filled in READY only.
+  repeated RoomAdmission admissions = 15;
+  // Task boards the recipient sees (ADR-0042), by position, with statuses, labels, milestones
+  // and shared views; empty for guests.
+  repeated Board boards = 16;
+  // Tasks with something unseen for the recipient (Task.unread; ≤ 999): the badge on the
+  // boards icon. Changes come as TASK_UPDATE on the user channel.
+  repeated string unread_task_ids = 17;
 }
 
 message Ready {
@@ -318,6 +369,22 @@ message Ready {
   // Read receipts of workspace rooms (docs/09 #92): how far the other members (bots excluded)
   // read, for visible rooms someone else has read. DMs carry theirs in dms[].peer_read_message_id.
   repeated PeerRead peer_reads = 11;
+  // The recipient's own knocks (ADR-0040): PENDING (the client shows the waiting screen
+  // instead of the room) and DECLINED ones for 10 minutes after the decision.
+  repeated RoomAdmission pending_admissions = 12;
+  // The user's notes shelves (ADR-0039) by position; empty for bots and guest accounts.
+  repeated NotesShelf notes = 13;
+}
+
+// A guest knocks on a room (ADR-0040); to the room's deciders.
+message RoomAdmissionRequest {
+  RoomAdmission admission = 1;
+}
+
+// A knock was decided, cancelled by the guest or declined for want of an answer (ADR-0040).
+// To the deciders (admission.user carries the id only) and to the guest.
+message RoomAdmissionDecided {
+  RoomAdmission admission = 1;
 }
 
 // How far others read a room (docs/09 #92): in a DM the peer's read marker, in a workspace
@@ -358,7 +425,18 @@ message DmSummary {
   string peer_read_message_id = 8;
 }
 
-// Preview of a DM's newest live message (DmSummary.last_message).
+// A notes shelf (ADR-0039) as its owner sees it. In READY, GET/POST/PATCH /api/notes and
+// NOTES_CREATE / NOTES_UPDATE. Messages, files, pins, reactions and search use the room
+// endpoints like a DM; its events come on the owner's user channel with an empty workspace_id.
+message NotesShelf {
+  // type NOTES, empty workspace_id; name (1..40 characters) and position (list order, ascending)
+  // are the shelf's; last_message_id / last_message_at as in READY (empty = no messages).
+  Room room = 1;
+  string emoji = 2;               // one emoji or empty
+  DmLastMessage last_message = 3; // the newest live message for the list preview; unset = none
+}
+
+// Preview of a DM's newest live message (DmSummary.last_message, NotesShelf.last_message).
 message DmLastMessage {
   string id = 1;
   string author_id = 2;
@@ -652,6 +730,21 @@ message ReadStateUpdate {
 // the participants' user channels, with an empty workspace_id.
 message DmCreate {
   DmSummary dm = 1;
+}
+
+// A shelf was created on one of the owner's devices (POST /api/notes).
+message NotesCreate {
+  NotesShelf shelf = 1;
+}
+
+// A shelf was renamed, got another emoji or moved (PATCH /api/notes/{id}).
+message NotesUpdate {
+  NotesShelf shelf = 1;
+}
+
+// A shelf was deleted with all its messages (DELETE /api/notes/{id}).
+message NotesDelete {
+  string room_id = 1;
 }
 
 // The user's own state of a DM (DmSummary.archived_at / cleared_before_message_id): after

@@ -142,7 +142,7 @@ function NewBadge({ workspaceId, onDone }: { workspaceId: string; onDone: () => 
           title={t('badges.pick')}
           data-testid="badge-pick"
           className={cx(
-            'grid size-16 shrink-0 place-items-center overflow-hidden rounded-[10px] text-muted transition-colors duration-[var(--motion-fast)] focus-visible:outline-2 focus-visible:outline-accent',
+            'grid size-16 shrink-0 place-items-center overflow-hidden rounded-[10px] text-muted transition-colors duration-[var(--motion-fast)]',
             picture ? 'bg-hover' : 'border border-dashed border-line hover:bg-hover hover:text-fg',
           )}
         >

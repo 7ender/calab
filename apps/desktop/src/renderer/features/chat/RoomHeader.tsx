@@ -1,7 +1,7 @@
 import { NotificationLevel, PresenceStatus, RoomType, WorkspaceRole, type Message, type PermissionBits, type Room } from '@calaba/protocol';
 import * as Dropdown from '@radix-ui/react-dropdown-menu';
 import * as Popover from '@radix-ui/react-popover';
-import { Bell, BellOff, BellRing, Hash, Phone, Pin, PinOff, Search, Settings, Users, Volume2 } from 'lucide-react';
+import { Bell, BellOff, BellRing, Hash, Phone, Pin, PinOff, Search, Settings, Timer, Users, Volume2 } from 'lucide-react';
 import { useCallback, useEffect, useLayoutEffect, useRef, useState, type ReactNode } from 'react';
 import { Avatar } from '../../components/Avatar';
 import { Button, IconButton, MOD, Tip, cx } from '../../components/ui';
@@ -35,6 +35,7 @@ import { PreviewRuns } from './PreviewRuns';
 import { TypingDots, useTypingText } from './TypingIndicator';
 import { systemPreview } from '../../lib/recording';
 import { headerFit, measureHeader, type HeaderFit } from './headerFit';
+import { RoomEventBadge } from '../calendar/RoomEvent';
 
 const NO_PINS: never[] = [];
 
@@ -62,7 +63,8 @@ export function RoomHeader({
   const searchOpen = useChatView((s) => s.searchRoom === room.id);
   const setSearch = useChatView((s) => s.setSearch);
   const voiceRoom = room.type === RoomType.VOICE;
-  const Icon = voiceRoom ? Volume2 : Hash;
+  // A temporary room (ADR-0044): its own `Timer` icon, as in the room list.
+  const Icon = room.expiresAt ? Timer : voiceRoom ? Volume2 : Hash;
   // Phone layout (ADR-0021): this header is the top bar — ☰ (rooms drawer) first, the name takes
   // the room; search, notifications and members stay (pins show in the pinned bar, room settings in
   // the drawer's room menu), 40 px touch targets.
@@ -86,6 +88,7 @@ export function RoomHeader({
       <h1 data-header-name className={cx('min-w-0 max-w-[40%] truncate text-list font-semibold', mobile && 'max-w-none flex-1')} title={room.name}>
         {room.name}
       </h1>
+      {voiceRoom ? <RoomEventBadge roomId={room.id} variant="header" compact={mobile} /> : null}
       {preview ? <VoicePreviewBar workspaceId={workspaceId} room={room} perms={perms} /> : null}
       {mobile ? null : typing ? (
         <span data-header-fill className="flex min-w-0 flex-1 items-center gap-1.5 text-body text-accent-text" aria-live="polite">
@@ -374,7 +377,7 @@ function Topic({ topic }: { topic: string }): ReactNode {
   );
 }
 
-function PinsButton({ workspaceId, roomId, canManage }: { workspaceId: string; roomId: string; canManage: boolean }): ReactNode {
+export function PinsButton({ workspaceId, roomId, canManage }: { workspaceId: string; roomId: string; canManage: boolean }): ReactNode {
   const pins = useMessages((s) => s.pins[roomId] ?? NO_PINS);
   const jump = useChatView((s) => s.requestJump);
   const [open, setOpen] = useState(false);

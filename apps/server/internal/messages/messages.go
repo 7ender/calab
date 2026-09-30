@@ -44,6 +44,9 @@ type Handlers struct {
 	BotLimiter *redisx.RateLimiter
 	// Receipts publishes READ_RECEIPT after reads (docs/09 #92); nil = none.
 	Receipts *Receipts
+	// TaskHook runs after a message is posted (or forwarded) into a task's comment room
+	// (ADR-0042): subscriptions, notifications, TASK_UPDATE; nil = none.
+	TaskHook func(ctx context.Context, acc perm.RoomAccess, msg sqlc.Message)
 }
 
 // NewHandlers creates the message handlers.
@@ -226,7 +229,7 @@ func (h *Handlers) get(w http.ResponseWriter, r *http.Request) error {
 	if err != nil {
 		return err
 	}
-	acc, err := rooms.Access(r, roomID)
+	acc, err := rooms.ReadAccess(r, roomID) // history: archived temporary rooms too (ADR-0044)
 	if err != nil {
 		return err
 	}
@@ -261,7 +264,7 @@ func (h *Handlers) list(w http.ResponseWriter, r *http.Request) error {
 	if err != nil {
 		return err
 	}
-	acc, err := rooms.Access(r, roomID)
+	acc, err := rooms.ReadAccess(r, roomID) // history: archived temporary rooms too (ADR-0044)
 	if err != nil {
 		return err
 	}
@@ -304,7 +307,7 @@ func (h *Handlers) list(w http.ResponseWriter, r *http.Request) error {
 // clearedBefore is the caller's «Удалить чат» mark in a DM (docs/09 item 51): they see only
 // messages after it. nil = the whole history (never cleared, or not a DM).
 func (h *Handlers) clearedBefore(r *http.Request, acc perm.RoomAccess, roomID uuid.UUID) (*uuid.UUID, error) {
-	if !acc.DM {
+	if !acc.DM || acc.Notes { // a notes shelf is never cleared (ADR-0039)
 		return nil, nil
 	}
 	id, err := h.db.Q.GetDMClearedBefore(r.Context(), sqlc.GetDMClearedBeforeParams{UserID: uid(r), RoomID: roomID})
@@ -513,7 +516,7 @@ func (h *Handlers) create(w http.ResponseWriter, r *http.Request) error {
 	if sticker != nil {
 		pb.Sticker = pbconv.Sticker(sticker.Sticker, sticker.FileSize)
 	}
-	if acc.DM { // docs/09 item 51: an incoming message takes the DM out of the recipient's archive
+	if acc.DM && !acc.Notes { // docs/09 item 51: an incoming message takes the DM out of the recipient's archive
 		states, err := h.db.Q.UnarchiveDMForRecipients(r.Context(), sqlc.UnarchiveDMForRecipientsParams{RoomID: roomID, AuthorID: uid(r)})
 		if err != nil {
 			return err
@@ -532,6 +535,9 @@ func (h *Handlers) create(w http.ResponseWriter, r *http.Request) error {
 	rooms.Publish(r.Context(), h.events, acc, &v1.DispatchEvent{Event: &v1.DispatchEvent_MessageCreate{
 		MessageCreate: &v1.MessageCreate{WorkspaceId: rooms.WorkspaceIDString(acc), Message: ev},
 	}})
+	if acc.Task && h.TaskHook != nil {
+		h.TaskHook(r.Context(), acc, msg)
+	}
 	h.events.User(r.Context(), uid(r), &v1.DispatchEvent{Event: &v1.DispatchEvent_ReadStateUpdate{
 		ReadStateUpdate: &v1.ReadStateUpdate{ReadState: &v1.ReadState{RoomId: roomID.String(), LastReadMessageId: msg.ID.String()}},
 	}})

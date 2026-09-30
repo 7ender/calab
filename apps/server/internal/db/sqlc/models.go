@@ -19,6 +19,72 @@ type BirthdayGreeting struct {
 	CreatedAt   time.Time
 }
 
+type Board struct {
+	ID              uuid.UUID
+	WorkspaceID     uuid.UUID
+	Name            string
+	Key             string
+	Emoji           string
+	IconFileID      *uuid.UUID
+	Description     string
+	IsPrivate       bool
+	Position        int32
+	NextNumber      int32
+	AutoArchiveDays int32
+	DefaultViewID   *uuid.UUID
+	CreatedBy       *uuid.UUID
+	CreatedAt       time.Time
+	ArchivedAt      *time.Time
+}
+
+type BoardLabel struct {
+	ID       uuid.UUID
+	BoardID  uuid.UUID
+	Name     string
+	Color    int32
+	Position int32
+}
+
+type BoardMilestone struct {
+	ID       uuid.UUID
+	BoardID  uuid.UUID
+	Name     string
+	DueOn    pgtype.Date
+	Position int32
+}
+
+type BoardPermission struct {
+	BoardID    uuid.UUID
+	TargetType string
+	TargetID   string
+	Allow      int64
+	Deny       int64
+}
+
+type BoardStatus struct {
+	ID        uuid.UUID
+	BoardID   uuid.UUID
+	Name      string
+	Type      string
+	Color     int32
+	Position  int32
+	IsDefault bool
+}
+
+type BoardView struct {
+	ID        uuid.UUID
+	BoardID   uuid.UUID
+	Name      string
+	Kind      string
+	Filter    []byte
+	GroupBy   string
+	Sort      string
+	Shared    bool
+	CreatedBy uuid.UUID
+	Position  int32
+	CreatedAt time.Time
+}
+
 type Bot struct {
 	UserID              uuid.UUID
 	OwnerUserID         uuid.UUID
@@ -63,6 +129,32 @@ type BotWebhookDelivery struct {
 	Error       string
 }
 
+type CaldavAccount struct {
+	UserID       uuid.UUID
+	Url          string
+	Username     string
+	SecretEnc    []byte
+	Calendars    []byte
+	CalendarHref *string
+	Import       bool
+	Push         bool
+	LastSyncAt   *time.Time
+	LastError    string
+	CreatedAt    time.Time
+	UpdatedAt    time.Time
+	ShareLevel   string
+}
+
+type CaldavPush struct {
+	UserID    uuid.UUID
+	EventID   uuid.UUID
+	Gen       int64
+	Attempts  int32
+	NextAt    time.Time
+	Error     string
+	CreatedAt time.Time
+}
+
 type DmMember struct {
 	RoomID    uuid.UUID
 	UserID    uuid.UUID
@@ -96,6 +188,75 @@ type EmailInvite struct {
 	LastSentAt  time.Time
 	AcceptedAt  *time.Time
 	CreatedAt   time.Time
+}
+
+type Event struct {
+	ID          uuid.UUID
+	WorkspaceID uuid.UUID
+	RoomID      *uuid.UUID
+	Title       string
+	Description string
+	StartsAt    time.Time
+	EndsAt      time.Time
+	AllDay      bool
+	Tz          string
+	OrganizerID uuid.UUID
+	Record      bool
+	Rrule       *string
+	UntilAt     *time.Time
+	Sequence    int32
+	CreatedAt   time.Time
+	UpdatedAt   time.Time
+	CancelledAt *time.Time
+}
+
+type EventAttendee struct {
+	EventID     uuid.UUID
+	UserID      *uuid.UUID
+	Email       *string
+	Required    bool
+	Status      string
+	RespondedAt *time.Time
+	InviteID    *uuid.UUID
+}
+
+type EventException struct {
+	EventID      uuid.UUID
+	OccurrenceAt time.Time
+}
+
+type EventRecording struct {
+	EventID      uuid.UUID
+	OccurrenceAt time.Time
+	RecordingID  uuid.UUID
+}
+
+type EventRemindersSent struct {
+	EventID      uuid.UUID
+	OccurrenceAt time.Time
+	UserID       uuid.UUID
+	Minutes      int16
+	SentAt       time.Time
+}
+
+type EventRoomSignal struct {
+	EventID      uuid.UUID
+	OccurrenceAt time.Time
+	Kind         string
+	SentAt       time.Time
+}
+
+type ExternalBusy struct {
+	UserID    uuid.UUID
+	Uid       string
+	StartsAt  time.Time
+	EndsAt    time.Time
+	AllDay    bool
+	Summary   string
+	Location  string
+	Attendees []byte
+	Organizer string
+	Url       string
 }
 
 type File struct {
@@ -209,6 +370,20 @@ type Room struct {
 	DmKey            *string
 	AllowRecording   bool
 	Restricted       bool
+	Emoji            string
+	GuestApproval    bool
+	ExpiresAt        *time.Time
+	CreatedBy        *uuid.UUID
+}
+
+type RoomAdmission struct {
+	RoomID      uuid.UUID
+	UserID      uuid.UUID
+	InviteID    *uuid.UUID
+	Status      string
+	RequestedAt time.Time
+	DecidedBy   *uuid.UUID
+	DecidedAt   *time.Time
 }
 
 type RoomCategory struct {
@@ -220,17 +395,21 @@ type RoomCategory struct {
 }
 
 type RoomInvite struct {
-	ID          uuid.UUID
-	RoomID      uuid.UUID
-	Code        string
-	CreatedBy   uuid.UUID
-	ExpiresAt   *time.Time
-	MaxUses     int32
-	Uses        int32
-	AllowGuests bool
-	AllowBits   int64
-	RevokedAt   *time.Time
-	CreatedAt   time.Time
+	ID              uuid.UUID
+	RoomID          uuid.UUID
+	Code            string
+	CreatedBy       uuid.UUID
+	ExpiresAt       *time.Time
+	MaxUses         int32
+	Uses            int32
+	AllowGuests     bool
+	AllowBits       int64
+	RevokedAt       *time.Time
+	CreatedAt       time.Time
+	NotBefore       *time.Time
+	EventID         *uuid.UUID
+	RequireApproval *bool
+	MembersOnly     bool
 }
 
 type RoomNotificationSetting struct {
@@ -299,6 +478,10 @@ type Session struct {
 	LastSeenAt           time.Time
 	ExpiresAt            time.Time
 	RevokedAt            *time.Time
+	RefreshGen           int64
+	RefreshUsedAt        *time.Time
+	ReplaySeal           []byte
+	RevokedReason        *string
 }
 
 type Sticker struct {
@@ -326,31 +509,108 @@ type StickerPack struct {
 	DeletedAt      *time.Time
 }
 
+type Task struct {
+	ID          uuid.UUID
+	BoardID     uuid.UUID
+	Number      int32
+	Title       string
+	Description string
+	StatusID    uuid.UUID
+	Priority    int16
+	CreatedBy   *uuid.UUID
+	Estimate    *int16
+	StartOn     pgtype.Date
+	DueOn       pgtype.Date
+	ParentID    *uuid.UUID
+	MilestoneID *uuid.UUID
+	Position    float64
+	RoomID      uuid.UUID
+	CreatedAt   time.Time
+	UpdatedAt   time.Time
+	StartedAt   *time.Time
+	CompletedAt *time.Time
+	CompletedBy *uuid.UUID
+	ArchivedAt  *time.Time
+}
+
+type TaskActivity struct {
+	ID        uuid.UUID
+	TaskID    uuid.UUID
+	BoardID   uuid.UUID
+	ActorID   *uuid.UUID
+	Kind      string
+	Before    []byte
+	After     []byte
+	CreatedAt time.Time
+}
+
+type TaskAssignee struct {
+	TaskID     uuid.UUID
+	UserID     uuid.UUID
+	IsLead     bool
+	Note       string
+	AssignedBy *uuid.UUID
+	AssignedAt time.Time
+}
+
+type TaskAttachment struct {
+	TaskID   uuid.UUID
+	FileID   uuid.UUID
+	Position int16
+}
+
+type TaskLabel struct {
+	TaskID  uuid.UUID
+	LabelID uuid.UUID
+}
+
+type TaskRelation struct {
+	TaskID    uuid.UUID
+	RelatedID uuid.UUID
+	Kind      string
+	CreatedBy *uuid.UUID
+	CreatedAt time.Time
+}
+
+type TaskSubscriber struct {
+	TaskID     uuid.UUID
+	UserID     uuid.UUID
+	Muted      bool
+	NotifiedAt *time.Time
+	SeenAt     *time.Time
+}
+
 type User struct {
-	ID              uuid.UUID
-	Email           *string
-	PasswordHash    *string
-	DisplayName     string
-	AvatarFileID    *uuid.UUID
-	StatusText      string
-	Settings        []byte
-	CreatedAt       time.Time
-	DisabledAt      *time.Time
-	StatusEmoji     string
-	StatusExpiresAt *time.Time
-	IsGuest         bool
-	GuestExpiresAt  *time.Time
-	Timezone        *string
-	EmailVerifiedAt *time.Time
-	PendingEmail    *string
-	Locale          *string
-	PresenceStatus  *int16
-	PresenceUntil   *time.Time
-	IsBot           bool
-	BirthdayDay     *int16
-	BirthdayMonth   *int16
-	BirthdayYear    *int16
-	BirthdayHidden  bool
+	ID                uuid.UUID
+	Email             *string
+	PasswordHash      *string
+	DisplayName       string
+	AvatarFileID      *uuid.UUID
+	StatusText        string
+	Settings          []byte
+	CreatedAt         time.Time
+	DisabledAt        *time.Time
+	StatusEmoji       string
+	StatusExpiresAt   *time.Time
+	IsGuest           bool
+	GuestExpiresAt    *time.Time
+	Timezone          *string
+	EmailVerifiedAt   *time.Time
+	PendingEmail      *string
+	Locale            *string
+	PresenceStatus    *int16
+	PresenceUntil     *time.Time
+	IsBot             bool
+	BirthdayDay       *int16
+	BirthdayMonth     *int16
+	BirthdayYear      *int16
+	BirthdayHidden    bool
+	EventReminders    []int16
+	EventRemindersDnd bool
+	StorageQuotaBytes *int64
+	WorkStartMin      int16
+	WorkEndMin        int16
+	WorkDays          []int16
 }
 
 type UserNote struct {
@@ -462,6 +722,7 @@ type WorkspaceNotificationSetting struct {
 	WorkspaceID uuid.UUID
 	Level       string
 	MutedUntil  *time.Time
+	TaskLevel   string
 }
 
 type WorkspacePlan struct {

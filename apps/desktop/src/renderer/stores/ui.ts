@@ -5,6 +5,7 @@ import { HOME } from './dms';
 import { RoomType } from '@calaba/protocol';
 import { useRooms } from './rooms';
 import type { LightboxImage } from '../lib/lightbox';
+import { useBoardsUi } from './boardsUi';
 
 export type Dialog =
   | { kind: 'create-workspace' }
@@ -12,6 +13,10 @@ export type Dialog =
   /** `roomId`: opened from a room («Пригласить», docs/09 #55) — the invites tab leads with its guest link. */
   | { kind: 'workspace-settings'; workspaceId: string; tab?: string; roomId?: string }
   | { kind: 'room-create'; workspaceId: string; voice: boolean; categoryId?: string }
+  /** «Временная комната» (ADR-0044): name, lifetime, visibility, guests, meeting → the link. */
+  | { kind: 'temp-room-create'; workspaceId: string }
+  /** «Продлить › До даты…» of a temporary room. */
+  | { kind: 'temp-room-extend'; roomId: string }
   | { kind: 'room-settings'; roomId: string; tab?: string }
   | { kind: 'settings'; tab?: string }
   | { kind: 'stream-picker' }
@@ -29,7 +34,27 @@ export type Dialog =
   /** Member profile (docs/09 #20); `note` focuses «Заметка» («Добавить заметку» in the member menu). */
   | { kind: 'profile'; workspaceId: string; userId: string; note?: boolean }
   /** «Администрирование» (superadmins, ADR-0024); the web shows it at /admin. */
-  | { kind: 'admin'; workspaceId?: string };
+  | { kind: 'admin'; workspaceId?: string }
+  /**
+   * Create / edit a meeting (ADR-0038 §7). `eventKey`: the occurrence edited (its series is
+   * changed); `draft`: prefilled values of a new one (a range selected on the grid, «Дублировать»).
+   */
+  | { kind: 'event'; workspaceId: string; eventKey?: string; draft?: EventDraftInit };
+
+/** Prefill of the meeting dialog (features/calendar/EventDialog.tsx). */
+export interface EventDraftInit {
+  start?: number;
+  end?: number;
+  allDay?: boolean;
+  roomId?: string;
+  /** Attendees (members) prefilled: «Подобрать время», a slot picked (ADR-0041 §3); me left out. */
+  attendees?: readonly string[];
+  /** Copy everything else from this occurrence («Дублировать»). */
+  copyOf?: string;
+  /** «Создать встречу в Calab» from an external event (ADR-0045 §3): its title, and the addresses of its attendees who are not members here. */
+  title?: string;
+  outside?: readonly string[];
+}
 
 interface UiState {
   /** The open workspace, or HOME (stores/dms.ts) for «Личные» — the DM list (ADR-0020). */
@@ -74,6 +99,22 @@ interface UiState {
    */
   notifyMenuReq: number;
   requestNotifyMenu: () => void;
+  /**
+   * Calendar (ADR-0038 §7), not persisted: the mini month under the column header, and the day
+   * shown in the centre instead of the room (`YYYY-MM-DD`, the viewer's zone) with the selected
+   * occurrence (`<event id>@<start ms>`) in the right panel. Opening a room closes the day view —
+   * the room it covered is still `lastRoom`, so closing returns there.
+   */
+  miniCal: boolean;
+  /** The mini calendar's month (`YYYY-MM`); null = the day view's / this month. */
+  calMonth: string | null;
+  calDay: string | null;
+  calEvent: string | null;
+  toggleMiniCal: (open?: boolean) => void;
+  setCalMonth: (month: string | null) => void;
+  openCalendarDay: (day: string, eventKey?: string | null) => void;
+  selectCalEvent: (key: string | null) => void;
+  closeCalendar: () => void;
 }
 
 /** Window width from which the members list is a column instead of a floating panel (docs/08: chat keeps ≥ ~600 px). */
@@ -101,20 +142,41 @@ export const useUi = create<UiState>()(
       setHideMuted: (hideMuted) => set({ hideMuted }),
       notifyMenuReq: 0,
       requestNotifyMenu: () => set((s) => ({ dialog: null, notifyMenuReq: s.notifyMenuReq + 1 })),
+      miniCal: false,
+      calMonth: null,
+      calDay: null,
+      calEvent: null,
+      toggleMiniCal: (open) => set((s) => ({ miniCal: open ?? !s.miniCal })),
+      setCalMonth: (calMonth) => set({ calMonth }),
+      openCalendarDay: (day, eventKey) =>
+        set((s) => {
+          if (useBoardsUi.getState().active) useBoardsUi.getState().setActive(false);
+          return { calDay: day, calEvent: eventKey === undefined ? s.calEvent : eventKey, calMonth: day.slice(0, 7), navDrawer: false, membersOverlay: false, editing: null };
+        }),
+      selectCalEvent: (calEvent) => set({ calEvent }),
+      closeCalendar: () => set({ calDay: null, calEvent: null }),
       setWorkspace: (id) =>
         set((s) => ({
+          calDay: null,
+          calEvent: null,
           activeWorkspaceId: id,
           history: id ? pushLoc(s.history, here(s), { ws: id, room: s.lastRoom[id] ?? null }) : s.history,
         })),
       openRoom: (wsId, roomId) =>
-        set((s) => ({
+        set((s) => {
+          // A room opened from anywhere (⌘K, a notification, a link) leaves the boards mode.
+          if (useBoardsUi.getState().active) useBoardsUi.getState().setActive(false);
+          return {
+          calDay: null,
+          calEvent: null,
           activeWorkspaceId: wsId,
           lastRoom: { ...s.lastRoom, [wsId]: roomId },
           editing: null,
           membersOverlay: false,
           navDrawer: false,
           history: pushLoc(s.history, here(s), { ws: wsId, room: roomId }),
-        })),
+          };
+        }),
       selectDefaultRoom: (wsId, roomId) => set((s) => ({ lastRoom: { ...s.lastRoom, [wsId]: roomId } })),
       goBack: () => set((s) => travel(s, -1)),
       goForward: () => set((s) => travel(s, 1)),
@@ -153,6 +215,12 @@ export const useUi = create<UiState>()(
   ),
 );
 
+// The workspace modes are exclusive (docs/09 #140): the boards turned on from anywhere (the tab, a
+// board link, «Мои задачи», a task) close the day view — as opening a day turns the boards off.
+useBoardsUi.subscribe((s, prev) => {
+  if (s.active && !prev.active && useUi.getState().calDay !== null) useUi.getState().closeCalendar();
+});
+
 function here(s: Pick<UiState, 'activeWorkspaceId' | 'lastRoom'>): Loc | null {
   return s.activeWorkspaceId ? { ws: s.activeWorkspaceId, room: s.lastRoom[s.activeWorkspaceId] ?? null } : null;
 }
@@ -160,7 +228,7 @@ function here(s: Pick<UiState, 'activeWorkspaceId' | 'lastRoom'>): Loc | null {
 /** A history entry is still reachable: the room exists (or the entry is workspace-only). */
 function reachable(l: Loc): boolean {
   const rooms = useRooms.getState().byId;
-  if (l.ws === HOME) return !l.room || rooms[l.room]?.type === RoomType.DM;
+  if (l.ws === HOME) return !l.room || rooms[l.room]?.type === RoomType.DM || rooms[l.room]?.type === RoomType.NOTES;
   if (l.room) return rooms[l.room]?.workspaceId === l.ws;
   return Object.values(rooms).some((r) => r.workspaceId === l.ws);
 }
@@ -170,6 +238,8 @@ function travel(s: UiState, dir: -1 | 1): Partial<UiState> {
   if (!r) return {};
   const { ws, room } = r.to;
   return {
+    calDay: null,
+    calEvent: null,
     history: r.history,
     activeWorkspaceId: ws,
     lastRoom: room ? { ...s.lastRoom, [ws]: room } : s.lastRoom,

@@ -2,6 +2,7 @@ import type { Dict } from '../types';
 import { esApp } from './app';
 import { esChat } from './chat';
 import { esDm } from './dm';
+import { esNotes } from './notes';
 import { esCall } from './call';
 import { esEcho } from './echo';
 import { esMedia } from './media';
@@ -12,12 +13,16 @@ import { esPeople } from './people';
 import { esModeration } from './moderation';
 import { esPicker } from './picker';
 import { esRoles } from './roles';
+import { esCalendar } from './calendar';
+import { esBoards } from './boards';
 import { esPlan } from './plan';
 import { esShell } from './shell';
 import { esVideo } from './video';
 import { esStickers } from './stickers';
 import { esSounds } from './sounds';
 import { esBots } from './bots';
+import { esGuests } from './guests';
+import { esTemp } from './temp';
 
 /** Spanish UI strings (ADR-0022): same keys and placeholders as `ru`/`en`; glossary docs/i18n-glossary.md. */
 export const es: Dict = {
@@ -29,7 +34,10 @@ export const es: Dict = {
   ...esStickers,
   ...esSounds,
   ...esBots,
+  ...esGuests,
+  ...esTemp,
   ...esDm,
+  ...esNotes,
   ...esCall,
   ...esEcho,
   ...esMedia,
@@ -40,6 +48,8 @@ export const es: Dict = {
   ...esAnnot,
   ...esPicker,
   ...esRoles,
+  ...esCalendar,
+  ...esBoards,
   'voice.pendingMember': 'Conectando…',
   // common
   'common.cancel': 'Cancelar',
@@ -74,6 +84,7 @@ export const es: Dict = {
   'auth.toRegister': 'Registrarse',
   'auth.toLogin': 'Iniciar sesión',
   'auth.revoked': 'Tu sesión se cerró en otro dispositivo. Inicia sesión de nuevo.',
+  'auth.reset': 'Tu sesión se restableció tras una pérdida de conexión: inicia sesión de nuevo.',
   'auth.expired': 'Tu sesión ha caducado. Inicia sesión de nuevo.',
   'auth.err.credentials': 'Correo o contraseña incorrectos',
   'auth.err.inviteOnly': 'Este servidor solo acepta invitaciones. Ingresa un código de invitación.',
@@ -261,6 +272,16 @@ export const es: Dict = {
   'perm.MANAGE_WORKSPACE': 'Gestionar espacio',
   'perm.MANAGE_ROLES': 'Gestionar roles',
   'perm.MANAGE_STICKERS': 'Gestionar stickers',
+  'perm.VIEW_BOARD': 'Ver el tablero',
+  'perm.CREATE_TASKS': 'Crear tareas',
+  'perm.EDIT_TASKS': 'Editar cualquier tarea',
+  'perm.MANAGE_BOARD': 'Gestionar el tablero',
+  'perm.INVITE_MEMBERS': 'Invitar miembros',
+  'perm.INVITE_GUESTS': 'Invitar invitados',
+  'perm.CREATE_TEMP_ROOMS': 'Crear salas temporales',
+  'perm.hint.INVITE_MEMBERS': 'Enlaces de invitación e invitaciones por correo al espacio; en una sala, un enlace solo para miembros del espacio.',
+  'perm.hint.INVITE_GUESTS': 'Enlaces de invitado de las salas y decidir a qué invitados en espera dejar pasar.',
+  'perm.hint.CREATE_TEMP_ROOMS': 'Salas para una hora o unos días con enlace para invitados; se cierran solas y el historial queda en el archivo.',
   'perm.ADMINISTRATOR': 'Administrador',
   'perm.allow': 'permitido',
   'perm.deny': 'denegado',
@@ -374,7 +395,9 @@ export const es: Dict = {
   'stream.systemAudioNo': 'No compatible con este sistema operativo',
   'stream.systemAudioMac':
     'macOS: las voces de otras personas también se incluirán en la pantalla compartida (eco). Actívalo solo con auriculares y cuando nadie en la sala esté hablando.',
-  'stream.systemAudioWin': 'El audio propio de Calab se excluye de la captura',
+  'stream.systemAudioWin10':
+    'Windows 10: las voces de otras personas también se incluirán en la pantalla compartida; solo Windows 11 puede excluir el sonido de Calab. Actívalo solo cuando nadie en la sala esté hablando.',
+  'stream.systemAudioWin':'El audio propio de Calab se excluye de la captura',
   'stream.noScreenAccess': 'macOS no concedió acceso a la grabación de pantalla — permite Calab en «Grabación de pantalla» y reinicia la app.',
   'stream.webPicker': 'Después de «Empezar a compartir», tu navegador te preguntará qué compartir: toda la pantalla, una ventana o una pestaña.',
   'stream.expand': 'Expandir',
@@ -600,6 +623,7 @@ export const es: Dict = {
   'chat.rateLimited': 'Demasiado rápido — espera un par de segundos',
   'notify.attachment': '📎 adjunto',
   'session.revokedToast': 'Tu sesión se cerró en otro dispositivo',
+  'session.resetToast': 'Sesión restablecida tras una pérdida de conexión: inicia sesión de nuevo',
   'session.expiredToast': 'Tu sesión caducó — inicia sesión de nuevo',
   'stream.stoppedLimit': 'Pantalla compartida detenida: la sala superó su límite de pantallas compartidas',
   'stream.stoppedModerator': 'Un moderador detuvo tu pantalla compartida',

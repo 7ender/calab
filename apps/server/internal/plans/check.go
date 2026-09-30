@@ -22,10 +22,12 @@ const (
 	KindBots
 	// KindStickerPacks counts live sticker packs of the workspace.
 	KindStickerPacks
+	// KindBoards counts the task boards of the workspace, live and archived (ADR-0042).
+	KindBoards
 )
 
 // what names a kind in the error message; the client tells the limits apart by it.
-var what = map[Kind]string{KindMembers: "members", KindBots: "bots", KindStickerPacks: "sticker packs"}
+var what = map[Kind]string{KindMembers: "members", KindBots: "bots", KindStickerPacks: "sticker packs", KindBoards: "boards"}
 
 // LimitError is the plan-limit error of every counted kind (ADR-0024): 409 CONFLICT, reason
 // PLAN_LIMIT, with the counter and the limit.
@@ -42,6 +44,8 @@ func (k Kind) limit(l Limits) uint32 {
 		return l.Bots
 	case KindStickerPacks:
 		return l.StickerPacks
+	case KindBoards:
+		return l.Boards
 	}
 	return 0
 }
@@ -54,6 +58,8 @@ func (k Kind) lock(ctx context.Context, q *sqlc.Queries, wsID uuid.UUID) error {
 		return q.LockWorkspaceBots(ctx, wsID.String())
 	case KindStickerPacks:
 		return q.LockWorkspaceStickers(ctx, wsID)
+	case KindBoards:
+		return q.LockBoards(ctx, wsID.String())
 	}
 	return nil
 }
@@ -67,6 +73,9 @@ func (k Kind) count(ctx context.Context, q *sqlc.Queries, wsID uuid.UUID) (int64
 		return q.CountWorkspaceBots(ctx, wsID)
 	case KindStickerPacks:
 		n, err := q.CountWorkspaceStickerPacks(ctx, wsID)
+		return int64(n), err
+	case KindBoards:
+		n, err := q.CountAllBoards(ctx, wsID)
 		return int64(n), err
 	}
 	return 0, nil

@@ -146,40 +146,78 @@ func buildMIME(from *mail.Address, m Message, now time.Time) ([]byte, error) {
 	_, _ = rand.Read(id[:])
 	domain := from.Address[strings.LastIndexByte(from.Address, '@')+1:]
 
-	var body bytes.Buffer
-	mw := multipart.NewWriter(&body)
-	for _, part := range []struct{ ctype, content string }{
+	parts := []struct{ ctype, content string }{
 		{"text/plain; charset=utf-8", m.Text},
 		{"text/html; charset=utf-8", m.HTML},
-	} {
-		w, err := mw.CreatePart(textproto.MIMEHeader{
-			"Content-Type":              {part.ctype},
-			"Content-Transfer-Encoding": {"base64"},
-		})
-		if err != nil {
-			return nil, err
-		}
-		if _, err := w.Write(wrap76(base64.StdEncoding.EncodeToString([]byte(part.content)))); err != nil {
+	}
+	if m.Calendar != "" {
+		// Inline text/calendar in the alternative makes Gmail / Outlook / Apple Mail show the
+		// invitation; the attachment is for everything else (ADR-0038 §4).
+		parts = append(parts, struct{ ctype, content string }{"text/calendar; charset=utf-8; method=" + m.CalendarMethod, m.Calendar})
+	}
+	var alt bytes.Buffer
+	aw := multipart.NewWriter(&alt)
+	for _, part := range parts {
+		if err := writeBase64Part(aw, textproto.MIMEHeader{"Content-Type": {part.ctype}}, part.content); err != nil {
 			return nil, err
 		}
 	}
-	if err := mw.Close(); err != nil {
+	if err := aw.Close(); err != nil {
 		return nil, err
+	}
+	body, ctype := alt.Bytes(), `multipart/alternative; boundary="`+aw.Boundary()+`"`
+	if m.Calendar != "" {
+		var mixed bytes.Buffer
+		mw := multipart.NewWriter(&mixed)
+		w, err := mw.CreatePart(textproto.MIMEHeader{"Content-Type": {ctype}})
+		if err != nil {
+			return nil, err
+		}
+		if _, err := w.Write(body); err != nil {
+			return nil, err
+		}
+		if err := writeBase64Part(mw, textproto.MIMEHeader{
+			"Content-Type":        {"application/ics; name=\"invite.ics\""},
+			"Content-Disposition": {"attachment; filename=\"invite.ics\""},
+		}, m.Calendar); err != nil {
+			return nil, err
+		}
+		if err := mw.Close(); err != nil {
+			return nil, err
+		}
+		body, ctype = mixed.Bytes(), `multipart/mixed; boundary="`+mw.Boundary()+`"`
 	}
 
 	var b bytes.Buffer
 	h := func(k, v string) { b.WriteString(k + ": " + v + "\r\n") }
 	h("From", from.String())
 	h("To", to.String())
+	if m.ReplyTo != "" {
+		rt, err := mail.ParseAddress(m.ReplyTo)
+		if err != nil {
+			return nil, fmt.Errorf("bad reply-to: %w", err)
+		}
+		h("Reply-To", rt.String())
+	}
 	h("Subject", mime.QEncoding.Encode("utf-8", m.Subject))
 	h("Date", now.Format(time.RFC1123Z))
 	h("Message-ID", "<"+hex.EncodeToString(id[:])+"@"+domain+">")
 	h("MIME-Version", "1.0")
 	h("Auto-Submitted", "auto-generated")
-	h("Content-Type", `multipart/alternative; boundary="`+mw.Boundary()+`"`)
+	h("Content-Type", ctype)
 	b.WriteString("\r\n")
-	b.Write(body.Bytes())
+	b.Write(body)
 	return b.Bytes(), nil
+}
+
+func writeBase64Part(mw *multipart.Writer, hdr textproto.MIMEHeader, content string) error {
+	hdr.Set("Content-Transfer-Encoding", "base64")
+	w, err := mw.CreatePart(hdr)
+	if err != nil {
+		return err
+	}
+	_, err = w.Write(wrap76(base64.StdEncoding.EncodeToString([]byte(content))))
+	return err
 }
 
 func wrap76(s string) []byte {

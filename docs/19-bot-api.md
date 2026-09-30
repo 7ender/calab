@@ -66,6 +66,7 @@ await bot.start();
 - Бот видит только то, что разрешает `VIEW_ROOM`; ограниченные комнаты (ADR-0029) действуют и на ботов.
 - Человек может «Заблокировать бота» — тогда бот не может писать ему в DM (`403 BOT_BLOCKED`).
 - Звонки один на один (ADR-0034) ботам недоступны: бот не звонит и не принимает (`POST /api/dms/{id}/call`, `/api/calls/…` — `403 BOT_NOT_ALLOWED`), позвонить боту нельзя.
+- «Заметки» (личные полки, ADR-0039) ботам недоступны: `/api/notes*` — `403 BOT_NOT_ALLOWED`; чужую полку бот не видит (`404`).
 - Webhook-секрет храните отдельно от токена; проверяйте подпись каждой доставки (см. [Webhook](#webhook)).
 
 ## REST
@@ -125,6 +126,9 @@ curl -s $CALAB/api/bots/me -H "Authorization: Bearer $TOKEN"
 | `POST /api/rooms/{id}/stream/request` · `…/camera/request` · `…/camera/stop` | стрим экрана, камера | `STREAM` / `VIDEO` |
 | `PATCH /api/voice/self` · `PATCH /api/rooms/{id}/voice-status` | своё mute/deafen, статус звонка | в звонке |
 | `POST /api/rooms/{id}/voice/{userId}/mute · unmute · disconnect · move · stop-stream · stop-camera · allow-camera` | модерация голоса | `MUTE_MEMBERS` / `MOVE_MEMBERS` |
+| `GET /api/rooms/{id}/admissions` | гости, ожидающие подтверждения входа (ADR-0040); пустить/отклонить — 403 `BOT_NOT_ALLOWED` | `MANAGE_ROOM` |
+| `GET /api/workspaces/{id}/events?from=&to=` · `GET /api/events/{id}` | календарь (ADR-0038): встречи в видимых боту комнатах; только чтение (создавать, менять, отвечать — 403 `BOT_NOT_ALLOWED`), адреса внешних участников боту не показываются; свободно/занято, подбор времени и CalDAV (ADR-0041) — 403 `BOT_NOT_ALLOWED` | `VIEW_ROOM` |
+| доски задач (ADR-0042): `GET /api/workspaces/{id}/boards`, `GET /api/boards/{id}`, `GET/POST /api/boards/{id}/tasks`, `GET/PATCH /api/tasks/{id}`, `PUT /api/tasks/{id}/assignees`, `GET /api/workspaces/{id}/tasks/search?q=`, `GET /api/t/{KEY-N}`, `GET /api/me/tasks`, статусы/лейблы/вехи/виды, архив задач | бот работает как человек — по битам доски своих ролей и переопределений (бота можно назначить исполнителем и дать ему доступ к приватной доске лично); комментарий — сообщение в `task.roomId`. Доступ к доске (`PUT …/permissions`) и удаление навсегда (`DELETE …?purge=1`) — 403 `BOT_NOT_ALLOWED`. SDK: `bot.boards.list/get`, `bot.tasks.list/search/get/create/update/setAssignees/comment` | `VIEW_BOARD` / `CREATE_TASKS` / `EDIT_TASKS` / `MANAGE_BOARD` |
 | `GET /api/workspaces/{id}/sounds` · `POST /api/rooms/{id}/sounds/play {soundId}` | саундборд (ADR-0036): список звуков; проиграть звук всем в звонке (`builtin:<имя>` или id звука; 1 в 2 с на бота, 5 в 10 с на комнату) | бот в звонке комнаты; управление звуками — 403 |
 | стикеры: `GET/POST /api/workspaces/{id}/sticker-packs`, `/api/sticker-packs/{id}…`, `/api/stickers/{id}`, `/api/me/sticker-packs…` | см. [Стикеры](#стикеры-по-api) | участник / `MANAGE_STICKERS` |
 | комнаты, категории, роли, участники, баны (`POST/PATCH/DELETE …`) | управление пространством | `MANAGE_ROOM`, `MANAGE_ROLES`, `MANAGE_WORKSPACE`, … |

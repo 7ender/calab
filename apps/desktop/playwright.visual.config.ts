@@ -55,8 +55,32 @@ export default defineConfig<VisualOptions>({
     { name: 'selection', testMatch: /selection\.spec\.ts/ },
     // A dialog's «×» hit at its icon centre, clear of window drag regions (docs/09 #105): behaviour only.
     { name: 'modal-close', testMatch: /modal-close\.spec\.ts/, use: { theme: 'dark', size: { width: 960, height: 600 } } },
+    // A mouse click leaves no focus outline, Tab shows the ring (docs/08 «Фокус», docs/09 #138): behaviour only.
+    { name: 'focus-pointer', testMatch: /focus-pointer\.spec\.ts/, use: { theme: 'dark', size: { width: 960, height: 600 } } },
+    // «Поздравить» → the greeting room with a ready mention (docs/09 #120): behaviour only.
+    { name: 'birthday-congratulate', testMatch: /birthday-congratulate\.spec\.ts/, use: { theme: 'dark', size: { width: 1440, height: 800 } } },
+    // The emoji picker's list scrolls in the composer and inside a modal sheet (docs/09 #118): behaviour only.
+    { name: 'emoji-scroll', testMatch: /emoji-scroll\.spec\.ts/, use: { theme: 'dark', size: { width: 960, height: 600 } } },
+    // After a restart for an update: back into the stored room (docs/09 #126): behaviour only.
+    { name: 'resume-voice', testMatch: /resume-voice\.spec\.ts/ },
     // Deafen holds for late voices (docs/09 #70): behaviour only, web build + dev LiveKit.
     { name: 'deafen', testMatch: /deafen\.spec\.ts/ },
+    // Calendar (ADR-0038, docs/20 (c)): create, drag, RSVP, reminders, zones, deep link — behaviour
+    // only, the web build in Chromium in the Moscow zone.
+    {
+      name: 'calendar',
+      testMatch: /calendar-[a-z-]+\.spec\.ts/,
+      use: { browserName: 'chromium', timezoneId: 'Europe/Moscow', colorScheme: 'dark', viewport: { width: 1280, height: 800 } },
+    },
+    // Task boards (ADR-0042, docs/21): kanban, d&d, the panel, filter, views, list — behaviour
+    // only, the web build in Chromium.
+    {
+      name: 'boards',
+      testMatch: /boards-[a-z-]+\.spec\.ts/,
+      use: { browserName: 'chromium', timezoneId: 'Europe/Moscow', colorScheme: 'dark', viewport: { width: 1280, height: 800 } },
+    },
+    // A room switch never hangs in «Подключение…» (docs/09 #131): behaviour only, web build + dev LiveKit.
+    { name: 'voice-switch', testMatch: /voice-switch\.spec\.ts/ },
     // Focus walk and the web client's own screens (they start their own mock / app). Locally only
     // web.spec.ts, where everything but the dark-960 join card is skipped (see above).
     { name: 'misc', testMatch: ALL_CONFIGS ? /(focus|web)\.spec\.ts/ : /web\.spec\.ts/ },

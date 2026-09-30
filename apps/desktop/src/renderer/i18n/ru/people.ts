@@ -21,6 +21,9 @@ export const ruPeople = {
   'people.profile.name': 'Имя профиля',
   'people.profile.status': 'Статус',
   'people.profile.lastSeen': 'Был(а) в сети {when}',
+  // client version line (docs/09 #143)
+  'people.client.title': 'Приложение',
+  'people.client.last': 'Последняя известная версия',
   // local time line (docs/09 #48)
   'people.tz.title': 'Местное время',
   'people.tz.hours': '{h} ч',
@@ -150,6 +153,7 @@ export const ruPeople = {
   'people.link.guestsOff': 'только с аккаунтом',
   'people.link.open': 'Войти в комнату',
   'people.link.invalid': 'Ссылка недействительна или истекла',
+  'people.link.membersOnly': 'Эта ссылка только для участников пространства.',
   'people.link.needAccount': 'По этой ссылке можно войти только с аккаунтом',
   'people.link.unreachable': 'Сервер недоступен — попробуйте позже',
   'guestInvite.title': 'Пригласить гостя без регистрации',
@@ -221,7 +225,7 @@ export const ruPeople = {
   'birthday.whenToday': 'Сегодня',
   'birthday.whenTomorrow': 'Завтра',
   'birthday.congratulate': 'Поздравить',
-  'birthday.congratulateName': 'Поздравить {name}: написать в личные сообщения',
+  'birthday.congratulateName': 'Поздравить {name} в общем чате',
   'birthday.cardAt': 'Открытка в чате появится в {time}',
   'birthday.age': { one: '{n} год', few: '{n} года', many: '{n} лет', other: '{n} года' },
   'birthday.inDays': { one: 'Через {n} день', few: 'Через {n} дня', many: 'Через {n} дней', other: 'Через {n} дня' },

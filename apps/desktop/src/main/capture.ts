@@ -25,7 +25,8 @@ export function macSystemAudioEnabled(): boolean {
 }
 
 export function systemAudioSupport(): SystemAudioSupport {
-  return systemAudioSupportFor(process.platform, process.platform === 'darwin' ? process.getSystemVersion() : '', process.env);
+  const osVersion = process.platform === 'darwin' || process.platform === 'win32' ? process.getSystemVersion() : '';
+  return systemAudioSupportFor(process.platform, osVersion, process.env);
 }
 
 /** CALABA_VISUAL_TEST=1: synthetic sources — no real screens in screenshots, no TCC prompt. */
@@ -182,8 +183,9 @@ export function installDisplayMediaHandler(ses: Session): void {
           const wantAudio = sel.audio && request.audioRequested && systemAudioSupport() !== 'unsupported';
           // Plain 'loopback' (docs/02-media.md rule 4, main/systemAudio.ts): with the renderer's
           // `restrictOwnAudio` Chromium opens `loopbackWithoutChrome` — our own playback (other
-          // participants' voices) is excluded and stays audible locally. 'loopbackWithMute' would
-          // mute all local playback and ignore `restrictOwnAudio`.
+          // participants' voices) is excluded and stays audible locally (macOS 14.2+, Windows 11;
+          // not Windows 10 — 'experimental'). 'loopbackWithMute' would mute all local playback
+          // and ignore `restrictOwnAudio`.
           callback(wantAudio ? { video: source, audio: loopbackDevice(process.platform) } : { video: source });
         })
         .catch(() => callback({}));

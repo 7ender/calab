@@ -6,7 +6,7 @@ import { confirmAction } from '../../components/Confirm';
 import { Tip, cx } from '../../components/ui';
 import { t } from '../../i18n';
 import { api } from '../../lib/api/endpoints';
-import { mayManageWorkspace } from '../../lib/permissions';
+import { mayInviteMembers, mayManageWorkspace } from '../../lib/permissions';
 import { markRead } from '../../services/chat';
 import { isUnread, useRooms } from '../../stores/rooms';
 import { useSession } from '../../stores/session';
@@ -30,6 +30,7 @@ export function RailContextMenu({ workspaceId, tip, children }: { workspaceId: s
   if (!ws) return <Tip label={tip} side="right">{children}</Tip>;
   // Invites and settings: MANAGE_WORKSPACE (the server's check), a custom role's included.
   const admin = mayManageWorkspace(myRoles);
+  const inviter = mayInviteMembers(myRoles); // ADR-0043
   const owner = role === WorkspaceRole.OWNER;
 
   const markAllRead = (): void => {
@@ -59,7 +60,7 @@ export function RailContextMenu({ workspaceId, tip, children }: { workspaceId: s
             <CheckCheck className="size-4" aria-hidden /> {t('room.markRead')}
           </ContextMenu.Item>
           <ContextMenu.Separator className={menuSeparator} />
-          {admin ? (
+          {inviter ? (
             <ContextMenu.Item className={menuItem} onSelect={() => open({ kind: 'workspace-settings', workspaceId, tab: 'invites' })}>
               <UserPlus className="size-4" aria-hidden /> {t('ws.invite')}
             </ContextMenu.Item>

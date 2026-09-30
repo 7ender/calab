@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { dimsOf, fitFrame, lightboxLayers, stepImage } from './lightbox';
+import { dimsOf, fitFrame, isTap, lightboxLayers, stepImage } from './lightbox';
 
 describe('lightboxLayers', () => {
   it('shows the thumbnail with a spinner while the full image loads', () => {
@@ -36,5 +36,16 @@ describe('stepImage', () => {
     expect(stepImage(2, 1, 3)).toBeNull();
     expect(stepImage(0, -1, 3)).toBeNull();
     expect(stepImage(0, 1, 1)).toBeNull();
+  });
+});
+
+describe('isTap', () => {
+  it('counts a press released in place or within the slop as a click', () => {
+    expect(isTap({ x: 10, y: 10 }, { x: 10, y: 10 })).toBe(true);
+    expect(isTap({ x: 10, y: 10 }, { x: 14, y: 13 })).toBe(true);
+  });
+  it('treats a press that moved further as a drag (the viewer stays open)', () => {
+    expect(isTap({ x: 10, y: 10 }, { x: 40, y: 10 })).toBe(false);
+    expect(isTap({ x: 10, y: 10 }, { x: 15, y: 15 })).toBe(false);
   });
 });

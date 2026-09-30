@@ -71,13 +71,13 @@ func (s *Service) ChangePassword(ctx context.Context, id Identity, current, next
 		if err := q.SetPasswordHash(ctx, sqlc.SetPasswordHashParams{ID: id.UserID, PasswordHash: &hash}); err != nil {
 			return err
 		}
-		revoked, err = q.RevokeOtherUserSessions(ctx, sqlc.RevokeOtherUserSessionsParams{UserID: id.UserID, ID: id.SessionID})
+		revoked, err = q.RevokeOtherUserSessions(ctx, sqlc.RevokeOtherUserSessionsParams{UserID: id.UserID, ID: id.SessionID, Reason: RevokePasswordChanged})
 		return err
 	})
 	if err != nil {
 		return err
 	}
-	s.afterRevokeMany(ctx, revoked)
+	s.afterRevokeMany(ctx, revoked, RevokePasswordChanged)
 	return nil
 }
 

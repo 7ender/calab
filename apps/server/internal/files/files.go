@@ -35,6 +35,7 @@ import (
 	"github.com/calaba/calaba/server/internal/db/sqlc"
 	"github.com/calaba/calaba/server/internal/events"
 	"github.com/calaba/calaba/server/internal/httpx"
+	"github.com/calaba/calaba/server/internal/notes"
 	"github.com/calaba/calaba/server/internal/pbconv"
 	"github.com/calaba/calaba/server/internal/perm"
 	"github.com/calaba/calaba/server/internal/plans"
@@ -69,7 +70,11 @@ type Service struct {
 	limiter  *redisx.RateLimiter // uploads per user
 	plans    *plans.Service      // workspace plan storage limit (ADR-0024); nil = none
 	conv     *Converter          // HEIC → JPEG (POST /api/files/convert); nil = 501
+	personal int64               // DEFAULT_PERSONAL_QUOTA_BYTES: notes shelves' personal quota (ADR-0039)
 }
+
+// SetPersonalQuota sets the default personal quota of uploads into notes shelves (ADR-0039 §5).
+func (s *Service) SetPersonalQuota(bytes int64) { s.personal = bytes }
 
 // SetPlans sets the plan resolver (storage_mb caps the workspace quota).
 func (s *Service) SetPlans(p *plans.Service) { s.plans = p }
@@ -427,6 +432,13 @@ func (s *Service) upload(w http.ResponseWriter, r *http.Request) error {
 	if !can {
 		return httpx.Forbidden("ATTACH_FILES required")
 	}
+	return s.UploadInto(w, r, wsID)
+}
+
+// UploadInto stores an upload of the caller into the workspace's quota; the caller checked that
+// they may attach files there (e.g. a task board, ADR-0042).
+func (s *Service) UploadInto(w http.ResponseWriter, r *http.Request, wsID uuid.UUID) error {
+	uid := auth.MustFromContext(r.Context()).UserID
 	if s.limiter != nil {
 		if err := s.limiter.Take(r.Context(), uid.String()); err != nil {
 			return err
@@ -513,6 +525,11 @@ func (s *Service) uploadDM(w http.ResponseWriter, r *http.Request) error {
 		return httpx.Coded(http.StatusRequestEntityTooLarge, v1.ErrorCode_ERROR_CODE_FILE_QUOTA_EXCEEDED,
 			"too many uploaded files are not attached to messages yet")
 	}
+	if acc.Notes { // early answer before reading the body; checked again under the lock below
+		if err := notes.CheckUpload(r.Context(), s.db.Q, uid, max(r.ContentLength, 0), s.personal); err != nil {
+			return err
+		}
+	}
 	st, err := s.receive(w, r, s.maxBytes, func(id uuid.UUID) string { return "users/" + uid.String() + "/" + id.String() }, acceptAny)
 	if err != nil {
 		return err
@@ -521,6 +538,11 @@ func (s *Service) uploadDM(w http.ResponseWriter, r *http.Request) error {
 	err = s.db.Tx(r.Context(), func(q *sqlc.Queries) error {
 		if err := s.checkTotal(r.Context(), q, st.size); err != nil {
 			return err
+		}
+		if acc.Notes { // under the storage lock: concurrent uploads cannot both fit (ADR-0039 §5)
+			if err := notes.CheckUpload(r.Context(), q, uid, st.size, s.personal); err != nil {
+				return err
+			}
 		}
 		f, err = q.InsertFile(r.Context(), s.row(st, nil, uid))
 		return err
@@ -688,7 +710,7 @@ func (s *Service) CanRead(r *http.Request, f sqlc.File) (bool, error) {
 		return false, err
 	}
 	for _, rid := range roomIDs {
-		acc, err := res.Room(ctx, rid, uid)
+		acc, err := res.ReadRoom(ctx, rid, uid) // attachments of archived temporary rooms stay readable (ADR-0044)
 		if errors.Is(err, perm.ErrNoRoom) {
 			continue
 		}

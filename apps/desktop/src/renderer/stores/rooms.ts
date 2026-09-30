@@ -202,7 +202,14 @@ const isDefaultNotify = (n: RoomNotificationSettings): boolean =>
   (n.level === NotificationLevel.INHERIT || n.level === NotificationLevel.UNSPECIFIED) && !n.mutedUntil;
 
 const isDefaultWsNotify = (n: WorkspaceNotificationSettings): boolean =>
-  (n.level === NotificationLevel.MENTIONS || n.level === NotificationLevel.UNSPECIFIED) && !n.mutedUntil;
+  (n.level === NotificationLevel.MENTIONS || n.level === NotificationLevel.UNSPECIFIED) &&
+  !n.mutedUntil &&
+  (n.taskLevel === NotificationLevel.ALL || n.taskLevel === NotificationLevel.UNSPECIFIED);
+
+/** The workspace's «Задачи» level (ADR-0042 §4): ALL unless set. */
+export function workspaceTaskLevel(n: WorkspaceNotificationSettings | undefined): NotificationLevel {
+  return !n || n.taskLevel === NotificationLevel.UNSPECIFIED ? NotificationLevel.ALL : n.taskLevel;
+}
 
 export interface RoomNotify {
   /** The stored level: a room's INHERIT / ALL / MENTIONS / NONE, a workspace's ALL / MENTIONS / NONE. */
@@ -247,7 +254,8 @@ type NotifyState = Pick<RoomsState, 'byId' | 'notify' | 'wsNotify'>;
 /** The settings that decide for a room now (docs/05 «Уведомления», docs/09 item 22). */
 export function effectiveNotify(roomId: string, s: NotifyState, now = Date.now()): EffectiveNotify {
   const r = s.byId[roomId];
-  const dm = r?.type === RoomType.DM;
+  // A notes shelf (ADR-0039) has no workspace either: its own settings only.
+  const dm = r?.type === RoomType.DM || r?.type === RoomType.NOTES;
   const room = roomNotify(s.notify[roomId], now);
   const workspace = dm || !r ? workspaceNotify(undefined) : workspaceNotify(s.wsNotify[r.workspaceId], now);
   const level = effectiveNotificationLevel(room.level, workspace.level, dm);
@@ -272,9 +280,11 @@ export const byPosition = (a: { position: number; name: string; id: string }, b:
  * flat list, no header), then the categories by position. Inside a group rooms follow
  * `position` only — drag & drop may interleave text and voice rooms (migration 00012 kept the
  * old text-before-voice order). Categories without rooms are hidden unless `keepEmpty`
- * (admins drop and add rooms into them).
+ * (admins drop and add rooms into them). Temporary rooms (ADR-0044) are not here: they form the
+ * virtual «Временные» group under the categories (`tempRoomsOf`), outside the reorder layout.
  */
-export function groupRooms(rooms: Room[], categories: RoomCategory[], keepEmpty = false): RoomGroup[] {
+export function groupRooms(allRooms: Room[], categories: RoomCategory[], keepEmpty = false): RoomGroup[] {
+  const rooms = allRooms.filter((r) => !r.expiresAt);
   const known = new Set(categories.map((c) => c.id));
   const sortRooms = (list: Room[]): Room[] => [...list].sort(byPosition);
   const groups: RoomGroup[] = [];
@@ -293,9 +303,33 @@ export function defaultRoom(rooms: Room[], categories: RoomCategory[]): Room | u
   return ordered.find((r) => !isVoice(r)) ?? ordered[0];
 }
 
+/**
+ * The workspace's greeting room — where the server posts birthday cards (docs/09 #76, #120):
+ * the same order as the ListBirthdayRooms query — text rooms only, a room everyone can see
+ * (not private) first, then top level before categories, category position, room position,
+ * id. Derived from the rooms I can see: when the server's pick is hidden from me the next
+ * visible one by the same order is where I can write anyway. Returns an id (a primitive for
+ * store selectors).
+ */
+export function greetingRoomId(byId: Record<string, Room>, categories: Record<string, RoomCategory>, wsId: string): string | undefined {
+  let best: { r: Room; key: [number, number, number, number] } | undefined;
+  for (const r of Object.values(byId)) {
+    if (r.workspaceId !== wsId || r.type !== RoomType.TEXT) continue;
+    const c = r.categoryId ? categories[r.categoryId] : undefined;
+    const key: [number, number, number, number] = [r.isPrivate ? 1 : 0, c ? 1 : 0, c?.position ?? 0, r.position];
+    if (!best || cmpKey(key, best.key) < 0 || (cmpKey(key, best.key) === 0 && r.id < best.r.id)) best = { r, key };
+  }
+  return best?.r.id;
+}
+
+const cmpKey = (a: readonly number[], b: readonly number[]): number => {
+  for (let i = 0; i < a.length; i++) if (a[i] !== b[i]) return (a[i] ?? 0) - (b[i] ?? 0);
+  return 0;
+};
+
 export function roomsOfWorkspace(byId: Record<string, Room>, wsId: string): Room[] {
   return Object.values(byId)
-    .filter((r) => r.workspaceId === wsId)
+    .filter((r) => r.workspaceId === wsId && r.type !== RoomType.TASK)
     .sort((a, b) => a.position - b.position || a.name.localeCompare(b.name));
 }
 
@@ -334,3 +368,6 @@ export function badgeCount(s: Pick<RoomsState, 'byId' | 'mentions'>): number {
 }
 
 export const isVoice = (r: Room | undefined): boolean => r?.type === RoomType.VOICE;
+
+/** A task's hidden comment room (ADR-0042): never in room lists, switchers or the rail's counts. */
+export const isTaskRoom = (r: Pick<Room, 'type'> | undefined): boolean => r?.type === RoomType.TASK;

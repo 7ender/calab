@@ -107,8 +107,32 @@ async function send(method: Method, path: string, body?: JsonValue, signal?: Abo
     if (err instanceof DOMException && err.name === 'AbortError') throw err;
     throw new ApiError('ERROR_CODE_UNAVAILABLE', err instanceof Error ? err.message : String(err), 0);
   }
-  if (!res.ok) throw await toApiError(res);
+  if (!res.ok) {
+    const err = await toApiError(res);
+    // ADR-0044: a room closed meanwhile answers 410 ROOM_ARCHIVED to anything but its history.
+    if (err.code === 'ERROR_CODE_ROOM_ARCHIVED') {
+      const id = archivedRoomOf(path);
+      if (id) for (const h of archivedHooks) h(id);
+    }
+    throw err;
+  }
   return res;
+}
+
+/** The room id of a `/api/rooms/{id}…` path (the one a 410 ROOM_ARCHIVED is about). */
+export function archivedRoomOf(path: string): string | null {
+  return /^\/api\/rooms\/([^/?#]+)/.exec(path)?.[1] ?? null;
+}
+
+const archivedHooks = new Set<(roomId: string) => void>();
+
+/**
+ * A request about a room answered 410 ROOM_ARCHIVED (ADR-0044: a temporary room closed by its
+ * owner or by expiry): services/tempRooms drops it from the live list with a toast.
+ */
+export function onRoomArchived(h: (roomId: string) => void): () => void {
+  archivedHooks.add(h);
+  return () => archivedHooks.delete(h);
 }
 
 /** Request with a typed protobuf response. */
@@ -120,6 +144,8 @@ export async function call<Res extends DescMessage>(
   signal?: AbortSignal,
 ): Promise<MessageShape<Res>> {
   const res = await send(method, path, body, signal);
+  // An older server may still answer 204 for an endpoint that grew a body (e.g. password/forgot).
+  if (res.status === 204) return create(resSchema);
   const json = (await res.json()) as JsonValue;
   return fromJson(resSchema, json, JSON_OPTS);
 }

@@ -4,7 +4,7 @@ import { renderToStaticMarkup } from 'react-dom/server';
 import { describe, expect, it, vi } from 'vitest';
 
 vi.mock('../../stores/workspaces', () => ({ useWorkspaces: () => undefined }));
-import { RoleMark, hasRoleMark, roleTextClass, roleTextStyle } from './MemberBits';
+import { RoleMark, hasRoleMark, nameMarkKind, roleTextClass, roleTextStyle } from './MemberBits';
 
 const mark = (role: WorkspaceRole, extra: Record<string, unknown> = {}): string => renderToStaticMarkup(createElement(RoleMark, { role, ...extra }));
 
@@ -62,5 +62,23 @@ describe('RoleMark (docs/09 #26)', () => {
     expect(roleTextClass(WorkspaceRole.GUEST)).toBe('text-fg');
     expect(roleTextClass(WorkspaceRole.OWNER, 'muted')).toBe('text-muted');
     expect(roleTextClass(WorkspaceRole.OWNER, 'inherit')).toBe('');
+  });
+});
+
+describe('nameMarkKind (docs/09 #129: the badge replaces the role mark)', () => {
+  const custom = { name: 'Дизайн', color: 0x3a86ff };
+  it('a badge wins over any role mark', () => {
+    expect(nameMarkKind(true, WorkspaceRole.OWNER)).toBe('badge');
+    expect(nameMarkKind(true, WorkspaceRole.ADMIN)).toBe('badge');
+    expect(nameMarkKind(true, WorkspaceRole.MEMBER, custom)).toBe('badge');
+    expect(nameMarkKind(true, WorkspaceRole.MEMBER)).toBe('badge');
+  });
+  it('no badge: the role mark for owner / admin / a custom role, nothing otherwise', () => {
+    expect(nameMarkKind(false, WorkspaceRole.OWNER)).toBe('role');
+    expect(nameMarkKind(false, WorkspaceRole.ADMIN)).toBe('role');
+    expect(nameMarkKind(false, WorkspaceRole.MEMBER, custom)).toBe('role');
+    expect(nameMarkKind(false, WorkspaceRole.MEMBER)).toBeNull();
+    expect(nameMarkKind(false, WorkspaceRole.GUEST)).toBeNull();
+    expect(nameMarkKind(false, undefined)).toBeNull();
   });
 });

@@ -1,7 +1,20 @@
 import { randomUUID } from 'node:crypto';
 import WebSocket from 'ws';
+import { create, toJson, type MessageInitShape } from '@bufbuild/protobuf';
 import {
+  BoardResponseSchema,
   BotWebhookResponseSchema,
+  CreateTaskRequestSchema,
+  ListBoardsResponseSchema,
+  ListTasksResponseSchema,
+  SearchTasksResponseSchema,
+  SetAssigneesRequestSchema,
+  TaskFilterSchema,
+  TaskResponseSchema,
+  UpdateTaskRequestSchema,
+  type Board,
+  type Task,
+  type TaskResponse,
   CreateDmRequestSchema,
   CreateDmResponseSchema,
   CreateMessageRequestSchema,
@@ -510,6 +523,57 @@ export class Bot extends Emitter<BotEvents> {
       }),
     remove: async (stickerId: string): Promise<void> => {
       await this.rest.request('DELETE', `/api/stickers/${enc(stickerId)}`);
+    },
+  };
+
+  // ---- task boards (ADR-0042): a bot works within the board bits of its roles ----
+
+  readonly boards = {
+    /** Boards of a workspace the bot sees. */
+    list: async (workspaceId: string): Promise<Board[]> =>
+      (await this.rest.call(ListBoardsResponseSchema, 'GET', `/api/workspaces/${enc(workspaceId)}/boards`)).boards,
+    get: async (boardId: string): Promise<Board> =>
+      (await this.rest.call(BoardResponseSchema, 'GET', `/api/boards/${enc(boardId)}`)).board ?? fail('board'),
+  };
+
+  readonly tasks = {
+    /** All live tasks of a board (every page), optionally filtered (TaskFilter, ADR-0042 §3). */
+    list: async (boardId: string, filter?: MessageInitShape<typeof TaskFilterSchema>): Promise<Task[]> => {
+      const out: Task[] = [];
+      const f = filter ? JSON.stringify(toJson(TaskFilterSchema, create(TaskFilterSchema, filter))) : undefined;
+      for (let cursor = ''; ; ) {
+        const r = await this.rest.call(ListTasksResponseSchema, 'GET', `/api/boards/${enc(boardId)}/tasks`, {
+          query: { filter: f, cursor: cursor || undefined },
+        });
+        out.push(...r.tasks);
+        if (!r.nextCursor) return out;
+        cursor = r.nextCursor;
+      }
+    },
+    /** Search over the boards the bot sees: by key (FNG-12) and words of title / description. */
+    search: async (workspaceId: string, q: string, limit?: number): Promise<Task[]> =>
+      (await this.rest.call(SearchTasksResponseSchema, 'GET', `/api/workspaces/${enc(workspaceId)}/tasks/search`, { query: { q, limit } }))
+        .tasks,
+    /** A task with its subtasks, related tasks and comment room. */
+    get: (taskId: string): Promise<TaskResponse> => this.rest.call(TaskResponseSchema, 'GET', `/api/tasks/${enc(taskId)}`),
+    create: async (boardId: string, t: MessageInitShape<typeof CreateTaskRequestSchema>): Promise<Task> =>
+      (await this.rest.call(TaskResponseSchema, 'POST', `/api/boards/${enc(boardId)}/tasks`, { json: Rest.body(CreateTaskRequestSchema, t) }))
+        .task ?? fail('task'),
+    /** Changes fields (unset = unchanged); statusId with afterTaskId / beforeTaskId moves it in the kanban. */
+    update: async (taskId: string, p: MessageInitShape<typeof UpdateTaskRequestSchema>): Promise<Task> =>
+      (await this.rest.call(TaskResponseSchema, 'PATCH', `/api/tasks/${enc(taskId)}`, { json: Rest.body(UpdateTaskRequestSchema, p) })).task ??
+      fail('task'),
+    /** Replaces the assignees (exactly one lead; the first when none is marked). */
+    setAssignees: async (taskId: string, assignees: { userId: string; isLead?: boolean; note?: string }[]): Promise<Task> =>
+      (
+        await this.rest.call(TaskResponseSchema, 'PUT', `/api/tasks/${enc(taskId)}/assignees`, {
+          json: Rest.body(SetAssigneesRequestSchema, { assignees }),
+        })
+      ).task ?? fail('task'),
+    /** A comment: a message of the task's hidden room (reactions, files, replies as in a chat). */
+    comment: async (task: Task | string, content: SendContent): Promise<Message> => {
+      const roomId = typeof task === 'string' ? ((await this.tasks.get(task)).task?.roomId ?? fail('task')) : task.roomId;
+      return this.send(roomId, content);
     },
   };
 

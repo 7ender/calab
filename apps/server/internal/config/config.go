@@ -42,9 +42,12 @@ type Config struct {
 	// (docs/06 «Общий Valkey»). Empty = none: the historical names.
 	RedisKeyPrefix string `env:"REDIS_KEY_PREFIX"`
 
-	JWTSecret       string        `env:"JWT_SECRET,required"`
-	AccessTokenTTL  time.Duration `env:"ACCESS_TOKEN_TTL" envDefault:"15m"`
-	RefreshTokenTTL time.Duration `env:"REFRESH_TOKEN_TTL" envDefault:"720h"`
+	JWTSecret string `env:"JWT_SECRET,required"`
+	// Token lifetimes (owner, 2026-09-29: lenient — sign in once a year). Revocation does not
+	// wait for expiry: a revoked session's access tokens die at once (Valkey marker + DB
+	// recheck, auth/sessioncheck.go). Self-hosted installs may tighten both.
+	AccessTokenTTL  time.Duration `env:"ACCESS_TOKEN_TTL" envDefault:"24h"`
+	RefreshTokenTTL time.Duration `env:"REFRESH_TOKEN_TTL" envDefault:"8760h"`
 
 	RegistrationMode RegistrationMode `env:"REGISTRATION_MODE" envDefault:"invite"`
 
@@ -60,6 +63,8 @@ type Config struct {
 	WorkspaceCreatesPerHour    int   `env:"WORKSPACE_CREATES_PER_HOUR" envDefault:"3"`
 	StorageMaxTotalBytes       int64 `env:"STORAGE_MAX_TOTAL_BYTES" envDefault:"53687091200"`       // 50 GiB, all files
 	DefaultWorkspaceQuotaBytes int64 `env:"DEFAULT_WORKSPACE_QUOTA_BYTES" envDefault:"10737418240"` // 10 GiB per new workspace
+	// Personal file quota of notes shelves (ADR-0039) for users without their own.
+	DefaultPersonalQuotaBytes int64 `env:"DEFAULT_PERSONAL_QUOTA_BYTES" envDefault:"1073741824"` // 1 GiB
 
 	// Peers allowed to set X-Forwarded-For (Caddy on loopback in prod).
 	TrustedProxies []netip.Prefix `env:"TRUSTED_PROXIES" envDefault:"127.0.0.1/32,::1/128"`
@@ -75,6 +80,9 @@ type Config struct {
 	// public. Only for dev machines whose VPN resolves names into a fake-IP range
 	// (e.g. 198.18.0.0/15). Loopback and link-local stay blocked regardless. Never set in prod.
 	UnfurlAllowCIDRs []netip.Prefix `env:"UNFURL_ALLOW_CIDRS"`
+
+	// CalDAV (ADR-0041 §4): how often the busy time of a user's connected calendar is imported.
+	CalDAVSyncInterval time.Duration `env:"CALDAV_SYNC_INTERVAL" envDefault:"15m"`
 
 	// Gateway.
 	HeartbeatInterval time.Duration `env:"GATEWAY_HEARTBEAT_INTERVAL" envDefault:"41s"`
@@ -122,9 +130,12 @@ type Config struct {
 	// volume is RECORDINGS_PATH here and RECORDING_EGRESS_DIR in the egress container.
 	// GPTUNNEL_WEB_URL replaces the host app.gptunnel.ai in links GPTunneL gives (docs/17 §4);
 	// RECORDING_KEEP_DAYS: a done recording's audio stays attached to its chat card this long.
-	GPTunnelAPIURL         string `env:"GPTUNNEL_API_URL" envDefault:"https://gptunnel.ru"`
-	GPTunnelWebURL         string `env:"GPTUNNEL_WEB_URL" envDefault:"https://gptunnel.ru"`
-	RecordingKeepDays      int    `env:"RECORDING_KEEP_DAYS" envDefault:"30"`
+	GPTunnelAPIURL    string `env:"GPTUNNEL_API_URL" envDefault:"https://gptunnel.ru"`
+	GPTunnelWebURL    string `env:"GPTUNNEL_WEB_URL" envDefault:"https://gptunnel.ru"`
+	RecordingKeepDays int    `env:"RECORDING_KEEP_DAYS" envDefault:"30"`
+	// TEMP_ROOM_RETENTION_DAYS (ADR-0044): archived temporary rooms are deleted with their
+	// history this many days after they closed.
+	TempRoomRetentionDays  int    `env:"TEMP_ROOM_RETENTION_DAYS" envDefault:"90"`
 	RecordingMaxConcurrent int    `env:"RECORDING_MAX_CONCURRENT" envDefault:"3"`
 	RecordingsPath         string `env:"RECORDINGS_PATH" envDefault:"./data/recordings"`
 	RecordingEgressDir     string `env:"RECORDING_EGRESS_DIR" envDefault:"/out"`
@@ -132,6 +143,8 @@ type Config struct {
 	// Mail limits: per recipient address and for the whole server, per hour.
 	MailPerAddressPerHour int `env:"MAIL_PER_ADDRESS_PER_HOUR" envDefault:"3"`
 	MailPerHour           int `env:"MAIL_PER_HOUR" envDefault:"200"`
+	// Meeting mail (invitations, changes, cancellations) per address: a bucket of its own.
+	MailEventsPerAddressPerHour int `env:"MAIL_EVENTS_PER_ADDRESS_PER_HOUR" envDefault:"10"`
 
 	// Bot API limits per bot (ADR-0031): requests per second (burst = one second's worth) and
 	// messages per minute. 0 = the default.
@@ -230,8 +243,8 @@ func (c *Config) Validate() error {
 		errs = append(errs, fmt.Errorf("STORAGE_DRIVER must be fs or s3, got %q", c.StorageDriver))
 	}
 	if c.LoginAccountBurst < 1 || c.MaxWorkspacesPerUser < 1 || c.WorkspaceCreatesPerHour < 1 ||
-		c.StorageMaxTotalBytes < 1 || c.DefaultWorkspaceQuotaBytes < 0 {
-		errs = append(errs, errors.New("LOGIN_ACCOUNT_ATTEMPTS, MAX_WORKSPACES_PER_USER, WORKSPACE_CREATES_PER_HOUR, STORAGE_MAX_TOTAL_BYTES must be >= 1 and DEFAULT_WORKSPACE_QUOTA_BYTES >= 0"))
+		c.StorageMaxTotalBytes < 1 || c.DefaultWorkspaceQuotaBytes < 0 || c.DefaultPersonalQuotaBytes < 0 {
+		errs = append(errs, errors.New("LOGIN_ACCOUNT_ATTEMPTS, MAX_WORKSPACES_PER_USER, WORKSPACE_CREATES_PER_HOUR, STORAGE_MAX_TOTAL_BYTES must be >= 1 and DEFAULT_WORKSPACE_QUOTA_BYTES, DEFAULT_PERSONAL_QUOTA_BYTES >= 0"))
 	}
 	if c.MaxFileSizeMB < 1 {
 		errs = append(errs, errors.New("MAX_FILE_SIZE_MB must be >= 1"))
@@ -253,8 +266,8 @@ func (c *Config) Validate() error {
 				errs = append(errs, fmt.Errorf("SMTP_HOST: bad port %q", p))
 			}
 		}
-		if c.MailPerAddressPerHour < 1 || c.MailPerHour < 1 {
-			errs = append(errs, errors.New("MAIL_PER_ADDRESS_PER_HOUR and MAIL_PER_HOUR must be >= 1"))
+		if c.MailPerAddressPerHour < 1 || c.MailPerHour < 1 || c.MailEventsPerAddressPerHour < 1 {
+			errs = append(errs, errors.New("MAIL_PER_ADDRESS_PER_HOUR, MAIL_EVENTS_PER_ADDRESS_PER_HOUR and MAIL_PER_HOUR must be >= 1"))
 		}
 	}
 	if Origin(c.GPTunnelAPIURL) == "" {
@@ -263,8 +276,14 @@ func (c *Config) Validate() error {
 	if Origin(c.GPTunnelWebURL) == "" {
 		errs = append(errs, fmt.Errorf("GPTUNNEL_WEB_URL must be an absolute http(s) URL, got %q", c.GPTunnelWebURL))
 	}
+	if c.CalDAVSyncInterval != 0 && (c.CalDAVSyncInterval < time.Minute || c.CalDAVSyncInterval > 24*time.Hour) {
+		errs = append(errs, fmt.Errorf("CALDAV_SYNC_INTERVAL must be between 1m and 24h, got %s", c.CalDAVSyncInterval))
+	}
 	if c.RecordingKeepDays < 1 || c.RecordingKeepDays > 3650 {
 		errs = append(errs, errors.New("RECORDING_KEEP_DAYS must be 1..3650"))
+	}
+	if c.TempRoomRetentionDays < 1 || c.TempRoomRetentionDays > 3650 {
+		errs = append(errs, errors.New("TEMP_ROOM_RETENTION_DAYS must be 1..3650"))
 	}
 	if c.RecordingMaxConcurrent < 1 || c.RecordingsPath == "" || !strings.HasPrefix(c.RecordingEgressDir, "/") {
 		errs = append(errs, errors.New("RECORDING_MAX_CONCURRENT must be >= 1, RECORDINGS_PATH set and RECORDING_EGRESS_DIR an absolute path"))

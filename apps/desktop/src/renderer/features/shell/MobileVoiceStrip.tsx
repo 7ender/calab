@@ -19,6 +19,7 @@ import { menuBox, menuItem, menuLabel, menuSeparator } from './menu';
 import { selectMicMode } from './micMenu';
 import { MobileRecDot, useRecording } from '../voice/Recording';
 import { SoundboardAnchored, SoundboardButton } from '../voice/Soundboard';
+import { TempExpiry } from '../voice/TempExpiry';
 
 /** 40 px round control of the strip (pill buttons, docs/08). */
 const round = 'grid size-10 shrink-0 place-items-center rounded-full transition-colors duration-[var(--motion-fast)]';
@@ -86,6 +87,7 @@ export function MobileVoiceStrip(): ReactNode {
             {/* Recording (docs/09 #30): the red dot only — the strip has no room for the timer; a tap
                 opens «Идёт запись · 12:34» / «Остановить запись» (docs/09 #64). */}
             {recording ? <MobileRecDot roomId={roomId} workspaceId={wsId} rec={recording} className="pointer-events-auto -my-1 relative" /> : null}
+            {call ? null : <TempExpiry roomId={roomId} workspaceId={wsId} compact />}
           </span>
           <span className="pointer-events-none max-w-full truncate text-caption text-muted">{call ? t('call.panel', { name: peerName }) : (room?.name ?? '')}</span>
         </div>

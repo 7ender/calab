@@ -14,10 +14,12 @@ import { myUserId, useSession } from '../stores/session';
 import { activeRoomId, useUi } from '../stores/ui';
 import { useVoice } from '../stores/voice';
 import { rolesOf, useWorkspaces } from '../stores/workspaces';
-import { resyncLoadedRooms, resyncPins } from './chat';
+import { resyncLoadedRooms, resyncPins, retryFailedLoads } from './chat';
 import { queryClient } from '../lib/queryClient';
 import { bansKey } from '../lib/moderation';
 import { applyDm, applyDmState, refreshDmPreview, refreshDms } from './dms';
+import { applyShelf, applyShelves, dropShelf } from './notes';
+import { useNotes } from '../stores/notes';
 import { loadMentions } from './mentions';
 import { mentionsMe, onIncomingMessage } from './notify';
 import { applyUserSettings } from './profile';
@@ -26,11 +28,31 @@ import { applyBotEvent } from './bots';
 import { useBots } from '../stores/bots';
 import { voice } from './voice';
 import { onCallRing, onCallState, onReadyCall } from './call';
+import { resumeVoiceAfterReady } from './resumeVoice';
+import { checkWebVersion } from './webVersion';
 import { applySnapshotRecordings, dropRecordings, onRoomRecording, resetRecordings } from './recording';
 import { t } from '../i18n';
 import { dropStaleWorkspaceBackground } from './cameraBackground';
 import { applySnapshotSounds, useSounds } from '../stores/sounds';
 import { onSoundPlay } from './soundboard';
+import {
+  applySnapshotEvents,
+  dropWorkspaceEvents,
+  onCalendarReady,
+  onEventCreate,
+  onEventDelete,
+  onEventReminder,
+  onEventRsvp,
+  onEventUpdate,
+  onRoomEventActive,
+  onRoomEventEnded,
+} from './calendar';
+import { applyReadyAdmissions, onAdmissionEvent } from '../features/guests/services/admissions';
+import { applyBoardEvent, applySnapshotBoards, dropWorkspaceBoards, onBoardsReady, restoreTaskRooms } from './boards';
+import { isTaskRoom } from '../stores/rooms';
+import { onRoomArchived } from '../lib/api/client';
+import { isTempRoom } from '../lib/tempRooms';
+import { roomClosedToast } from './roomClosed';
 
 /** «печатает» lives 5 s after the last TYPING_START: senders repeat it every 3 s while typing (services/chat.ts), so a stuck indicator (a lost stop, a closed tab) fades fast (docs/09 #64). */
 export const TYPING_MS = 5000;
@@ -53,6 +75,34 @@ function openAdminRoute(superadmin: boolean): void {
 }
 
 /** Applies one gateway DISPATCH event to the stores. */
+/**
+ * ROOM_DELETE: deleted, or hidden from me by a role / override change — or a temporary room closed
+ * (ADR-0044: deleted, expired, or found archived by a 410). Its participants are no longer «in
+ * voice» for me (the server stops sending their states for a room I cannot see); the chat falls
+ * back to the workspace's default room (AppShell). A temporary room I was in (voice or its open
+ * chat) says «Комната закрыта».
+ */
+export function removeRoom(workspaceId: string, roomId: string): void {
+  const room = useRooms.getState().byId[roomId];
+  const ui = useUi.getState();
+  const inVoice = voice.currentRoomId === roomId;
+  if (room && isTempRoom(room) && (inVoice || (ui.activeWorkspaceId === workspaceId && ui.lastRoom[workspaceId] === roomId))) roomClosedToast(roomId);
+  useRooms.getState().remove(roomId);
+  useWorkspaces.getState().clearRoomVoice(workspaceId, roomId);
+  useMessages.getState().unload(roomId);
+  dropRecordings((r) => r === roomId);
+  useInbox.getState().removeRooms((id) => id !== roomId);
+  if (inVoice) void voice.leave();
+}
+
+// A request about a live room answered 410 ROOM_ARCHIVED (a temporary room closed meanwhile, the
+// event missed): drop it like ROOM_DELETE. The archive view reads such rooms on purpose — they are
+// not in the live list, so nothing happens there.
+onRoomArchived((roomId) => {
+  const room = useRooms.getState().byId[roomId];
+  if (room) removeRoom(room.workspaceId, roomId);
+});
+
 export function applyDispatch(ev: DispatchEvent): void {
   const e = ev.event;
   switch (e.case) {
@@ -81,10 +131,15 @@ export function applyDispatch(ev: DispatchEvent): void {
         for (const room of snap.rooms) if (room.lastMessageId) rooms.setLastMessage(room.id, room.lastMessageId);
         applySnapshotExtras(snap);
         applySnapshotSounds(snap);
+        applySnapshotBoards(snap);
       }
+      // Task rooms (ADR-0042) are not in READY: the open ones come back before stale windows go.
+      restoreTaskRooms();
       // DMs (ADR-0020): rooms without a workspace; their read states are in read_states below.
       for (const dm of r.dms) applyDm(dm, false);
       useDms.getState().setAll(r.dms);
+      // Notes shelves (ADR-0039): rooms without a workspace, opened in «Личные».
+      applyShelves(r.notes);
       // Unread / mention counters come with the read states (server-counted, so missed
       // messages and mentions are included — review M12/N7); the client keeps them from here.
       for (const rs of r.readStates) {
@@ -103,6 +158,7 @@ export function applyDispatch(ev: DispatchEvent): void {
       const msgs = useMessages.getState();
       for (const id of Object.keys(msgs.rooms)) if (!(id in alive)) msgs.unload(id);
       void resyncLoadedRooms();
+      void retryFailedLoads(); // a room left on «Не удалось загрузить» (docs/09 #146)
       void resyncPins();
       // Recordings (ADR-0025): the server's state replaces ours (REC, «Остановить запись»).
       resetRecordings(r.workspaces);
@@ -110,17 +166,28 @@ export function applyDispatch(ev: DispatchEvent): void {
       if (r.me?.settings) applyUserSettings(r.me.settings);
       syncTimeZone(r.me);
       ensureActiveWorkspace();
+      // Calendar (ADR-0038): rooms' active meetings, listed months again, today's count, a pending /e/<id>.
+      onCalendarReady(r.workspaces);
+      // Boards (ADR-0042): loaded boards and the open task reloaded, a pending /b/ or /t/ link.
+      onBoardsReady();
+      // Guest admission (ADR-0040): knocks I decide, my own waiting screen.
+      applyReadyAdmissions(r);
       dropStaleWorkspaceBackground();
       openAdminRoute(r.me?.isSuperadmin === true);
       // After a reconnect the server's record of this device and LiveKit may disagree (docs/09 #71).
       voice.checkSeat();
       // ADR-0034: the ringing / in-call UI as the server has it now.
       onReadyCall(r.call);
+      // The first READY after a restart for an update: back into the same room / call (docs/09 #126).
+      resumeVoiceAfterReady(r.call);
+      // Web: a server newer than this bundle → «Обновить страницу» (docs/09 #125).
+      void checkWebVersion();
       return;
     }
     case 'resumed':
       log.info(`gateway resumed, replayed ${e.value.replayed}`);
       voice.checkSeat();
+      void retryFailedLoads(); // a room left on «Не удалось загрузить» (docs/09 #146)
       return;
     case 'workspaceCreate': {
       const snap = e.value.snapshot;
@@ -131,11 +198,29 @@ export function applyDispatch(ev: DispatchEvent): void {
       applySnapshotExtras(snap);
       applySnapshotSounds(snap);
       applySnapshotRecordings(snap);
+      applySnapshotEvents(snap);
+      applySnapshotBoards(snap);
       ensureActiveWorkspace();
       return;
     }
+    case 'boardCreate':
+    case 'boardUpdate':
+    case 'boardDelete':
+    case 'taskCreate':
+    case 'taskUpdate':
+    case 'taskDelete':
+    case 'taskActivity':
+      applyBoardEvent(e);
+      return;
     case 'dmCreate':
       if (e.value.dm) applyDm(e.value.dm, true);
+      return;
+    case 'notesCreate':
+    case 'notesUpdate':
+      if (e.value.shelf) applyShelf(e.value.shelf);
+      return;
+    case 'notesDelete':
+      dropShelf(e.value.roomId);
       return;
     case 'dmStateUpdate':
       applyDmState(e.value.roomId, e.value.archivedAt ? timestampMs(e.value.archivedAt) : 0, e.value.clearedBeforeMessageId);
@@ -149,6 +234,8 @@ export function applyDispatch(ev: DispatchEvent): void {
       useRooms.getState().removeWorkspace(id);
       useSounds.getState().dropWorkspace(id);
       dropRecordings((_room, rec) => rec.workspaceId === id);
+      dropWorkspaceEvents(id);
+      dropWorkspaceBoards(id);
       if (useVoice.getState().workspaceId === id) void voice.leave();
       if (useUi.getState().activeWorkspaceId === id) useUi.getState().setWorkspace(null);
       ensureActiveWorkspace();
@@ -227,17 +314,9 @@ export function applyDispatch(ev: DispatchEvent): void {
         if (e.value.room.id === voice.currentRoomId) voice.refreshRights();
       }
       return;
-    case 'roomDelete': {
-      useRooms.getState().remove(e.value.roomId);
-      // Deleted, or hidden from me by a role / override change: its participants are no longer
-      // «in voice» for me (the server stops sending their states for a room I cannot see).
-      useWorkspaces.getState().clearRoomVoice(e.value.workspaceId, e.value.roomId);
-      useMessages.getState().unload(e.value.roomId);
-      dropRecordings((room) => room === e.value.roomId);
-      useInbox.getState().removeRooms((id) => id !== e.value.roomId);
-      if (voice.currentRoomId === e.value.roomId) void voice.leave();
+    case 'roomDelete':
+      removeRoom(e.value.workspaceId, e.value.roomId);
       return;
-    }
     case 'roomPermissionsUpdate':
       useRooms.getState().setOverrides(e.value.roomId, e.value.permissions);
       if (e.value.roomId === voice.currentRoomId) voice.refreshRights();
@@ -249,6 +328,7 @@ export function applyDispatch(ev: DispatchEvent): void {
       if (e.value.message) {
         useMessages.getState().upsert(e.value.message);
         useDms.getState().onChanged(e.value.message.roomId, e.value.message.id, e.value.message);
+        useNotes.getState().onChanged(e.value.message.roomId, e.value.message.id, e.value.message);
         onMessageEdited(e.value.message, e.value.workspaceId);
       }
       return;
@@ -262,7 +342,8 @@ export function applyDispatch(ev: DispatchEvent): void {
       useMessages.getState().remove(roomId, messageId);
       useInbox.getState().remove(messageId);
       useDms.getState().onChanged(roomId, messageId, null);
-      if (useDms.getState().byRoom[roomId] && useDms.getState().preview[roomId] === undefined) void refreshDmPreview(roomId);
+      useNotes.getState().onChanged(roomId, messageId, null);
+      if ((useDms.getState().byRoom[roomId] || useNotes.getState().byRoom[roomId]) && previewUnknown(roomId)) void refreshDmPreview(roomId);
       return;
     }
     case 'messageReactionAdd':
@@ -357,6 +438,32 @@ export function applyDispatch(ev: DispatchEvent): void {
     case 'callState':
       onCallState(e.value.call);
       return;
+    // Workspace calendar (ADR-0038): lists, cards, room badges, reminders.
+    case 'eventCreate':
+      if (e.value.event) onEventCreate(e.value.event);
+      return;
+    case 'eventUpdate':
+      if (e.value.event) onEventUpdate(e.value.event);
+      return;
+    case 'eventDelete':
+      if (e.value.event) onEventDelete(e.value.event);
+      return;
+    case 'eventRsvp':
+      onEventRsvp(e.value);
+      return;
+    case 'eventReminder':
+      onEventReminder(e.value);
+      return;
+    case 'roomEventActive':
+      onRoomEventActive(e.value);
+      return;
+    case 'roomEventEnded':
+      onRoomEventEnded(e.value);
+      return;
+    case 'roomAdmissionRequest':
+    case 'roomAdmissionDecided':
+      onAdmissionEvent(e);
+      return;
     case 'userUpdate':
       // Another member's public profile (name, avatar, time zone, birthday — docs/09 #76).
       if (e.value.user && e.value.user.id !== myUserId()) {
@@ -405,14 +512,30 @@ function onMessage(m: Message, workspaceId: string): void {
   // A message of a DM we have not heard of (its DM_CREATE got lost): fetch the list.
   if (!workspaceId && !useRooms.getState().byId[m.roomId]) void refreshDms();
   useDms.getState().onMessage(m);
+  useNotes.getState().onMessage(m);
   if (!firstSeen(m.id)) return; // duplicate: no second badge / sound / notification
   const rooms = useRooms.getState();
+  // A comment of a task (ADR-0042): task rooms are hidden — no room badges or chat sounds; the
+  // task's own notice (TASK_UPDATE on my channel) notifies. Unknown workspace rooms likewise.
+  const known = rooms.byId[m.roomId];
+  if (workspaceId && (!known || isTaskRoom(known))) {
+    if (known) {
+      rooms.setLastMessage(m.roomId, m.id);
+      if (m.authorId === myUserId()) rooms.setRead(m.roomId, m.id);
+    }
+    return;
+  }
   rooms.setLastMessage(m.roomId, m.id);
   if (m.authorId === myUserId()) {
     rooms.setRead(m.roomId, m.id);
     return;
   }
   onIncomingMessage(m, workspaceId, activeRoomId() === m.roomId && document.hasFocus());
+}
+
+/** A DM's or a shelf's list preview was deleted and is not known yet. */
+function previewUnknown(roomId: string): boolean {
+  return useDms.getState().byRoom[roomId] ? useDms.getState().preview[roomId] === undefined : useNotes.getState().preview[roomId] === undefined;
 }
 
 /** An edit can add or remove a mention of me: keep the inbox in step (badges stay as they are). */

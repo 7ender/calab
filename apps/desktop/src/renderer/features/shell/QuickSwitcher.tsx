@@ -1,6 +1,6 @@
 import * as DialogP from '@radix-ui/react-dialog';
 import { RoomType, type Message, type Room, type WorkspaceMember } from '@calaba/protocol';
-import { Hash, MessageCircle, MessageSquare, Phone, Search, Volume2, X } from 'lucide-react';
+import { Hash, MessageCircle, MessageSquare, NotebookText, Phone, Search, Volume2, X } from 'lucide-react';
 import { Fragment, memo, useCallback, useEffect, useMemo, useRef, useState, type KeyboardEvent, type ReactNode } from 'react';
 import { Avatar } from '../../components/Avatar';
 import { Button, Spinner, Tip, cx } from '../../components/ui';
@@ -13,6 +13,7 @@ import { joinOutcome } from '../../lib/voiceEntry';
 import { useSession } from '../../stores/session';
 import { toast } from '../../stores/toasts';
 import { HOME, sortedDms, useDms } from '../../stores/dms';
+import { sortedShelves, useNotes } from '../../stores/notes';
 import { useRooms } from '../../stores/rooms';
 import { useUi } from '../../stores/ui';
 import { useVoice } from '../../stores/voice';
@@ -30,6 +31,7 @@ import { startCall } from '../../services/call';
 import { keyAction, rowActions, type SwitcherAction, type SwitcherRowKind } from './quickSwitcherActions';
 
 type Item =
+  | { kind: 'notes'; id: string; roomId: string; name: string; emoji: string }
   | { kind: 'dm'; id: string; roomId: string; peerId: string; name: string }
   | { kind: 'room'; id: string; room: Room }
   | { kind: 'member'; id: string; member: WorkspaceMember }
@@ -37,10 +39,11 @@ type Item =
 
 const MAX_ROOMS_QUERY = 6;
 const MAX_DMS = 5;
+const MAX_SHELVES_SHOWN = 5;
 const MAX_MEMBERS = 5;
 
 /**
- * ⌘/Ctrl+K — global search (docs/09 #3): DMs by the peer's name (ADR-0020), rooms of every
+ * ⌘/Ctrl+K — global search (docs/09 #3): notes shelves by name (ADR-0039), DMs by the peer's name (ADR-0020), rooms of every
  * workspace, members and messages of the active one (server FTS). Choosing a member filters
  * messages by that author.
  */
@@ -51,6 +54,7 @@ export function QuickSwitcher({ onClose, initialQuery = '' }: { onClose: () => v
   const activeWs = useUi((s) => (s.activeWorkspaceId && s.activeWorkspaceId !== HOME ? s.activeWorkspaceId : null));
   const openRoom = useUi((s) => s.openRoom);
   const dms = useDms((s) => s.byRoom);
+  const shelves = useNotes((s) => s.byRoom);
   const users = useWorkspaces((s) => s.users);
   const [q, setQ] = useState(initialQuery);
   const [author, setAuthor] = useState<WorkspaceMember | null>(null);
@@ -70,6 +74,14 @@ export function QuickSwitcher({ onClose, initialQuery = '' }: { onClose: () => v
     // users: a peer's renamed profile re-filters
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [needle, dms, users, author, home]);
+
+  // Shelves: by name with a query; without one in «Личные» only (like the recent DMs).
+  const shelfItems = useMemo(() => {
+    if (author || (!needle && !home)) return [];
+    return sortedShelves(shelves)
+      .filter((e) => !needle || e.name.toLowerCase().includes(needle))
+      .slice(0, MAX_SHELVES_SHOWN);
+  }, [needle, shelves, author, home]);
 
   const roomItems = useMemo(() => {
     if (author) return [];
@@ -115,12 +127,13 @@ export function QuickSwitcher({ onClose, initialQuery = '' }: { onClose: () => v
 
   const items: Item[] = useMemo(
     () => [
+      ...shelfItems.map((e): Item => ({ kind: 'notes', id: `n-${e.roomId}`, roomId: e.roomId, name: e.name, emoji: e.emoji })),
       ...dmItems.map((e): Item => ({ kind: 'dm', id: `d-${e.roomId}`, roomId: e.roomId, peerId: e.peerId, name: e.name })),
       ...roomItems.map((room): Item => ({ kind: 'room', id: `r-${room.id}`, room })),
       ...memberItems.map((member): Item => ({ kind: 'member', id: `u-${member.user?.id ?? ''}`, member })),
       ...(messages ?? []).map((msg): Item => ({ kind: 'message', id: `m-${msg.id}`, msg })),
     ],
-    [dmItems, roomItems, memberItems, messages],
+    [shelfItems, dmItems, roomItems, memberItems, messages],
   );
   const cur = Math.min(sel, Math.max(0, items.length - 1));
   // Grid row of each result (a section header takes the row above it).
@@ -142,7 +155,7 @@ export function QuickSwitcher({ onClose, initialQuery = '' }: { onClose: () => v
       if (peer) void startCall(peer);
       return;
     }
-    if (it.kind === 'dm') {
+    if (it.kind === 'dm' || it.kind === 'notes') {
       openRoom(HOME, it.roomId);
       onClose();
     } else if (it.kind === 'room') {
@@ -194,7 +207,7 @@ export function QuickSwitcher({ onClose, initialQuery = '' }: { onClose: () => v
   };
 
   const section = (kind: Item['kind']): string =>
-    kind === 'dm' ? t('search.dms') : kind === 'room' ? t('search.rooms') : kind === 'member' ? t('search.members') : t('search.messages');
+    kind === 'notes' ? t('search.notes') : kind === 'dm' ? t('search.dms') : kind === 'room' ? t('search.rooms') : kind === 'member' ? t('search.members') : t('search.messages');
 
   return (
     <DialogP.Root open onOpenChange={(o) => !o && onClose()}>
@@ -235,7 +248,7 @@ export function QuickSwitcher({ onClose, initialQuery = '' }: { onClose: () => v
               aria-activedescendant={items[cur] ? `qs-${items[cur].id}` : undefined}
               placeholder={t('search.placeholder')}
               aria-label={t('search.placeholder')}
-              className="h-12 min-w-0 flex-1 bg-transparent text-headline text-fg placeholder:text-faint focus:outline-none focus-visible:outline-none"
+              className="h-12 min-w-0 flex-1 bg-transparent text-headline text-fg placeholder:text-faint"
             />
             {busy ? <Spinner className="size-4" /> : null}
           </div>
@@ -292,6 +305,7 @@ function rowKind(it: Item, canConnect: boolean, canDm: boolean, canCall: boolean
   if (it.kind === 'room') return { kind: 'room', voice: it.room.type === RoomType.VOICE, canConnect };
   if (it.kind === 'member') return { kind: 'member', canDm, canCall };
   if (it.kind === 'dm') return { kind: 'dm', canCall };
+  if (it.kind === 'notes') return { kind: 'room' };
   return { kind: it.kind };
 }
 
@@ -438,7 +452,7 @@ function useCanConnect(room: Room | null): boolean {
 
 /** The row's subject for the buttons' names («Подключиться: Созвон»). */
 function rowName(it: Item): string {
-  if (it.kind === 'dm') return it.name;
+  if (it.kind === 'dm' || it.kind === 'notes') return it.name;
   if (it.kind === 'room') return it.room.name;
   if (it.kind === 'member') return it.member.nickname || it.member.user?.displayName || '';
   return memberName(useRooms.getState().byId[it.msg.roomId]?.workspaceId ?? null, it.msg.authorId);
@@ -446,6 +460,19 @@ function rowName(it: Item): string {
 
 function RowBody({ it, q, workspaceName, rooms }: { it: Item; q: string; workspaceName: string; rooms: Record<string, Room> }): ReactNode {
   const sub = 'shrink-0 truncate text-caption text-muted mobile:hidden';
+  if (it.kind === 'notes') {
+    return (
+      <>
+        <span className="grid size-5 shrink-0 place-items-center text-[15px] leading-none text-muted" aria-hidden>
+          {it.emoji || <NotebookText className="size-4" strokeWidth={1.75} />}
+        </span>
+        <span className="min-w-0 flex-1 truncate">
+          <Highlight text={it.name} q={q} />
+        </span>
+        <span className={sub}>{t('search.notes')}</span>
+      </>
+    );
+  }
   if (it.kind === 'dm') {
     const u = useWorkspaces.getState().users[it.peerId];
     return (

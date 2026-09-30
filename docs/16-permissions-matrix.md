@@ -9,8 +9,15 @@
 | «Только по списку» (`restricted`) приватной комнаты (изменено ADR-0029) | владелец (`workspaces.owner_id`), иначе `403 OWNER_ONLY` | `rooms.update` | `RoomSettings` (owner) |
 | Переопределения комнаты | `MANAGE_ROOM` room; не-админ — только свои биты | `rooms.validateOverrides` | вкладка «Права» |
 | `allow_recording` комнаты | `MANAGE_ROOM` room + `MANAGE_WORKSPACE` ws | `rooms.update` | `mayManageWorkspace` |
-| Ссылка-приглашение в комнату (гости) | `MANAGE_ROOM` room; не-админ — не шире своих | `guests.manage` | `roomMenuGroups` (voice + canManage) |
-| Настройки, медиа, инвайты, email-инвайты, баны, GPTunneL | `MANAGE_WORKSPACE` ws; тариф: `members` (инвайты, вход), `audio_tier_max_kbps` (медиа) | `requireManage`, `recording`, `plans.Check` | `mayManageWorkspace`, `useMembersCap` |
+| Ссылка-приглашение в комнату (гости): создать / список / отозвать (ADR-0043) | `INVITE_GUESTS` room (не гость); не-админ — не шире своих | `guests.linkAccess` | `mayInviteGuestsIn`, `roomMenuGroups` (voice + inviteRoom) |
+| Ссылка комнаты «только для участников» (ADR-0043) | `INVITE_MEMBERS` или `INVITE_GUESTS` room; вход — только участник (не гость), иначе 403 `INVITE_MEMBERS_ONLY` | `guests.linkAccess`, `guests.grant` | `mayInviteToRoom`, `InviteToRoomDialog` |
+| Подтверждение входа гостей: настройка комнаты / ссылки (ADR-0040) | комната — `MANAGE_ROOM` room; ссылка — `INVITE_GUESTS` room | `rooms.update`, `guests.update` | `RoomLinkTab` |
+| Временная комната: создать (ADR-0044) | `CREATE_TEMP_ROOMS` ws (не гость); `guests=true` — ещё `INVITE_GUESTS` ws; лимиты 20 / 5 | `rooms.createTemp` | — (клиент впереди) |
+| Временная комната: переименовать, продлить, доступ, права, ссылки «только для участников», удалить (в архив) | `MANAGE_ROOM` room **или** создатель (не гость); `make_permanent` — только `MANAGE_ROOM` | `rooms.MayManage`, `guests.linkAccess`, `rooms.tempPatch` | `mayManageRoom` (впереди) |
+| Архив временных комнат: список / история | список — `MANAGE_ROOM` ws + `VIEW_ROOM`; история — `VIEW_ROOM`; прочее — 410 `ROOM_ARCHIVED` | `rooms.listArchived`, `rooms.ReadAccess` | — |
+| Пустить / отклонить гостя, имя и бейдж при допуске (ADR-0040) | `INVITE_GUESTS` room (не гость) или автор ссылки (не гость); бот — только `GET` | `guests.loadDecider`, `decider.may`, шлюз `RoomAdmission*` | — (только решающим приходят «стуки») |
+| Инвайты и email-инвайты в пространство (ADR-0043) | `INVITE_MEMBERS` ws, подтверждённый не-гостевой аккаунт | `requireInvite`, `inviter` | `mayInviteMembers` |
+| Настройки, медиа, баны, GPTunneL | `MANAGE_WORKSPACE` ws; тариф: `members` (инвайты, вход), `audio_tier_max_kbps` (медиа) | `requireManage`, `recording`, `plans.Check` | `mayManageWorkspace`, `useMembersCap` |
 | Пригласить админом по email | владелец | `createEmailInvite` | `EmailInvite` (owner) |
 | Исключить / забанить / встроенная роль | `MANAGE_WORKSPACE` ws + иерархия: не владельца, админа — только владелец, цель ниже моей старшей роли | `workspaces.outranks` | `canRemoveMember` |
 | Гость → участник | `MANAGE_WORKSPACE` ws | `promote` | `memberActions.promote` |
@@ -39,8 +46,17 @@
 | Аннотации на стриме | `SPEAK` (клиент; data-канал, docs/12) | — | `annot.canAnnotate` |
 | Статус звонка | в звонке + `CONNECT`, или `MANAGE_ROOM` room | `setVoiceStatus` | `useStatusLine` |
 | Запись встречи | не гость, `VIEW_ROOM` + `CONNECT`, `allow_recording` | `recording.participant` | `roomMenuGroups` (`record`) |
+| Календарь (ADR-0038): видеть встречу | не гость; организатор, участник встречи или `VIEW_ROOM` в её комнате; бот — только чтение, без адресов внешних | `calendar.viewer.sees` | — |
+| Создать встречу | не гость, не бот; комната — голосовая, видимая; внешние адреса — подтверждённая почта | `calendar.create`, `checkRoom` | — |
+| Изменить / отменить встречу (и вхождение) | организатор; иначе `MANAGE_ROOM` room встречи, без комнаты — `MANAGE_WORKSPACE` ws; бот — 403 | `calendar.viewer.canEdit` | `event.can_edit` |
+| Свободно/занято, подбор времени (ADR-0041) | не гость, не бот; о ком спрашивают — участники (не гости, не боты) того же пространства; `event_id` — только видимой встречи этого пространства | `calendar.busyViewer`, `calendar.people`, `viewer.sees` | — |
+| Внешний календарь CalDAV (ADR-0041) | свой аккаунт; не гость, не бот | `caldav.person` | — |
+| Ответить на встречу | участник встречи; внешний — подписанной ссылкой без входа | `calendar.rsvp`, `calendar.publicAnswer` | — |
+| Гостевая ссылка встречи для внешнего | делается от имени организатора, если у него `INVITE_GUESTS` room (не шире его прав) | `calendar.linkBits` | `event.guest_links` |
 | Саммари, аудио, транскрипт записи (docs/09 #47) | `VIEW_ROOM` room (карточка — сообщение комнаты; аудио — вложение; ограниченная — только допущенные) | `files.CanRead`, `recording.transcript` | — |
 | Переслать сообщение / карточку записи (ADR-0033) | `VIEW_ROOM` в источнике (restricted — можно), `SEND_MESSAGES` в цели (+ `ATTACH_FILES` для вложений; DM — участник); копия даёт читателям цели файлы и транскрипт, её удаление — отзывает | `messages.forward`, `files.CanRead`, `recording.visibleRecording` | MessageMenu, ForwardDialog |
+| «Заметки» (ADR-0039): полки — создать (≤ 20) / переименовать / эмодзи / порядок / удалить; сообщения, файлы, закрепы, поиск в полке; пересылка в полку и из неё | владелец полки (набор DM); чужая полка — 404; боты и гостевые аккаунты — 403; файлы — личная квота (`413 PERSONAL_QUOTA`); голос/звонок в полке — 404 | `notes.*`, `perm.Resolver` (`Notes`), `files.uploadDM`, `rtc` | `NotesSection`, `NotesHeader`, ForwardDialog |
+| Личная квота пользователя (ADR-0039) | суперадмин (`SUPERADMIN_EMAILS`), остальным — 404 | `plans.Admin.setStorageQuota` | — |
 | Удалить запись встречи (docs/09 #50) | запустивший, владелец (`owner_id`) или `MANAGE_MESSAGES` room (+ `VIEW_ROOM`) | `recording.remove` | `mayDeleteRecording` |
 | Создать бота, список ботов (ADR-0031) | `MANAGE_WORKSPACE` ws (владелец — всегда), подтверждённый email; тариф `bots` | `bots.create`, `bots.list` (`manager`) | — (клиент, фаза 1b) |
 | Перевыпустить / отозвать токен, удалить бота | в «домашнем» пространстве: владелец бота или `MANAGE_WORKSPACE` ws | `bots.homeBot`, `bots.remove` | — |
@@ -49,6 +65,14 @@
 | Бот: любое действие | те же биты, что у человека (роли + переопределения; встроенная роль всегда `member`) + маршрут `allow` в `internal/app/botroutes.go`, иначе `403 BOT_NOT_ALLOWED` | `botGate` (`auth.NoBots`) + обработчик | — |
 | Бот: писать в DM | общее пространство (не гость) и не заблокирован собеседником (`403 BOT_BLOCKED`) | `dms.create`, `messages.create` (`CheckBotBlocked`) | — |
 | Команды бота в комнате (подсказки) | `VIEW_ROOM` room у запрашивающего и у бота | `bots.roomCommands`, `messages.resolveCommand` | — |
+| Доски (ADR-0042): видеть доску, задачи, ленту; комментировать, подписаться, загрузить вложение | `VIEW_BOARD` board (приватная — только по переопределению); гость — никогда (404, список — 403) | `boards.board`, `perm.Resolver.Board`, комната задачи — `perm.TaskRoom` | `computeMemberBoardPermissions` |
+| Создать доску | `MANAGE_WORKSPACE` ws + тариф `boards` (Free 3), ≤ 50; создатель получает все биты доски лично | `boards.createBoard`, `plans.Check(KindBoards)` | — (клиент доски) |
+| Создать задачу; править свои и назначенные на себя, архивировать свои | `CREATE_TASKS` board | `boards.createTask`, `canEdit` | — |
+| Править / двигать / архивировать любые задачи; закрепы и удаление чужих комментариев | `EDIT_TASKS` board (в комнате задачи → `MANAGE_MESSAGES`) | `boards.requireEdit`, `setArchived`, `messages.delete` | — |
+| Статусы, лейблы (правка / удаление), вехи, настройки, общие виды, порядок, архив доски; журнал и CSV (или `EDIT_TASKS`) | `MANAGE_BOARD` board; создать лейбл — ещё и `CREATE_TASKS` | `boards.manageBoard` | — |
+| Доступ к доске (переопределения) | `MANAGE_BOARD` board; только биты доски; не-админ — только свои биты; бот-токен — 403 | `boards.validateOverrides` | — |
+| Перенести задачу на другую доску · удалить доску навсегда (`?purge=1`, бот — 403) | `MANAGE_BOARD` на обеих · `MANAGE_BOARD` | `boards.moveBoard`, `deleteBoard` | — |
+| «Создать задачу из сообщения» | `CREATE_TASKS` board + `VIEW_ROOM` в комнате сообщения (иначе 404) | `boards.quoteMessage` | — |
 | Позвонить (`POST /api/dms/{id}/call`, ADR-0034) | участник DM, не гость; собеседник — человек (не бот, не гость, не отключён) с общим пространством (оба полные участники); бот-токен — 403; занят → `409 BUSY`, сам в звонке → `409 IN_CALL` | `calls.start` (`mayCall`) | `useCanDm` (клиент — в работе) |
 | Принять / отклонить · отменить · завершить звонок (`POST /api/calls/{id}/accept · decline · cancel · hangup`) | участник звонка (иначе 404): accept/decline — вызываемый, cancel — звонящий (иначе 403), hangup — любой; состояние RINGING / ACTIVE (иначе 409); бот-токен — 403 | `calls.action` (`Record.Apply`) | — |
 | Голос звонка DM (`POST /api/rooms/{dm}/join`) | участник ACTIVE-звонка этой DM, иначе `409 CALL_NOT_ACTIVE` (перепроверка на `participant_joined`); grant фиксированный: `microphone`, `screen_share(+audio)`, `camera`; без модерации | `rtc.joinDM`, `dmParticipantJoined` | — |

@@ -124,6 +124,10 @@ func roomTypeFromDB(s string) v1.RoomType {
 		return v1.RoomType_ROOM_TYPE_VOICE
 	case "dm":
 		return v1.RoomType_ROOM_TYPE_DM
+	case "notes":
+		return v1.RoomType_ROOM_TYPE_NOTES
+	case "task":
+		return v1.RoomType_ROOM_TYPE_TASK
 	}
 	return v1.RoomType_ROOM_TYPE_TEXT
 }
@@ -216,7 +220,11 @@ func NormalizeSettings(s *v1.UserSettings) *v1.UserSettings {
 
 // EncodeSettings stores settings with every field explicit, so a stored false stays false.
 func EncodeSettings(s *v1.UserSettings) ([]byte, error) {
-	return protojson.MarshalOptions{EmitDefaultValues: true}.Marshal(NormalizeSettings(s))
+	s = NormalizeSettings(proto.CloneOf(s))
+	// Meeting reminders live in their own columns (users.event_reminders*, ADR-0038 §5).
+	s.EventReminders, s.EventRemindersDnd = nil, false
+	s.WorkHours = nil // users.work_* columns (ADR-0041)
+	return protojson.MarshalOptions{EmitDefaultValues: true}.Marshal(s)
 }
 
 // DefaultSettings are the settings of a new user.
@@ -230,7 +238,18 @@ func Me(u sqlc.User) *v1.Me {
 	if u.Email != nil {
 		email = *u.Email
 	}
-	me := &v1.Me{User: User(u), Email: email, Settings: Settings(u.Settings),
+	settings := Settings(u.Settings)
+	settings.EventReminders = make([]uint32, 0, len(u.EventReminders))
+	for _, m := range u.EventReminders {
+		settings.EventReminders = append(settings.EventReminders, uint32(max(m, 0))) //nolint:gosec // ≤ 1440
+	}
+	settings.EventRemindersDnd = u.EventRemindersDnd
+	settings.WorkHours = &v1.WorkHours{StartMin: uint32(max(u.WorkStartMin, 0)), EndMin: uint32(max(u.WorkEndMin, 0)), //nolint:gosec // ≤ 1440
+		Days: make([]uint32, 0, len(u.WorkDays))}
+	for _, d := range u.WorkDays {
+		settings.WorkHours.Days = append(settings.WorkHours.Days, uint32(max(d, 0))) //nolint:gosec // 1..7
+	}
+	me := &v1.Me{User: User(u), Email: email, Settings: settings,
 		EmailVerified: u.IsGuest || u.EmailVerifiedAt != nil,                 // guests have no email to verify
 		IsSuperadmin:  u.EmailVerifiedAt != nil && superadmin.IsPtr(u.Email)} // an unverified address proves nothing
 	if u.PendingEmail != nil {
@@ -513,13 +532,22 @@ func Room(r sqlc.Room, defaults *v1.RoomMediaSettings, overrides []sqlc.RoomPerm
 		UserLimit:           uint32(max(r.UserLimit, 0)),
 		VoiceStatus:         deref(r.VoiceStatus),
 		AllowRecording:      r.AllowRecording,
+		GuestApproval:       r.GuestApproval,
+		ExpiresAt:           tsp(r.ExpiresAt),
+		CreatedBy:           idp(r.CreatedBy),
+		ArchivedAt:          tsp(r.ArchivedAt),
 	}
 }
 
 // DMRoom is the wire form of a direct message room (ADR-0020): no workspace, name, topic,
-// media or overrides — clients title it with the peer.
+// media or overrides — clients title it with the peer. A notes shelf (ADR-0039) carries its
+// name and position.
 func DMRoom(r sqlc.Room) *v1.Room {
-	return &v1.Room{Id: r.ID.String(), Type: v1.RoomType_ROOM_TYPE_DM, CreatedAt: ts(r.CreatedAt)}
+	out := &v1.Room{Id: r.ID.String(), Type: roomTypeFromDB(r.Type), CreatedAt: ts(r.CreatedAt)}
+	if r.Type == "notes" {
+		out.Name, out.Position = r.Name, r.Position
+	}
+	return out
 }
 
 // Category converts a room category row.
@@ -634,6 +662,7 @@ func RoomNotificationSettings(s sqlc.RoomNotificationSetting) *v1.RoomNotificati
 func WorkspaceNotificationSettings(s sqlc.WorkspaceNotificationSetting) *v1.WorkspaceNotificationSettings {
 	return &v1.WorkspaceNotificationSettings{
 		WorkspaceId: s.WorkspaceID.String(), MutedUntil: tsp(s.MutedUntil),
-		Level: notifications.LevelFromDB(s.Level, v1.NotificationLevel_NOTIFICATION_LEVEL_MENTIONS),
+		Level:     notifications.LevelFromDB(s.Level, v1.NotificationLevel_NOTIFICATION_LEVEL_MENTIONS),
+		TaskLevel: notifications.LevelFromDB(s.TaskLevel, v1.NotificationLevel_NOTIFICATION_LEVEL_ALL),
 	}
 }

@@ -57,7 +57,7 @@ const createDMRoom = `-- name: CreateDMRoom :one
 INSERT INTO rooms (workspace_id, type, name, dm_key)
 VALUES (NULL, 'dm', 'dm', $1)
 ON CONFLICT (dm_key) WHERE dm_key IS NOT NULL DO NOTHING
-RETURNING id, workspace_id, type, name, topic, position, is_private, audio_bitrate_kbps, max_stream_preset, max_streams, created_at, archived_at, category_id, user_limit, voice_status, camera_limit, dm_key, allow_recording, restricted
+RETURNING id, workspace_id, type, name, topic, position, is_private, audio_bitrate_kbps, max_stream_preset, max_streams, created_at, archived_at, category_id, user_limit, voice_status, camera_limit, dm_key, allow_recording, restricted, emoji, guest_approval, expires_at, created_by
 `
 
 // No row = a concurrent request created the pair's DM first (read it with GetDMByKey).
@@ -84,13 +84,17 @@ func (q *Queries) CreateDMRoom(ctx context.Context, dmKey *string) (Room, error)
 		&i.DmKey,
 		&i.AllowRecording,
 		&i.Restricted,
+		&i.Emoji,
+		&i.GuestApproval,
+		&i.ExpiresAt,
+		&i.CreatedBy,
 	)
 	return i, err
 }
 
 const getDMByKey = `-- name: GetDMByKey :one
 
-SELECT id, workspace_id, type, name, topic, position, is_private, audio_bitrate_kbps, max_stream_preset, max_streams, created_at, archived_at, category_id, user_limit, voice_status, camera_limit, dm_key, allow_recording, restricted FROM rooms WHERE dm_key = $1 AND archived_at IS NULL
+SELECT id, workspace_id, type, name, topic, position, is_private, audio_bitrate_kbps, max_stream_preset, max_streams, created_at, archived_at, category_id, user_limit, voice_status, camera_limit, dm_key, allow_recording, restricted, emoji, guest_approval, expires_at, created_by FROM rooms WHERE dm_key = $1 AND archived_at IS NULL
 `
 
 // Direct messages (ADR-0020). A DM is a room with type 'dm', no workspace and two rows in
@@ -118,6 +122,10 @@ func (q *Queries) GetDMByKey(ctx context.Context, dmKey *string) (Room, error) {
 		&i.DmKey,
 		&i.AllowRecording,
 		&i.Restricted,
+		&i.Emoji,
+		&i.GuestApproval,
+		&i.ExpiresAt,
+		&i.CreatedBy,
 	)
 	return i, err
 }
@@ -172,7 +180,7 @@ func (q *Queries) IsAvatar(ctx context.Context, avatarFileID *uuid.UUID) (bool, 
 }
 
 const listDMCandidates = `-- name: ListDMCandidates :many
-SELECT u.id, u.email, u.password_hash, u.display_name, u.avatar_file_id, u.status_text, u.settings, u.created_at, u.disabled_at, u.status_emoji, u.status_expires_at, u.is_guest, u.guest_expires_at, u.timezone, u.email_verified_at, u.pending_email, u.locale, u.presence_status, u.presence_until, u.is_bot, u.birthday_day, u.birthday_month, u.birthday_year, u.birthday_hidden FROM users u
+SELECT u.id, u.email, u.password_hash, u.display_name, u.avatar_file_id, u.status_text, u.settings, u.created_at, u.disabled_at, u.status_emoji, u.status_expires_at, u.is_guest, u.guest_expires_at, u.timezone, u.email_verified_at, u.pending_email, u.locale, u.presence_status, u.presence_until, u.is_bot, u.birthday_day, u.birthday_month, u.birthday_year, u.birthday_hidden, u.event_reminders, u.event_reminders_dnd, u.storage_quota_bytes, u.work_start_min, u.work_end_min, u.work_days FROM users u
 WHERE u.id <> $1 AND NOT u.is_guest AND u.disabled_at IS NULL
   AND EXISTS (
     SELECT 1 FROM workspace_members a
@@ -228,6 +236,12 @@ func (q *Queries) ListDMCandidates(ctx context.Context, arg ListDMCandidatesPara
 			&i.BirthdayMonth,
 			&i.BirthdayYear,
 			&i.BirthdayHidden,
+			&i.EventReminders,
+			&i.EventRemindersDnd,
+			&i.StorageQuotaBytes,
+			&i.WorkStartMin,
+			&i.WorkEndMin,
+			&i.WorkDays,
 		); err != nil {
 			return nil, err
 		}
@@ -241,7 +255,7 @@ func (q *Queries) ListDMCandidates(ctx context.Context, arg ListDMCandidatesPara
 
 const listDMs = `-- name: ListDMs :many
 SELECT r.id AS room_id, r.created_at AS room_created_at,
-       u.id, u.email, u.password_hash, u.display_name, u.avatar_file_id, u.status_text, u.settings, u.created_at, u.disabled_at, u.status_emoji, u.status_expires_at, u.is_guest, u.guest_expires_at, u.timezone, u.email_verified_at, u.pending_email, u.locale, u.presence_status, u.presence_until, u.is_bot, u.birthday_day, u.birthday_month, u.birthday_year, u.birthday_hidden,
+       u.id, u.email, u.password_hash, u.display_name, u.avatar_file_id, u.status_text, u.settings, u.created_at, u.disabled_at, u.status_emoji, u.status_expires_at, u.is_guest, u.guest_expires_at, u.timezone, u.email_verified_at, u.pending_email, u.locale, u.presence_status, u.presence_until, u.is_bot, u.birthday_day, u.birthday_month, u.birthday_year, u.birthday_hidden, u.event_reminders, u.event_reminders_dnd, u.storage_quota_bytes, u.work_start_min, u.work_end_min, u.work_days,
        rs.last_read_message_id,
        (lm.id IS NOT NULL)::boolean AS has_messages,
        coalesce(lm.id, r.id)::uuid AS last_message_id,
@@ -352,6 +366,12 @@ func (q *Queries) ListDMs(ctx context.Context, arg ListDMsParams) ([]ListDMsRow,
 			&i.User.BirthdayMonth,
 			&i.User.BirthdayYear,
 			&i.User.BirthdayHidden,
+			&i.User.EventReminders,
+			&i.User.EventRemindersDnd,
+			&i.User.StorageQuotaBytes,
+			&i.User.WorkStartMin,
+			&i.User.WorkEndMin,
+			&i.User.WorkDays,
 			&i.LastReadMessageID,
 			&i.HasMessages,
 			&i.LastMessageID,

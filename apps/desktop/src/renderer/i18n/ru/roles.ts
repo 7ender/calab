@@ -26,6 +26,7 @@ export const ruRoles = {
   'roles.group.rooms': 'Комнаты',
   'roles.group.voice': 'Голос',
   'roles.group.moderation': 'Модерация',
+  'roles.group.invites': 'Приглашения',
   'roles.members': 'Участники с ролью',
   'roles.everyMember': 'Эта роль есть у каждого участника (кроме гостей).',
   'roles.everyGuest': 'Эта роль есть у каждого гостя.',

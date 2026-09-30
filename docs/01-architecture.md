@@ -58,6 +58,7 @@
 - Пакеты: `internal/auth`, `users`, `workspaces`, `rooms`, `messages`, `files`, `rtc` (токены LiveKit, webhooks), `gateway`, `perm`.
 - Контракт — protobuf в `proto/` (`buf`): те же message-типы генерируются в TS для клиента. Gateway — бинарный protobuf, REST — JSON (`protojson`).
 - Цель по задержке: gateway-событие от REST-мутации до всех сокетов < 5 мс внутри инстанса; память процесса < 50 MB при 30 пользователях.
+- Presence — в Redis по gateway-сессиям (`presence:<user>`: статус и клиент из `Identify.device` — платформа и версия, `presence:seen` — последняя активность и её клиент); `Presence` отдаёт агрегат, в т. ч. `client_version`/`client_platform` самой свежей сессии (офлайн — последней активной, скрытые как `last_seen` при «невидимке»; docs/09 #143).
 - LiveKit-токены выдаёт только сервер: в grant пишем ровно те права, что есть у пользователя в комнате (`canPublish`, `canPublishSources: [mic, screen]`, `canSubscribe`).
 
 ### Protocol (`proto/` + `packages/protocol`)

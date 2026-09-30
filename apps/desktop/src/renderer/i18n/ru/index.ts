@@ -1,6 +1,7 @@
 import { ruApp } from './app';
 import { ruChat } from './chat';
 import { ruDm } from './dm';
+import { ruNotes } from './notes';
 import { ruCall } from './call';
 import { ruEcho } from './echo';
 import { ruMedia } from './media';
@@ -11,12 +12,16 @@ import { ruPeople } from './people';
 import { ruModeration } from './moderation';
 import { ruPicker } from './picker';
 import { ruRoles } from './roles';
+import { ruCalendar } from './calendar';
+import { ruBoards } from './boards';
 import { ruPlan } from './plan';
 import { ruShell } from './shell';
 import { ruVideo } from './video';
 import { ruStickers } from './stickers';
 import { ruSounds } from './sounds';
 import { ruBots } from './bots';
+import { ruGuests } from './guests';
+import { ruTemp } from './temp';
 
 /** Russian UI strings. Keys are flat, dotted; `{param}` placeholders. Area files are merged in. */
 export const ru = {
@@ -28,7 +33,10 @@ export const ru = {
   ...ruStickers,
   ...ruSounds,
   ...ruBots,
+  ...ruGuests,
+  ...ruTemp,
   ...ruDm,
+  ...ruNotes,
   ...ruCall,
   ...ruEcho,
   ...ruMedia,
@@ -39,6 +47,8 @@ export const ru = {
   ...ruAnnot,
   ...ruPicker,
   ...ruRoles,
+  ...ruCalendar,
+  ...ruBoards,
   // common
   'common.cancel': 'Отмена',
   'common.create': 'Создать',
@@ -72,6 +82,7 @@ export const ru = {
   'auth.toRegister': 'Зарегистрироваться',
   'auth.toLogin': 'Войти',
   'auth.revoked': 'Сессия была завершена на другом устройстве. Войдите снова.',
+  'auth.reset': 'Сессия сброшена после обрыва связи — войдите снова.',
   'auth.expired': 'Сессия истекла. Войдите снова.',
   'auth.err.credentials': 'Неверный email или пароль',
   'auth.err.inviteOnly': 'Регистрация на этом сервере — только по приглашению. Введите код приглашения.',
@@ -259,6 +270,16 @@ export const ru = {
   'perm.MANAGE_WORKSPACE': 'Управлять пространством',
   'perm.MANAGE_ROLES': 'Управлять ролями',
   'perm.MANAGE_STICKERS': 'Управлять стикерами',
+  'perm.VIEW_BOARD': 'Видеть доску',
+  'perm.CREATE_TASKS': 'Создавать задачи',
+  'perm.EDIT_TASKS': 'Править любые задачи',
+  'perm.MANAGE_BOARD': 'Управлять доской',
+  'perm.INVITE_MEMBERS': 'Приглашать участников',
+  'perm.INVITE_GUESTS': 'Приглашать гостей',
+  'perm.CREATE_TEMP_ROOMS': 'Создавать временные комнаты',
+  'perm.hint.INVITE_MEMBERS': 'Ссылки-приглашения и приглашения по почте в пространство; в комнате — ссылка только для участников пространства.',
+  'perm.hint.INVITE_GUESTS': 'Гостевые ссылки комнат и решение, кого из ожидающих гостей впустить.',
+  'perm.hint.CREATE_TEMP_ROOMS': 'Комнаты на час или несколько дней со ссылкой для гостей; закрываются сами, история остаётся в архиве.',
   'perm.ADMINISTRATOR': 'Администратор',
   'perm.allow': 'разрешено',
   'perm.deny': 'запрещено',
@@ -369,7 +390,8 @@ export const ru = {
   'stream.systemAudio': 'Системный звук',
   'stream.systemAudioNo': 'Не поддерживается на этой ОС',
   'stream.systemAudioMac': 'macOS: звук участников тоже попадёт в стрим (эхо). Включайте только в наушниках и когда в комнате никто не говорит.',
-  'stream.systemAudioWin': 'Звук приложения Calab исключается из захвата',
+  'stream.systemAudioWin10': 'Windows 10: звук участников тоже попадёт в стрим — исключать звук Calab умеет только Windows 11. Включайте, когда в комнате никто не говорит.',
+  'stream.systemAudioWin':'Звук приложения Calab исключается из захвата',
   'stream.noScreenAccess': 'macOS не дал доступ к записи экрана — разрешите Calab в «Запись экрана» и перезапустите приложение.',
   'stream.webPicker': 'После «Начать стрим» браузер покажет свой выбор: весь экран, окно или вкладку.',
   'stream.expand': 'Развернуть',
@@ -593,6 +615,7 @@ export const ru = {
   'chat.rateLimited': 'Слишком часто — подождите пару секунд',
   'notify.attachment': '📎 вложение',
   'session.revokedToast': 'Сессия завершена на другом устройстве',
+  'session.resetToast': 'Сессия сброшена после обрыва связи — войдите снова',
   'session.expiredToast': 'Сессия истекла — войдите снова',
   'stream.stoppedLimit': 'Стрим остановлен: в комнате превышен лимит стримов',
   'stream.stoppedModerator': 'Модератор остановил ваш стрим',

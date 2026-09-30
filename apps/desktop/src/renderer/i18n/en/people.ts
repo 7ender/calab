@@ -23,6 +23,9 @@ export const enPeople: DictShape<typeof ruPeople> = {
   'people.profile.name': 'Profile name',
   'people.profile.status': 'Status',
   'people.profile.lastSeen': 'Last seen {when}',
+  // client version line (docs/09 #143)
+  'people.client.title': 'App',
+  'people.client.last': 'Last known version',
   // local time line (docs/09 #48)
   'people.tz.title': 'Local time',
   'people.tz.hours': '{h} h',
@@ -152,6 +155,7 @@ export const enPeople: DictShape<typeof ruPeople> = {
   'people.link.guestsOff': 'account required',
   'people.link.open': 'Join room',
   'people.link.invalid': 'The link is invalid or has expired',
+  'people.link.membersOnly': 'This link is for members of the workspace only.',
   'people.link.needAccount': 'This link requires an account',
   'people.link.unreachable': 'The server is unavailable — try again later',
   'guestInvite.title': 'Invite a guest without an account',
@@ -223,7 +227,7 @@ export const enPeople: DictShape<typeof ruPeople> = {
   'birthday.whenToday': 'Today',
   'birthday.whenTomorrow': 'Tomorrow',
   'birthday.congratulate': 'Congratulate',
-  'birthday.congratulateName': 'Congratulate {name}: send a direct message',
+  'birthday.congratulateName': 'Congratulate {name} in the team chat',
   'birthday.cardAt': 'The card appears in the chat at {time}',
   'birthday.age': { one: '{n} year old', other: '{n} years old' },
   'birthday.inDays': { one: 'In {n} day', other: 'In {n} days' },

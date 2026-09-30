@@ -2,6 +2,7 @@ import type { Dict } from '../types';
 import { enApp } from './app';
 import { enChat } from './chat';
 import { enDm } from './dm';
+import { enNotes } from './notes';
 import { enCall } from './call';
 import { enEcho } from './echo';
 import { enMedia } from './media';
@@ -12,12 +13,16 @@ import { enPeople } from './people';
 import { enModeration } from './moderation';
 import { enPicker } from './picker';
 import { enRoles } from './roles';
+import { enCalendar } from './calendar';
+import { enBoards } from './boards';
 import { enPlan } from './plan';
 import { enShell } from './shell';
 import { enVideo } from './video';
 import { enStickers } from './stickers';
 import { enSounds } from './sounds';
 import { enBots } from './bots';
+import { enGuests } from './guests';
+import { enTemp } from './temp';
 
 /** English UI strings (ADR-0022): same keys and placeholders as `ru`; glossary docs/i18n-glossary.md. */
 export const en: Dict = {
@@ -29,7 +34,10 @@ export const en: Dict = {
   ...enStickers,
   ...enSounds,
   ...enBots,
+  ...enGuests,
+  ...enTemp,
   ...enDm,
+  ...enNotes,
   ...enCall,
   ...enEcho,
   ...enMedia,
@@ -40,6 +48,8 @@ export const en: Dict = {
   ...enAnnot,
   ...enPicker,
   ...enRoles,
+  ...enCalendar,
+  ...enBoards,
   'voice.pendingMember': 'Connecting…',
   // common
   'common.cancel': 'Cancel',
@@ -74,6 +84,7 @@ export const en: Dict = {
   'auth.toRegister': 'Sign up',
   'auth.toLogin': 'Sign in',
   'auth.revoked': 'Your session was ended on another device. Please sign in again.',
+  'auth.reset': 'Your session was reset after a connection loss — please sign in again.',
   'auth.expired': 'Your session has expired. Please sign in again.',
   'auth.err.credentials': 'Incorrect email or password',
   'auth.err.inviteOnly': 'This server is invite-only. Enter an invite code.',
@@ -261,6 +272,16 @@ export const en: Dict = {
   'perm.MANAGE_WORKSPACE': 'Manage workspace',
   'perm.MANAGE_ROLES': 'Manage roles',
   'perm.MANAGE_STICKERS': 'Manage stickers',
+  'perm.VIEW_BOARD': 'View board',
+  'perm.CREATE_TASKS': 'Create tasks',
+  'perm.EDIT_TASKS': 'Edit any task',
+  'perm.MANAGE_BOARD': 'Manage board',
+  'perm.INVITE_MEMBERS': 'Invite members',
+  'perm.INVITE_GUESTS': 'Invite guests',
+  'perm.CREATE_TEMP_ROOMS': 'Create temporary rooms',
+  'perm.hint.INVITE_MEMBERS': 'Invite links and e-mail invitations to the workspace; in a room, a link for workspace members only.',
+  'perm.hint.INVITE_GUESTS': 'Guest links of rooms and deciding which waiting guests to let in.',
+  'perm.hint.CREATE_TEMP_ROOMS': 'Rooms for an hour or a few days with a guest link; they close by themselves, the history stays in the archive.',
   'perm.ADMINISTRATOR': 'Administrator',
   'perm.allow': 'allowed',
   'perm.deny': 'denied',
@@ -374,7 +395,9 @@ export const en: Dict = {
   'stream.systemAudioNo': 'Not supported on this OS',
   'stream.systemAudioMac':
     'macOS: other people’s voices will get into the screen share too (echo). Turn it on only with headphones and when nobody in the room is talking.',
-  'stream.systemAudioWin': 'Calab’s own audio is excluded from capture',
+  'stream.systemAudioWin10':
+    'Windows 10: other people’s voices will get into the screen share too — only Windows 11 can leave Calab’s sound out. Turn it on only when nobody in the room is talking.',
+  'stream.systemAudioWin':'Calab’s own audio is excluded from capture',
   'stream.noScreenAccess': 'macOS didn’t grant screen recording access — allow Calab in “Screen Recording” and restart the app.',
   'stream.webPicker': 'After “Start sharing”, your browser will ask what to share: the entire screen, a window or a tab.',
   'stream.expand': 'Expand',
@@ -600,6 +623,7 @@ export const en: Dict = {
   'chat.rateLimited': 'Too fast — wait a couple of seconds',
   'notify.attachment': '📎 attachment',
   'session.revokedToast': 'Your session was ended on another device',
+  'session.resetToast': 'Session reset after a connection loss — sign in again',
   'session.expiredToast': 'Your session expired — sign in again',
   'stream.stoppedLimit': 'Screen share stopped: the room is over its screen share limit',
   'stream.stoppedModerator': 'A moderator stopped your screen share',

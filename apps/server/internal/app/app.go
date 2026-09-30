@@ -12,11 +12,15 @@ import (
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 	"github.com/redis/rueidis"
 
+	v1 "github.com/calaba/calaba/server/gen/calaba/v1"
 	"github.com/calaba/calaba/server/internal/auth"
 	"github.com/calaba/calaba/server/internal/birthdays"
 	"github.com/calaba/calaba/server/internal/blob"
+	"github.com/calaba/calaba/server/internal/boards"
 	"github.com/calaba/calaba/server/internal/bots"
 	"github.com/calaba/calaba/server/internal/buildinfo"
+	"github.com/calaba/calaba/server/internal/caldav"
+	"github.com/calaba/calaba/server/internal/calendar"
 	"github.com/calaba/calaba/server/internal/calls"
 	"github.com/calaba/calaba/server/internal/config"
 	"github.com/calaba/calaba/server/internal/db"
@@ -32,6 +36,7 @@ import (
 	"github.com/calaba/calaba/server/internal/mail"
 	"github.com/calaba/calaba/server/internal/messages"
 	"github.com/calaba/calaba/server/internal/moderation"
+	"github.com/calaba/calaba/server/internal/notes"
 	"github.com/calaba/calaba/server/internal/perm"
 	"github.com/calaba/calaba/server/internal/plans"
 	"github.com/calaba/calaba/server/internal/recording"
@@ -67,6 +72,9 @@ type Deps struct {
 	// BotWebhooks tunes bot webhook delivery (tests: TLS roots of a test server, short
 	// backoff); the zero value is production. The address policy is UnfurlAllowAddr's.
 	BotWebhooks bots.WebhookOptions
+	// CalDAV tunes the CalDAV client and workers (tests: TLS roots, short polls); the zero
+	// value is production. The address policy is UnfurlAllowAddr's.
+	CalDAV caldav.Options
 }
 
 // App is the assembled server.
@@ -87,6 +95,17 @@ type App struct {
 	Birthdays *birthdays.Service
 	// Calls: one-to-one calls (ADR-0034) with their ring / lost timers.
 	Calls *calls.Service
+	// Calendar: meetings (ADR-0038) with the reminder / room badge sweeper.
+	Calendar *calendar.Service
+	// CalDAV: the users' CalDAV calendars (ADR-0041) with the import sweeper and push worker.
+	CalDAV *caldav.Service
+	// Boards: task boards (ADR-0042) with the auto-archive sweeper.
+	Boards *boards.Service
+	// Rooms: room handlers with the temporary rooms sweeper (ADR-0044).
+	Rooms *rooms.Handlers
+	redis rueidis.Client
+	// tempRetention: TEMP_ROOM_RETENTION_DAYS.
+	tempRetention time.Duration
 	// Routes: every registered route pattern (the bot route table test).
 	Routes []string
 }
@@ -98,6 +117,7 @@ func (a *App) Run(ctx context.Context) {
 	go a.Files.RunCleanup(ctx, time.Hour)
 	go a.Files.RunStorageMetrics(ctx, time.Minute)
 	go a.Guests.RunCleanup(ctx, time.Hour)
+	go a.Guests.RunAdmissions(ctx, guests.AdmissionSweep)
 	go a.Plans.Run(ctx)
 	if a.RTC != nil {
 		go a.RTC.RunReconcile(ctx, 30*time.Second)
@@ -107,6 +127,10 @@ func (a *App) Run(ctx context.Context) {
 	go a.Bots.Run(ctx) // bot webhook deliveries
 	go a.Birthdays.Run(ctx, time.Hour)
 	go a.Calls.Run(ctx)
+	go a.Calendar.Run(ctx, calendar.Tick)
+	go a.CalDAV.Run(ctx)
+	go a.Boards.Run(ctx, a.redis, boards.SweepInterval)
+	go a.Rooms.RunTempRooms(ctx, a.redis, a.tempRetention)
 }
 
 // mailSender: the test override, else SMTP from config, else nil (mail disabled).
@@ -178,7 +202,8 @@ func New(d Deps) *App {
 		panic(err) // config.Validate checks the SMTP settings first
 	}
 	mailSvc := mail.New(mail.Config{
-		PerAddressPerHour: d.Config.MailPerAddressPerHour, PerHour: d.Config.MailPerHour, Secret: []byte(d.Config.JWTSecret),
+		PerAddressPerHour: d.Config.MailPerAddressPerHour, EventsPerAddressPerHour: d.Config.MailEventsPerAddressPerHour,
+		PerHour: d.Config.MailPerHour, Secret: []byte(d.Config.JWTSecret),
 	}, d.DB, d.Redis, sender)
 
 	authSvc := auth.NewService(d.Config, d.DB, d.Redis, pub)
@@ -215,6 +240,7 @@ func New(d Deps) *App {
 	filesSvc := files.NewService(d.DB, d.Blob, pub, d.Config.MaxFileSizeMB<<20, d.Config.StorageMaxTotalBytes)
 	filesSvc.SetLimiter(redisx.NewRateLimiter(d.Redis, "rl:upload:", 30, 2)) // 30 at once, 120 per hour
 	filesSvc.SetPlans(planSvc)
+	filesSvc.SetPersonalQuota(d.Config.DefaultPersonalQuotaBytes)
 	filesSvc.SetConverter(files.NewConverter(context.Background(), d.Config.FFmpegPath, d.Config.FFprobePath))
 	botSvc.SetAvatars(filesSvc)
 	recSvc.SetFiles(filesSvc)
@@ -272,13 +298,21 @@ func New(d Deps) *App {
 		Send:   redisx.NewRateLimiter(d.Redis, "rl:invite-send:", 20, 0.5),  // 20 at once, 30 per hour
 	}).WithFiles(filesSvc).Routes(mux, private)
 	roomHandlers := rooms.NewHandlers(d.DB, pub).WithPlans(planSvc)
+	roomHandlers.PublicURL = d.Config.PublicAppURL
 	roomHandlers.Routes(mux, private)
 	roomHandlers.CategoryRoutes(mux, private)
 	msgHandlers := messages.NewHandlers(d.DB, pub, msgLimiter)
 	msgHandlers.BotLimiter = redisx.NewRateLimiter(d.Redis, "rl:bot:msg:", botMsgsPerMin, float64(botMsgsPerMin))
 	msgHandlers.Receipts = messages.NewReceipts(d.DB, pub, d.Redis)
+	boardSvc := boards.New(d.DB, pub, planSvc, filesSvc)
+	boardSvc.PublicURL = d.Config.PublicAppURL
+	boardSvc.CreateLimit = redisx.NewRateLimiter(d.Redis, "rl:task-create:", 60, 60) // 60 at once, one per second
+	boardSvc.SearchLimit = redisx.NewRateLimiter(d.Redis, "rl:task-search:", 30, 60) // ⌘K: 30 at once, one per second
+	msgHandlers.TaskHook = boardSvc.TaskHook
 	msgHandlers.Routes(mux, private)
+	boardSvc.Routes(mux, private)
 	dms.NewHandlers(d.DB, pub, redisx.NewRateLimiter(d.Redis, "rl:dm-create:", 10, 0.5)).Routes(mux, private) // 10 at once, 30 per hour
+	notes.NewHandlers(d.DB, pub, d.Config.DefaultPersonalQuotaBytes).Routes(mux, private)
 	filesSvc.Routes(mux, private)
 	stickers.NewHandlers(d.DB, pub, filesSvc, planSvc,
 		redisx.NewRateLimiter(d.Redis, "rl:sticker-upload:", 10, 1)).Routes(mux, private) // 10 batches at once, 60 per hour
@@ -287,14 +321,43 @@ func New(d Deps) *App {
 		redisx.NewRateLimiter(d.Redis, "rl:guest:", 5, 5.0/60), d.Config.AllowedOrigins()) // 5 guests/h per IP
 	guestSvc.Plans = planSvc
 	guestSvc.Routes(mux, private)
-	plans.NewAdmin(d.DB, planSvc, pub, redisx.NewRateLimiter(d.Redis, "rl:admin:", 60, 60)).Routes(mux, private) // 60 per minute
-	unfurl.NewService(d.Redis, []byte(d.Config.JWTSecret),
-		redisx.NewRateLimiter(d.Redis, "rl:unfurl:", 30, 120), unfurl.Options{AllowAddr: unfurlPolicy(d)}).Routes(mux, private)
+	admin := plans.NewAdmin(d.DB, planSvc, pub, redisx.NewRateLimiter(d.Redis, "rl:admin:", 60, 60)) // 60 per minute
+	admin.StorageQuota = func(ctx context.Context, q *sqlc.Queries, userID uuid.UUID) (*v1.UserStorageQuota, error) {
+		qt, err := notes.PersonalQuota(ctx, q, userID, d.Config.DefaultPersonalQuotaBytes)
+		return qt.Proto(), err
+	}
+	admin.Routes(mux, private)
+	unfurlSvc := unfurl.NewService(d.Redis, []byte(d.Config.JWTSecret),
+		redisx.NewRateLimiter(d.Redis, "rl:unfurl:", 30, 120), unfurl.Options{AllowAddr: unfurlPolicy(d)})
+	unfurlSvc.Internal = boardSvc.Unfurl(d.Config.AllowedOrigins()) // own /t/ and /b/ links (ADR-0042)
+	unfurlSvc.Routes(mux, private)
 	recSvc.Routes(mux, private)
 	botSvc.Routes(mux, private)
 	bdSvc := birthdays.New(d.DB, pub)
 	bdSvc.Routes(mux, private)
 	callSvc.Routes(mux, private)
+	calSvc := calendar.New(calendar.Config{PublicURL: d.Config.PublicAppURL, Secret: []byte(d.Config.JWTSecret), MailFrom: d.Config.SMTPFrom},
+		d.DB, pub, mailSvc,
+		redisx.NewRateLimiter(d.Redis, "rl:event-write:", 30, 2), // 30 at once, 120 per hour
+		redisx.NewRateLimiter(d.Redis, "rl:event-rsvp:", 30, 30)) // signed answer links: 30 per minute per IP
+	calSvc.Presence = hub.Statuses
+	recSvc.OnStarted = calSvc.RecordingStarted
+	calSvc.FreeBusyLimit = redisx.NewRateLimiter(d.Redis, "rl:freebusy:", 60, 60) // ADR-0041 §5: 60 per minute
+	calSvc.SuggestLimit = redisx.NewRateLimiter(d.Redis, "rl:suggest:", 30, 30)   // 30 per minute
+	calSvc.Routes(mux, private)
+	roomHandlers.Meetings = calSvc // temporary rooms book and close meetings (ADR-0044)
+	cdOpts := d.CalDAV
+	if cdOpts.AllowAddr == nil {
+		cdOpts.AllowAddr = unfurlPolicy(d)
+	}
+	if cdOpts.SyncInterval == 0 {
+		cdOpts.SyncInterval = d.Config.CalDAVSyncInterval
+	}
+	cdSvc := caldav.New(d.DB, d.Redis, calSvc, []byte(d.Config.JWTSecret), cdOpts,
+		redisx.NewRateLimiter(d.Redis, "rl:caldav-connect:", 5, 5.0/60), // 5 per hour
+		redisx.NewRateLimiter(d.Redis, "rl:caldav-sync:", 1, 1))         // once per minute
+	calSvc.Changed = cdSvc.EventChanged
+	cdSvc.Routes(mux, private)
 	if rtcSvc != nil {
 		rtcSvc.Routes(mux, private)
 	} else {
@@ -313,5 +376,6 @@ func New(d Deps) *App {
 		events.Middleware, // one post-commit publish budget per request
 	)
 	return &App{Handler: h, Auth: authSvc, Gateway: hub, Files: filesSvc, Guests: guestSvc, RTC: rtcSvc, Plans: planSvc, Mail: mailSvc,
-		Recording: recSvc, Bots: botSvc, Birthdays: bdSvc, Calls: callSvc, Routes: mux.patterns}
+		Recording: recSvc, Bots: botSvc, Birthdays: bdSvc, Calls: callSvc, Calendar: calSvc, CalDAV: cdSvc, Boards: boardSvc, Rooms: roomHandlers, redis: d.Redis, Routes: mux.patterns,
+		tempRetention: time.Duration(d.Config.TempRoomRetentionDays) * 24 * time.Hour}
 }

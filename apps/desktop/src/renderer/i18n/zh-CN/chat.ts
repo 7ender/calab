@@ -19,6 +19,7 @@ export const zhChat: DictShape<typeof enChat> = {
   'chat.reactionLabel': '表情回应 {emoji}：{count}',
   'chat.replyOpen': '显示原消息',
   'chat.messageGone': '消息已删除或不可用',
+  'chat.rowFailed': '无法显示此消息',
   'chat.historyStart': '房间历史记录开始',
   // plural keys: zh only uses the "other" category
   'chat.unreadBanner': { other: '{time}以来有{n}条新消息' },

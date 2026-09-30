@@ -195,6 +195,9 @@ func (s *Service) join(w http.ResponseWriter, r *http.Request) error {
 	if err != nil {
 		return err
 	}
+	if acc.Notes { // a notes shelf has no voice (ADR-0039)
+		return httpx.NotFound("room")
+	}
 	if acc.DM {
 		return s.joinDM(w, r, roomID)
 	}
@@ -297,6 +300,9 @@ func (s *Service) requestStream(w http.ResponseWriter, r *http.Request) error {
 	acc, err := rooms.Access(r, roomID)
 	if err != nil {
 		return err
+	}
+	if acc.Notes { // a notes shelf has no voice (ADR-0039)
+		return httpx.NotFound("room")
 	}
 	if acc.DM {
 		return s.requestDMMedia(w, r, roomID, true)
@@ -877,7 +883,7 @@ func (s *Service) setVoiceStatus(w http.ResponseWriter, r *http.Request) error {
 	me := auth.MustFromContext(r.Context()).UserID
 	var upd sqlc.Room
 	err = s.voice.WithLock(r.Context(), acc.WorkspaceID, func() error {
-		if !acc.Bits.Has(perm.ManageRoom) {
+		if !rooms.MayManage(acc, me) { // MANAGE_ROOM, or the creator of a temporary room (ADR-0044)
 			if !acc.Bits.Has(perm.Connect) {
 				return httpx.Forbidden("CONNECT required")
 			}

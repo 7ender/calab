@@ -1,8 +1,9 @@
 import { existsSync } from 'node:fs';
 import { join } from 'node:path';
 import { expect, test } from '@playwright/test';
-import { startMockServer, type MockServer } from '../e2e-support/mock-server';
+import { IDS, startMockServer, type MockServer } from '../e2e-support/mock-server';
 import { NOW, PASSWORD, THEMES, VIEWPORTS, checkpoint, type Shot } from './harness';
+import { seedDay } from './calendarWeb';
 
 /**
  * Web client chrome (docs/09 #46, ADR-0015): the production web build (dist-web, `pnpm build:web`)
@@ -44,12 +45,12 @@ for (const theme of THEMES) {
         const box = await bar.boundingBox();
         expect(box?.height, 'web top bar height').toBe(30);
         expect(box?.y).toBe(0);
-        // No traffic-light inset: ← sits at the left edge (8 px padding).
-        const back = await bar.getByRole('button', { name: 'Назад' }).boundingBox();
-        expect(back?.x ?? 99, '← at the left edge').toBeLessThanOrEqual(12);
-        // Workspace icon + name centred in the window (±4 px).
-        const title = await bar.locator('[title="Команда Calab"]').boundingBox();
-        expect(Math.abs((title ? title.x + title.width / 2 : 0) - viewport.width / 2), 'workspace name centred').toBeLessThanOrEqual(4);
+        // No traffic-light inset: the workspace menu sits at the left edge (docs/09 #140; no «‹ ›»).
+        const title = bar.getByTestId('titlebar-title');
+        await expect(title).toHaveText('Команда Calab');
+        await expect(bar.getByRole('button', { name: 'Назад' })).toHaveCount(0);
+        const box2 = await title.boundingBox();
+        expect(box2?.x ?? 99, 'workspace menu at the left edge').toBeLessThanOrEqual(8);
         await expect(bar.getByRole('button', { name: /^Упоминания/ })).toBeVisible();
         await expect(bar.getByRole('button', { name: 'Горячие клавиши' })).toBeVisible();
         // The search pill: at every width (docs/09 #53, no field in the room header).
@@ -147,6 +148,34 @@ for (const theme of THEMES) {
   }
 }
 
+/**
+ * The public meeting page of an invited address (ADR-0038 «Диплинки для приглашённых»): no account,
+ * the card with the time in the viewer's zone, the organizer's, the room, the description, the
+ * answers and «Присоединиться к встрече» — not active yet (15 minutes before the start). Dark 960.
+ */
+test('calendar-public: dark 960', async ({ page }) => {
+  expect(existsSync(join(DIST, 'index.html')), 'dist-web is missing: run `pnpm build:web` first').toBe(true);
+  let mock: MockServer | undefined;
+  try {
+    mock = await startMockServer({ port: 0, scenario: 'data', staticDir: DIST });
+    mock.setClock(NOW.getTime());
+    const id = seedDay(mock);
+    mock.eventGuestLink(id, 'ext@example.com');
+    const viewport = { width: 960, height: 600 };
+    await page.setViewportSize(viewport);
+    await page.clock.setFixedTime(NOW);
+    await page.goto(`${mock.url}/?visual-test`);
+    await page.evaluate(() => localStorage.setItem('calaba-prefs', JSON.stringify({ state: { theme: 'dark', onboarded: true, locale: 'ru' }, version: 1 })));
+    await page.goto(`${mock.url}/e/${id}?t=${encodeURIComponent(mock.eventViewToken(id, 'ext@example.com'))}&visual-test`);
+    const card = page.getByTestId('event-public');
+    await expect(card.getByTestId('event-title')).toHaveText('Планёрка');
+    await expect(card.getByTestId('event-join-hint')).toHaveText('Ссылка станет активной за 15 минут до начала');
+    await checkpoint({ page, theme: 'dark', viewport }, 'calendar-public');
+  } finally {
+    await mock?.close();
+  }
+});
+
 test('web link card: room preview, «always in the app», signed in', async ({ page }) => {
   test.skip(!ALL, 'full matrix only (CALABA_VISUAL_ALL=1, nightly CI)');
   expect(existsSync(join(DIST, 'index.html')), 'dist-web is missing: run `pnpm build:web` first').toBe(true);
@@ -237,6 +266,77 @@ test('web room header stays inside the chat at 1200–1320 with a 320 px room co
       expect.soft(m.header.scrollW, `${width}: header content fits`).toBeLessThanOrEqual(m.header.clientW);
       expect.soft(m.search, `${width}: no search field in the room header`).toBe(false);
     }
+  } finally {
+    await mock?.close();
+  }
+});
+
+/**
+ * Guest admission (ADR-0040, docs/08 «Подтверждение входа гостей»): «Созвон» asks for the
+ * organizer's approval → a guest by its link sees the note before the name step, knocks, waits on
+ * the waiting screen (snapshot `guest-waiting`, dark 960) and gets into the room once admitted.
+ */
+async function knockAsGuest(page: import('@playwright/test').Page, mock: MockServer, name: string): Promise<string> {
+  mock.setGuestApproval(IDS.rooms.call, true);
+  await openLink(page, mock.url, '/r/call-guest-link', 'dark');
+  await expect(page.getByTestId('link-landing').getByTestId('approval-note')).toBeVisible();
+  await page.getByTestId('link-landing').getByRole('button', { name: 'Продолжить в браузере' }).click();
+  await expect(page.getByText('Комната требует подтверждения организатора')).toBeVisible();
+  await page.getByLabel('Ваше имя').fill(name);
+  await page.getByRole('button', { name: 'Войти как гость' }).click();
+  const waiting = page.getByTestId('guest-waiting');
+  await expect(waiting.getByText('Ожидаем подтверждения организатора…')).toBeVisible();
+  await expect(waiting.getByRole('heading', { name: 'Созвон' })).toBeVisible();
+  await expect(waiting.getByText('в «Команда Calab»')).toBeVisible();
+  const knock = [...mock.state.admissions.values()].find((a) => a.roomId === IDS.rooms.call);
+  expect(knock, 'the knock reached the mock').toBeDefined();
+  return knock?.userId ?? '';
+}
+
+test('guest-waiting: approval → waiting screen → admitted → the room', async ({ page }) => {
+  expect(existsSync(join(DIST, 'index.html')), 'dist-web is missing: run `pnpm build:web` first').toBe(true);
+  let mock: MockServer | undefined;
+  try {
+    mock = await startMockServer({ port: 0, scenario: 'data', staticDir: DIST });
+    await page.setViewportSize({ width: 960, height: 600 });
+    await page.clock.setFixedTime(NOW);
+    const guest = await knockAsGuest(page, mock, 'Гость Ромашка');
+    await expect(page.getByTestId('guest-waiting').getByRole('button', { name: 'Отменить' })).toBeVisible();
+    await checkpoint({ page, theme: 'dark', viewport: { width: 960, height: 600 } }, 'guest-waiting');
+
+    mock.decideAdmission(IDS.rooms.call, guest, 'admitted');
+    await expect(page.getByTestId('guest-waiting')).toHaveCount(0);
+    await expect(page.locator('section[data-toast-anchor] h1')).toHaveText('Созвон');
+  } finally {
+    await mock?.close();
+  }
+});
+
+test('guest admission: cancel → join card → knock again; declined shows the retry time', async ({ page }) => {
+  expect(existsSync(join(DIST, 'index.html')), 'dist-web is missing: run `pnpm build:web` first').toBe(true);
+  let mock: MockServer | undefined;
+  try {
+    mock = await startMockServer({ port: 0, scenario: 'data', staticDir: DIST });
+    await page.setViewportSize({ width: 960, height: 600 });
+    await page.clock.setFixedTime(NOW);
+    const guest = await knockAsGuest(page, mock, 'Гость Василёк');
+    const waiting = page.getByTestId('guest-waiting');
+
+    // «Отменить» → the join card of the room; «Постучать» knocks again with the same link.
+    await waiting.getByRole('button', { name: 'Отменить' }).click();
+    await expect(waiting.getByText('Запрос отменён')).toBeVisible();
+    await expect.poll(() => mock?.state.admissions.size).toBe(0);
+    await waiting.getByRole('button', { name: 'Постучать', exact: true }).click();
+    await expect(waiting.getByText('Ожидаем подтверждения организатора…')).toBeVisible();
+    await expect.poll(() => [...(mock?.state.admissions.values() ?? [])].some((a) => a.userId === guest)).toBe(true);
+
+    // Declined by the organizer: no «Постучать снова» for 10 minutes, the time is shown.
+    mock.decideAdmission(IDS.rooms.call, guest, 'declined');
+    await expect(waiting.getByText('Организатор отклонил вход')).toBeVisible();
+    await expect(waiting.getByText(/^Постучать снова можно в \d{1,2}:\d{2}/)).toBeVisible();
+    await expect(waiting.getByRole('button', { name: 'Постучать снова' })).toHaveCount(0);
+    await waiting.getByRole('button', { name: 'Закрыть' }).click();
+    await expect(page.getByTestId('guest-waiting')).toHaveCount(0);
   } finally {
     await mock?.close();
   }

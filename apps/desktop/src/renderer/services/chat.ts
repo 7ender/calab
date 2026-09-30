@@ -13,6 +13,7 @@ import { reportPlanError } from './plan';
 import { log } from '../lib/log';
 import { useMessages, type ChatMessage, type PendingUpload } from '../stores/messages';
 import { idAfter, useRooms } from '../stores/rooms';
+import { useBoards } from '../stores/boards';
 import { myUserId } from '../stores/session';
 import { toast } from '../stores/toasts';
 import { sendTyping } from './gateway';
@@ -28,7 +29,73 @@ function errText(e: unknown): string {
   return errorText(e);
 }
 
-const loading = new Set<string>();
+/**
+ * A page request that takes longer than this is abandoned (docs/09 #146): a request that stalled
+ * (sleep / a network switch / a dead connection while it was in flight) kept the room's load
+ * pending forever, and the in-flight dedupe turned every later open of that room into a no-op —
+ * an endless spinner until the app restarted.
+ */
+export const LOAD_TIMEOUT_MS = 15_000;
+/** A load pending this long no longer blocks a new one when the room is opened again. */
+export const STALE_LOAD_MS = 10_000;
+
+class LoadTimeout extends Error {
+  constructor() {
+    super('messages request timed out');
+    this.name = 'LoadTimeout';
+  }
+}
+
+type Page = Awaited<ReturnType<typeof api.messages.list>>;
+
+/** One page of a room, abandoned after LOAD_TIMEOUT_MS (also when the transport ignores the abort). */
+async function listPage(roomId: string, p: { before?: string; after?: string; limit?: number }): Promise<Page> {
+  const ctl = new AbortController();
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const timeout = new Promise<never>((_res, rej) => {
+    timer = setTimeout(() => {
+      ctl.abort();
+      rej(new LoadTimeout());
+    }, LOAD_TIMEOUT_MS);
+  });
+  const req = api.messages.list(roomId, p, ctl.signal);
+  req.catch(() => undefined); // when it loses the race, its AbortError is not an unhandled rejection
+  try {
+    return await Promise.race([req, timeout]);
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+/**
+ * The first load / older page of each room in flight: its generation and start. A newer load of
+ * the same room (a retry, or an open after STALE_LOAD_MS) supersedes it: the late answer of the
+ * old one is dropped and never touches the newer one's state.
+ */
+const loads = new Map<string, { gen: number; at: number }>();
+let loadGen = 0;
+
+function inFlight(roomId: string): boolean {
+  const l = loads.get(roomId);
+  return !!l && Date.now() - l.at < STALE_LOAD_MS;
+}
+
+function beginLoad(roomId: string): number {
+  const gen = ++loadGen;
+  loads.set(roomId, { gen, at: Date.now() });
+  useMessages.getState().setLoading(roomId, true);
+  return gen;
+}
+
+const isCurrent = (roomId: string, gen: number): boolean => loads.get(roomId)?.gen === gen;
+
+function endLoad(roomId: string, gen: number): void {
+  if (isCurrent(roomId, gen)) loads.delete(roomId);
+}
+
+function loadErrText(e: unknown): string {
+  return e instanceof LoadTimeout || (e instanceof DOMException && e.name === 'AbortError') ? t('err.ctx.loadMessages') : errText(e);
+}
 
 /**
  * First load of a room. With unread messages it loads a window starting just above the
@@ -36,72 +103,96 @@ const loading = new Set<string>();
  */
 export async function openRoom(roomId: string): Promise<void> {
   const st = useMessages.getState().rooms[roomId];
-  if (st?.loaded || loading.has(roomId)) return;
+  if (st?.loaded || inFlight(roomId)) return;
   const rooms = useRooms.getState();
   const marker = rooms.readState[roomId];
   if (marker && idAfter(rooms.lastMessage[roomId], marker)) {
-    loading.add(roomId);
-    useMessages.getState().setLoading(roomId, true);
+    const gen = beginLoad(roomId);
     try {
-      const after = await api.messages.list(roomId, { after: marker, limit: PAGE });
+      const after = await listPage(roomId, { after: marker, limit: PAGE });
       const first = after.messages[0];
       if (first) {
-        const before = await api.messages.list(roomId, { before: first.id, limit: 30 });
+        const before = await listPage(roomId, { before: first.id, limit: 30 });
+        if (!isCurrent(roomId, gen)) return; // superseded by a retry
         useMessages.getState().setWindow(roomId, [...before.messages].reverse().concat(after.messages), before.hasMore, after.hasMore);
         return;
       }
     } catch (e) {
       log.warn('load unread window failed', e);
     } finally {
-      loading.delete(roomId);
+      endLoad(roomId, gen);
     }
+    // Superseded by a retry that runs or already loaded the room.
+    if (loads.has(roomId) || useMessages.getState().rooms[roomId]?.loaded) return;
   }
-  await loadOlder(roomId);
+  await loadOlder(roomId, true);
 }
 
-/** Cursor pagination upwards (`before` = oldest loaded id). */
-export async function loadOlder(roomId: string): Promise<void> {
-  if (loading.has(roomId)) return;
+/**
+ * «Повторить» and the reconnect retry (docs/09 #146): forgets a pending load of the room (its late
+ * answer is dropped) and loads the room again.
+ */
+export function reloadRoom(roomId: string): Promise<void> {
+  loads.delete(roomId);
+  const st = useMessages.getState().rooms[roomId];
+  if (st && !st.loaded) useMessages.getState().setLoading(roomId, false);
+  return openRoom(roomId);
+}
+
+/** After READY / RESUMED: rooms whose first load failed (the error state) load again. */
+export async function retryFailedLoads(): Promise<void> {
+  const failed = Object.entries(useMessages.getState().rooms).filter(([id, r]) => !r.loaded && !!r.error && !inFlight(id));
+  await Promise.all(failed.map(([id]) => reloadRoom(id)));
+}
+
+/**
+ * Cursor pagination upwards (`before` = oldest loaded id). `first`: the room's first load from
+ * openRoom, where a load pending longer than STALE_LOAD_MS no longer blocks.
+ */
+export async function loadOlder(roomId: string, first = false): Promise<void> {
+  if (first ? inFlight(roomId) : loads.has(roomId)) return;
   const st = useMessages.getState().rooms[roomId];
   if (st?.loaded && !st.hasMoreBefore) return;
-  loading.add(roomId);
-  useMessages.getState().setLoading(roomId, true);
+  const gen = beginLoad(roomId);
   try {
     const oldest = st?.items.find((c) => c.status === 'sent')?.msg.id;
-    const res = await api.messages.list(roomId, { ...(oldest ? { before: oldest } : {}), limit: PAGE });
+    const res = await listPage(roomId, { ...(oldest ? { before: oldest } : {}), limit: PAGE });
+    if (!isCurrent(roomId, gen)) return; // superseded by a retry
     useMessages.getState().prependPage(roomId, res.messages, res.hasMore);
     const newest = res.messages[0];
     if (!oldest && newest) useRooms.getState().setLastMessage(roomId, newest.id);
   } catch (e) {
+    if (!isCurrent(roomId, gen)) return;
     log.warn('load messages failed', e);
-    useMessages.getState().setLoading(roomId, false, errText(e));
+    useMessages.getState().setLoading(roomId, false, loadErrText(e));
   } finally {
-    loading.delete(roomId);
+    endLoad(roomId, gen);
   }
 }
 
+const newerLoading = new Set<string>();
+
 /** Cursor pagination downwards, while the loaded window doesn't reach the newest message. */
 export async function loadNewer(roomId: string): Promise<void> {
-  const key = `${roomId}:after`;
-  if (loading.has(key)) return;
+  if (newerLoading.has(roomId)) return;
   const st = useMessages.getState().rooms[roomId];
   if (!st?.loaded || !st.hasMoreAfter) return;
   const newest = [...st.items].reverse().find((c) => c.status === 'sent')?.msg.id;
   if (!newest) return;
-  loading.add(key);
+  newerLoading.add(roomId);
   try {
-    const res = await api.messages.list(roomId, { after: newest, limit: PAGE });
+    const res = await listPage(roomId, { after: newest, limit: PAGE });
     useMessages.getState().appendPage(roomId, res.messages, res.hasMore);
     if (!res.hasMore) {
       // Events that arrived while the window was detached were skipped: one catch-up page.
       const last = res.messages.at(-1)?.id ?? newest;
-      const tail = await api.messages.list(roomId, { after: last, limit: PAGE });
+      const tail = await listPage(roomId, { after: last, limit: PAGE });
       useMessages.getState().appendPage(roomId, tail.messages, tail.hasMore);
     }
   } catch (e) {
     log.warn('load newer failed', e);
   } finally {
-    loading.delete(key);
+    newerLoading.delete(roomId);
   }
 }
 
@@ -113,9 +204,9 @@ export async function ensureLoaded(roomId: string, messageId: string): Promise<b
   const has = (): boolean => !!useMessages.getState().rooms[roomId]?.items.some((c) => c.key === messageId);
   if (has()) return true;
   try {
-    const after = await api.messages.list(roomId, { after: messageId, limit: 25 });
+    const after = await listPage(roomId, { after: messageId, limit: 25 });
     const first = after.messages[0];
-    const before = await api.messages.list(roomId, { ...(first ? { before: first.id } : {}), limit: first ? 26 : PAGE });
+    const before = await listPage(roomId, { ...(first ? { before: first.id } : {}), limit: first ? 26 : PAGE });
     const asc = [...before.messages].reverse().concat(after.messages);
     if (!asc.some((m) => m.id === messageId)) return false;
     useMessages.getState().setWindow(roomId, asc, before.hasMore, after.hasMore);
@@ -136,7 +227,7 @@ export async function resyncLoadedRooms(): Promise<void> {
   await Promise.all(
     loaded.map(async ([roomId]) => {
       try {
-        const res = await api.messages.list(roomId, { limit: PAGE });
+        const res = await listPage(roomId, { limit: PAGE });
         useMessages.getState().resyncLatest(roomId, res.messages, res.hasMore);
       } catch (e) {
         log.warn('resync failed', roomId, e);
@@ -150,7 +241,7 @@ export async function loadPresent(roomId: string): Promise<void> {
   const st = useMessages.getState().rooms[roomId];
   if (!st?.hasMoreAfter) return;
   try {
-    const res = await api.messages.list(roomId, { limit: PAGE });
+    const res = await listPage(roomId, { limit: PAGE });
     useMessages.getState().setWindow(roomId, [...res.messages].reverse(), res.hasMore, false);
   } catch (e) {
     toast.fail(e, t('err.ctx.loadMessages'), () => void loadPresent(roomId));
@@ -246,7 +337,7 @@ export function unfurl(url: string): Promise<UnfurlResponse | null> {
   const hit = unfurlCache.get(url);
   if (hit) return hit;
   const p = api.unfurl.get(url).then(
-    (r) => (r.title || r.description || r.imageUrl ? r : null),
+    (r) => (r.title || r.description || r.imageUrl || r.task || r.board ? r : null),
     () => null,
   );
   unfurlCache.set(url, p);
@@ -267,6 +358,14 @@ export interface OutgoingFile {
 
 function newNonce(): string {
   return crypto.randomUUID();
+}
+
+/** Where an attachment of this room goes: a task comment → its board (ADR-0042), else uploadPath. */
+function attachmentPath(workspaceId: string, roomId: string): string {
+  const b = useBoards.getState();
+  const taskId = b.roomTask[roomId];
+  const boardId = taskId ? b.tasks[taskId]?.boardId : undefined;
+  return boardId ? `/api/boards/${boardId}/files` : uploadPath(workspaceId, roomId);
 }
 
 /**
@@ -307,7 +406,7 @@ export async function sendMessage(
     const metas: FileMeta[] = [];
     const handles: UploadHandle[] = [];
     for (const [i, f] of files.entries()) {
-      const path = uploadPath(workspaceId, roomId) + (f.voice ? voiceQuery(f.voice) : '');
+      const path = attachmentPath(workspaceId, roomId) + (f.voice ? voiceQuery(f.voice) : '');
       // HEIC (iPhone photos) → JPEG `.jpg` that every client shows (docs/02 «Изображения»).
       const out = f.voice ? { blob: f.file, name: f.name } : await attachmentFile(f.file, f.name);
       if (out.blob !== f.file) {
@@ -404,7 +503,8 @@ export function notifyTyping(roomId: string): void {
 }
 
 export function resetChatCaches(): void {
-  loading.clear();
+  loads.clear();
+  newerLoading.clear();
   pinsLoading.clear();
   unfurlCache.clear();
   sentRead.clear();

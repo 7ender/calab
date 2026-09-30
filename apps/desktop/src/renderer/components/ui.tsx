@@ -32,7 +32,7 @@ export function cx(...c: Array<string | false | null | undefined>): string {
 /** Platform modifier label for shortcuts (⌘ on macOS, Ctrl elsewhere). */
 export const MOD = typeof navigator !== 'undefined' && /Mac OS X|Macintosh/.test(navigator.userAgent) ? '⌘' : 'Ctrl+';
 
-type Variant = 'primary' | 'secondary' | 'destructive' | 'ghost';
+type Variant = 'primary' | 'secondary' | 'destructive' | 'ghost' | 'attention';
 
 const VARIANTS: Record<Variant, string> = {
   primary: 'bg-accent-strong text-accent-fg hover:brightness-110 active:brightness-95',
@@ -41,6 +41,8 @@ const VARIANTS: Record<Variant, string> = {
   // macOS: destructive = red text (docs/08); a faint red tint keeps the text ≥ 4.5:1 on any surface.
   destructive: 'bg-[color-mix(in_srgb,var(--color-danger)_12%,transparent)] text-danger-text hover:bg-[color-mix(in_srgb,var(--color-danger)_18%,transparent)] active:brightness-95',
   ghost: 'bg-transparent text-muted hover:bg-hover hover:text-fg',
+  // An invitation to set something up (docs/08 «Цвета»: orange, e.g. «Подключить свой календарь»).
+  attention: 'bg-attention text-attention-fg hover:brightness-110 active:brightness-95',
 };
 
 export const Button = forwardRef<
@@ -231,7 +233,7 @@ export const Input = forwardRef<HTMLInputElement, InputHTMLAttributes<HTMLInputE
       // Phones: a field is focused only by a tap (iOS would scroll to it and raise the keyboard).
       autoFocus={autoFocus && autoFocusAllowed()}
       className={cx(
-        'selectable h-7 w-full min-w-0 rounded-[var(--radius-control)] border border-line bg-elev px-2 mobile:h-10 mobile:px-3 text-body text-fg shadow-[var(--shadow-card)] placeholder:text-faint focus-visible:outline-offset-0 disabled:opacity-50',
+        'selectable h-7 w-full min-w-0 rounded-[var(--radius-control)] border border-line bg-elev px-2 mobile:h-10 mobile:px-3 text-body text-fg shadow-[var(--shadow-card)] placeholder:text-faint disabled:opacity-50',
         icon ? 'pl-7 mobile:pl-9' : null,
         className,
       )}
@@ -299,7 +301,7 @@ export function Select({ className, children, ...rest }: SelectHTMLAttributes<HT
       className={cx(
         // macOS pop-up button: no native chevron; our own ↕ chevron (10 px) sits 8 px from the right edge,
         // the text keeps clear of it (pr-7) and long values end with an ellipsis.
-        'h-7 w-full min-w-0 appearance-none truncate rounded-[var(--radius-control)] border border-line bg-elev pl-2 pr-7 text-body text-fg shadow-[var(--shadow-card)] hover:bg-[color:var(--color-control-hover)] focus-visible:outline-offset-0 disabled:opacity-50 disabled:hover:bg-elev',
+        'h-7 w-full min-w-0 appearance-none truncate rounded-[var(--radius-control)] border border-line bg-elev pl-2 pr-7 text-body text-fg shadow-[var(--shadow-card)] hover:bg-[color:var(--color-control-hover)] disabled:opacity-50 disabled:hover:bg-elev',
         'select-chevron',
         className,
       )}
@@ -380,8 +382,9 @@ export function Segmented<T extends string>({
           onClick={() => onChange(o.value)}
           className={cx(
             // nowrap: «Push-to-talk» must never break at its hyphen. Selected = a raised, lighter
-            // segment (macOS), in dark too — not a darker «pressed» one.
-            'h-6 whitespace-nowrap rounded-full px-3 text-control font-medium transition-colors duration-[var(--motion-fast)]',
+            // segment (macOS), in dark too — not a darker «pressed» one. Focus ring at offset 0: it
+            // fills the track's 2 px padding instead of spilling onto the neighbours.
+            'h-6 whitespace-nowrap rounded-full px-3 text-control font-medium transition-colors duration-[var(--motion-fast)] focus-visible:outline-offset-0',
             value === o.value ? 'bg-[var(--color-segment-on)] text-fg shadow-[var(--shadow-segment)]' : 'text-fg hover:bg-[var(--color-fill)]',
           )}
         >
@@ -429,7 +432,7 @@ export function Slider({
       <SliderP.Track className="relative h-1 grow rounded-full bg-[var(--color-fill-hover)]">
         <SliderP.Range className="absolute h-full rounded-full bg-accent" />
       </SliderP.Track>
-      <SliderP.Thumb aria-label={pointerOnly ? undefined : label} tabIndex={pointerOnly ? -1 : undefined} className="block size-4 rounded-full bg-white shadow-[0_1px_3px_rgb(0_0_0/35%)] focus-visible:outline-2 focus-visible:outline-accent" />
+      <SliderP.Thumb aria-label={pointerOnly ? undefined : label} tabIndex={pointerOnly ? -1 : undefined} className="block size-4 rounded-full bg-white shadow-[0_1px_3px_rgb(0_0_0/35%)]" />
     </SliderP.Root>
   );
 }
@@ -491,6 +494,8 @@ export function Modal({
   closeButton = true,
   initialFocus,
   fill = false,
+  nonModal = false,
+  keepOpen,
 }: {
   open: boolean;
   onClose: () => void;
@@ -510,12 +515,23 @@ export function Modal({
    * window. Without it the body scrolls as a whole.
    */
   fill?: boolean;
+  /**
+   * No scrim, the rest of the window stays usable (the meeting dialog: members and voice rooms are
+   * dragged into it, owner 29.09). A click outside still closes it through `onClose`, except on
+   * what `keepOpen` accepts (a drag source, another dialog).
+   */
+  nonModal?: boolean;
+  keepOpen?: (target: Element) => boolean;
 }): ReactNode {
   return (
-    <DialogP.Root open={open} onOpenChange={(o) => !o && onClose()}>
+    <DialogP.Root open={open} onOpenChange={(o) => !o && onClose()} modal={!nonModal}>
       <DialogP.Portal>
-        <DialogP.Overlay className="no-drag fixed inset-0 z-[var(--z-modal)] bg-scrim" />
-        <DialogP.Content aria-modal="true"
+        {nonModal ? null : <DialogP.Overlay className="no-drag fixed inset-0 z-[var(--z-modal)] bg-scrim" />}
+        <DialogP.Content aria-modal={nonModal ? undefined : 'true'}
+          onInteractOutside={(e) => {
+            const target = e.target instanceof Element ? e.target : null;
+            if (target && keepOpen?.(target)) e.preventDefault();
+          }}
           onOpenAutoFocus={(e) => {
             // Phones: the sheet itself takes the focus — no field focused (and no keyboard) until a tap.
             if (!autoFocusAllowed()) {
@@ -530,6 +546,7 @@ export function Modal({
           className={cx(
             'mat-sheet anim-in fixed left-1/2 top-1/2 z-[var(--z-modal)] flex max-h-[calc(100vh-92px)] w-[calc(100vw-32px)] -translate-x-1/2 -translate-y-1/2 flex-col rounded-[var(--radius-panel)] text-body focus:outline-none',
             wide ? 'max-w-[880px]' : 'max-w-[440px]',
+            nonModal && 'no-drag shadow-[var(--shadow-popover)]',
             // Phone layout (ADR-0021): a bottom sheet — full width, from the bottom edge, above the home indicator.
             'mobile:anim-sheet mobile:inset-x-0 mobile:bottom-[var(--kb-inset)] mobile:top-auto mobile:max-h-[calc(var(--app-height)-var(--safe-top)-16px)] mobile:w-full mobile:max-w-none mobile:translate-x-0 mobile:translate-y-0 mobile:rounded-b-none mobile:rounded-t-[16px] mobile:border-b-0 mobile:pb-[var(--safe-bottom)]',
           )}
@@ -631,7 +648,7 @@ export function Stepper({
     if (next !== value) onCommit(next);
   };
   return (
-    <span className="inline-flex h-7 w-20 shrink-0 items-stretch overflow-hidden rounded-[var(--radius-control)] border border-line bg-elev shadow-[var(--shadow-card)] focus-within:outline focus-within:outline-2 focus-within:outline-accent">
+    <span className="inline-flex h-7 w-20 shrink-0 items-stretch overflow-hidden rounded-[var(--radius-control)] border border-line bg-elev shadow-[var(--shadow-card)] has-[:focus-visible]:border-focus" data-focus-box>
       <input
         ref={input}
         id={id}

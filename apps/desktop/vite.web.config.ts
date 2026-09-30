@@ -13,7 +13,10 @@ import { bundledPackages } from './scripts/bundledPackages';
  */
 const require = createRequire(import.meta.url);
 const rnnoiseDist = dirname(require.resolve('@timephy/rnnoise-wasm'));
-const version = (require('./package.json') as { version: string }).version;
+// The release stamps the bundle with VERSION (infra/docker/release.sh builds the web client without
+// `npm version`, unlike release.yml for the desktop): package.json (0.1.0) is the dev fallback only —
+// a bundle stamped older than the server keeps showing «Обновить страницу» after every reload.
+const version = process.env.VERSION || process.env.CALABA_VERSION || (require('./package.json') as { version: string }).version;
 
 /** The CSP of the web build comes from the server (Caddy); the Electron meta CSP is dropped. */
 function stripMetaCsp(): Plugin {

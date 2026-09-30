@@ -4,6 +4,7 @@ import { t } from '../../i18n';
 import { log } from '../../lib/log';
 import { platform } from '../../platform';
 import { useSession } from '../../stores/session';
+import { useVoice } from '../../stores/voice';
 import { updateAction, updateLabel } from './format';
 
 /**
@@ -14,6 +15,7 @@ import { updateAction, updateLabel } from './format';
  */
 export function AboutUpdateRow({ version }: { version: string }): ReactNode {
   const update = useSession((s) => s.update);
+  const inVoice = useVoice((s) => s.roomId !== null);
   const [checking, setChecking] = useState(false);
   const [installing, setInstalling] = useState(false);
   const action = updateAction(update, checking);
@@ -35,11 +37,12 @@ export function AboutUpdateRow({ version }: { version: string }): ReactNode {
     platform.app.downloadUpdate().catch((e: unknown) => log.warn('update download failed', e));
   };
   const install = (): void => {
-    // Main may wait (≤ 3 s) for a token refresh in flight before quitting (docs/09 #89).
-    setInstalling(true);
-    platform.app.installUpdate().then(
+    // Main re-checks the feed (≤ 8 s) and waits (≤ 3 s) for a token refresh in flight before
+    // quitting (docs/09 #89, #125). In a call: «Перезапустить после звонка» — when it ends.
+    if (!inVoice) setInstalling(true);
+    platform.app.installUpdate(inVoice).then(
       (ok) => {
-        if (!ok) setInstalling(false);
+        if (!ok || inVoice) setInstalling(false);
       },
       (e: unknown) => {
         log.warn('update install failed', e);
@@ -81,9 +84,11 @@ export function AboutUpdateRow({ version }: { version: string }): ReactNode {
         </Button>
       ) : action === 'downloading' && update.state === 'downloading' ? (
         <Button disabled>{t('about.install', { v: update.version })}</Button>
+      ) : action === 'restart' && update.state === 'downloaded' && update.afterCall ? (
+        <Button disabled>{t('update.scheduled')}</Button>
       ) : action === 'restart' ? (
         <Button busy={installing} onClick={install} data-testid="update-restart">
-          {t('about.restart')}
+          {inVoice ? t('update.afterCall') : t('about.restart')}
         </Button>
       ) : action === 'page' && update.state === 'available' ? (
         <Button onClick={() => void platform.app.openExternal(update.downloadPage ?? '')}>{t('about.download')}</Button>

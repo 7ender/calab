@@ -13,6 +13,7 @@ import { api, thumbnailPath } from '../../lib/api/endpoints';
 import { fmt } from '../../lib/format';
 import { startDm } from '../../services/dms';
 import { LocalTime } from './LocalTime';
+import { ClientVersion } from './ClientVersion';
 import { BirthdayInfo } from './Birthday';
 import { isGuest, rolesOf, useMemberName, useMemberRoles, useRoleLook, useWorkspaces } from '../../stores/workspaces';
 import { useSession } from '../../stores/session';
@@ -26,10 +27,10 @@ import { promoteGuest, toggleMemberRole } from './actions';
 import { MemberPicker } from './MemberPicker';
 import type { PeoplePickItem, RolePickItem } from './memberPickItems';
 import { roleColorCss } from '../../lib/roles';
-import { BotBadge, GuestBadge, RoleMark, roleName, roleTextClass, roleTextStyle } from './MemberBits';
+import { BotBadge, GuestBadge, roleName, roleTextClass, roleTextStyle } from './MemberBits';
 import { BotActions, BotAvatarControls, BotDetails, BotHandle } from './BotProfile';
 import { EditBadge } from './ProfileBadge';
-import { MemberBadge } from './MemberBadge';
+import { BadgeOrRoleMark } from './MemberBadge';
 import { MemberContextMenu, useMemberActions } from './MemberContextMenu';
 import { NOTE_MAX, createNoteSaver, type NoteSaveState, type NoteSaver } from './noteSaver';
 
@@ -150,8 +151,7 @@ export function ProfileDialog({
                   {name}
                 </DialogP.Title>
                 {/* 20 px inline after the name, no text line (docs/08 «Бейдж»); its name is the tooltip. */}
-                <MemberBadge workspaceId={workspaceId} userId={userId} size={20} />
-                <RoleMark role={m.role} custom={look} />
+                <BadgeOrRoleMark workspaceId={workspaceId} userId={userId} role={m.role} custom={look} size={20} />
                 {isGuest(m) ? <GuestBadge /> : null}
                 {u.isBot ? <BotBadge /> : null}
               </div>
@@ -170,6 +170,7 @@ export function ProfileDialog({
                 </div>
               ) : null}
               <LocalTime userId={userId} variant="line" />
+              {u.isBot ? null : <ClientVersion userId={userId} />}
               <BirthdayInfo userId={userId} variant="line" />
               <EditBirthday workspaceId={workspaceId} userId={userId} />
               <EditBadge workspaceId={workspaceId} userId={userId} />
@@ -193,7 +194,7 @@ export function ProfileDialog({
                       aria-label={t('call.call')}
                       data-testid="profile-call"
                       onClick={() => leave(() => void startCall(userId))}
-                      className="inline-grid size-8 shrink-0 place-items-center rounded-full bg-[var(--color-fill-hover)] text-fg transition-[filter] duration-[var(--motion-fast)] hover:brightness-125 focus-visible:outline-2 focus-visible:outline-accent"
+                      className="inline-grid size-8 shrink-0 place-items-center rounded-full bg-[var(--color-fill-hover)] text-fg transition-[filter] duration-[var(--motion-fast)] hover:brightness-125"
                     >
                       <Phone className="size-4" aria-hidden />
                     </button>
@@ -246,7 +247,7 @@ export function ProfileDialog({
           </div>
           <DialogP.Close
             aria-label={t('common.close')}
-            className={cx(CLOSE_HIT, 'absolute right-3 top-3 grid size-7 place-items-center rounded-full bg-scrim text-white transition-[filter] duration-[var(--motion-fast)] hover:brightness-125 focus-visible:outline-2 focus-visible:outline-accent')}
+            className={cx(CLOSE_HIT, 'absolute right-3 top-3 grid size-7 place-items-center rounded-full bg-scrim text-white transition-[filter] duration-[var(--motion-fast)] hover:brightness-125')}
           >
             <X className="size-4" strokeWidth={1.75} aria-hidden />
           </DialogP.Close>
@@ -275,7 +276,7 @@ function EditBirthday({ workspaceId, userId }: { workspaceId: string; userId: st
       <button
         type="button"
         data-testid="profile-edit-birthday"
-        className="mt-1 flex items-center gap-1.5 rounded-[var(--radius-control)] text-caption text-muted transition-colors duration-[var(--motion-fast)] hover:text-fg focus-visible:outline-2 focus-visible:outline-accent"
+        className="mt-1 flex items-center gap-1.5 rounded-[var(--radius-control)] text-caption text-muted transition-colors duration-[var(--motion-fast)] hover:text-fg"
         onClick={() => setOpen(true)}
       >
         <Cake className="size-3.5" aria-hidden />
@@ -307,7 +308,7 @@ function MoreButton({ workspaceId, userId }: { workspaceId: string; userId: stri
         aria-label={t('people.profile.more')}
         aria-haspopup="menu"
         data-testid="profile-more"
-        className="inline-grid size-8 shrink-0 place-items-center rounded-full bg-[var(--color-fill-hover)] text-fg transition-[filter] duration-[var(--motion-fast)] hover:brightness-125 focus-visible:outline-2 focus-visible:outline-accent"
+        className="inline-grid size-8 shrink-0 place-items-center rounded-full bg-[var(--color-fill-hover)] text-fg transition-[filter] duration-[var(--motion-fast)] hover:brightness-125"
         onClick={(e) => {
           // Radix opens a context menu at the pointer: a synthetic contextmenu under the button.
           const r = e.currentTarget.getBoundingClientRect();
@@ -363,7 +364,7 @@ function RoleChips({ workspaceId, userId }: { workspaceId: string; userId: strin
               <button
                 type="button"
                 aria-label={t('people.profile.removeRole', { role: label })}
-                className={cx(CLOSE_HIT, '-mr-1 grid size-5 shrink-0 place-items-center rounded-full text-muted hover:bg-hover hover:text-fg focus-visible:outline-2 focus-visible:outline-accent')}
+                className={cx(CLOSE_HIT, '-mr-1 grid size-5 shrink-0 place-items-center rounded-full text-muted hover:bg-hover hover:text-fg')}
                 onClick={() => void toggleMemberRole(workspaceId, userId, r, false)}
               >
                 <X className="size-3.5" aria-hidden />
@@ -387,7 +388,7 @@ function RoleChips({ workspaceId, userId }: { workspaceId: string; userId: strin
           <button
             type="button"
             aria-label={t('people.profile.addRole')}
-            className="grid size-7 place-items-center rounded-full text-muted hover:bg-hover hover:text-fg focus-visible:outline-2 focus-visible:outline-accent"
+            className="grid size-7 place-items-center rounded-full text-muted hover:bg-hover hover:text-fg"
           >
             <Plus className="size-4" aria-hidden />
           </button>
@@ -465,7 +466,7 @@ function NoteEditor({ userId, textareaRef }: { userId: string; textareaRef: RefO
         aria-busy={text === null || undefined}
         value={text ?? ''}
         placeholder={t('people.profile.notePlaceholder')}
-        className="selectable -ml-1.5 block w-[calc(100%+6px)] resize-none rounded-[6px] bg-transparent px-1.5 py-1 text-body leading-5 text-fg outline-none transition-colors duration-[var(--motion-fast)] placeholder:italic placeholder:text-faint hover:bg-hover focus:bg-hover focus-visible:outline-2 focus-visible:outline-accent"
+        className="selectable -ml-1.5 block w-[calc(100%+6px)] resize-none rounded-[6px] bg-transparent px-1.5 py-1 text-body leading-5 text-fg outline-none transition-colors duration-[var(--motion-fast)] placeholder:italic placeholder:text-faint hover:bg-hover focus:bg-hover"
         onChange={(e) => {
           setText(e.target.value);
           saver.current?.change(e.target.value);

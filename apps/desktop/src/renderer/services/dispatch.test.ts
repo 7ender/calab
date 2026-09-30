@@ -1,6 +1,16 @@
 import { create } from '@bufbuild/protobuf';
 import {
   DispatchEventSchema,
+  PERMISSION_BITS,
+  PermissionTargetType,
+  RoleSchema,
+  RoleUpdateSchema,
+  RoomPermissionOverrideSchema,
+  RoomPermissionsUpdateSchema,
+  UserSchema,
+  WorkspaceMemberSchema,
+  WorkspaceMemberUpdateSchema,
+  WorkspaceRole,
   MessageCreateSchema,
   MessageSchema,
   ReadySchema,
@@ -31,8 +41,8 @@ vi.stubGlobal('window', globalThis);
 
 const onIncomingMessage = vi.fn<(...a: unknown[]) => void>();
 const loadMentions = vi.fn(() => Promise.resolve());
-vi.mock('./voice', () => ({ voice: { leave: vi.fn(), currentRoomId: null, onMoved: vi.fn(), reconcileSelfState: vi.fn(), stopStream: vi.fn(), checkSeat: vi.fn() } }));
-vi.mock('./chat', () => ({ resyncLoadedRooms: vi.fn(() => Promise.resolve()), resyncPins: vi.fn(() => Promise.resolve()) }));
+vi.mock('./voice', () => ({ voice: { leave: vi.fn(), currentRoomId: null, onMoved: vi.fn(), reconcileSelfState: vi.fn(), stopStream: vi.fn(), checkSeat: vi.fn(), refreshRights: vi.fn() } }));
+vi.mock('./chat', () => ({ resyncLoadedRooms: vi.fn(() => Promise.resolve()), resyncPins: vi.fn(() => Promise.resolve()), retryFailedLoads: vi.fn(() => Promise.resolve()) }));
 vi.mock('./mentions', () => ({ loadMentions: () => loadMentions() }));
 vi.mock('./notify', () => ({ onIncomingMessage: (...a: unknown[]) => {
     onIncomingMessage(...a);
@@ -52,6 +62,9 @@ const { useUi } = await import('../stores/ui');
 const { useWorkspaces } = await import('../stores/workspaces');
 const { installTimeFormat } = await import('./timeFormat');
 const { getTimeFormat } = await import('../lib/format');
+const { useSession } = await import('../stores/session');
+const { rolesOf } = await import('../stores/workspaces');
+const { mayInviteGuestsIn, mayInviteMembers, mayInviteToRoom } = await import('../lib/permissions');
 
 const WS = 'ws-1';
 const id = (n: number): string => `0190a0b0-0000-7000-8000-${String(n).padStart(12, '0')}`;
@@ -274,5 +287,65 @@ describe('WORKSPACE_UPDATE → clock format (docs/09 #73)', () => {
     } finally {
       off();
     }
+  });
+});
+
+// Part B of ADR-0043: rights granted or taken apply to my UI at once — the gated UI reads
+// useMemberRoles (= rolesOf over the store) and the room's overrides, both updated by dispatch.
+describe('dispatch: my roles and their permissions apply live (ADR-0026, ADR-0043)', () => {
+  const ME = 'me';
+  const MEMBER_BITS = PERMISSION_BITS.VIEW_ROOM | PERMISSION_BITS.SEND_MESSAGES | PERMISSION_BITS.CONNECT;
+  const roles = [
+    create(RoleSchema, { id: 'owner', workspaceId: WS, position: 1001, permissions: PERMISSION_BITS.ADMINISTRATOR, builtin: WorkspaceRole.OWNER }),
+    create(RoleSchema, { id: 'hr', workspaceId: WS, position: 2, permissions: PERMISSION_BITS.INVITE_MEMBERS }),
+    create(RoleSchema, { id: 'member', workspaceId: WS, position: 1, permissions: MEMBER_BITS, builtin: WorkspaceRole.MEMBER }),
+  ];
+  const me = (roleIds: string[]) =>
+    create(WorkspaceMemberSchema, { workspaceId: WS, user: create(UserSchema, { id: ME, displayName: 'Me' }), role: WorkspaceRole.MEMBER, roleIds });
+  const entry = () => useWorkspaces.getState().byId[WS];
+  const r1 = room('r1');
+
+  beforeEach(() => {
+    useSession.setState({ me: { user: create(UserSchema, { id: ME }) } } as never);
+    useWorkspaces.getState().reset();
+    useWorkspaces.getState().applySnapshot(
+      create(WorkspaceSnapshotSchema, { workspace: create(WorkspaceSchema, { id: WS, name: 'W' }), role: WorkspaceRole.MEMBER, roles, members: [me(['member'])] }),
+    );
+    useRooms.getState().upsert(r1);
+  });
+
+  it('WORKSPACE_MEMBER_UPDATE with a new role, then ROLE_UPDATE of its bits', () => {
+    expect(mayInviteMembers(rolesOf(entry(), ME))).toBe(false);
+    applyDispatch(create(DispatchEventSchema, { event: { case: 'workspaceMemberUpdate', value: create(WorkspaceMemberUpdateSchema, { member: me(['member', 'hr']) }) } }));
+    expect(rolesOf(entry(), ME).map((r) => r.id)).toEqual(['hr', 'member']);
+    expect(mayInviteMembers(rolesOf(entry(), ME))).toBe(true);
+
+    const edited = create(RoleSchema, { id: 'hr', workspaceId: WS, position: 2, permissions: 0n });
+    applyDispatch(create(DispatchEventSchema, { event: { case: 'roleUpdate', value: create(RoleUpdateSchema, { role: edited }) } }));
+    expect(mayInviteMembers(rolesOf(entry(), ME))).toBe(false);
+
+    applyDispatch(create(DispatchEventSchema, { event: { case: 'workspaceMemberUpdate', value: create(WorkspaceMemberUpdateSchema, { member: me(['member']) }) } }));
+    expect(rolesOf(entry(), ME).map((r) => r.id)).toEqual(['member']);
+  });
+
+  it('ROOM_PERMISSIONS_UPDATE grants a room invite right in that room only', () => {
+    const inRoom = () => mayInviteGuestsIn(rolesOf(entry(), ME), ME, useRooms.getState().byId['r1']);
+    expect(inRoom()).toBe(false);
+    const ov = create(RoomPermissionOverrideSchema, { targetType: PermissionTargetType.USER, targetId: ME, allow: PERMISSION_BITS.INVITE_GUESTS, deny: 0n });
+    applyDispatch(create(DispatchEventSchema, { event: { case: 'roomPermissionsUpdate', value: create(RoomPermissionsUpdateSchema, { roomId: 'r1', permissions: [ov] }) } }));
+    expect(inRoom()).toBe(true);
+    expect(mayInviteToRoom(rolesOf(entry(), ME), ME, useRooms.getState().byId['r1'])).toBe(true);
+    // Not workspace-wide, and MANAGE_ROOM alone would not do.
+    expect(mayInviteMembers(rolesOf(entry(), ME))).toBe(false);
+    const manage = create(RoomPermissionOverrideSchema, { targetType: PermissionTargetType.USER, targetId: ME, allow: PERMISSION_BITS.MANAGE_ROOM, deny: 0n });
+    applyDispatch(create(DispatchEventSchema, { event: { case: 'roomPermissionsUpdate', value: create(RoomPermissionsUpdateSchema, { roomId: 'r1', permissions: [manage] }) } }));
+    expect(inRoom()).toBe(false);
+  });
+
+  it('a guest never gets the invite helpers, even with an allow', () => {
+    const guestRole = create(RoleSchema, { id: 'guest', workspaceId: WS, position: 0, permissions: PERMISSION_BITS.CONNECT, builtin: WorkspaceRole.GUEST });
+    const host = create(RoleSchema, { id: 'host', workspaceId: WS, position: 3, permissions: PERMISSION_BITS.INVITE_GUESTS | PERMISSION_BITS.INVITE_MEMBERS });
+    expect(mayInviteMembers([guestRole, host])).toBe(false);
+    expect(mayInviteMembers([...roles.slice(2), host])).toBe(true);
   });
 });

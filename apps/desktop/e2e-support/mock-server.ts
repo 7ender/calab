@@ -26,6 +26,42 @@ import {
 } from '@bufbuild/protobuf';
 import { timestampFromMs, timestampMs, type Timestamp } from '@bufbuild/protobuf/wkt';
 import {
+  BoardPermissionsResponseSchema,
+  BoardResponseSchema,
+  BoardViewResponseSchema,
+  CreateBoardLabelRequestSchema,
+  CreateBoardMilestoneRequestSchema,
+  CreateBoardRequestSchema,
+  CreateBoardStatusRequestSchema,
+  CreateBoardViewRequestSchema,
+  CreateTaskRequestSchema,
+  ListBoardViewsResponseSchema,
+  ListBoardsResponseSchema,
+  ListTasksResponseSchema,
+  MyTasksResponseSchema,
+  SearchTasksResponseSchema,
+  SetAssigneesRequestSchema,
+  SetBoardPermissionsRequestSchema,
+  SetBoardPositionRequestSchema,
+  SetTaskRelationRequestSchema,
+  SetTaskSubscriptionRequestSchema,
+  TaskActivityPageSchema,
+  TaskFilterSchema,
+  TaskResponseSchema,
+  TaskSchema,
+  UpdateBoardLabelRequestSchema,
+  UpdateBoardMilestoneRequestSchema,
+  UpdateBoardRequestSchema,
+  UpdateBoardStatusRequestSchema,
+  UpdateBoardViewRequestSchema,
+  UpdateTaskRequestSchema,
+  type Task,
+  type TaskActivity,
+  type TaskFilter,
+  type TaskRelationKind,
+} from '@calaba/protocol';
+import { BoardError, BoardsMock, MANAGE_BOARD } from './mock-boards';
+import {
   AdminGetWorkspaceResponseSchema,
   CallActionResponseSchema,
   CallOutcome,
@@ -88,6 +124,7 @@ import {
   CreateEmailInviteResponseSchema,
   EmailInviteSchema,
   ForgotPasswordRequestSchema,
+  ForgotPasswordResponseSchema,
   InviteLookupRequestSchema,
   InviteLookupResponseSchema,
   ListEmailInvitesResponseSchema,
@@ -154,6 +191,8 @@ import {
   ForwardMessageResponseSchema,
   CreateRoomRequestSchema,
   CreateRoomResponseSchema,
+  CreateTempRoomRequestSchema,
+  TempRoomResponseSchema,
   CreateWorkspaceRequestSchema,
   CreateWorkspaceResponseSchema,
   DiscoverWorkspacesResponseSchema,
@@ -164,17 +203,30 @@ import {
   GatewayOpcode,
   GetInviteResponseSchema,
   GetMeResponseSchema,
+  GetVersionResponseSchema,
   GetRoomInviteResponseSchema,
   GetRoomResponseSchema,
   GetWorkspaceResponseSchema,
   InviteSchema,
   JoinRoomInviteRequestSchema,
   JoinRoomInviteResponseSchema,
+  ListRoomAdmissionsResponseSchema,
+  DecideRoomAdmissionRequestSchema,
+  DecideRoomAdmissionResponseSchema,
+  UpdateRoomInviteRequestSchema,
+  UpdateRoomInviteResponseSchema,
+  RoomAdmissionStatus,
   JoinVoiceResponseSchema,
   JoinWorkspaceResponseSchema,
   ListCategoriesResponseSchema,
   ListDmCandidatesResponseSchema,
   ListDmsResponseSchema,
+  ListNotesResponseSchema,
+  CreateNotesRequestSchema,
+  CreateNotesResponseSchema,
+  UpdateNotesRequestSchema,
+  UpdateNotesResponseSchema,
+  NotesShelfSchema,
   CreateDmRequestSchema,
   CreateDmResponseSchema,
   UpdateDmStateRequestSchema,
@@ -254,6 +306,7 @@ import {
   VoiceInfoSchema,
   UserSchema,
   UserSettingsSchema,
+  WorkHoursSchema,
   VoiceStateSchema,
   VoiceDisconnectReason,
   VoiceStreamStopReason,
@@ -279,6 +332,7 @@ import {
   type Role,
   type DispatchEvent,
   type DmSummary,
+  type NotesShelf,
   type GatewayFrame,
   type Me,
   type FileMeta,
@@ -288,10 +342,25 @@ import {
   type WorkspaceNotificationSettings,
   type RoomCategory,
   type RoomInvite,
+  type RoomAdmission,
   type Session,
   type VoiceState,
   type WorkspaceMember,
   type WorkspaceSnapshot,
+  AttendeeStatus,
+  CalendarEventAttendeeSchema,
+  CalendarEventResponseSchema,
+  CalendarEventSchema,
+  CreateCalendarEventRequestSchema,
+  EventRepeat,
+  EventRsvpTokenRequestSchema,
+  EventRsvpTokenResponseSchema,
+  ListCalendarEventsResponseSchema,
+  RsvpCalendarEventRequestSchema,
+  TodayCalendarEventsResponseSchema,
+  UpdateCalendarEventRequestSchema,
+  type CalendarEvent,
+  type CalendarEventAttendee,
 } from '@calaba/protocol';
 import { AccessToken, RoomServiceClient } from 'livekit-server-sdk';
 import { WebSocketServer, type RawData, type WebSocket } from 'ws';
@@ -313,6 +382,7 @@ import {
   defaultSettings,
   effectiveMedia,
   fileMeta,
+  mockId,
   nextId,
   sha256,
   tick,
@@ -328,7 +398,37 @@ import {
   SCENARIOS,
 } from './fixtures';
 import { MARKETING_UNFURLS } from './fixtures-marketing';
+import {
+  ACTIVE_BEFORE_MS,
+  DEFAULT_WORK_HOURS,
+  REMINDER_CHOICES,
+  davCalendars,
+  davOut,
+  meetingBusy,
+  slotsOf,
+  externalEventsOut,
+  sharedBusy,
+  shareLevelIn,
+  type CalDavRec,
+  type ExternalSpan,
+  type Span,
+  type WorkHoursRec,
+  activeOccurrence,
+  counts,
+  eventForGuest,
+  eventOut,
+  involves,
+  occurrences,
+  parseRsvpToken,
+  rsvpToken,
+  viewToken,
+  type CalEventRec,
+  type EmailView,
+  type Occurrence,
+} from './mock-calendar';
 import { cardPicture, encodePng, pngSize } from './png';
+import { freeWindows, intersectIntervals, workIntervals } from '../src/renderer/lib/calendar/freebusy';
+import { admissionKey, admissionOutcome, deciderView, guestView, requiresApproval, type AdmissionRec } from './mock-admissions';
 
 export {
   IDS,
@@ -377,6 +477,26 @@ export interface MockServerOptions {
 }
 
 type EventInit = MessageInitShape<typeof DispatchEventSchema>;
+
+/** addEvent(): a meeting as its organizer creates it (ADR-0038); times in ms (UTC). */
+export interface AddEventArgs {
+  workspaceId: string;
+  /** Default: Анна. */
+  organizerId?: string;
+  title: string;
+  description?: string;
+  startMs: number;
+  endMs: number;
+  allDay?: boolean;
+  tz?: string;
+  /** A voice room of the workspace ('' / unset = none). */
+  roomId?: string;
+  record?: boolean;
+  repeat?: EventRepeat;
+  repeatUntilMs?: number;
+  /** Members (userId) or external addresses (email); `status` sets an answer right away. */
+  attendees?: { userId?: string; email?: string; required?: boolean; status?: AttendeeStatus }[];
+}
 
 export interface MockServer {
   url: string;
@@ -466,10 +586,19 @@ export interface MockServer {
   /** The mock's «now» for date answers (GET …/birthdays): a visual test's page clock; null = real time. */
   setClock(nowMs: number | null): void;
   /**
+   * ADR-0044: a temporary voice room as POST …/rooms/temp by `createdBy` (default Анна) → ROOM_CREATE,
+   * with its link (members-only unless `guests`); `expiresAtMs` absolute (a visual test's clock).
+   */
+  addTempRoom(args: { workspaceId: string; name: string; expiresAtMs: number; createdBy?: string; isPrivate?: boolean; guests?: boolean }): Room;
+  /** ADR-0044: the sweeper — temporary rooms with expires_at ≤ `nowMs` are archived (ROOM_DELETE). Returns their ids. */
+  expireTempRooms(nowMs?: number): string[];
+  /**
    * docs/09 #51: a user's own state of a DM, like PATCH /api/dms/{id}/state — archive / «Удалить
    * чат» (for them only) — and DM_STATE_UPDATE to their devices.
    */
   setDmState(userId: string, roomId: string, patch: { archived?: boolean; cleared?: boolean }): void;
+  /** ADR-0039: a notes shelf of `userId`, as POST /api/notes (NOTES_CREATE to their devices). Returns its room id. */
+  addShelf(userId: string, name: string, emoji: string): string;
   /**
    * ADR-0031: the two bots of «Команда Calab» join it (IDS.bots — «Погода» with commands and a
    * delivering webhook, «Деплой» with a failing one) → WORKSPACE_MEMBER_ADD + BOT_CREATE.
@@ -503,6 +632,57 @@ export interface MockServer {
   acceptCall(callId: string): Call;
   /** ADR-0034: any call action on behalf of a participant (decline / cancel / hangup …). */
   callAction(callId: string, byUserId: string, action: 'accept' | 'decline' | 'cancel' | 'hangup'): Call;
+  /**
+   * ADR-0038: a meeting, as POST /api/workspaces/{id}/events by `organizerId` (validated the same
+   * way) → EVENT_CREATE, and ROOM_EVENT_ACTIVE when it is within 15 minutes of its start (the
+   * mock's clock: setClock, else real time). Returns the series.
+   */
+  addEvent(a: AddEventArgs): CalendarEvent;
+  /** ADR-0038: `userId` answers (PUT /api/events/{id}/rsvp) → EVENT_RSVP. */
+  rsvp(eventId: string, userId: string, status: AttendeeStatus): CalendarEvent;
+  /** ADR-0038 §5: EVENT_REMINDER to `userId` (default occurrence: the next one). */
+  emitReminder(eventId: string, userId: string, minutes: number, occurrenceAtMs?: number): void;
+  /** ADR-0038 §6: the room badge of an occurrence starts (ROOM_EVENT_ACTIVE) or ends (ROOM_EVENT_ENDED). */
+  setEventActive(eventId: string, active: boolean, occurrenceAtMs?: number): void;
+  /** ADR-0038 §6: an occurrence's recording (shown in lists / the card; no event is sent). */
+  setEventRecording(eventId: string, occurrenceAtMs: number, recordingId: string): void;
+  /** ADR-0041: `userId`'s busy time from an external calendar (free / busy kind EXTERNAL), replacing it. */
+  setBusy(userId: string, intervals: readonly ExternalSpan[]): void;
+  /** ADR-0041 §4 / ADR-0045: a connected CalDAV account of `userId` (calendar «Работа», import on, synced at the clock). */
+  setCalDav(userId: string, patch?: Partial<CalDavRec>): void;
+  /** ADR-0041: `userId`'s work hours (default 10:00–19:00 Mon–Fri in their zone; the mock's default zone is Moscow). */
+  setWorkHours(userId: string, wh: WorkHoursRec): void;
+  /** ADR-0041 §4: what the fake CalDAV server holds for `userId`: a sync with import on copies it to their external busy time (default: 11:00–12:00 MSK of the clock's day). */
+  setCalDavRemote(userId: string, intervals: readonly Span[]): void;
+  /** The answer link token of an external attendee (the page /e/<id>/rsvp?t=…). */
+  eventRsvpToken(eventId: string, email: string, status: AttendeeStatus): string;
+  /** ADR-0040: the room's «Подтверждение входа гостей» (ROOM_UPDATE), as PATCH /api/rooms/{id}. */
+  setGuestApproval(roomId: string, on: boolean): void;
+  /**
+   * ADR-0040: a new guest account `nickname` knocks on `roomId` (as a link join with approval):
+   * `guest` membership without the room, the knock, ROOM_ADMISSION_REQUEST to the deciders.
+   * Returns the guest's user id. `inviteId`: the link used (default: none, the author is Анна).
+   */
+  knock(roomId: string, nickname: string, inviteId?: string): string;
+  /**
+   * ADR-0040: decides a waiting knock like POST …/admissions/{userId} by `byUserId` (default
+   * Анна): `admitted` gives the room (ROOM_CREATE), `declined` / `no_answer` (the server's 30-min
+   * sweep) drop the membership when the guest has no other room; `cancelled` = the guest withdrew.
+   * ROOM_ADMISSION_DECIDED to the deciders and the guest.
+   */
+  decideAdmission(roomId: string, userId: string, status: 'admitted' | 'declined' | 'no_answer' | 'cancelled', byUserId?: string): void;
+  /** The view token of an external attendee: the meeting link of its mail, /e/<id>?t=… (no answers). */
+  eventViewToken(eventId: string, email: string): string;
+  /**
+   * The guest link of an external attendee into the meeting's room (made on first call, like
+   * the server's: single use, from 15 minutes before the next occurrence until 1 h after it).
+   * Returns the absolute /r/<code> URL; GET /api/event-rsvp then carries it as guest_url.
+   */
+  eventGuestLink(eventId: string, email: string): string;
+  /** Task boards (ADR-0042, mock-boards.ts): the live domain (tasks, boards, activity). */
+  readonly boards: BoardsMock;
+  /** A task change by another user (e.g. a rename during a call): TASK_UPDATE to the board's viewers. */
+  updateTaskAs(actorId: string, taskId: string, patch: { title?: string; statusId?: string }): Task;
 }
 
 export async function startMockServer(opts: MockServerOptions = {}): Promise<MockServer> {
@@ -520,6 +700,7 @@ export async function startMockServer(opts: MockServerOptions = {}): Promise<Moc
     injectMessage: (a) => impl.injectMessage(a),
     markRead: (u, roomId, messageId) => impl.markRead(u, roomId, messageId),
     setDmState: (u, roomId, patch) => impl.setDmState(u, roomId, patch),
+    addShelf: (u, name, emoji) => impl.addShelf(u, name, emoji),
     setVoiceState: (a) => impl.setVoice(a.userId, a.roomId, a),
     setPresence: (u, st) => impl.setPresence(u, st),
     setMemberRoles: (w, u, ids) => impl.setMemberRoles(w, u, ids),
@@ -537,6 +718,8 @@ export async function startMockServer(opts: MockServerOptions = {}): Promise<Moc
     setBirthday: (u, b, card) => impl.setBirthday(u, b, card),
     setBirthdayHidden: (u, hidden) => impl.setBirthdayHidden(u, hidden),
     setClock: (ms) => impl.setClock(ms),
+    addTempRoom: (a) => impl.addTempRoom(a),
+    expireTempRooms: (ms) => impl.expireTempRooms(ms),
     seedBots: () => impl.seedBots(),
     seedLaughStickers: () => impl.seedLaughStickers(),
     setBotAvatar: (id, colors) => impl.setBotAvatar(id, colors),
@@ -546,6 +729,25 @@ export async function startMockServer(opts: MockServerOptions = {}): Promise<Moc
     ringCall: (from, to) => impl.ringCall(from, to),
     acceptCall: (id) => impl.callTransition(id, impl.calleeOf(id), 'accept'),
     callAction: (id, by, action) => impl.callTransition(id, by, action),
+    addEvent: (a) => impl.addEvent(a),
+    rsvp: (id, u, st) => impl.rsvpEvent(id, u, st),
+    emitReminder: (id, u, min, at) => impl.emitReminder(id, u, min, at),
+    setEventActive: (id, active, at) => impl.setEventActive(id, active, at),
+    setBusy: (u, list) => impl.calExternal.set(u, [...list]),
+    setCalDav: (u, patch) => impl.seedCalDav(u, patch),
+    setWorkHours: (u, wh) => impl.calWorkHours.set(u, { ...wh, days: [...wh.days] }),
+    setCalDavRemote: (u, list) => impl.calDavRemote.set(u, [...list]),
+    setEventRecording: (id, at, rec) => impl.setEventRecording(id, at, rec),
+    eventRsvpToken: (id, email, st) => rsvpToken(id, email, st),
+    setGuestApproval: (roomId, on) => impl.setGuestApproval(roomId, on),
+    knock: (roomId, nickname, inviteId) => impl.knock(roomId, nickname, inviteId),
+    decideAdmission: (roomId, userId, status, by) => impl.decideAdmission(roomId, userId, status, by),
+    eventViewToken: (id, email) => viewToken(id, email),
+    eventGuestLink: (id, email) => impl.eventGuestLink(id, email),
+    get boards() {
+      return impl.boards;
+    },
+    updateTaskAs: (actor, taskId, patch) => impl.updateTaskAs(actor, taskId, patch),
   };
 }
 
@@ -615,6 +817,8 @@ function mailLocale(tag: string): string | null {
 
 const notFound = (what = 'not found'): HttpError => new HttpError(404, ErrorCode.NOT_FOUND, what);
 const forbidden = (what = 'forbidden'): HttpError => new HttpError(403, ErrorCode.FORBIDDEN, what);
+/** ADR-0044: an archived temporary room — anything but its history. */
+const archived = (): HttpError => new HttpError(410, ErrorCode.ROOM_ARCHIVED, 'the room is archived');
 const invalid = (field: string, what: string): HttpError => new HttpError(422, ErrorCode.VALIDATION, what, field);
 
 /**
@@ -843,9 +1047,19 @@ class MockImpl {
   private readonly calls = new Map<string, Call>();
   private readonly userCall = new Map<string, string>();
   private callSeq = 0;
+  /** Meetings (ADR-0038) by id; cancelled ones stay (cancelled_at). */
+  private readonly calEvents = new Map<string, CalEventRec>();
+  /** Task boards (ADR-0042); rebuilt with the state. */
+  boards: BoardsMock;
+  /** Free / busy (ADR-0041): work hours, external busy time, CalDAV accounts and the fake remote calendars, by user. */
+  readonly calWorkHours = new Map<string, WorkHoursRec>();
+  readonly calExternal = new Map<string, ExternalSpan[]>();
+  readonly calDav = new Map<string, CalDavRec>();
+  readonly calDavRemote = new Map<string, Span[]>();
 
   constructor(opts: MockServerOptions) {
     this.state = buildState(opts.scenario ?? 'data');
+    this.boards = this.newBoards();
     this.lk = {
       url: opts.livekitUrl ?? 'ws://127.0.0.1:7880',
       key: opts.livekitKey ?? 'devkey',
@@ -855,6 +1069,11 @@ class MockImpl {
     this.log = opts.log ?? (() => undefined);
     this.registerRoutes();
     this.registerCallRoutes();
+    this.calendarRoutes();
+    this.freeBusyRoutes();
+    this.admissionRoutes();
+    this.boardRoutes();
+    this.seedBoards();
     this.http.on('upgrade', (req, socket, head) => {
       const path = new URL(req.url ?? '/', 'http://mock').pathname;
       if (path !== '/gateway' || Date.now() < this.gatewayDownUntil) {
@@ -896,13 +1115,21 @@ class MockImpl {
     this.timers.clear();
     this.releaseFiles();
     this.state = buildState(scenario);
+    this.boards = this.newBoards();
+    this.seedBoards();
     this.voiceSessions.clear();
     this.calls.clear();
     this.userCall.clear();
     this.callSeq = 0;
+    this.calEvents.clear();
+    this.calWorkHours.clear();
+    this.calExternal.clear();
+    this.calDav.clear();
+    this.calDavRemote.clear();
     this.droppedSessions.clear();
     this.gatewayDownUntil = 0;
     this.clockMs = null;
+    this.archivedRooms.clear();
     for (const c of this.conns) c.ws.close(GatewayCloseCode.SESSION_TIMED_OUT, 'mock reset');
   }
 
@@ -950,6 +1177,12 @@ class MockImpl {
     // DM (ADR-0020): the fixed set for the two participants, nothing for anyone else.
     if (room.type === RoomType.DM) {
       return computePermissions({ role: WorkspaceRole.UNSPECIFIED, dm: { participant: this.dmPeer(room.id, userId) !== null } });
+    }
+    // A task's comment room (ADR-0042): rights from the task's board.
+    if (room.type === RoomType.TASK) return this.boards.roomPerms(room.id, userId) ?? 0n;
+    // A notes shelf (ADR-0039): the DM set for its owner only.
+    if (room.type === RoomType.NOTES) {
+      return computePermissions({ role: WorkspaceRole.UNSPECIFIED, dm: { participant: this.state.shelves.get(room.id)?.ownerId === userId } });
     }
     const m = this.member(room.workspaceId, userId);
     // ADR-0029: in a restricted room admins count as members; the owner (owner_id) has everything.
@@ -1050,6 +1283,48 @@ class MockImpl {
       .sort((a, b) => at(b) - at(a));
   }
 
+  /** A notes shelf as its owner sees it (ADR-0039), or null when not theirs. */
+  private shelfOut(roomId: string, userId: string): NotesShelf | null {
+    const room = this.state.rooms.get(roomId);
+    const sh = this.state.shelves.get(roomId);
+    if (!room || !sh || sh.ownerId !== userId) return null;
+    const last = this.state.messages.get(roomId)?.at(-1);
+    return create(NotesShelfSchema, {
+      room: this.roomOut(room),
+      emoji: sh.emoji,
+      ...(last
+        ? {
+            lastMessage: {
+              id: last.id,
+              authorId: last.authorId,
+              content: last.content.slice(0, 200),
+              attachmentCount: last.attachments.length,
+              ...(last.createdAt ? { createdAt: last.createdAt } : {}),
+              stickerEmoji: last.sticker?.emoji ?? '',
+            },
+          }
+        : {}),
+    });
+  }
+
+  /** The user's shelves by position. */
+  private notesOf(userId: string): NotesShelf[] {
+    return [...this.state.shelves.keys()]
+      .map((id) => this.shelfOut(id, userId))
+      .filter((n): n is NotesShelf => n !== null)
+      .sort((a, b) => (a.room?.position ?? 0) - (b.room?.position ?? 0) || (a.room?.id ?? '').localeCompare(b.room?.id ?? ''));
+  }
+
+  addShelf(userId: string, name: string, emoji: string): string {
+    if (this.notesOf(userId).length >= 20) throw new HttpError(409, ErrorCode.CONFLICT, 'at most 20 notes shelves', '', { reason: 'NOTES_LIMIT', used: 20n, limit: 20n });
+    const id = nextId(this.state, 'room');
+    this.state.rooms.set(id, create(RoomSchema, { id, workspaceId: '', type: RoomType.NOTES, name, position: this.notesOf(userId).length, createdAt: tick(this.state) }));
+    this.state.shelves.set(id, { ownerId: userId, emoji });
+    const shelf = this.shelfOut(id, userId);
+    if (shelf) this.toUser(userId, { event: { case: 'notesCreate', value: { shelf } } });
+    return id;
+  }
+
   /** @everyone / @here count as mentions only from authors with MENTION_EVERYONE in the room. */
   private mayMentionAll(room: Room, userId: string): boolean {
     return has(this.perms(room, userId), PERMISSION_BITS.MENTION_EVERYONE);
@@ -1067,11 +1342,34 @@ class MockImpl {
     return { ws, m };
   }
 
-  /** Room visible to the caller; 404 otherwise. */
+  /** Room visible to the caller; 404 otherwise; 410 ROOM_ARCHIVED for an archived temporary room it could see (ADR-0044). */
   private roomFor(roomId: string, userId: string): Room {
     const r = this.state.rooms.get(roomId);
-    if (!r || !this.canView(r, userId)) throw notFound('room not found');
+    if (!r) {
+      const a = this.archivedRooms.get(roomId);
+      if (a && this.canView(a, userId)) throw archived();
+      throw notFound('room not found');
+    }
+    if (!this.canView(r, userId)) throw notFound('room not found');
     return r;
+  }
+
+  /** A live room, or an archived temporary one — its history stays readable (ADR-0044). */
+  private roomOrArchivedFor(roomId: string, userId: string): Room {
+    const a = this.archivedRooms.get(roomId);
+    if (a && this.canView(a, userId)) return a;
+    return this.roomFor(roomId, userId);
+  }
+
+  /** ADR-0044 rooms.MayManage: MANAGE_ROOM in the room, or the creator of a temporary room (not a guest). */
+  private mayManageRoom(room: Room, userId: string): boolean {
+    if (has(this.perms(room, userId), MANAGE_ROOM)) return true;
+    const m = this.member(room.workspaceId, userId);
+    return !!room.expiresAt && room.createdBy === userId && !!m && m.role !== WorkspaceRole.GUEST;
+  }
+
+  private requireManage(room: Room, userId: string): void {
+    if (!this.mayManageRoom(room, userId)) throw forbidden('MANAGE_ROOM required');
   }
 
   private requireRoomPerm(room: Room, userId: string, bit: bigint): void {
@@ -1123,7 +1421,7 @@ class MockImpl {
 
   /** Runs `fn`; then ROOM_CREATE / ROOM_DELETE to each member whose room visibility changed (docs/05). */
   private withVisibility(wsId: string, fn: () => void): void {
-    const rooms = [...this.state.rooms.values()].filter((r) => r.workspaceId === wsId);
+    const rooms = [...this.state.rooms.values()].filter((r) => r.workspaceId === wsId && r.type !== RoomType.TASK);
     const before = new Map(this.membersOf(wsId).map((m) => [m.userId, new Set(rooms.filter((r) => this.canView(r, m.userId)).map((r) => r.id))]));
     fn();
     for (const m of this.membersOf(wsId)) {
@@ -1142,7 +1440,8 @@ class MockImpl {
     return create(MeSchema, {
       user: u.user,
       email: u.email,
-      settings: u.settings,
+      // ADR-0041: work hours are kept apart (calWorkHours), like the reminders on the server.
+      settings: { ...clone(UserSettingsSchema, u.settings), workHours: create(WorkHoursSchema, this.workHoursOf(u.user.id)) },
       isSuperadmin: this.state.superadmins.has(u.user.id),
       // Guests have no email: always «verified» (user.proto).
       emailVerified: u.user.isGuest || u.emailVerified,
@@ -1177,7 +1476,9 @@ class MockImpl {
   private presenceOut(userId: string): ReturnType<typeof create<typeof PresenceSchema>> {
     const p = this.state.presences.get(userId);
     if (!p || p.status === PresenceStatus.INVISIBLE || p.status === PresenceStatus.OFFLINE || p.status === PresenceStatus.UNSPECIFIED) {
-      return create(PresenceSchema, { userId, status: PresenceStatus.OFFLINE });
+      // Offline keeps the last known app (docs/09 #143); invisible hides it, like the server.
+      const last = p?.status === PresenceStatus.OFFLINE ? { clientVersion: p.clientVersion, clientPlatform: p.clientPlatform } : {};
+      return create(PresenceSchema, { userId, status: PresenceStatus.OFFLINE, ...last });
     }
     // ADR-0034: «На звонке» while in an ACTIVE call (only with a visible status).
     if (this.liveCall(userId)?.state === CallState.ACTIVE) {
@@ -1199,9 +1500,10 @@ class MockImpl {
     const ws = this.state.workspaces.get(wsId);
     const m = this.member(wsId, userId);
     const rooms = [...this.state.rooms.values()]
-      .filter((r) => r.workspaceId === wsId && this.canView(r, userId))
+      .filter((r) => r.workspaceId === wsId && r.type !== RoomType.TASK && this.canView(r, userId))
       .sort((a, b) => a.position - b.position || a.id.localeCompare(b.id));
     const members = this.membersOf(wsId);
+    const boards = m && m.role !== WorkspaceRole.GUEST ? this.boards.snapshot(wsId, userId) : { boards: [], unreadTaskIds: [] };
     return create(WorkspaceSnapshotSchema, {
       ...(ws ? { workspace: ws } : {}),
       role: m?.role ?? WorkspaceRole.UNSPECIFIED,
@@ -1221,6 +1523,9 @@ class MockImpl {
       badges: this.badgesOf(wsId),
       backgrounds: this.backgroundsOf(wsId),
       sounds: this.soundsOf(wsId),
+      activeEvents: m ? this.activeEvents(wsId, userId) : [],
+      boards: boards.boards,
+      unreadTaskIds: boards.unreadTaskIds,
     });
   }
 
@@ -1247,10 +1552,11 @@ class MockImpl {
           sessionId: conn.gatewaySessionId,
           me: this.me(u),
           planContact: MOCK_PLAN_CONTACT,
-          workspaces: wsIds.map((w) => this.snapshot(w, u.user.id)),
+          workspaces: wsIds.map((w) => this.withAdmissions(this.snapshot(w, u.user.id), u.user.id)),
+          pendingAdmissions: this.ownAdmissions(u.user.id),
           // Every visible room (server contract): never read → empty marker.
           readStates: [...this.state.rooms.values()]
-            .filter((r) => (wsIds.includes(r.workspaceId) || r.type === RoomType.DM) && this.canView(r, u.user.id))
+            .filter((r) => r.type !== RoomType.TASK && (wsIds.includes(r.workspaceId) || r.type === RoomType.DM || r.type === RoomType.NOTES) && this.canView(r, u.user.id))
             .map((r): [string, string] => [r.id, reads.get(r.id) ?? ''])
             .sort(([a], [b]) => a.localeCompare(b))
             .map(([roomId, lastReadMessageId]) => create(ReadStateSchema, { roomId, lastReadMessageId, ...this.readCounts(roomId, u.user.id, lastReadMessageId) })),
@@ -1265,12 +1571,14 @@ class MockImpl {
             .sort((a, b) => a.workspaceId.localeCompare(b.workspaceId)),
           // Read receipts of workspace rooms (docs/09 #92); DMs carry theirs in dms[].
           peerReads: [...this.state.rooms.values()]
-            .filter((r) => r.type !== RoomType.DM && wsIds.includes(r.workspaceId) && this.canView(r, u.user.id))
+            .filter((r) => r.type !== RoomType.DM && r.type !== RoomType.TASK && wsIds.includes(r.workspaceId) && this.canView(r, u.user.id))
             .map((r) => ({ roomId: r.id, lastReadMessageId: this.peerRead(r.id, u.user.id) }))
             .filter((pr) => pr.lastReadMessageId !== '')
             .sort((a, b) => a.roomId.localeCompare(b.roomId)),
           // Guest accounts have no DMs (ADR-0020).
           dms: u.user.isGuest ? [] : this.dmsOf(u.user.id),
+          // Notes shelves (ADR-0039): people only.
+          notes: u.user.isGuest || u.user.isBot ? [] : this.notesOf(u.user.id),
           // ADR-0034: the user's ringing / active call.
           ...(this.liveCall(u.user.id) ? { call: this.liveCall(u.user.id) } : {}),
         }),
@@ -1384,7 +1692,7 @@ class MockImpl {
     this.fanout((u) => {
       const r = roomId ? this.state.rooms.get(roomId) : undefined;
       // DM rooms (no workspace): the participants' user channels (docs/05).
-      if (r?.type === RoomType.DM) {
+      if (r?.type === RoomType.DM || r?.type === RoomType.NOTES) {
         if (!this.canView(r, u)) return null;
       } else {
         if (!this.member(wsId, u)) return null;
@@ -2096,6 +2404,7 @@ class MockImpl {
     const peer = room.type === RoomType.DM ? this.dmPeer(room.id, authorId) : null;
     if (peer && this.dmStateOf(peer, room.id).archivedAt) this.setDmState(peer, room.id, { archived: false });
     this.toWorkspace(room.workspaceId, { event: { case: 'messageCreate', value: { workspaceId: room.workspaceId, message: msg } } }, room.id);
+    if (room.type === RoomType.TASK) this.boards.onComment(room.id, authorId, msg, parseMentions(content).users);
     return msg;
   }
 
@@ -2176,6 +2485,7 @@ class MockImpl {
       return !!m && m.role !== WorkspaceRole.GUEST;
     };
     if (room.type === RoomType.DM) return (this.state.dmMembers.get(room.id) ?? []).every(full);
+    if (room.type === RoomType.NOTES) return full(this.state.shelves.get(room.id)?.ownerId ?? '');
     return room.workspaceId === pack.workspaceId && full(userId);
   }
 
@@ -2373,6 +2683,11 @@ class MockImpl {
     this.emailRoutes();
     this.recordingRoutes();
 
+    // ---------------- version (public; the web compares its bundle, docs/09 #125)
+    this.route('GET', '/api/version', (c) => {
+      sendMsg(c.res, 200, GetVersionResponseSchema, { version: this.state.serverVersion, commit: 'mock', license: 'BUSL-1.1', product: 'Calab' });
+    });
+
     // ---------------- me
     this.route('GET', '/api/me', (c) => {
       sendMsg(c.res, 200, GetMeResponseSchema, { me: this.me(this.auth(c).user) });
@@ -2381,6 +2696,14 @@ class MockImpl {
     this.route('PATCH', '/api/me', (c) => {
       const u = this.auth(c).user;
       const b = parseBody(c, UpdateMeRequestSchema);
+      // ADR-0041: work_hours (validated like the server; guests and bots 403).
+      if (b.workHours) {
+        if (u.user.isGuest || u.user.isBot) throw forbidden('work hours are not for guests and bots');
+        const wh = { startMin: b.workHours.startMin, endMin: b.workHours.endMin, days: [...new Set(b.workHours.days)].sort((x, y) => x - y) };
+        if (wh.startMin % 15 || wh.endMin % 15 || wh.startMin < 0 || wh.endMin > 1440 || wh.endMin <= wh.startMin) throw invalid('workHours', 'work hours are 15-minute steps, end after start');
+        if (!wh.days.length || wh.days.some((d) => d < 1 || d > 7)) throw invalid('workHours.days', 'days are 1..7, at least one');
+        this.calWorkHours.set(u.user.id, wh);
+      }
       if (b.displayName !== undefined) {
         if (!b.displayName.trim()) throw invalid('displayName', 'display name required');
         u.user.displayName = b.displayName.trim();
@@ -2404,8 +2727,19 @@ class MockImpl {
         if (b.avatarFileId && !s().files.has(b.avatarFileId)) throw invalid('avatarFileId', 'unknown file');
         u.user.avatarFileId = b.avatarFileId;
       }
+      if (b.eventReminders) {
+        // ADR-0038 §5: ≤ 5 distinct values of REMINDER_CHOICES, largest first.
+        const mins = [...new Set(b.eventReminders.minutes)];
+        if (mins.some((x) => !REMINDER_CHOICES.includes(x))) throw invalid('eventReminders.minutes', 'reminders are 5, 10, 15, 30, 60, 120 or 1440 minutes');
+        if (mins.length > 5) throw invalid('eventReminders.minutes', 'at most 5 reminders');
+        u.settings.eventReminders = mins.sort((x, y) => y - x);
+        u.settings.eventRemindersDnd = b.eventReminders.dnd;
+      }
       if (b.settings) {
         const st = create(UserSettingsSchema, b.settings);
+        // Meeting reminders are stored apart: a settings replace keeps them (user.proto).
+        st.eventReminders = u.settings.eventReminders;
+        st.eventRemindersDnd = u.settings.eventRemindersDnd;
         if (st.micMode === MicMode.UNSPECIFIED) st.micMode = MicMode.VAD;
         // The server keeps the deprecated flag in sync with mic_mode (user.proto).
         // eslint-disable-next-line @typescript-eslint/no-deprecated
@@ -3297,6 +3631,33 @@ class MockImpl {
       sendMsg(c.res, 201, CreateRoomResponseSchema, { room });
     });
 
+    // ---------------- temporary rooms (ADR-0044)
+    this.route('POST', '/api/workspaces/:id/rooms/temp', (c) => {
+      const me = this.uid(c);
+      const { ws, m } = this.workspaceFor(c.params[0] ?? '', me);
+      this.requireActive(ws.id);
+      const wsPerms = workspacePermissions(this.memberRoles(m));
+      if (m.role === WorkspaceRole.GUEST || !has(wsPerms, PERMISSION_BITS.CREATE_TEMP_ROOMS)) throw forbidden('CREATE_TEMP_ROOMS required');
+      const b = parseBody(c, CreateTempRoomRequestSchema);
+      const name = b.name.trim();
+      if (!name || name.length > 100) throw invalid('name', 'name must be 1..100 characters');
+      if (b.ttlSeconds < 900 || b.ttlSeconds > 604800) throw invalid('ttlSeconds', 'ttl_seconds must be 900..604800');
+      const guests = b.guests ?? true;
+      if (guests && !has(wsPerms, PERMISSION_BITS.INVITE_GUESTS)) throw forbidden('INVITE_GUESTS required for a link that admits guests (guests=false: members only)');
+      if (b.memberIds.length > 50) throw invalid('memberIds', 'at most 50 members');
+      const live = [...s().rooms.values()].filter((r) => r.workspaceId === ws.id && r.expiresAt);
+      if (live.length >= 20) throw new HttpError(409, ErrorCode.TEMP_ROOM_LIMIT, 'temporary room limit', '', { used: BigInt(live.length), limit: 20n });
+      const mine = live.filter((r) => r.createdBy === me).length;
+      if (mine >= 5) throw new HttpError(409, ErrorCode.TEMP_ROOM_LIMIT, 'temporary room limit', '', { reason: 'PER_USER', used: BigInt(mine), limit: 5n });
+      const expiresAtMs = this.calNow() + b.ttlSeconds * 1000;
+      const { room, invite } = this.createTempRoom({ workspaceId: ws.id, name, createdBy: me, expiresAtMs, isPrivate: b.private, memberIds: b.memberIds, guests });
+      const step = 5 * 60_000;
+      const event = b.withEvent
+        ? this.addEvent({ workspaceId: ws.id, organizerId: me, title: name, startMs: Math.ceil(this.calNow() / step) * step, endMs: expiresAtMs, roomId: room.id })
+        : undefined;
+      sendMsg(c.res, 201, TempRoomResponseSchema, { room, inviteUrl: `${this.url}/r/${invite.code}`, inviteCode: invite.code, ...(event ? { event } : {}) });
+    });
+
     // ---------------- categories (MANAGE_ROOM at workspace level = admins)
     this.route('GET', '/api/workspaces/:id/categories', (c) => {
       const me = this.uid(c);
@@ -3384,7 +3745,16 @@ class MockImpl {
 
     this.route('GET', '/api/workspaces/:id/rooms', (c) => {
       const me = this.uid(c);
-      const { ws } = this.workspaceFor(c.params[0] ?? '', me);
+      const { ws, m } = this.workspaceFor(c.params[0] ?? '', me);
+      // ADR-0044: the archive of temporary rooms — MANAGE_ROOM at workspace level, rooms I may view, newest first.
+      if (c.url.searchParams.get('archived') === '1') {
+        if (!has(workspacePermissions(this.memberRoles(m)), MANAGE_ROOM)) throw forbidden('MANAGE_ROOM required');
+        const rooms = [...this.archivedRooms.values()]
+          .filter((r) => r.workspaceId === ws.id && this.canView(r, me))
+          .sort((a, b) => (b.archivedAt ? timestampMs(b.archivedAt) : 0) - (a.archivedAt ? timestampMs(a.archivedAt) : 0));
+        sendMsg(c.res, 200, ListRoomsResponseSchema, { rooms });
+        return;
+      }
       sendMsg(c.res, 200, ListRoomsResponseSchema, { rooms: this.snapshot(ws.id, me).rooms });
     });
 
@@ -3397,9 +3767,30 @@ class MockImpl {
     this.route('PATCH', '/api/rooms/:id', (c) => {
       const me = this.uid(c);
       const room = this.roomFor(c.params[0] ?? '', me);
-      this.requireRoomPerm(room, me, MANAGE_ROOM);
+      // ADR-0044: a temporary room's creator too.
+      this.requireManage(room, me);
       const b = parseBody(c, UpdateRoomRequestSchema);
       const before = create(RoomSchema, room);
+      if (b.expiresAt !== undefined) {
+        if (!room.expiresAt) throw invalid('expiresAt', 'only temporary rooms expire');
+        const at = timestampMs(b.expiresAt);
+        const now = this.calNow();
+        if (at <= now || at > now + 7 * 86_400_000) throw invalid('expiresAt', 'expires_at must be within 7 days from now');
+        room.expiresAt = b.expiresAt;
+        for (const inv of s().roomInvites.values()) if (inv.roomId === room.id) inv.expiresAt = b.expiresAt;
+      }
+      if (b.makePermanent) {
+        if (!has(this.perms(room, me), MANAGE_ROOM)) throw forbidden('MANAGE_ROOM required');
+        delete room.expiresAt;
+      }
+      if (b.isPrivate !== undefined) {
+        if (!room.expiresAt) throw invalid('isPrivate', 'only temporary rooms');
+        room.isPrivate = b.isPrivate;
+        const rest = room.permissionOverrides.filter((o) => !(o.targetType === PermissionTargetType.ROLE && o.targetId === 'member'));
+        room.permissionOverrides = b.isPrivate
+          ? [create(RoomPermissionOverrideSchema, { targetType: PermissionTargetType.ROLE, targetId: 'member', allow: 0n, deny: VIEW_ROOM }), ...rest]
+          : rest;
+      }
       if (b.name !== undefined) {
         if (!b.name.trim() || b.name.length > 100) throw invalid('name', 'name must be 1..100 characters');
         room.name = b.name.trim();
@@ -3429,6 +3820,7 @@ class MockImpl {
         if (b.restricted && !room.isPrivate) throw invalid('restricted', 'only private rooms can be restricted');
         room.restricted = b.restricted;
       }
+      if (b.guestApproval !== undefined) room.guestApproval = b.guestApproval; // ADR-0040
       this.emitRoomChange(before, room, { event: { case: 'roomUpdate', value: { room } } });
       if (b.allowRecording === false && s().recordings.has(room.id)) this.stopRecording(room, 'disabled', '');
       sendMsg(c.res, 200, UpdateRoomResponseSchema, { room });
@@ -3437,7 +3829,13 @@ class MockImpl {
     this.route('DELETE', '/api/rooms/:id', (c) => {
       const me = this.uid(c);
       const room = this.roomFor(c.params[0] ?? '', me);
-      this.requireRoomPerm(room, me, MANAGE_ROOM);
+      this.requireManage(room, me);
+      // ADR-0044: a temporary room goes to the archive (history readable, links revoked).
+      if (room.expiresAt) {
+        this.archiveTempRoom(room);
+        noContent(c.res);
+        return;
+      }
       for (const v of [...s().voiceStates.values()]) if (v.roomId === room.id) this.setVoice(v.userId, '', {});
       this.toWorkspace(room.workspaceId, { event: { case: 'roomDelete', value: { workspaceId: room.workspaceId, roomId: room.id } } }, room.id);
       s().rooms.delete(room.id);
@@ -3459,7 +3857,7 @@ class MockImpl {
 
     // ---------------- messages
     this.route('GET', '/api/rooms/:id/messages', (c) => {
-      const room = this.roomFor(c.params[0] ?? '', this.uid(c));
+      const room = this.roomOrArchivedFor(c.params[0] ?? '', this.uid(c));
       if (c.url.searchParams.has('q')) {
         this.search(c, [room.id]);
         return;
@@ -3523,7 +3921,7 @@ class MockImpl {
       const room = this.roomFor(b.toRoomId, me);
       this.requireActive(room.workspaceId);
       this.requireRoomPerm(room, me, SEND_MESSAGES);
-      const fwd = orig.forward ?? { authorId: orig.authorId, roomId: src.type === RoomType.DM ? '' : src.id, messageId: orig.id, sentAt: orig.createdAt };
+      const fwd = orig.forward ?? { authorId: orig.authorId, roomId: src.type === RoomType.DM || src.type === RoomType.NOTES ? '' : src.id, messageId: orig.id, sentAt: orig.createdAt };
       const message = create(MessageSchema, {
         id: nextId(this.state, 'message'),
         roomId: room.id,
@@ -3586,6 +3984,7 @@ class MockImpl {
         { event: { case: 'messageDelete', value: { workspaceId: room.workspaceId, roomId: room.id, messageId: msg.id } } },
         room.id,
       );
+      if (room.type === RoomType.TASK) this.boards.onCommentDeleted(room.id);
       noContent(c.res);
     });
 
@@ -3706,7 +4105,7 @@ class MockImpl {
       const { room, list, index } = this.findMessage(c.params[0] ?? '');
       if (!this.canView(room, me)) throw notFound('message not found');
       // Both DM participants may pin (docs/04); rooms need MANAGE_MESSAGES.
-      if (room.type !== RoomType.DM) this.requireRoomPerm(room, me, MANAGE_MESSAGES);
+      if (room.type !== RoomType.DM && room.type !== RoomType.NOTES) this.requireRoomPerm(room, me, MANAGE_MESSAGES);
       const msg = list[index];
       if (!msg) throw notFound('message not found');
       if (on === !!msg.pinnedAt) {
@@ -3735,8 +4134,28 @@ class MockImpl {
     });
 
     this.route('GET', '/api/unfurl', (c) => {
-      this.uid(c);
+      const me = this.uid(c);
       const url = c.url.searchParams.get('url') ?? '';
+      // Own links (ADR-0042): /t/<KEY-N> and /b/<id> from the boards, 404 when not visible.
+      const ownTask = /\/t\/([A-Za-z][A-Za-z0-9]{1,5}-[0-9]+)\/?$/.exec(url);
+      const ownBoard = /\/b\/([0-9a-f-]{36})\/?$/.exec(url);
+      if (ownTask?.[1] || ownBoard?.[1]) {
+        try {
+          if (ownTask?.[1]) {
+            const rec = this.boards.tasks.get(this.boards.byKey(ownTask[1], me));
+            if (!rec) throw new Error('gone');
+            const task = this.boards.taskOut(rec, me, false);
+            const board = this.boards.getBoard(task.boardId, me);
+            sendMsg(c.res, 200, UnfurlResponseSchema, { url, title: `${task.key} ${task.title}`, siteName: board.name, task, board });
+          } else {
+            const board = this.boards.getBoard(ownBoard?.[1] ?? '', me);
+            sendMsg(c.res, 200, UnfurlResponseSchema, { url, title: board.name, board });
+          }
+        } catch {
+          throw notFound('preview not found');
+        }
+        return;
+      }
       const card = UNFURLS[url] ?? MARKETING_UNFURLS[url];
       if (!card) throw notFound('preview not found');
       sendMsg(c.res, 200, UnfurlResponseSchema, {
@@ -3774,6 +4193,70 @@ class MockImpl {
     const noGuest = (u: UserRec): void => {
       if (u.user.isGuest) throw forbidden('guests have no direct messages');
     };
+    // Notes shelves (ADR-0039): people only; another user's shelf is 404.
+    const shelfOwner = (u: UserRec): void => {
+      if (u.user.isGuest || u.user.isBot) throw forbidden('notes are not available for guest accounts and bots');
+    };
+    const myShelf = (roomId: string, me: string): Room => {
+      const room = s().rooms.get(roomId);
+      if (!room || s().shelves.get(roomId)?.ownerId !== me) throw notFound('notes not found');
+      return room;
+    };
+    this.route('GET', '/api/notes', (c) => {
+      const { user } = this.auth(c);
+      shelfOwner(user);
+      sendMsg(c.res, 200, ListNotesResponseSchema, { shelves: this.notesOf(user.user.id), storage: { quotaBytes: 1n << 30n, usedBytes: 0n, isDefault: true } });
+    });
+    this.route('POST', '/api/notes', (c) => {
+      const { user } = this.auth(c);
+      shelfOwner(user);
+      const b = parseBody(c, CreateNotesRequestSchema);
+      const name = b.name.trim();
+      if (!name || Array.from(name).length > 40) throw invalid('name', 'name must be 1 to 40 characters');
+      const id = this.addShelf(user.user.id, name, b.emoji.trim());
+      sendMsg(c.res, 201, CreateNotesResponseSchema, { shelf: this.shelfOut(id, user.user.id) ?? undefined });
+    });
+    this.route('PATCH', '/api/notes/:id', (c) => {
+      const { user } = this.auth(c);
+      shelfOwner(user);
+      const me = user.user.id;
+      const room = myShelf(c.params[0] ?? '', me);
+      const b = parseBody(c, UpdateNotesRequestSchema);
+      const sh = s().shelves.get(room.id);
+      if (b.name !== undefined) {
+        const name = b.name.trim();
+        if (!name || Array.from(name).length > 40) throw invalid('name', 'name must be 1 to 40 characters');
+        room.name = name;
+      }
+      if (b.emoji !== undefined && sh) sh.emoji = b.emoji.trim();
+      const moved = new Set([room.id]);
+      if (b.position !== undefined) {
+        const order = this.notesOf(me).map((n) => n.room?.id ?? '').filter((id) => id !== room.id);
+        order.splice(Math.min(b.position, order.length), 0, room.id);
+        order.forEach((id, i) => {
+          const r = s().rooms.get(id);
+          if (r && r.position !== i) {
+            r.position = i;
+            moved.add(id);
+          }
+        });
+      }
+      for (const id of moved) {
+        const shelf = this.shelfOut(id, me);
+        if (shelf) this.toUser(me, { event: { case: 'notesUpdate', value: { shelf } } });
+      }
+      sendMsg(c.res, 200, UpdateNotesResponseSchema, { shelf: this.shelfOut(room.id, me) ?? undefined });
+    });
+    this.route('DELETE', '/api/notes/:id', (c) => {
+      const { user } = this.auth(c);
+      shelfOwner(user);
+      const room = myShelf(c.params[0] ?? '', user.user.id);
+      s().rooms.delete(room.id);
+      s().shelves.delete(room.id);
+      s().messages.delete(room.id);
+      this.toUser(user.user.id, { event: { case: 'notesDelete', value: { roomId: room.id } } });
+      noContent(c.res);
+    });
     this.route('GET', '/api/dms', (c) => {
       const { user } = this.auth(c);
       noGuest(user);
@@ -3836,7 +4319,7 @@ class MockImpl {
     this.route('POST', '/api/dms/:id/files', async (c) => {
       const me = this.uid(c);
       const room = this.roomFor(c.params[0] ?? '', me);
-      if (room.type !== RoomType.DM) throw notFound('dm not found');
+      if (room.type !== RoomType.DM && room.type !== RoomType.NOTES) throw notFound('dm not found');
       const f = await parseMultipartFile(c);
       if (f.bytes.length > 50 * 1024 * 1024) throw new HttpError(413, ErrorCode.FILE_TOO_LARGE, 'file too large');
       const id = this.storeFile('', me, f, parseVoice(c, f));
@@ -4441,7 +4924,7 @@ class MockImpl {
     this.route('GET', '/api/rooms/:id/invites', (c) => {
       const me = this.uid(c);
       const room = this.roomFor(c.params[0] ?? '', me);
-      this.requireRoomPerm(room, me, MANAGE_ROOM);
+      this.requireManage(room, me);
       const invites = [...s().roomInvites.values()].filter((i) => i.roomId === room.id).sort((a, b) => b.id.localeCompare(a.id));
       sendMsg(c.res, 200, ListRoomInvitesResponseSchema, { invites });
     });
@@ -4468,11 +4951,26 @@ class MockImpl {
         allowMessages: b.allowMessages ?? true,
         allowFiles: b.allowFiles ?? false,
         allowStream: b.allowStream ?? false,
+        ...(b.requireApproval !== undefined ? { requireApproval: b.requireApproval } : {}),
         ...(expiresIn ? { expiresAt: timestampFromMs(timestampMs(at) + expiresIn * 1000) } : {}),
         createdAt: at,
       });
       s().roomInvites.set(id, invite);
       sendMsg(c.res, 201, CreateRoomInviteResponseSchema, { invite });
+    });
+    // ADR-0040: the link's approval setting (inherit_approval = back to the room's).
+    this.route('PATCH', '/api/rooms/:id/invites/:inviteId', (c) => {
+      const me = this.uid(c);
+      const room = this.roomFor(c.params[0] ?? '', me);
+      this.requireRoomPerm(room, me, MANAGE_ROOM);
+      const inv = s().roomInvites.get(c.params[1] ?? '');
+      if (inv?.roomId !== room.id) throw notFound('invite not found');
+      const b = parseBody(c, UpdateRoomInviteRequestSchema);
+      if (b.inheritApproval && b.requireApproval !== undefined) throw invalid('requireApproval', 'requireApproval and inheritApproval exclude each other');
+      if (!b.inheritApproval && b.requireApproval === undefined) throw invalid('requireApproval', 'nothing to change');
+      if (b.inheritApproval) delete inv.requireApproval;
+      else inv.requireApproval = b.requireApproval;
+      sendMsg(c.res, 200, UpdateRoomInviteResponseSchema, { invite: inv });
     });
     this.route('DELETE', '/api/rooms/:id/invites/:inviteId', (c) => {
       const me = this.uid(c);
@@ -4493,6 +4991,7 @@ class MockImpl {
         workspaceIconFileId: ws.iconFileId,
         allowGuests: inv.allowGuests,
         ...(inv.expiresAt ? { expiresAt: inv.expiresAt } : {}),
+        requiresApproval: requiresApproval(room.guestApproval, inv.requireApproval),
       });
     });
     // With a bearer: join as the current user; without one (allow_guests): a guest account.
@@ -4500,8 +4999,8 @@ class MockImpl {
       const { inv, room, ws } = roomInvite(c.params[0] ?? '');
       const b = parseBody(c, JoinRoomInviteRequestSchema);
       if ((c.req.headers.authorization ?? '').startsWith('Bearer ')) {
-        this.grantRoomLink(inv, this.uid(c));
-        sendMsg(c.res, 200, JoinRoomInviteResponseSchema, { roomId: room.id, workspaceId: ws.id });
+        const admission = this.joinByLink(inv, this.uid(c));
+        sendMsg(c.res, 200, JoinRoomInviteResponseSchema, { roomId: room.id, workspaceId: ws.id, ...(admission ? { admission } : {}) });
         return;
       }
       if (!inv.allowGuests) throw new HttpError(401, ErrorCode.UNAUTHENTICATED, 'sign in to use this link');
@@ -4524,8 +5023,14 @@ class MockImpl {
       s().sessions.set(id, [
         create(SessionSchema, { id: sessionId, deviceName: b.deviceName || 'Guest', ip: '192.0.2.10', userAgent: 'mock', createdAt: at, lastSeenAt: at, expiresAt: FAR_FUTURE }),
       ]);
-      this.grantRoomLink(inv, id);
-      sendMsg(c.res, 201, JoinRoomInviteResponseSchema, { roomId: room.id, workspaceId: ws.id, tokens: this.tokensJson(c, sessionId), me: this.me(rec) });
+      const admission = this.joinByLink(inv, id);
+      sendMsg(c.res, 201, JoinRoomInviteResponseSchema, {
+        roomId: room.id,
+        workspaceId: ws.id,
+        tokens: this.tokensJson(c, sessionId),
+        me: this.me(rec),
+        ...(admission ? { admission } : {}),
+      });
     });
 
     // ---------------- mock control (tests; no auth)
@@ -4903,6 +5408,86 @@ class MockImpl {
 
   private clockMs: number | null = null;
 
+  // ------------------------------------------------ temporary rooms (ADR-0044)
+
+  /** Archived temporary rooms (not in `state.rooms`): their history stays readable. */
+  private readonly archivedRooms = new Map<string, Room>();
+
+  /** The room and its link, as the server's one transaction; ROOM_CREATE to whoever sees it. */
+  private createTempRoom(a: { workspaceId: string; name: string; createdBy: string; expiresAtMs: number; isPrivate: boolean; memberIds: readonly string[]; guests: boolean }): { room: Room; invite: RoomInvite } {
+    const s = this.state;
+    const ws = s.workspaces.get(a.workspaceId);
+    const positions = [...s.rooms.values()].filter((r) => r.workspaceId === a.workspaceId).map((r) => r.position);
+    const mediaOverride = create(RoomMediaOverrideSchema, {});
+    const bits = VIEW_ROOM | PERMISSION_BITS.CONNECT | PERMISSION_BITS.SPEAK | PERMISSION_BITS.VIDEO | PERMISSION_BITS.STREAM | PERMISSION_BITS.SEND_MESSAGES | PERMISSION_BITS.ATTACH_FILES;
+    const expiresAt = timestampFromMs(a.expiresAtMs);
+    const room = create(RoomSchema, {
+      id: nextId(s, 'room'),
+      workspaceId: a.workspaceId,
+      type: RoomType.VOICE,
+      name: a.name,
+      position: positions.length ? Math.max(...positions) + 1 : 0,
+      isPrivate: a.isPrivate,
+      media: effectiveMedia(ws, mediaOverride),
+      mediaOverride,
+      permissionOverrides: a.isPrivate
+        ? [
+            create(RoomPermissionOverrideSchema, { targetType: PermissionTargetType.ROLE, targetId: 'member', allow: 0n, deny: VIEW_ROOM }),
+            ...[a.createdBy, ...a.memberIds.filter((id) => id !== a.createdBy)].map((id) =>
+              create(RoomPermissionOverrideSchema, { targetType: PermissionTargetType.USER, targetId: id, allow: bits, deny: 0n }),
+            ),
+          ]
+        : [],
+      createdAt: tick(s),
+      allowRecording: true,
+      createdBy: a.createdBy,
+      expiresAt,
+    });
+    s.rooms.set(room.id, room);
+    this.toWorkspace(a.workspaceId, { event: { case: 'roomCreate', value: { room } } }, room.id);
+    const id = nextId(s, 'invite');
+    const invite = create(RoomInviteSchema, {
+      id,
+      roomId: room.id,
+      workspaceId: a.workspaceId,
+      code: `mock-temp-${id.slice(-4)}`,
+      createdBy: a.createdBy,
+      allowGuests: a.guests,
+      membersOnly: !a.guests,
+      allowSpeak: true,
+      allowMessages: true,
+      allowFiles: true,
+      allowStream: true,
+      expiresAt,
+      createdAt: room.createdAt,
+    });
+    s.roomInvites.set(id, invite);
+    return { room, invite };
+  }
+
+  addTempRoom(a: { workspaceId: string; name: string; expiresAtMs: number; createdBy?: string; isPrivate?: boolean; guests?: boolean }): Room {
+    return this.createTempRoom({ workspaceId: a.workspaceId, name: a.name, createdBy: a.createdBy ?? IDS.users.anna, expiresAtMs: a.expiresAtMs, isPrivate: a.isPrivate ?? false, memberIds: [], guests: a.guests ?? true }).room;
+  }
+
+  /** Closing (DELETE or expiry): archived, links revoked, voice emptied, ROOM_DELETE to whoever saw it. */
+  private archiveTempRoom(room: Room): void {
+    const s = this.state;
+    for (const v of [...s.voiceStates.values()]) if (v.roomId === room.id) this.setVoice(v.userId, '', {});
+    this.toWorkspace(room.workspaceId, { event: { case: 'roomDelete', value: { workspaceId: room.workspaceId, roomId: room.id } } }, room.id);
+    for (const [id, inv] of s.roomInvites) if (inv.roomId === room.id) s.roomInvites.delete(id);
+    s.rooms.delete(room.id);
+    room.archivedAt = timestampFromMs(this.calNow());
+    room.messageCount = (s.messages.get(room.id) ?? []).length;
+    this.archivedRooms.set(room.id, room);
+  }
+
+  expireTempRooms(nowMs?: number): string[] {
+    const now = nowMs ?? this.calNow();
+    const due = [...this.state.rooms.values()].filter((r) => r.expiresAt && timestampMs(r.expiresAt) <= now);
+    for (const r of due) this.archiveTempRoom(r);
+    return due.map((r) => r.id);
+  }
+
   setClock(nowMs: number | null): void {
     this.clockMs = nowMs;
   }
@@ -5193,9 +5778,17 @@ class MockImpl {
     this.route('POST', '/api/auth/password/forgot', (c) => {
       const email = parseBody(c, ForgotPasswordRequestSchema).email.trim().toLowerCase();
       if (!EMAIL_RE.test(email)) throw invalid('email', 'invalid email address');
-      const u = [...s().users.values()].find((x) => x.email === email && !x.user.isGuest);
+      const users = [...s().users.values()];
+      const u = users.find((x) => x.email === email && !x.user.isGuest);
       if (u) s().emailCodes.set(`reset:${email}`, { attempts: 0, sentAtMs: Date.now() });
-      noContent(c.res); // always 204: no account enumeration
+      // Same answer whether or not the address has an account, except the hint (docs/09 #137):
+      // no exact account, but the same login at a sibling domain (owner@calaba.ru ↔ owner@calaba.test).
+      const at = email.lastIndexOf('@');
+      const name = (e: string): string => e.slice(e.lastIndexOf('@') + 1).replace(/\.[^.]*$/, '');
+      const similarAccount =
+        !users.some((x) => x.email === email) &&
+        users.some((x) => !x.user.isGuest && x.email.slice(0, x.email.lastIndexOf('@')) === email.slice(0, at) && name(x.email) === name(email));
+      sendMsg(c.res, 200, ForgotPasswordResponseSchema, { similarAccount });
     });
 
     this.route('POST', '/api/auth/password/reset', (c) => {
@@ -5312,33 +5905,1095 @@ class MockImpl {
     if (!room) return;
     const existing = this.member(inv.workspaceId, userId);
     if (existing && this.canView(room, userId)) return;
+    inv.uses += 1;
+    if (!existing) this.addGuestMember(inv.workspaceId, userId);
+    this.grantOverride(room, userId, inv);
+  }
+
+  /** A new `guest` member: WORKSPACE_CREATE to them, WORKSPACE_MEMBER_ADD to the others. */
+  private addGuestMember(wsId: string, userId: string): void {
+    const m: MemberRec = { workspaceId: wsId, userId, role: WorkspaceRole.GUEST, nickname: '', joinedAt: tick(this.state) };
+    this.state.members.push(m);
+    const member = this.memberOut(m);
+    this.fanout((u) =>
+      u === userId
+        ? { event: { case: 'workspaceCreate', value: { snapshot: this.snapshot(wsId, userId) } } }
+        : this.member(wsId, u)
+          ? { event: { case: 'workspaceMemberAdd', value: { member } } }
+          : null,
+    );
+  }
+
+  /** The user override a link grants (its rights; no link = a default link's) → ROOM_PERMISSIONS_UPDATE. */
+  private grantOverride(room: Room, userId: string, inv: RoomInvite | undefined): void {
     const allow =
       VIEW_ROOM |
       CONNECT |
-      (inv.allowSpeak ? SPEAK : 0n) |
-      (inv.allowMessages ? SEND_MESSAGES : 0n) |
-      (inv.allowFiles ? ATTACH_FILES : 0n) |
-      (inv.allowStream ? STREAM : 0n);
+      ((inv?.allowSpeak ?? true) ? SPEAK : 0n) |
+      ((inv?.allowMessages ?? true) ? SEND_MESSAGES : 0n) |
+      (inv?.allowFiles ? ATTACH_FILES : 0n) |
+      (inv?.allowStream ? STREAM : 0n);
     const before = clone(RoomSchema, room); // create() would return the same instance
     room.permissionOverrides = [
       ...room.permissionOverrides.filter((o) => !(o.targetType === PermissionTargetType.USER && o.targetId === userId)),
       create(RoomPermissionOverrideSchema, { targetType: PermissionTargetType.USER, targetId: userId, allow, deny: 0n }),
     ];
-    inv.uses += 1;
-    if (!existing) {
-      const m: MemberRec = { workspaceId: inv.workspaceId, userId, role: WorkspaceRole.GUEST, nickname: '', joinedAt: tick(this.state) };
-      this.state.members.push(m);
-      const member = this.memberOut(m);
-      this.fanout((u) =>
-        u === userId
-          ? { event: { case: 'workspaceCreate', value: { snapshot: this.snapshot(inv.workspaceId, userId) } } }
-          : this.member(inv.workspaceId, u)
-            ? { event: { case: 'workspaceMemberAdd', value: { member } } }
-            : null,
-      );
-    }
     this.emitRoomChange(before, room, {
       event: { case: 'roomPermissionsUpdate', value: { workspaceId: room.workspaceId, roomId: room.id, permissions: room.permissionOverrides } },
+    });
+  }
+
+  // ------------------------------------------------ guest admission (ADR-0040)
+
+  /**
+   * A link join (ADR-0016) that may wait (ADR-0040): guests on a link requiring approval (its
+   * own setting, else the room's) become `guest` without the room and knock. Returns the guest's
+   * view of the knock, or undefined when the join granted the room (or nothing changed).
+   */
+  private joinByLink(inv: RoomInvite, userId: string): RoomAdmission | undefined {
+    const room = this.state.rooms.get(inv.roomId);
+    const ws = this.state.workspaces.get(inv.workspaceId);
+    if (!room || !ws) return undefined;
+    const existing = this.member(inv.workspaceId, userId);
+    if (existing && this.canView(room, userId)) return undefined;
+    const wait = requiresApproval(room.guestApproval, inv.requireApproval) && (!existing || existing.role === WorkspaceRole.GUEST);
+    if (!wait) {
+      this.grantRoomLink(inv, userId);
+      return undefined;
+    }
+    const cur = this.state.admissions.get(admissionKey(room.id, userId));
+    if (cur) return guestView(cur, room.name, ws.name); // knocking again while waiting
+    inv.uses += 1;
+    if (!existing) this.addGuestMember(inv.workspaceId, userId);
+    return this.addKnock(room, userId, inv.id, inv.createdBy);
+  }
+
+  private addKnock(room: Room, userId: string, inviteId: string, inviteCreatedBy: string): RoomAdmission {
+    const a: AdmissionRec = { roomId: room.id, workspaceId: room.workspaceId, userId, inviteId, inviteCreatedBy, requestedAt: tick(this.state) };
+    this.state.admissions.set(admissionKey(room.id, userId), a);
+    const out = deciderView(a, this.state.users.get(userId)?.user);
+    this.fanout((u) => (this.decides(a, u) ? { event: { case: 'roomAdmissionRequest', value: { admission: out } } } : null));
+    return guestView(a, room.name, this.state.workspaces.get(room.workspaceId)?.name ?? '');
+  }
+
+  /** Deciders of a knock: MANAGE_ROOM in the room, or the link's author (not a guest). */
+  private decides(a: AdmissionRec, userId: string): boolean {
+    const m = this.member(a.workspaceId, userId);
+    const room = this.state.rooms.get(a.roomId);
+    if (!m || !room) return false;
+    return has(this.perms(room, userId), MANAGE_ROOM) || (userId === a.inviteCreatedBy && m.role !== WorkspaceRole.GUEST);
+  }
+
+  /** READY: the user's own waiting knocks (declines are not kept by the mock). */
+  private ownAdmissions(userId: string): RoomAdmission[] {
+    return [...this.state.admissions.values()]
+      .filter((a) => a.userId === userId)
+      .map((a) => guestView(a, this.state.rooms.get(a.roomId)?.name ?? '', this.state.workspaces.get(a.workspaceId)?.name ?? ''));
+  }
+
+  /** READY: the knocks the recipient decides, in each workspace snapshot. */
+  private withAdmissions(snap: WorkspaceSnapshot, userId: string): WorkspaceSnapshot {
+    const wsId = snap.workspace?.id ?? '';
+    snap.admissions = [...this.state.admissions.values()]
+      .filter((a) => a.workspaceId === wsId && this.decides(a, userId))
+      .map((a) => deciderView(a, this.state.users.get(a.userId)?.user));
+    return snap;
+  }
+
+  setGuestApproval(roomId: string, on: boolean): void {
+    const room = this.state.rooms.get(roomId);
+    if (!room) throw new Error(`no room ${roomId}`);
+    room.guestApproval = on;
+    this.toWorkspace(room.workspaceId, { event: { case: 'roomUpdate', value: { room: this.roomOut(room) } } }, room.id);
+  }
+
+  knock(roomId: string, nickname: string, inviteId?: string): string {
+    const room = this.state.rooms.get(roomId);
+    if (!room) throw new Error(`no room ${roomId}`);
+    const id = nextId(this.state, 'user');
+    const at = tick(this.state);
+    this.state.users.set(id, {
+      user: create(UserSchema, { id, displayName: nickname, avatarFileId: '', statusText: '', createdAt: at, isGuest: true }),
+      email: '',
+      password: '',
+      settings: defaultSettings(),
+      emailVerified: true,
+      pendingEmail: '',
+      locale: '',
+    });
+    this.state.presences.set(id, create(PresenceSchema, { userId: id, status: PresenceStatus.ONLINE, lastSeen: at }));
+    this.addGuestMember(room.workspaceId, id);
+    const inv = inviteId ? this.state.roomInvites.get(inviteId) : undefined;
+    this.addKnock(room, id, inv?.id ?? '', inv?.createdBy ?? IDS.users.anna);
+    return id;
+  }
+
+  decideAdmission(roomId: string, userId: string, status: 'admitted' | 'declined' | 'no_answer' | 'cancelled', byUserId: string = IDS.users.anna): void {
+    const key = admissionKey(roomId, userId);
+    const a = this.state.admissions.get(key);
+    const room = this.state.rooms.get(roomId);
+    if (!a || !room) throw new Error(`no knock of ${userId} on ${roomId}`);
+    const outcome = admissionOutcome(status, byUserId, tick(this.state));
+    // Deciders are computed before the knock goes (the link's author may decide it).
+    const deciders = new Set([...this.conns].map((c) => c.userId).filter((u): u is string => !!u && this.decides(a, u)));
+    this.state.admissions.delete(key);
+    if (status === 'admitted') this.grantOverride(room, userId, this.state.roomInvites.get(a.inviteId));
+    const dv = deciderView(a, create(UserSchema, { id: userId }), outcome);
+    this.fanout((u) => (deciders.has(u) ? { event: { case: 'roomAdmissionDecided', value: { admission: dv } } } : null));
+    this.toUser(userId, {
+      event: { case: 'roomAdmissionDecided', value: { admission: guestView(a, room.name, this.state.workspaces.get(a.workspaceId)?.name ?? '', outcome) } },
+    });
+    if (status !== 'admitted') this.dropIdleGuest(a.workspaceId, userId);
+  }
+
+  /** A guest membership with no room left (no personal override, no other knock) goes. */
+  private dropIdleGuest(wsId: string, userId: string): void {
+    const m = this.member(wsId, userId);
+    if (m?.role !== WorkspaceRole.GUEST) return;
+    const hasRoom = [...this.state.rooms.values()].some(
+      (r) => r.workspaceId === wsId && r.permissionOverrides.some((o) => o.targetType === PermissionTargetType.USER && o.targetId === userId),
+    );
+    const knocks = [...this.state.admissions.values()].some((x) => x.workspaceId === wsId && x.userId === userId);
+    if (hasRoom || knocks) return;
+    this.toUser(userId, { event: { case: 'workspaceDelete', value: { workspaceId: wsId } } });
+    this.state.members = this.state.members.filter((x) => x !== m);
+    this.toWorkspace(wsId, { event: { case: 'workspaceMemberRemove', value: { workspaceId: wsId, userId } } });
+  }
+
+  private admissionRoutes(): void {
+    const s = (): MockState => this.state;
+    const knockOf = (roomId: string, userId: string): AdmissionRec => {
+      const a = s().admissions.get(admissionKey(roomId, userId));
+      if (!a) throw notFound('admission not found');
+      return a;
+    };
+    // MANAGE_ROOM in the room, or the author of one of its links (a member, not a guest).
+    const deciderRoom = (roomId: string, me: string): Room => {
+      const room = s().rooms.get(roomId);
+      const m = room ? this.member(room.workspaceId, me) : undefined;
+      if (!room || room.type === RoomType.DM || !m) throw notFound('room not found');
+      const author = m.role !== WorkspaceRole.GUEST && [...s().roomInvites.values()].some((i) => i.roomId === room.id && i.createdBy === me);
+      if (!has(this.perms(room, me), MANAGE_ROOM) && !author) {
+        if (!this.canView(room, me)) throw notFound('room not found');
+        throw forbidden('MANAGE_ROOM required');
+      }
+      return room;
+    };
+    this.route('GET', '/api/rooms/:id/admissions', (c) => {
+      const me = this.uid(c);
+      const room = deciderRoom(c.params[0] ?? '', me);
+      const admissions = [...s().admissions.values()]
+        .filter((a) => a.roomId === room.id && this.decides(a, me))
+        .sort((a, b) => timestampMs(a.requestedAt) - timestampMs(b.requestedAt))
+        .map((a) => deciderView(a, s().users.get(a.userId)?.user));
+      sendMsg(c.res, 200, ListRoomAdmissionsResponseSchema, { admissions });
+    });
+    this.route('POST', '/api/rooms/:id/admissions/:userId', (c) => {
+      const me = this.uid(c);
+      if (s().users.get(me)?.user.isBot) throw new HttpError(403, ErrorCode.FORBIDDEN, 'not available for bots', '', { reason: 'BOT_NOT_ALLOWED' });
+      const room = deciderRoom(c.params[0] ?? '', me);
+      const target = c.params[1] ?? '';
+      const b = parseBody(c, DecideRoomAdmissionRequestSchema);
+      const admit = b.status === RoomAdmissionStatus.ADMITTED;
+      if (!admit && b.status !== RoomAdmissionStatus.DECLINED) throw invalid('status', 'status must be ADMITTED or DECLINED');
+      const name = admit && b.displayName !== undefined ? b.displayName.trim() : undefined;
+      if (name !== undefined && (!name || Array.from(name).length > 40)) throw invalid('displayName', 'name must be 1..40 characters');
+      const a = knockOf(room.id, target);
+      if (!this.decides(a, me)) throw forbidden('MANAGE_ROOM required');
+      const guest = s().users.get(target);
+      if (name !== undefined && !guest?.user.isGuest) throw invalid('displayName', 'only a guest account can be renamed');
+      if (admit && b.badgeId && !this.badgesOf(room.workspaceId).some((x) => x.id === b.badgeId)) throw invalid('badgeId', 'unknown badge');
+      if (name !== undefined && guest) {
+        guest.user.displayName = name;
+        const user = guest.user;
+        this.fanout((u) => (u === target || this.shareWorkspace(u, target) ? { event: { case: 'userUpdate', value: { user } } } : null));
+      }
+      if (admit && b.badgeId !== undefined) this.setMemberBadge(room.workspaceId, target, b.badgeId);
+      this.decideAdmission(room.id, target, admit ? 'admitted' : 'declined', me);
+      const outcome = admissionOutcome(admit ? 'admitted' : 'declined', me, tick(s()));
+      sendMsg(c.res, 200, DecideRoomAdmissionResponseSchema, { admission: deciderView(a, guest?.user, outcome) });
+    });
+    this.route('DELETE', '/api/rooms/:id/admissions/me', (c) => {
+      const me = this.uid(c);
+      const roomId = c.params[0] ?? '';
+      knockOf(roomId, me);
+      this.decideAdmission(roomId, me, 'cancelled', me);
+      noContent(c.res);
+    });
+  }
+
+  // ------------------------------------------------ free / busy, find a time, CalDAV (ADR-0041)
+
+  private workHoursOf(userId: string): WorkHoursRec {
+    return this.calWorkHours.get(userId) ?? DEFAULT_WORK_HOURS;
+  }
+
+  /** The mock's zone of a user: User.timezone, else Moscow (the visual tests' zone). */
+  private zoneOf(userId: string): string {
+    return this.state.users.get(userId)?.user.timezone || 'Europe/Moscow';
+  }
+
+  /** A connected account of `userId` (visual fixtures): «Работа» picked, import on, synced now. */
+  seedCalDav(userId: string, patch: Partial<CalDavRec> = {}): void {
+    const url = 'https://caldav.example.com';
+    this.calDav.set(userId, { url, username: 'anna@example.com', calendarHref: davCalendars(url)[0]?.href ?? '', import: true, push: false, lastSyncAt: this.calNow(), lastError: '', shareLevel: 'busy', ...patch });
+  }
+
+  /** A member of `wsId` (a person, not a guest) with this address: their id, else ''. */
+  private memberByEmail(wsId: string, email: string): string {
+    for (const u of this.state.users.values()) {
+      if (u.email.toLowerCase() !== email || u.user.isBot || u.user.isGuest) continue;
+      const m = this.member(wsId, u.user.id);
+      if (m && m.role !== WorkspaceRole.GUEST) return u.user.id;
+    }
+    return '';
+  }
+
+  /** One person's busy time for `viewer` (ADR-0041 §1): event_id only for meetings the viewer sees; external titles by the owner's share level (ADR-0045 §4). */
+  private busyOf(wsId: string, userId: string, viewer: string, fromMs: number, toMs: number): Array<{ startsAt: string; endsAt: string; eventId?: string; kind: string; allDay: boolean; title?: string; attendeeUserIds?: string[] }> {
+    const iso = (t: number): string => new Date(t).toISOString();
+    const out: Array<{ startsAt: string; endsAt: string; eventId?: string; kind: string; allDay: boolean; title?: string; attendeeUserIds?: string[] }> = [];
+    const level = this.calDav.get(userId)?.shareLevel ?? 'busy';
+    for (const o of meetingBusy(this.calEvents.values(), wsId, userId, fromMs, toMs)) {
+      const seen = !!this.calView(o.rec, viewer);
+      out.push({ startsAt: iso(o.startMs), endsAt: iso(o.endMs), ...(seen ? { eventId: o.rec.ev.id } : {}), kind: 'BUSY_KIND_MEETING', allDay: o.rec.ev.allDay });
+    }
+    for (const x of this.calExternal.get(userId) ?? []) {
+      if (x.endMs > fromMs && x.startMs < toMs) {
+        out.push({ startsAt: iso(x.startMs), endsAt: iso(x.endMs), kind: 'BUSY_KIND_EXTERNAL', allDay: false, ...sharedBusy(x, level, (e) => this.memberByEmail(wsId, e)) });
+      }
+    }
+    return out.sort((a, b) => Date.parse(a.startsAt) - Date.parse(b.startsAt));
+  }
+
+  private freeBusyRoutes(): void {
+    const DAY = 86_400_000;
+    const asker = (wsId: string, me: string): void => {
+      const { m } = this.workspaceFor(wsId, me);
+      if (m.role === WorkspaceRole.GUEST || this.state.users.get(me)?.user.isBot) throw forbidden('free / busy is not available for guests and bots');
+    };
+    const people = (wsId: string, ids: readonly string[]): string[] => {
+      const list = [...new Set(ids.filter(Boolean))];
+      if (!list.length || list.length > 20) throw invalid('users', '1..20 users');
+      for (const u of list) {
+        const m = this.member(wsId, u);
+        if (!m || m.role === WorkspaceRole.GUEST || this.state.users.get(u)?.user.isBot) throw invalid('users', 'users must be members of the workspace');
+      }
+      return list;
+    };
+    const span = (from: number, to: number): void => {
+      if (Number.isNaN(from) || Number.isNaN(to) || to <= from || to - from > 14 * DAY) throw invalid('to', 'from / to: RFC 3339, to after from, at most 14 days');
+    };
+
+    this.route('GET', '/api/workspaces/:id/freebusy', (c) => {
+      const me = this.uid(c);
+      const wsId = c.params[0] ?? '';
+      asker(wsId, me);
+      const list = people(wsId, (c.url.searchParams.get('users') ?? '').split(','));
+      const from = Date.parse(c.url.searchParams.get('from') ?? '');
+      const to = Date.parse(c.url.searchParams.get('to') ?? '');
+      span(from, to);
+      const users = list.map((u) => ({ userId: u, timezone: this.zoneOf(u), workHours: this.workHoursOf(u), busy: this.busyOf(wsId, u, me, from, to) }));
+      send(c.res, 200, JSON.stringify({ users }), 'application/json');
+    });
+
+    this.route('POST', '/api/workspaces/:id/freebusy/suggest', (c) => {
+      const me = this.uid(c);
+      const wsId = c.params[0] ?? '';
+      asker(wsId, me);
+      const b = JSON.parse(c.raw.toString('utf8') || '{}') as { users?: string[]; durationMin?: unknown; from?: string; to?: string; withinWorkHours?: boolean; roomId?: string };
+      const list = people(wsId, b.users ?? []);
+      const dur = Number(b.durationMin ?? 0);
+      if (!(dur >= 15 && dur <= 480) || dur % 15) throw invalid('durationMin', 'duration is 15..480 minutes in 15-minute steps');
+      const from = Date.parse(b.from ?? '');
+      const to = Date.parse(b.to ?? '');
+      span(from, to);
+      const toSpans = (x: ReturnType<MockImpl['busyOf']>): Array<{ start: number; end: number }> => x.map((i) => ({ start: Date.parse(i.startsAt), end: Date.parse(i.endsAt) }));
+      const busy = list.map((u) => toSpans(this.busyOf(wsId, u, me, from, to)));
+      if (b.roomId) {
+        const roomBusy: Array<{ start: number; end: number }> = [];
+        for (const rec of this.calEvents.values()) {
+          if (rec.ev.roomId !== b.roomId || rec.ev.cancelledAt) continue;
+          for (const o of occurrences(rec, from, to)) roomBusy.push({ start: o.startMs, end: o.endMs });
+        }
+        busy.push(roomBusy);
+      }
+      let work: Array<Array<{ start: number; end: number }>> | null = null;
+      if (b.withinWorkHours) {
+        work = list.map((u) => workIntervals(this.workHoursOf(u), this.zoneOf(u), from, to));
+        let common: Array<{ start: number; end: number }> = [{ start: from, end: to }];
+        for (const w of work) common = intersectIntervals(common, w);
+        if (!common.length) throw new HttpError(409, ErrorCode.NO_COMMON_HOURS, 'the work hours of these people never overlap');
+      }
+      const slots = slotsOf(freeWindows({ from, to, busy, work, minMinutes: dur }), dur);
+      send(c.res, 200, JSON.stringify({ slots: slots.map((x) => ({ startsAt: new Date(x.startMs).toISOString(), endsAt: new Date(x.endMs).toISOString() })) }), 'application/json');
+    });
+
+    // CalDAV (ADR-0041 §4): one fake account per user; any https address «discovers» two calendars,
+    // an address with «fail» answers 422 like a server that refused the login.
+    const davUser = (c: Ctx): string => {
+      const u = this.auth(c).user;
+      if (u.user.isGuest || u.user.isBot) throw forbidden('CalDAV is not for guests and bots');
+      return u.user.id;
+    };
+    const syncDav = (userId: string, a: CalDavRec): void => {
+      a.lastSyncAt = this.calNow();
+      a.lastError = '';
+      if (!a.import) return;
+      const clock = this.calNow();
+      const day = new Date(clock);
+      day.setUTCHours(8, 0, 0, 0); // 11:00 MSK
+      this.calExternal.set(userId, [...(this.calDavRemote.get(userId) ?? [{ startMs: day.getTime(), endMs: day.getTime() + 3_600_000 }])]);
+    };
+    this.route('GET', '/api/me/caldav', (c) => {
+      send(c.res, 200, JSON.stringify(davOut(this.calDav.get(davUser(c)))), 'application/json');
+    });
+    this.route('POST', '/api/me/caldav', (c) => {
+      const me = davUser(c);
+      const b = JSON.parse(c.raw.toString('utf8') || '{}') as { url?: string; username?: string; password?: string };
+      const url = (b.url ?? '').trim();
+      if (!/^https:\/\/[^\s/]+/.test(url)) throw invalid('url', 'the address must be https');
+      if (!b.username || !b.password) throw invalid('username', 'login and password are required');
+      if (url.includes('fail')) throw invalid('password', 'the server refused the login');
+      const a: CalDavRec = { url, username: b.username, calendarHref: '', import: false, push: false, lastSyncAt: null, lastError: '' };
+      this.calDav.set(me, a);
+      send(c.res, 200, JSON.stringify(davOut(a)), 'application/json');
+    });
+    this.route('PUT', '/api/me/caldav', (c) => {
+      const me = davUser(c);
+      const a = this.calDav.get(me);
+      if (!a) throw notFound('no CalDAV account');
+      const b = JSON.parse(c.raw.toString('utf8') || '{}') as { calendarHref?: string; import?: boolean; push?: boolean };
+      if (b.calendarHref !== undefined) a.calendarHref = b.calendarHref;
+      a.import = !!b.import;
+      a.push = !!b.push;
+      if (!a.import) this.calExternal.delete(me);
+      else if (a.calendarHref) syncDav(me, a);
+      send(c.res, 200, JSON.stringify(davOut(a)), 'application/json');
+    });
+    this.route('PATCH', '/api/me/caldav', (c) => {
+      const me = davUser(c);
+      const a = this.calDav.get(me);
+      if (!a) throw notFound('no CalDAV account');
+      const b = JSON.parse(c.raw.toString('utf8') || '{}') as { shareLevel?: unknown };
+      const level = shareLevelIn(b.shareLevel);
+      if (!level) throw invalid('shareLevel', 'one of busy, title, details');
+      a.shareLevel = level;
+      send(c.res, 200, JSON.stringify(davOut(a)), 'application/json');
+    });
+    this.route('GET', '/api/me/external-events', (c) => {
+      const me = davUser(c);
+      const from = Date.parse(c.url.searchParams.get('from') ?? '');
+      const to = Date.parse(c.url.searchParams.get('to') ?? '');
+      if (Number.isNaN(from) || Number.isNaN(to) || to <= from || to - from > 14 * 86_400_000) throw invalid('to', 'from / to: RFC 3339, to after from, at most 14 days');
+      const wsId = c.url.searchParams.get('workspace') ?? '';
+      if (wsId) {
+        const m = this.member(wsId, me);
+        if (!m || m.role === WorkspaceRole.GUEST) throw forbidden('not a member of this workspace');
+      }
+      const match = (e: string): string => (wsId ? this.memberByEmail(wsId, e) : '');
+      send(c.res, 200, JSON.stringify(externalEventsOut(this.calExternal.get(me) ?? [], from, to, match)), 'application/json');
+    });
+    this.route('POST', '/api/me/caldav/sync', (c) => {
+      const me = davUser(c);
+      const a = this.calDav.get(me);
+      if (!a) throw notFound('no CalDAV account');
+      syncDav(me, a);
+      send(c.res, 200, JSON.stringify(davOut(a)), 'application/json');
+    });
+    this.route('DELETE', '/api/me/caldav', (c) => {
+      const me = davUser(c);
+      this.calDav.delete(me);
+      this.calExternal.delete(me);
+      noContent(c.res);
+    });
+  }
+
+  // ------------------------------------------------ calendar (ADR-0038)
+
+  /** How `userId` sees `rec` in its workspace: null = not at all (guests, strangers, other rooms). */
+  private calView(rec: CalEventRec, userId: string): { view: EmailView; canEdit: boolean } | null {
+    const ev = rec.ev;
+    const m = this.member(ev.workspaceId, userId);
+    if (!m || m.role === WorkspaceRole.GUEST) return null;
+    const bot = this.state.users.get(userId)?.user.isBot ?? false;
+    const room = ev.roomId ? this.state.rooms.get(ev.roomId) : undefined;
+    const inv = !bot && involves(ev, userId);
+    if (!inv && !(room && this.canView(room, userId))) return null;
+    const canEdit = !bot && (ev.organizerId === userId || (room ? has(this.perms(room, userId), MANAGE_ROOM) : isAdminRole(m.role)));
+    return { view: bot ? 'none' : inv || canEdit ? 'full' : 'masked', canEdit };
+  }
+
+  /** A guest of the workspace who can view the meeting's room (ADR-0038 «Диплинки для приглашённых»). */
+  private calGuestSees(rec: CalEventRec, userId: string): boolean {
+    const m = this.member(rec.ev.workspaceId, userId);
+    const room = rec.ev.roomId ? this.state.rooms.get(rec.ev.roomId) : undefined;
+    return !!m && m.role === WorkspaceRole.GUEST && !!room && !rec.ev.cancelledAt && this.canView(room, userId);
+  }
+
+  /** The event for a member; a guest who sees its room → 403, anyone else → 404. */
+  private calRec(id: string, userId: string): { rec: CalEventRec; view: EmailView; canEdit: boolean } {
+    const rec = this.calEvents.get(id);
+    const v = rec ? this.calView(rec, userId) : null;
+    if (rec && !v && this.calGuestSees(rec, userId)) throw forbidden('the calendar is not available for guests');
+    if (!rec || !v) throw notFound('event not found');
+    return { rec, ...v };
+  }
+
+  eventGuestLink(eventId: string, email: string): string {
+    const rec = this.calEvents.get(eventId);
+    const addr = email.trim().toLowerCase();
+    if (!rec?.ev.roomId || !rec.ev.attendees.some((a) => a.email === addr)) throw notFound('external attendee of a meeting with a room not found');
+    rec.guestLinks ??= new Map();
+    let inv = this.state.roomInvites.get(rec.guestLinks.get(addr) ?? '');
+    if (!inv) {
+      if (!this.state.rooms.has(rec.ev.roomId)) throw notFound('room not found');
+      const occ = occurrences(rec, this.calNow(), Infinity)[0] ?? { startMs: timestampMs(rec.ev.startsAt ?? timestampFromMs(0)), endMs: timestampMs(rec.ev.endsAt ?? timestampFromMs(0)) };
+      const id = nextId(this.state, 'invite');
+      inv = create(RoomInviteSchema, {
+        id, roomId: rec.ev.roomId, workspaceId: rec.ev.workspaceId, code: `mock-meet-${id.slice(-4)}`, createdBy: rec.ev.organizerId,
+        maxUses: 1, uses: 0, allowGuests: true, allowSpeak: true, allowMessages: true, allowFiles: false, allowStream: false,
+        notBefore: timestampFromMs(occ.startMs - ACTIVE_BEFORE_MS), expiresAt: timestampFromMs(occ.endMs + 3_600_000), eventId: rec.ev.id,
+        createdAt: tick(this.state),
+      });
+      this.state.roomInvites.set(id, inv);
+      rec.guestLinks.set(addr, id);
+    }
+    return `${this.url}/r/${inv.code}`;
+  }
+
+  /** EVENT_* to everyone who may see the event, each with their view of the addresses. */
+  private calPublish(rec: CalEventRec, kind: 'eventCreate' | 'eventUpdate' | 'eventDelete'): void {
+    this.fanout((u) => {
+      const v = this.calView(rec, u);
+      if (!v) return null;
+      return { event: { case: kind, value: { event: eventOut(rec, null, v.view, '', false) } } };
+    });
+  }
+
+  private calActive(rec: CalEventRec, occ: Occurrence): void {
+    const ev = rec.ev;
+    this.fanout((u) => {
+      const room = this.state.rooms.get(ev.roomId);
+      if (this.calGuestSees(rec, u)) {
+        return { event: { case: 'roomEventActive', value: { workspaceId: ev.workspaceId, roomId: ev.roomId, event: eventForGuest(eventOut(rec, occ, 'none', '', false)) } } };
+      }
+      const v = this.calView(rec, u);
+      if (!room || !v || !this.canView(room, u)) return null;
+      return { event: { case: 'roomEventActive', value: { workspaceId: ev.workspaceId, roomId: ev.roomId, event: eventOut(rec, occ, v.view, '', false) } } };
+    });
+  }
+
+  private calEnded(rec: CalEventRec, occ: Occurrence): void {
+    const ev = rec.ev;
+    this.fanout((u) => {
+      const room = this.state.rooms.get(ev.roomId);
+      const m = this.member(ev.workspaceId, u);
+      if (!room || !m || !this.canView(room, u)) return null; // guests of the room too
+      return { event: { case: 'roomEventEnded', value: { workspaceId: ev.workspaceId, roomId: ev.roomId, eventId: ev.id, occurrenceAt: timestampFromMs(occ.startMs) } } };
+    });
+  }
+
+  private calNow(): number {
+    return this.clockMs ?? Date.now();
+  }
+
+  /** Validates a request's timing / room / attendees like the server (calendar/input.go, simplified). */
+  private calCheck(wsId: string, me: string, f: { title: string; description: string; startMs: number; endMs: number; roomId: string; repeatUntilMs: number },
+    attendees: readonly { userId: string; email: string; required: boolean }[]): CalendarEventAttendee[] {
+    const title = f.title.trim();
+    if (!title || Array.from(title).length > 120) throw invalid('title', 'title must be 1..120 characters');
+    if (Array.from(f.description).length > 4000) throw invalid('description', 'description must be at most 4000 characters');
+    if (!f.startMs || !f.endMs) throw invalid('startsAt', 'startsAt and endsAt are required');
+    if (f.endMs <= f.startMs) throw invalid('endsAt', 'endsAt must be after startsAt');
+    if (f.endMs - f.startMs > 7 * 86_400_000 + 3_600_000) throw invalid('endsAt', 'a meeting lasts at most 7 days');
+    if (f.repeatUntilMs && f.repeatUntilMs < f.startMs) throw invalid('repeatUntil', 'repeatUntil must not be before startsAt');
+    if (f.roomId) {
+      const room = this.state.rooms.get(f.roomId);
+      if (!room || room.workspaceId !== wsId || !this.canView(room, me)) throw invalid('roomId', 'no such room in this workspace');
+      if (room.type !== RoomType.VOICE) throw invalid('roomId', 'a meeting room must be a voice room');
+    }
+    const out: CalendarEventAttendee[] = [];
+    const seen = new Set<string>();
+    let externals = 0;
+    for (const a of attendees) {
+      if (a.userId && a.email) throw invalid('attendees', 'an attendee is a user or an email, not both');
+      if (a.userId) {
+        const u = this.state.users.get(a.userId);
+        const m = this.member(wsId, a.userId);
+        if (!u || !m || u.user.isBot || m.role === WorkspaceRole.GUEST) throw invalid('attendees', 'attendees must be members of the workspace (not bots or guests)');
+      } else {
+        if (!/^[^\s@<>"]+@[^\s@<>"]+\.[^\s@<>"]+$/.test(a.email.trim())) throw invalid('attendees', 'invalid email address');
+        externals++;
+      }
+      const key = a.userId ? `u:${a.userId}` : `e:${a.email.trim().toLowerCase()}`;
+      if (seen.has(key)) continue;
+      seen.add(key);
+      out.push(create(CalendarEventAttendeeSchema, { userId: a.userId, email: a.userId ? '' : a.email.trim().toLowerCase(), required: a.required, status: AttendeeStatus.PENDING }));
+    }
+    if (externals > 20) throw invalid('attendees', 'at most 20 external email addresses');
+    if (out.length + (out.some((a) => a.userId === me) ? 0 : 1) > 100) throw invalid('attendees', 'at most 100 attendees');
+    return out;
+  }
+
+  /** Creates a meeting (POST …/events and addEvent()): EVENT_CREATE, ROOM_EVENT_ACTIVE when active now. */
+  addEvent(a: AddEventArgs): CalendarEvent {
+    const organizer = a.organizerId ?? IDS.users.anna;
+    const attendees = this.calCheck(a.workspaceId, organizer,
+      { title: a.title, description: a.description ?? '', startMs: a.startMs, endMs: a.endMs, roomId: a.roomId ?? '', repeatUntilMs: a.repeatUntilMs ?? 0 },
+      (a.attendees ?? []).map((x) => ({ userId: x.userId ?? '', email: x.email ?? '', required: x.required ?? true })));
+    const nowMs = this.calNow();
+    for (const [i, x] of (a.attendees ?? []).entries()) {
+      const at = attendees[i];
+      if (at && x.status !== undefined) {
+        at.status = x.status;
+        at.respondedAt = timestampFromMs(nowMs);
+      }
+    }
+    const me = attendees.find((x) => x.userId === organizer);
+    if (me) {
+      me.status = AttendeeStatus.ACCEPTED;
+      me.required = true;
+    } else {
+      attendees.unshift(create(CalendarEventAttendeeSchema, { userId: organizer, required: true, status: AttendeeStatus.ACCEPTED, respondedAt: timestampFromMs(nowMs) }));
+    }
+    const id = nextId(this.state, 'event');
+    const ev = create(CalendarEventSchema, {
+      id, workspaceId: a.workspaceId, roomId: a.roomId ?? '', title: a.title.trim(), description: a.description ?? '',
+      startsAt: timestampFromMs(a.startMs), endsAt: timestampFromMs(a.endMs), allDay: a.allDay ?? false, tz: a.tz ?? 'UTC',
+      organizerId: organizer, record: a.record ?? false, repeat: a.repeat ?? EventRepeat.UNSPECIFIED,
+      ...(a.repeatUntilMs ? { repeatUntil: timestampFromMs(a.repeatUntilMs) } : {}),
+      attendees, createdAt: timestampFromMs(nowMs), updatedAt: timestampFromMs(nowMs),
+    });
+    const rec: CalEventRec = { ev, exceptions: new Set(), recordings: new Map() };
+    this.calEvents.set(id, rec);
+    this.calPublish(rec, 'eventCreate');
+    const occ = activeOccurrence(rec, nowMs);
+    if (occ) this.calActive(rec, occ);
+    return eventOut(rec, null, 'full', '', false);
+  }
+
+  /** An attendee's answer (PUT …/rsvp and rsvp()): EVENT_RSVP to everyone who sees the event. */
+  rsvpEvent(eventId: string, userId: string, status: AttendeeStatus): CalendarEvent {
+    const rec = this.calEvents.get(eventId);
+    if (!rec || rec.ev.cancelledAt) throw notFound('event not found');
+    const a = rec.ev.attendees.find((x) => x.userId === userId);
+    if (!a) throw forbidden('only attendees answer');
+    if (![AttendeeStatus.ACCEPTED, AttendeeStatus.DECLINED, AttendeeStatus.MAYBE].includes(status)) throw invalid('status', 'status must be ACCEPTED, DECLINED or MAYBE');
+    a.status = status;
+    a.respondedAt = timestampFromMs(this.calNow());
+    this.calRsvpEvent(rec, a);
+    return eventOut(rec, null, 'full', userId, false);
+  }
+
+  private calRsvpEvent(rec: CalEventRec, a: CalendarEventAttendee): void {
+    this.fanout((u) => {
+      const v = this.calView(rec, u);
+      if (!v) return null;
+      const out = eventOut(rec, null, v.view, '', false);
+      const attendee = out.attendees.find((x) => (a.userId ? x.userId === a.userId : x.email && (v.view === 'full' ? x.email === a.email : true))) ?? a;
+      return { event: { case: 'eventRsvp', value: { workspaceId: rec.ev.workspaceId, eventId: rec.ev.id, attendee, counts: counts(rec.ev.attendees), event: out } } };
+    });
+  }
+
+  /** EVENT_REMINDER to one user (the server's sweeper, `minutes` before the occurrence). */
+  emitReminder(eventId: string, userId: string, minutes: number, occurrenceAtMs?: number): void {
+    const rec = this.calEvents.get(eventId);
+    if (!rec) throw notFound('event not found');
+    const first = occurrences(rec, occurrenceAtMs ?? this.calNow(), Infinity)[0];
+    const occ = occurrenceAtMs !== undefined ? { startMs: occurrenceAtMs, endMs: occurrenceAtMs + (first ? first.endMs - first.startMs : 0) } : first;
+    if (!occ) throw notFound('no occurrence ahead');
+    const v = this.calView(rec, userId);
+    this.toUser(userId, {
+      event: { case: 'eventReminder', value: { event: eventOut(rec, occ, v?.view ?? 'full', userId, v?.canEdit ?? false), occurrenceAt: timestampFromMs(occ.startMs), minutes } },
+    });
+  }
+
+  /** ROOM_EVENT_ACTIVE (true) / ROOM_EVENT_ENDED (false) of an occurrence, like the sweeper. */
+  setEventActive(eventId: string, active: boolean, occurrenceAtMs?: number): void {
+    const rec = this.calEvents.get(eventId);
+    if (!rec?.ev.roomId) throw notFound('event with a room not found');
+    const first = occurrences(rec, occurrenceAtMs ?? this.calNow() - 86_400_000, Infinity)[0];
+    if (!first) throw notFound('no occurrence');
+    const occ = occurrenceAtMs !== undefined ? { startMs: occurrenceAtMs, endMs: occurrenceAtMs + first.endMs - first.startMs } : first;
+    if (active) this.calActive(rec, occ);
+    else this.calEnded(rec, occ);
+  }
+
+  /** The recording of an occurrence (the organizer started it in the meeting window, ADR-0038 §6). */
+  setEventRecording(eventId: string, occurrenceAtMs: number, recordingId: string): void {
+    const rec = this.calEvents.get(eventId);
+    if (!rec) throw notFound('event not found');
+    rec.recordings.set(occurrenceAtMs, recordingId);
+  }
+
+  /** Meetings active now in the rooms a member sees (WorkspaceSnapshot.active_events); guests: without attendees. */
+  private activeEvents(wsId: string, userId: string): CalendarEvent[] {
+    const now = this.calNow();
+    const out: CalendarEvent[] = [];
+    for (const rec of this.calEvents.values()) {
+      if (rec.ev.workspaceId !== wsId) continue;
+      const v = this.calView(rec, userId);
+      const room = this.state.rooms.get(rec.ev.roomId);
+      const occ = activeOccurrence(rec, now);
+      if (occ && this.calGuestSees(rec, userId)) out.push(eventForGuest(eventOut(rec, occ, 'none', '', false)));
+      else if (v && occ && room && this.canView(room, userId)) out.push(eventOut(rec, occ, v.view, userId, v.canEdit));
+    }
+    return out;
+  }
+
+  // ------------------------------------------------ task boards (ADR-0042, mock-boards.ts)
+
+  /** A board route: BoardError → the HTTP error the server would send. */
+  private boardRoute(method: string, pattern: string, h: (c: Ctx, me: string) => void | Promise<void>): void {
+    this.route(method, pattern, async (c) => {
+      const me = this.uid(c);
+      try {
+        await h(c, me);
+      } catch (e) {
+        if (e instanceof BoardError) throw new HttpError(e.status, e.code, e.message, e.field, e.reason ? { reason: e.reason } : {});
+        throw e;
+      }
+    });
+  }
+
+  private boardRoutes(): void {
+    const b = (): BoardsMock => this.boards;
+    const q = (c: Ctx, k: string): string => c.url.searchParams.get(k) ?? '';
+    const taskRes = (id: string, me: string, full = false): MessageInitShape<typeof TaskResponseSchema> => {
+      if (!full) {
+        const t = b().tasks.get(id);
+        return t ? { task: b().taskOut(t, me, true) } : {};
+      }
+      const g = b().getTask(id, me);
+      return { task: g.task, subtasks: g.subtasks, related: g.related, ...(g.parent ? { parent: g.parent } : {}), ...(g.room ? { room: this.roomOut(g.room) } : {}), board: g.board };
+    };
+    const filterOf = (c: Ctx): TaskFilter | undefined => {
+      const raw = q(c, 'filter');
+      if (!raw) return undefined;
+      try {
+        return fromJson(TaskFilterSchema, JSON.parse(raw) as JsonValue, JSON_READ);
+      } catch {
+        throw invalid('filter', 'malformed filter');
+      }
+    };
+
+    this.boardRoute('GET', '/api/workspaces/:id/boards', (c, me) => {
+      sendMsg(c.res, 200, ListBoardsResponseSchema, { boards: b().listBoards(c.params[0] ?? '', me, q(c, 'archived') === '1') });
+    });
+    this.boardRoute('POST', '/api/workspaces/:id/boards', (c, me) => {
+      const r = parseBody(c, CreateBoardRequestSchema);
+      const rec = b().createBoard(c.params[0] ?? '', me, r);
+      sendMsg(c.res, 201, BoardResponseSchema, { board: b().boardOut(rec, me, { personal: true }) });
+    });
+    this.boardRoute('GET', '/api/boards/:id', (c, me) => sendMsg(c.res, 200, BoardResponseSchema, { board: b().getBoard(c.params[0] ?? '', me) }));
+    this.boardRoute('PATCH', '/api/boards/:id', (c, me) => {
+      const r = parseBody(c, UpdateBoardRequestSchema);
+      sendMsg(c.res, 200, BoardResponseSchema, { board: b().updateBoard(c.params[0] ?? '', me, r) });
+    });
+    this.boardRoute('DELETE', '/api/boards/:id', (c, me) => {
+      b().removeBoard(c.params[0] ?? '', me, q(c, 'purge') === '1');
+      noContent(c.res);
+    });
+    this.boardRoute('POST', '/api/boards/:id/restore', (c, me) => sendMsg(c.res, 200, BoardResponseSchema, { board: b().restoreBoard(c.params[0] ?? '', me) }));
+    this.boardRoute('PUT', '/api/boards/:id/position', (c, me) => {
+      const r = parseBody(c, SetBoardPositionRequestSchema);
+      sendMsg(c.res, 200, BoardResponseSchema, { board: b().moveBoard(c.params[0] ?? '', me, r.position) });
+    });
+    this.boardRoute('GET', '/api/boards/:id/permissions', (c, me) => {
+      const board = b().getBoard(c.params[0] ?? '', me);
+      if (!(board.permissions & MANAGE_BOARD)) throw forbidden('MANAGE_BOARD required');
+      sendMsg(c.res, 200, BoardPermissionsResponseSchema, { overrides: board.permissionOverrides, board });
+    });
+    this.boardRoute('PUT', '/api/boards/:id/permissions', (c, me) => {
+      const r = parseBody(c, SetBoardPermissionsRequestSchema);
+      const board = b().setPermissions(c.params[0] ?? '', me, r.overrides);
+      sendMsg(c.res, 200, BoardPermissionsResponseSchema, { overrides: board.permissionOverrides, board });
+    });
+    // statuses / labels / milestones
+    this.boardRoute('POST', '/api/boards/:id/statuses', (c, me) => {
+      const r = parseBody(c, CreateBoardStatusRequestSchema);
+      sendMsg(c.res, 201, BoardResponseSchema, { board: b().createStatus(c.params[0] ?? '', me, r) });
+    });
+    this.boardRoute('PATCH', '/api/boards/:id/statuses/:sid', (c, me) => {
+      const r = parseBody(c, UpdateBoardStatusRequestSchema);
+      sendMsg(c.res, 200, BoardResponseSchema, { board: b().updateStatus(c.params[0] ?? '', me, c.params[1] ?? '', r) });
+    });
+    this.boardRoute('DELETE', '/api/boards/:id/statuses/:sid', (c, me) => {
+      b().deleteStatus(c.params[0] ?? '', me, c.params[1] ?? '', q(c, 'move_to'));
+      noContent(c.res);
+    });
+    this.boardRoute('POST', '/api/boards/:id/labels', (c, me) => {
+      const r = parseBody(c, CreateBoardLabelRequestSchema);
+      sendMsg(c.res, 201, BoardResponseSchema, { board: b().createLabel(c.params[0] ?? '', me, r) });
+    });
+    this.boardRoute('PATCH', '/api/boards/:id/labels/:lid', (c, me) => {
+      const r = parseBody(c, UpdateBoardLabelRequestSchema);
+      sendMsg(c.res, 200, BoardResponseSchema, { board: b().updateLabel(c.params[0] ?? '', me, c.params[1] ?? '', r) });
+    });
+    this.boardRoute('DELETE', '/api/boards/:id/labels/:lid', (c, me) => {
+      b().deleteLabel(c.params[0] ?? '', me, c.params[1] ?? '');
+      noContent(c.res);
+    });
+    this.boardRoute('POST', '/api/boards/:id/milestones', (c, me) => {
+      const r = parseBody(c, CreateBoardMilestoneRequestSchema);
+      sendMsg(c.res, 201, BoardResponseSchema, { board: b().createMilestone(c.params[0] ?? '', me, r) });
+    });
+    this.boardRoute('PATCH', '/api/boards/:id/milestones/:mid', (c, me) => {
+      const r = parseBody(c, UpdateBoardMilestoneRequestSchema);
+      sendMsg(c.res, 200, BoardResponseSchema, { board: b().updateMilestone(c.params[0] ?? '', me, c.params[1] ?? '', r) });
+    });
+    this.boardRoute('DELETE', '/api/boards/:id/milestones/:mid', (c, me) => {
+      b().deleteMilestone(c.params[0] ?? '', me, c.params[1] ?? '');
+      noContent(c.res);
+    });
+    // views
+    this.boardRoute('GET', '/api/boards/:id/views', (c, me) => sendMsg(c.res, 200, ListBoardViewsResponseSchema, { views: b().getBoard(c.params[0] ?? '', me).views }));
+    this.boardRoute('POST', '/api/boards/:id/views', (c, me) => {
+      const r = parseBody(c, CreateBoardViewRequestSchema);
+      sendMsg(c.res, 201, BoardViewResponseSchema, { view: b().createView(c.params[0] ?? '', me, r) });
+    });
+    this.boardRoute('PATCH', '/api/boards/:id/views/:vid', (c, me) => {
+      const r = parseBody(c, UpdateBoardViewRequestSchema);
+      sendMsg(c.res, 200, BoardViewResponseSchema, { view: b().updateView(c.params[0] ?? '', me, c.params[1] ?? '', r) });
+    });
+    this.boardRoute('DELETE', '/api/boards/:id/views/:vid', (c, me) => {
+      b().deleteView(c.params[0] ?? '', me, c.params[1] ?? '');
+      noContent(c.res);
+    });
+    // files of task descriptions and comments (quota of the workspace)
+    this.boardRoute('POST', '/api/boards/:id/files', async (c, me) => {
+      const board = b().getBoard(c.params[0] ?? '', me);
+      const ws = this.state.workspaces.get(board.workspaceId);
+      if (!ws) throw notFound('board not found');
+      const f = await parseMultipartFile(c);
+      if (f.bytes.length > 50 * 1024 * 1024) throw new HttpError(413, ErrorCode.FILE_TOO_LARGE, 'file too large');
+      const id = this.storeFile(ws.id, me, f, parseVoice(c, f));
+      ws.storageUsedBytes += BigInt(f.bytes.length);
+      sendMsg(c.res, 201, UploadFileResponseSchema, { file: this.state.files.get(id)?.meta });
+    });
+    // tasks
+    this.boardRoute('GET', '/api/boards/:id/tasks', (c, me) => {
+      const r = b().listTasks(c.params[0] ?? '', me, {
+        filter: filterOf(c),
+        archived: q(c, 'archived') === '1',
+        cursor: q(c, 'cursor'),
+        limit: Number(q(c, 'limit')) || 500,
+        nowMs: timestampMs(this.callNow()),
+      });
+      sendMsg(c.res, 200, ListTasksResponseSchema, r);
+    });
+    this.boardRoute('POST', '/api/boards/:id/tasks', (c, me) => {
+      const r = parseBody(c, CreateTaskRequestSchema);
+      const t = b().createTask(c.params[0] ?? '', me, r);
+      sendMsg(c.res, 201, TaskResponseSchema, taskRes(t.task.id, me));
+    });
+    this.boardRoute('GET', '/api/tasks/:id', (c, me) => sendMsg(c.res, 200, TaskResponseSchema, taskRes(c.params[0] ?? '', me, true)));
+    this.boardRoute('GET', '/api/t/:key', (c, me) => sendMsg(c.res, 200, TaskResponseSchema, taskRes(b().byKey(c.params[0] ?? '', me), me, true)));
+    this.boardRoute('PATCH', '/api/tasks/:id', (c, me) => {
+      const r = parseBody(c, UpdateTaskRequestSchema);
+      const t = b().updateTask(c.params[0] ?? '', me, r);
+      sendMsg(c.res, 200, TaskResponseSchema, taskRes(t.task.id, me));
+    });
+    this.boardRoute('POST', '/api/tasks/:id/archive', (c, me) => sendMsg(c.res, 200, TaskResponseSchema, taskRes(b().archiveTask(c.params[0] ?? '', me, true).task.id, me)));
+    this.boardRoute('POST', '/api/tasks/:id/restore', (c, me) => sendMsg(c.res, 200, TaskResponseSchema, taskRes(b().archiveTask(c.params[0] ?? '', me, false).task.id, me)));
+    this.boardRoute('PUT', '/api/tasks/:id/assignees', (c, me) => {
+      const r = parseBody(c, SetAssigneesRequestSchema);
+      sendMsg(c.res, 200, TaskResponseSchema, taskRes(b().setAssignees(c.params[0] ?? '', me, r.assignees).task.id, me));
+    });
+    this.boardRoute('PUT', '/api/tasks/:id/relations', (c, me) => {
+      const r = parseBody(c, SetTaskRelationRequestSchema);
+      sendMsg(c.res, 200, TaskResponseSchema, taskRes(b().setRelation(c.params[0] ?? '', me, r.relatedId, r.kind, true).task.id, me, true));
+    });
+    this.boardRoute('DELETE', '/api/tasks/:id/relations', (c, me) => {
+      const kind: TaskRelationKind = Number(q(c, 'kind'));
+      sendMsg(c.res, 200, TaskResponseSchema, taskRes(b().setRelation(c.params[0] ?? '', me, q(c, 'related_id'), kind, false).task.id, me, true));
+    });
+    this.boardRoute('PUT', '/api/tasks/:id/subscription', (c, me) => {
+      const r = parseBody(c, SetTaskSubscriptionRequestSchema);
+      sendMsg(c.res, 200, TaskResponseSchema, taskRes(b().setSubscription(c.params[0] ?? '', me, r.muted).task.id, me));
+    });
+    this.boardRoute('PUT', '/api/tasks/:id/read', (c, me) => {
+      b().markRead(c.params[0] ?? '', me);
+      noContent(c.res);
+    });
+    this.boardRoute('GET', '/api/tasks/:id/activity', (c, me) => {
+      const r = b().feed(c.params[0] ?? '', me, q(c, 'before'), Number(q(c, 'limit')) || 50);
+      sendMsg(c.res, 200, TaskActivityPageSchema, {
+        items: r.items.map((x) => (x.message ? { item: { case: 'message' as const, value: this.msgOut(x.message, me) } } : { item: { case: 'activity' as const, value: x.activity as TaskActivity } })),
+        hasMore: r.hasMore,
+      });
+    });
+    this.boardRoute('GET', '/api/me/tasks', (c, me) => {
+      sendMsg(c.res, 200, MyTasksResponseSchema, { tasks: b().mine(q(c, 'workspace_id'), me, q(c, 'scope') || 'assigned', q(c, 'open') === '1'), nextCursor: '' });
+    });
+    this.boardRoute('GET', '/api/workspaces/:id/tasks/search', (c, me) => {
+      sendMsg(c.res, 200, SearchTasksResponseSchema, { tasks: b().search(c.params[0] ?? '', me, q(c, 'q'), Number(q(c, 'limit')) || 20) });
+    });
+    // Test control: an update of a task by another user (TASK_UPDATE fan-out as the server would).
+    this.route('POST', '/__mock/task', (c) => {
+      const body = JSON.parse(c.raw.toString('utf8') || '{}') as { taskId?: string; key?: string; actorId?: string; title?: string; statusId?: string };
+      const id = body.taskId ?? this.boards.taskByKey(body.key ?? '')?.task.id ?? '';
+      const task = this.updateTaskAs(body.actorId ?? IDS.users.boris, id, { ...(body.title ? { title: body.title } : {}), ...(body.statusId ? { statusId: body.statusId } : {}) });
+      send(c.res, 200, JSON.stringify(toJson(TaskSchema, task, JSON_WRITE)), 'application/json');
+    });
+  }
+
+  /** A task change by `actorId` (tests: «someone else edits a task»); fans out TASK_UPDATE. */
+  updateTaskAs(actorId: string, taskId: string, patch: { title?: string; statusId?: string }): Task {
+    return this.boards.updateAs(actorId, taskId, patch);
+  }
+
+  /** Scenario `data`: comments on CAL-3 in its task room (Борис, Анна, a reaction). */
+  private seedBoards(): void {
+    if (this.state.scenario !== 'data') return;
+    this.boards.seed();
+    const t3 = this.boards.taskByKey('CAL-3');
+    if (!t3) return;
+    const room = this.state.rooms.get(t3.task.roomId);
+    if (!room) return;
+    const list: Message[] = [];
+    // Own id range: the fixture message counter (runtime messages) is not shifted.
+    const add = (authorId: string, content: string, at: string): Message => {
+      const m = create(MessageSchema, { id: mockId('message', 0xb000 + list.length), roomId: room.id, authorId, content, createdAt: ts(at) });
+      list.push(m);
+      return m;
+    };
+    add(IDS.users.boris, 'Воспроизвёл: Windows 11, колонки Logitech, эхо появляется через ~10 секунд после входа.', '2026-01-14T09:10:00Z');
+    const m2 = add(IDS.users.anna, `@${IDS.users.boris} проверю на Mac со встроенными динамиками сегодня.`, '2026-01-14T09:25:00Z');
+    this.state.messages.set(room.id, list);
+    this.state.reactions.set(m2.id, new Map([['👍', new Set([IDS.users.boris])]]));
+    m2.reactions = [create(ReactionSchema, { emoji: '👍', count: 1, me: false })];
+    t3.task.commentCount = list.length;
+  }
+
+  private newBoards(): BoardsMock {
+    return new BoardsMock({
+      state: this.state,
+      member: (w, u) => this.member(w, u),
+      rolesOf: (m) => this.memberRoles(m),
+      ownerOf: (w) => this.state.workspaces.get(w)?.ownerId ?? '',
+      fanout: (pick) => this.fanout(pick),
+      tick: () => tick(this.state),
+    });
+  }
+
+  private calendarRoutes(): void {
+    const ms = (t: Timestamp | undefined): number => (t ? timestampMs(t) : 0);
+    const viewer = (wsId: string, userId: string): void => {
+      const { m } = this.workspaceFor(wsId, userId);
+      if (m.role === WorkspaceRole.GUEST) throw forbidden('the calendar is not available for guests');
+    };
+    const notBot = (userId: string): void => {
+      if (this.state.users.get(userId)?.user.isBot) throw new HttpError(403, ErrorCode.FORBIDDEN, 'not available for bots', '', { reason: 'BOT_NOT_ALLOWED' });
+    };
+
+    this.route('GET', '/api/workspaces/:id/events', (c) => {
+      const me = this.uid(c);
+      const wsId = c.params[0] ?? '';
+      viewer(wsId, me);
+      const from = Date.parse(c.url.searchParams.get('from') ?? '');
+      const to = Date.parse(c.url.searchParams.get('to') ?? '');
+      if (Number.isNaN(from) || Number.isNaN(to)) throw invalid('from', 'from and to are RFC 3339 times');
+      if (to <= from || to - from > 62 * 86_400_000) throw invalid('to', 'to must be after from, at most 62 days later');
+      const rows: { rec: CalEventRec; occ: Occurrence; v: { view: EmailView; canEdit: boolean } }[] = [];
+      for (const rec of this.calEvents.values()) {
+        if (rec.ev.workspaceId !== wsId || rec.ev.cancelledAt) continue;
+        const v = this.calView(rec, me);
+        if (!v) continue;
+        for (const occ of occurrences(rec, from, to)) rows.push({ rec, occ, v });
+      }
+      rows.sort((a, b) => a.occ.startMs - b.occ.startMs || a.occ.endMs - b.occ.endMs);
+      sendMsg(c.res, 200, ListCalendarEventsResponseSchema, { events: rows.map((r) => eventOut(r.rec, r.occ, r.v.view, me, r.v.canEdit)) });
+    });
+
+    this.route('POST', '/api/workspaces/:id/events', (c) => {
+      const me = this.uid(c);
+      notBot(me);
+      const wsId = c.params[0] ?? '';
+      viewer(wsId, me);
+      const b = parseBody(c, CreateCalendarEventRequestSchema);
+      const created = this.addEvent({
+        workspaceId: wsId, organizerId: me, title: b.title, description: b.description, startMs: ms(b.startsAt), endMs: ms(b.endsAt),
+        allDay: b.allDay, tz: b.tz || 'UTC', record: b.record, roomId: b.roomId, repeat: b.repeat, repeatUntilMs: ms(b.repeatUntil),
+        attendees: b.attendees.map((x) => ({ userId: x.userId, email: x.email, required: x.required })),
+      });
+      const { rec, canEdit } = this.calRec(created.id, me);
+      sendMsg(c.res, 201, CalendarEventResponseSchema, { event: eventOut(rec, null, 'full', me, canEdit) });
+    });
+
+    this.route('GET', '/api/events/:id', (c) => {
+      const me = this.uid(c);
+      const g = this.calEvents.get(c.params[0] ?? '');
+      if (g && this.calGuestSees(g, me)) {
+        // A guest: the occurrence active now in a room it sees, without attendees; else 404.
+        const occ = activeOccurrence(g, this.calNow());
+        if (!occ) throw notFound('event not found');
+        sendMsg(c.res, 200, CalendarEventResponseSchema, { event: eventForGuest(eventOut(g, occ, 'none', '', false)) });
+        return;
+      }
+      const { rec, view, canEdit } = this.calRec(c.params[0] ?? '', me);
+      sendMsg(c.res, 200, CalendarEventResponseSchema, { event: eventOut(rec, null, view, me, canEdit) });
+    });
+
+    this.route('PATCH', '/api/events/:id', (c) => {
+      const me = this.uid(c);
+      notBot(me);
+      const { rec, canEdit } = this.calRec(c.params[0] ?? '', me);
+      if (rec.ev.cancelledAt) throw notFound('event not found');
+      if (!canEdit) throw forbidden('only the organizer or a room manager may change the meeting');
+      const b = parseBody(c, UpdateCalendarEventRequestSchema);
+      const ev = rec.ev;
+      const next = {
+        title: b.title ?? ev.title, description: b.description ?? ev.description,
+        startMs: b.startsAt ? ms(b.startsAt) : ms(ev.startsAt), endMs: b.endsAt ? ms(b.endsAt) : ms(ev.endsAt),
+        roomId: b.roomId ?? ev.roomId, repeatUntilMs: b.clearRepeatUntil ? 0 : b.repeatUntil ? ms(b.repeatUntil) : ms(ev.repeatUntil),
+      };
+      const organizer = ev.organizerId;
+      const wanted = b.setAttendees
+        ? this.calCheck(ev.workspaceId, me, next, b.attendees.map((x) => ({ userId: x.userId, email: x.email, required: x.required })))
+        : this.calCheck(ev.workspaceId, me, next, []);
+      const before = eventOut(rec, null, 'full', '', false);
+      const hadActive = activeOccurrence(rec, this.calNow());
+      let removed = false;
+      if (b.setAttendees) {
+        const keep = new Map(ev.attendees.map((a) => [a.userId ? `u:${a.userId}` : `e:${a.email}`, a]));
+        const out: CalendarEventAttendee[] = [];
+        if (!wanted.some((a) => a.userId === organizer)) out.push(keep.get(`u:${organizer}`) ?? create(CalendarEventAttendeeSchema, { userId: organizer, required: true, status: AttendeeStatus.ACCEPTED }));
+        for (const w of wanted) {
+          const old = keep.get(w.userId ? `u:${w.userId}` : `e:${w.email}`);
+          out.push(old ? Object.assign(old, { required: w.userId === organizer ? true : w.required }) : w);
+        }
+        removed = ev.attendees.some((a) => !out.includes(a));
+        ev.attendees = out;
+      }
+      const significant = next.title.trim() !== ev.title || next.description !== ev.description || next.startMs !== ms(ev.startsAt) ||
+        next.endMs !== ms(ev.endsAt) || next.roomId !== ev.roomId || (b.repeat !== undefined && b.repeat !== ev.repeat) || next.repeatUntilMs !== ms(ev.repeatUntil);
+      const roomChanged = next.roomId !== ev.roomId;
+      Object.assign(ev, {
+        title: next.title.trim(), description: next.description, startsAt: timestampFromMs(next.startMs), endsAt: timestampFromMs(next.endMs),
+        roomId: next.roomId, allDay: b.allDay ?? ev.allDay, tz: b.tz ?? ev.tz, record: b.record ?? ev.record, repeat: b.repeat ?? ev.repeat,
+        updatedAt: timestampFromMs(this.calNow()), sequence: ev.sequence + (significant || removed ? 1 : 0),
+      });
+      if (next.repeatUntilMs) ev.repeatUntil = timestampFromMs(next.repeatUntilMs);
+      else delete ev.repeatUntil;
+      if (roomChanged || removed) {
+        const old: CalEventRec = { ev: before, exceptions: rec.exceptions, recordings: rec.recordings };
+        this.fanout((u) => {
+          const v = this.calView(old, u);
+          return v ? { event: { case: 'eventDelete', value: { event: eventOut(old, null, v.view, '', false) } } } : null;
+        });
+      }
+      this.calPublish(rec, 'eventUpdate');
+      const nowActive = activeOccurrence(rec, this.calNow());
+      if (hadActive && (!nowActive || nowActive.startMs !== hadActive.startMs || roomChanged)) this.calEnded({ ...rec, ev: before }, hadActive);
+      if (nowActive) this.calActive(rec, nowActive);
+      const { canEdit: ce } = this.calRec(ev.id, me);
+      sendMsg(c.res, 200, CalendarEventResponseSchema, { event: eventOut(rec, null, 'full', me, ce) });
+    });
+
+    this.route('DELETE', '/api/events/:id', (c) => {
+      const me = this.uid(c);
+      notBot(me);
+      const { rec, canEdit } = this.calRec(c.params[0] ?? '', me);
+      if (rec.ev.cancelledAt) throw notFound('event not found');
+      if (!canEdit) throw forbidden('only the organizer or a room manager may cancel the meeting');
+      const active = activeOccurrence(rec, this.calNow());
+      const occStr = c.url.searchParams.get('occurrence');
+      if (occStr) {
+        const at = Date.parse(occStr);
+        const all = rec.ev.repeat === EventRepeat.UNSPECIFIED ? [] : occurrences({ ...rec, exceptions: new Set() }, at, at + 1);
+        if (Number.isNaN(at) || !all.some((o) => o.startMs === at)) throw invalid('occurrence', 'not an occurrence of this series');
+        if (!rec.exceptions.has(at)) {
+          rec.exceptions.add(at);
+          rec.ev.sequence += 1;
+          this.calPublish(rec, 'eventUpdate');
+          if (active?.startMs === at) this.calEnded(rec, active);
+        }
+        noContent(c.res);
+        return;
+      }
+      rec.ev.cancelledAt = timestampFromMs(this.calNow());
+      rec.ev.sequence += 1;
+      this.calPublish(rec, 'eventDelete');
+      if (active) this.calEnded(rec, active);
+      noContent(c.res);
+    });
+
+    this.route('PUT', '/api/events/:id/rsvp', (c) => {
+      const me = this.uid(c);
+      notBot(me);
+      const { rec, canEdit } = this.calRec(c.params[0] ?? '', me);
+      this.rsvpEvent(rec.ev.id, me, parseBody(c, RsvpCalendarEventRequestSchema).status);
+      sendMsg(c.res, 200, CalendarEventResponseSchema, { event: eventOut(rec, null, 'full', me, canEdit) });
+    });
+
+    this.route('GET', '/api/me/events/today', (c) => {
+      const me = this.uid(c);
+      notBot(me);
+      const now = this.calNow();
+      const d = new Date(now);
+      const dayEnd = Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate() + 1); // the mock's day is UTC
+      const rows: { rec: CalEventRec; occ: Occurrence; v: { view: EmailView; canEdit: boolean } }[] = [];
+      for (const rec of this.calEvents.values()) {
+        if (rec.ev.cancelledAt || !involves(rec.ev, me)) continue;
+        if (rec.ev.attendees.find((a) => a.userId === me)?.status === AttendeeStatus.DECLINED) continue;
+        const v = this.calView(rec, me);
+        if (!v) continue;
+        for (const occ of occurrences(rec, now, dayEnd)) rows.push({ rec, occ, v });
+      }
+      rows.sort((a, b) => a.occ.startMs - b.occ.startMs);
+      const events = rows.map((r) => eventOut(r.rec, r.occ, r.v.view, me, r.v.canEdit));
+      sendMsg(c.res, 200, TodayCalendarEventsResponseSchema, { count: events.length, events });
+    });
+
+    // External attendees' answer page (/e/<id>/rsvp?t=…): preview and answer, no login.
+    // The meeting link of that mail (/e/<id>?t=<view token>) opens the same page; a view token
+    // answers nothing (POST → 400), the page answers with the response's answer tokens.
+    const endedAt = (rec: CalEventRec): number => {
+      const last = occurrences(rec, 0, Infinity).at(-1);
+      return rec.ev.repeat === EventRepeat.UNSPECIFIED && last ? last.endMs : Infinity;
+    };
+    const byToken = (tok: string): { rec: CalEventRec; a: CalendarEventAttendee; status: AttendeeStatus; view: boolean } => {
+      const t = parseRsvpToken(tok);
+      const rec = t ? this.calEvents.get(t.eventId) : undefined;
+      const a = rec?.ev.attendees.find((x) => x.email && x.email === t?.email);
+      if (!t || !rec || !a) throw notFound('invitation not found');
+      if (endedAt(rec) + (t.view ? 3_600_000 : 0) <= this.calNow()) throw new HttpError(410, ErrorCode.EVENT_OVER, 'the meeting is over');
+      return { rec, a, status: t.status, view: t.view };
+    };
+    const rsvpOut = (rec: CalEventRec, a: CalendarEventAttendee, status: AttendeeStatus): MessageInitShape<typeof EventRsvpTokenResponseSchema> => {
+      const occ = occurrences(rec, this.calNow(), Infinity)[0] ?? { startMs: ms(rec.ev.startsAt), endMs: ms(rec.ev.endsAt) };
+      const org = this.state.users.get(rec.ev.organizerId);
+      const open = !rec.ev.cancelledAt && this.calNow() < endedAt(rec);
+      const inv = this.state.roomInvites.get(rec.guestLinks?.get(a.email) ?? '');
+      return {
+        eventId: rec.ev.id, title: rec.ev.title, startsAt: timestampFromMs(occ.startMs), endsAt: timestampFromMs(occ.endMs), allDay: rec.ev.allDay,
+        tz: rec.ev.tz, organizerName: org?.user.displayName ?? '',
+        workspaceName: this.state.workspaces.get(rec.ev.workspaceId)?.name ?? '', status, email: a.email, cancelled: !!rec.ev.cancelledAt,
+        description: rec.ev.description, roomName: rec.ev.roomId ? (this.state.rooms.get(rec.ev.roomId)?.name ?? '') : '', myStatus: a.status,
+        acceptToken: open ? rsvpToken(rec.ev.id, a.email, AttendeeStatus.ACCEPTED) : '',
+        maybeToken: open ? rsvpToken(rec.ev.id, a.email, AttendeeStatus.MAYBE) : '',
+        declineToken: open ? rsvpToken(rec.ev.id, a.email, AttendeeStatus.DECLINED) : '',
+        ...(inv && rec.ev.roomId ? { guestUrl: `${this.url}/r/${inv.code}`, guestFrom: inv.notBefore, guestUntil: inv.expiresAt } : {}),
+        repeat: rec.ev.repeat, ...(rec.ev.repeatUntil ? { repeatUntil: rec.ev.repeatUntil } : {}),
+        organizerEmail: org?.emailVerified ? org.email : '',
+      };
+    };
+    this.route('GET', '/api/event-rsvp', (c) => {
+      const { rec, a, status } = byToken(c.url.searchParams.get('t') ?? '');
+      sendMsg(c.res, 200, EventRsvpTokenResponseSchema, rsvpOut(rec, a, status));
+    });
+    this.route('POST', '/api/event-rsvp', (c) => {
+      const { rec, a, status, view } = byToken(parseBody(c, EventRsvpTokenRequestSchema).token);
+      if (view) throw new HttpError(400, ErrorCode.BAD_REQUEST, 'a view token cannot answer: use an answer token');
+      if (rec.ev.cancelledAt) throw new HttpError(410, ErrorCode.EVENT_OVER, 'the meeting is over');
+      if (a.status !== status) {
+        a.status = status;
+        a.respondedAt = timestampFromMs(this.calNow());
+        this.calRsvpEvent(rec, a);
+      }
+      sendMsg(c.res, 200, EventRsvpTokenResponseSchema, rsvpOut(rec, a, status));
     });
   }
 

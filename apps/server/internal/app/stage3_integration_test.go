@@ -7,6 +7,7 @@ import (
 	"context"
 	"crypto/sha256"
 	"encoding/base64"
+	"errors"
 	"fmt"
 	"image"
 	"image/color"
@@ -15,6 +16,7 @@ import (
 	"mime/multipart"
 	"net"
 	"net/http"
+	"slices"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -41,6 +43,7 @@ type recordingLiveKit struct {
 	muted    []string
 	moves    []string
 	removed  []string
+	deleted  []string                  // DeleteRoom calls (room names)
 	fakeMove bool                      // pretend MoveParticipant succeeded (no real WebRTC participant in tests)
 	perms    map[string]rtc.Permission // last permission sent per identity
 	// afterCreateRoom, if set, runs once after a successful CreateRoom (e.g. to cancel the
@@ -58,6 +61,19 @@ func (r *recordingLiveKit) CreateRoom(ctx context.Context, name string, emptyTim
 		hook()
 	}
 	return err
+}
+
+func (r *recordingLiveKit) DeleteRoom(ctx context.Context, name string) error {
+	r.mu.Lock()
+	r.deleted = append(r.deleted, name)
+	r.mu.Unlock()
+	return r.LiveKit.DeleteRoom(ctx, name)
+}
+
+func (r *recordingLiveKit) wasDeleted(name string) bool {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	return slices.Contains(r.deleted, name)
 }
 
 func (r *recordingLiveKit) lastPerm(identity string) (rtc.Permission, bool) {
@@ -270,9 +286,19 @@ func (g *gw) identify(token string) *v1.Ready {
 }
 
 func (g *gw) closeStatus() websocket.StatusCode {
+	st, _ := g.closeFrame()
+	return st
+}
+
+// closeFrame reads until the socket closes; returns the close status and reason.
+func (g *gw) closeFrame() (websocket.StatusCode, string) {
 	for {
 		if _, err := g.read(5 * time.Second); err != nil {
-			return websocket.CloseStatus(err)
+			var ce websocket.CloseError
+			if errors.As(err, &ce) {
+				return ce.Code, ce.Reason
+			}
+			return websocket.CloseStatus(err), ""
 		}
 	}
 }
@@ -322,7 +348,7 @@ func TestGatewayFlow(t *testing.T) {
 		}
 	}
 	if snap == nil || len(snap.GetRooms()) != 1 || snap.GetRole() != v1.WorkspaceRole_WORKSPACE_ROLE_MEMBER ||
-		snap.GetPermissions()[room.GetId()] != 16503 || len(snap.GetMembers()) != 2 || snap.GetRooms()[0].GetMedia().GetMaxStreams() != 3 {
+		snap.GetPermissions()[room.GetId()] != 8798327 /* member defaults with the board bits (ADR-0042) and CREATE_TEMP_ROOMS (ADR-0044) */ || len(snap.GetMembers()) != 2 || snap.GetRooms()[0].GetMedia().GetMaxStreams() != 3 {
 		t.Fatalf("snapshot: %v", snap)
 	}
 	online := false
@@ -411,10 +437,10 @@ func TestGatewayFlow(t *testing.T) {
 		t.Fatalf("replaced session: close %d, want 4000", st)
 	}
 
-	// Logout revokes the session: its socket is closed with 4010.
+	// Logout revokes the session: its socket is closed with 4010 and the reason.
 	bob.must(204, "POST", "/api/auth/logout", &v1.LogoutRequest{}, nil)
-	if st := g2.closeStatus(); st != 4010 {
-		t.Fatalf("revoked session: close %d, want 4010", st)
+	if st, reason := g2.closeFrame(); st != 4010 || reason != "session revoked: LOGOUT" {
+		t.Fatalf("revoked session: close %d %q, want 4010 \"session revoked: LOGOUT\"", st, reason)
 	}
 }
 

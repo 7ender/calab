@@ -1,6 +1,6 @@
 import * as ContextMenu from '@radix-ui/react-context-menu';
 import { Archive, ArchiveRestore, ChevronDown, MessageCirclePlus, Search, Plus } from 'lucide-react';
-import { memo, useMemo, useState, type ReactNode } from 'react';
+import { memo, useCallback, useMemo, useState, type ReactNode } from 'react';
 import { Avatar } from '../../components/Avatar';
 import { Button, Tip, cx } from '../../components/ui';
 import { plural, t, useLocale } from '../../i18n';
@@ -14,7 +14,11 @@ import { isUnread, useRooms } from '../../stores/rooms';
 import { useSession } from '../../stores/session';
 import { toast } from '../../stores/toasts';
 import { useUi } from '../../stores/ui';
-import { useMemberName, useWorkspaces } from '../../stores/workspaces';
+import { memberName, useMemberName, useWorkspaces } from '../../stores/workspaces';
+import type { DropAction, DropTarget } from '../../lib/messageDrag';
+import { useChatDrop } from '../chat/useChatDrop';
+import { NotesSection } from '../notes/NotesSection';
+import { applyChatDrop } from '../notes/dropActions';
 import { usePreviewParts } from '../chat/mentionText';
 import { PreviewRuns } from '../chat/PreviewRuns';
 import { menuBox, menuItem, menuSeparator } from '../shell/menu';
@@ -34,6 +38,7 @@ export function DmSidebar(): ReactNode {
   const current = useUi((s) => (s.activeWorkspaceId === HOME ? (s.lastRoom[HOME] ?? '') : ''));
   const { main: list, archived } = useMemo(() => splitDms(byRoom, preview, current), [byRoom, preview, current]);
   const open = useUi((s) => s.openDialog);
+  const guest = useSession((s) => s.me?.user?.isGuest ?? false);
 
   return (
     <aside className="mat-sidebar island-fade flex w-[var(--sidebar-width)] shrink-0 flex-col" aria-label={t('dm.list')}>
@@ -48,6 +53,8 @@ export function DmSidebar(): ReactNode {
         </button>
       </div>
       <div className="min-h-0 flex-1 overflow-y-auto overflow-x-hidden px-2 pt-2" style={{ paddingBottom: 'calc(var(--island-height, 0px) + 20px)' }}>
+        {/* «Заметки» (ADR-0039): my shelves above the DMs; guest accounts have none. */}
+        {guest ? null : <NotesSection />}
         <div className="group/cat flex h-7 items-center pr-1 pt-1">
           <h2 className="min-w-0 flex-1 truncate pl-2 text-micro font-semibold uppercase tracking-[0.04em] text-muted">{t('dm.list')}</h2>
           <Tip label={t('dm.new')}>
@@ -116,6 +123,10 @@ const DmRow = memo(function DmRow({ entry }: { entry: DmEntry }): ReactNode {
   useTimeFormat();
   const { roomId, peerId } = entry;
   const active = useUi((s) => s.activeWorkspaceId === HOME && s.lastRoom[HOME] === roomId);
+  // A message dragged onto the DM is forwarded to it (docs/05 «Заметки», ADR-0033).
+  const dropTarget = useMemo<DropTarget>(() => ({ kind: 'dm', roomId, files: false, canSend: true }), [roomId]);
+  const onDrop = useCallback((a: DropAction, files: File[]) => applyChatDrop(a, files, memberName(null, peerId), false), [peerId]);
+  const [over, drop] = useChatDrop(dropTarget, onDrop);
   const name = useMemberName(null, peerId);
   const avatar = useWorkspaces((s) => s.users[peerId]?.avatarFileId ?? '');
   const bot = useWorkspaces((s) => s.users[peerId]?.isBot ?? false);
@@ -124,8 +135,13 @@ const DmRow = memo(function DmRow({ entry }: { entry: DmEntry }): ReactNode {
   const preview = useDms((s) => s.preview[roomId]);
   const me = useSession((s) => s.me?.user?.id ?? '');
   const parts = usePreviewParts(null, preview?.content ?? '');
-  const line =
-    preview === undefined ? '' : preview === null ? t('dm.noMessages') : (
+  const line = over ? (
+    <span className="text-accent-text">{t('notes.forwardTo', { name })}</span>
+  ) : preview === undefined ? (
+    ''
+  ) : preview === null ? (
+    t('dm.noMessages')
+  ) : (
       <>
         {preview.authorId === me ? `${t('dm.you')}: ` : ''}
         {parts.length ? <PreviewRuns parts={parts} /> : preview.attachments ? t('chat.attachment') : ''}
@@ -141,8 +157,14 @@ const DmRow = memo(function DmRow({ entry }: { entry: DmEntry }): ReactNode {
   return (
     <DmMenu roomId={roomId} unread={unread} archived={archived}>
       <li
-        className={cx('group/row relative flex h-[46px] items-center rounded-[var(--radius-row)] transition-colors duration-[var(--motion-fast)]', active ? 'bg-active' : 'hover:bg-hover')}
+        className={cx(
+          'group/row relative flex h-[46px] items-center rounded-[var(--radius-row)] transition-colors duration-[var(--motion-fast)]',
+          over ? 'bg-[color-mix(in_srgb,var(--color-accent)_16%,transparent)] shadow-[inset_0_0_0_1px_var(--color-accent)]' : active ? 'bg-active' : 'hover:bg-hover',
+        )}
+        data-testid="dm-row"
+        data-over={over || undefined}
         {...swipe.handlers}
+        {...drop}
       >
         {unread && !active ? <span aria-hidden className="absolute -left-1.5 top-1/2 h-2 w-1 -translate-y-1/2 rounded-full bg-fg" /> : null}
         {shifted ? (

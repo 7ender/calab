@@ -66,6 +66,7 @@ Without the SDK — any language with HTTP and WebSocket: REST below, the gatewa
 - A bot sees only what `VIEW_ROOM` allows; restricted rooms (ADR-0029) apply to bots too.
 - A person can "Block bot" — the bot then cannot write to them in DMs (`403 BOT_BLOCKED`).
 - One-to-one calls (ADR-0034) are not for bots: a bot neither calls nor answers (`POST /api/dms/{id}/call`, `/api/calls/…` — `403 BOT_NOT_ALLOWED`), and a bot cannot be called.
+- Notes shelves (personal rooms, ADR-0039) are not for bots: `/api/notes*` — `403 BOT_NOT_ALLOWED`; a bot never sees someone's shelf (`404`).
 - Keep the webhook secret apart from the token; verify the signature of every delivery (see [Webhook](#webhook)).
 
 ## REST
@@ -125,6 +126,9 @@ with the decision for bots is `apps/server/internal/app/botroutes.go`.
 | `POST /api/rooms/{id}/stream/request` · `…/camera/request` · `…/camera/stop` | screen share, camera | `STREAM` / `VIDEO` |
 | `PATCH /api/voice/self` · `PATCH /api/rooms/{id}/voice-status` | own mute/deafen, call status | in the call |
 | `POST /api/rooms/{id}/voice/{userId}/mute · unmute · disconnect · move · stop-stream · stop-camera · allow-camera` | voice moderation | `MUTE_MEMBERS` / `MOVE_MEMBERS` |
+| `GET /api/rooms/{id}/admissions` | guests waiting for approval to enter (ADR-0040); admit/decline — 403 `BOT_NOT_ALLOWED` | `MANAGE_ROOM` |
+| `GET /api/workspaces/{id}/events?from=&to=` · `GET /api/events/{id}` | calendar (ADR-0038): meetings in rooms the bot can see; read-only (create, change, answer — 403 `BOT_NOT_ALLOWED`); external attendees' addresses are not shown to bots; free/busy, finding a time and CalDAV (ADR-0041) — 403 `BOT_NOT_ALLOWED` | `VIEW_ROOM` |
+| task boards (ADR-0042): `GET /api/workspaces/{id}/boards`, `GET /api/boards/{id}`, `GET/POST /api/boards/{id}/tasks`, `GET/PATCH /api/tasks/{id}`, `PUT /api/tasks/{id}/assignees`, `GET /api/workspaces/{id}/tasks/search?q=`, `GET /api/t/{KEY-N}`, `GET /api/me/tasks`, statuses/labels/milestones/views, task archive | the bot works like a person, within the board bits of its roles and overrides (it can be an assignee and be let into a private board personally); a comment is a message in `task.roomId`. Board access (`PUT …/permissions`) and the final delete (`DELETE …?purge=1`) — 403 `BOT_NOT_ALLOWED`. SDK: `bot.boards.list/get`, `bot.tasks.list/search/get/create/update/setAssignees/comment` | `VIEW_BOARD` / `CREATE_TASKS` / `EDIT_TASKS` / `MANAGE_BOARD` |
 | `GET /api/workspaces/{id}/sounds` · `POST /api/rooms/{id}/sounds/play {soundId}` | soundboard (ADR-0036): the workspace's sounds; play one to everyone in the call (`builtin:<name>` or a sound id; 1 per 2 s per bot, 5 per 10 s per room) | the bot is in the room's call; managing sounds — 403 |
 | stickers: `GET/POST /api/workspaces/{id}/sticker-packs`, `/api/sticker-packs/{id}…`, `/api/stickers/{id}`, `/api/me/sticker-packs…` | see [Stickers](#stickers-over-the-api) | member / `MANAGE_STICKERS` |
 | rooms, categories, roles, members, bans (`POST/PATCH/DELETE …`) | workspace management | `MANAGE_ROOM`, `MANAGE_ROLES`, `MANAGE_WORKSPACE`, … |

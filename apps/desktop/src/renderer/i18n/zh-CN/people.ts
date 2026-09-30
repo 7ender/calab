@@ -23,6 +23,9 @@ export const zhPeople: DictShape<typeof enPeople> = {
   'people.profile.name': '资料名称',
   'people.profile.status': '状态',
   'people.profile.lastSeen': '最后在线：{when}',
+  // client version line (docs/09 #143)
+  'people.client.title': '应用',
+  'people.client.last': '最后已知版本',
   // local time line (docs/09 #48)
   'people.tz.title': '当地时间',
   'people.tz.hours': '{h} 小时',
@@ -152,6 +155,7 @@ export const zhPeople: DictShape<typeof enPeople> = {
   'people.link.guestsOff': '需要账号',
   'people.link.open': '进入房间',
   'people.link.invalid': '链接无效或已过期',
+  'people.link.membersOnly': '此链接仅限空间成员使用。',
   'people.link.needAccount': '此链接需要账号才能使用',
   'people.link.unreachable': '服务器不可用——请稍后再试',
   'guestInvite.title': '邀请无需注册的访客',
@@ -223,7 +227,7 @@ export const zhPeople: DictShape<typeof enPeople> = {
   'birthday.whenToday': '今天',
   'birthday.whenTomorrow': '明天',
   'birthday.congratulate': '送上祝福',
-  'birthday.congratulateName': '祝福 {name}：发送私信',
+  'birthday.congratulateName': '在团队聊天中祝福 {name}',
   'birthday.cardAt': '贺卡将于 {time} 出现在聊天中',
   'birthday.age': { other: '{n} 岁' },
   'birthday.inDays': { other: '{n} 天后' },

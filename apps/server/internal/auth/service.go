@@ -31,11 +31,20 @@ import (
 	"google.golang.org/protobuf/types/known/timestamppb"
 )
 
-// refreshGrace: presenting the *previous* refresh token within this window after a
-// rotation is not reuse: it is a retry whose answer was lost, or a concurrent refresh (another
-// tab). While the new token is unused the retry gets the same new token again (replay.go);
-// otherwise 409 without revoking. After the window it is reuse: the session is revoked.
-const refreshGrace = 60 * time.Second
+// Why a session ended (sessions.revoked_reason, ApiError.reason of SESSION_REVOKED, the
+// gateway's 4010 close reason). Clients show "reset after a connection loss" for REUSE and
+// "ended on another device" for the explicit ones.
+const (
+	RevokeReuse           = "REUSE"
+	RevokeLogout          = "LOGOUT"
+	RevokeLogoutAll       = "LOGOUT_ALL"
+	RevokeOtherDevice     = "OTHER_DEVICE"
+	RevokePasswordChanged = "PASSWORD_CHANGED"
+	RevokeAccountDisabled = "ACCOUNT_DISABLED"
+	RevokeGuestExpired    = "GUEST_EXPIRED"
+	// revokeBotToken: a replaced bot token (only the Redis marker, no session row).
+	revokeBotToken = "BOT_TOKEN"
+)
 
 // Service implements the auth use cases.
 type Service struct {
@@ -47,6 +56,7 @@ type Service struct {
 	refresh  time.Duration
 	accessTL time.Duration
 	now      func() time.Time
+	used     usedGens
 
 	// Mail sends verification / reset codes (ADR-0023); disabled = no SMTP (addresses are
 	// then verified at registration). Set before serving.
@@ -137,14 +147,27 @@ var (
 	errInvalidRefresh     = httpx.Coded(http.StatusUnauthorized, v1.ErrorCode_ERROR_CODE_INVALID_REFRESH_TOKEN, "invalid refresh token")
 	errInviteInvalid      = httpx.Coded(http.StatusNotFound, v1.ErrorCode_ERROR_CODE_INVITE_INVALID, "invite is invalid, expired or used up")
 	errRegistrationClosed = httpx.Coded(http.StatusForbidden, v1.ErrorCode_ERROR_CODE_REGISTRATION_CLOSED, "registration requires an invite")
-	errInviteEmail        = httpx.Coded(http.StatusForbidden, v1.ErrorCode_ERROR_CODE_INVITE_EMAIL_MISMATCH,
+	// errSimilarAccount rolls back a sign-up that hit the similar-account hint (docs/09 #119).
+	errSimilarAccount = errors.New("similar account")
+	errInviteEmail    = httpx.Coded(http.StatusForbidden, v1.ErrorCode_ERROR_CODE_INVITE_EMAIL_MISMATCH,
 		"this invitation was sent to another email address: use that address")
-	// errRefreshRace: the previous refresh token was presented within the grace window, but
-	// the rotation cannot be replayed (the new token was already used, or Valkey lost the
-	// replay entry). The session is intact: retry with the current token (web: the cookie
+	// errRefreshRace: the previous refresh token was presented while the new one is unused,
+	// but the rotation cannot be replayed (it happened before migration 00040: no seal). The session is intact: retry with the current token (web: the cookie
 	// already holds it). Must not clear the cookie.
 	errRefreshRace = httpx.Coded(http.StatusConflict, v1.ErrorCode_ERROR_CODE_CONFLICT, "refresh token was just rotated; retry with the current one")
+	// errSessionRevoked: the refresh token belongs to an ended session; errRevoked adds the
+	// reason. Clears the web cookie like errInvalidRefresh.
+	errSessionRevoked = httpx.Coded(http.StatusUnauthorized, v1.ErrorCode_ERROR_CODE_SESSION_REVOKED, "session revoked")
 )
+
+// errRevoked is errSessionRevoked with its reason ("" = unknown: a session revoked before
+// migration 00040).
+func errRevoked(reason string) error {
+	if reason == "" {
+		return errSessionRevoked
+	}
+	return errSessionRevoked.WithDetails(reason, 0, 0)
+}
 
 // ErrInviteInvalid is shared with the workspaces package.
 func ErrInviteInvalid() error { return errInviteInvalid }
@@ -199,7 +222,7 @@ func (s *Service) newSessionTTL(ctx context.Context, q *sqlc.Queries, userID uui
 }
 
 func (s *Service) tokenPair(sess sqlc.Session, secret string) (*v1.AuthTokens, error) {
-	access, exp, err := s.tokens.Issue(sess.UserID, sess.ID)
+	access, exp, err := s.tokens.Issue(sess.UserID, sess.ID, sess.RefreshGen)
 	if err != nil {
 		return nil, err
 	}
@@ -361,9 +384,25 @@ func (s *Service) Register(ctx context.Context, req *v1.RegisterRequest, c Clien
 			}
 			joined = &m
 		}
+		if req.GetCheckSimilarAccount() {
+			// Last, once every other check passed (docs/09 #119): the hint answers only a
+			// sign-up that would have gone through, at the same cost (password hash, invite,
+			// seats, bans), and a miss creates the account — so it is no cheaper oracle than the
+			// exact-address 409. A hit rolls everything back.
+			similar, err := similarAccount(ctx, q, email, gate)
+			if err != nil {
+				return err
+			}
+			if similar {
+				return errSimilarAccount
+			}
+		}
 		tokens, err = s.newSession(ctx, q, user.ID, c)
 		return err
 	})
+	if errors.Is(err, errSimilarAccount) {
+		return &v1.RegisterResponse{SimilarAccount: true}, nil
+	}
 	if err != nil {
 		return nil, err
 	}
@@ -423,9 +462,10 @@ func (s *Service) Login(ctx context.Context, req *v1.LoginRequest, c Client) (*v
 	return &v1.LoginResponse{Tokens: tokens, Me: pbconv.Me(user)}, nil
 }
 
-// Refresh rotates the refresh token of a session. Replaying a rotated token revokes the
-// session (reuse detection), except the previous token within refreshGrace of the last
-// rotation: it gets the same new token again while that one is unused (a lost answer), else 409.
+// Refresh rotates the refresh token of a session. The previous token gets the same new pair
+// again while the new token is unused (a lost answer, replay.go); any other stale token —
+// the previous one after the new one was used, or an older one — is reuse: the session is
+// revoked (401 SESSION_REVOKED, reason REUSE).
 func (s *Service) Refresh(ctx context.Context, req *v1.RefreshRequest, c Client) (*v1.RefreshResponse, error) {
 	sid, secret, ok := ParseRefreshToken(req.GetRefreshToken())
 	if !ok {
@@ -434,7 +474,7 @@ func (s *Service) Refresh(ctx context.Context, req *v1.RefreshRequest, c Client)
 	presented := HashRefreshSecret(secret)
 	var (
 		tokens  *v1.AuthTokens
-		revoked bool
+		revoked string // reason of a revocation made here
 	)
 	err := s.db.Tx(ctx, func(q *sqlc.Queries) error {
 		sess, err := q.GetSessionForUpdate(ctx, sid)
@@ -445,26 +485,35 @@ func (s *Service) Refresh(ctx context.Context, req *v1.RefreshRequest, c Client)
 			return err
 		}
 		now := s.now()
-		if sess.RevokedAt != nil || !now.Before(sess.ExpiresAt) {
+		current := subtle.ConstantTimeCompare(presented, sess.RefreshTokenHash) == 1
+		previous := !current && sess.PrevRefreshTokenHash != nil && subtle.ConstantTimeCompare(presented, sess.PrevRefreshTokenHash) == 1
+		if sess.RevokedAt != nil {
+			// Only a holder of one of its last two tokens learns why the session ended.
+			if current || previous {
+				return errRevoked(derefStr(sess.RevokedReason))
+			}
+			return errInvalidRefresh
+		}
+		if !now.Before(sess.ExpiresAt) {
 			return errInvalidRefresh
 		}
 		replay := "" // the new secret handed out again (lost answer), no rotation
-		if subtle.ConstantTimeCompare(presented, sess.RefreshTokenHash) != 1 {
-			if sess.PrevRefreshTokenHash != nil && sess.RotatedAt != nil &&
-				now.Sub(*sess.RotatedAt) < refreshGrace &&
-				subtle.ConstantTimeCompare(presented, sess.PrevRefreshTokenHash) == 1 {
-				// The answer to the rotation was lost (or another tab won the race): hand out the
-				// same new refresh token while it is unused; a fresh access token is harmless.
-				next, ok := s.loadReplay(ctx, sess.ID, secret, sess.RefreshTokenHash)
-				if !ok {
-					return errRefreshRace // no replay entry (Valkey down / new token used): keep the session
-				}
-				replay = next
-			} else {
-				if _, err := q.RevokeSession(ctx, sess.ID); err != nil {
+		if !current {
+			outcome := replayReuse
+			if previous {
+				outcome, replay = replayPrevious(sess, secret)
+			}
+			switch outcome {
+			case replaySamePair:
+				// The answer to the rotation was lost (or another tab won the race), and the new
+				// token has not been used since: the same new refresh token, a fresh access token.
+			case replayConflict:
+				return errRefreshRace // unused, but not replayable (rotated before 00040): keep the session
+			default:
+				if _, err := q.RevokeSession(ctx, sqlc.RevokeSessionParams{ID: sess.ID, Reason: RevokeReuse}); err != nil {
 					return err
 				}
-				revoked = true
+				revoked = RevokeReuse
 				return nil // commit the revocation
 			}
 		}
@@ -473,10 +522,10 @@ func (s *Service) Refresh(ctx context.Context, req *v1.RefreshRequest, c Client)
 			return err
 		}
 		if user.DisabledAt != nil {
-			if _, err := q.RevokeSession(ctx, sess.ID); err != nil {
+			if _, err := q.RevokeSession(ctx, sqlc.RevokeSessionParams{ID: sess.ID, Reason: RevokeAccountDisabled}); err != nil {
 				return err
 			}
-			revoked = true
+			revoked = RevokeAccountDisabled
 			return nil
 		}
 		if replay != "" {
@@ -494,51 +543,66 @@ func (s *Service) Refresh(ctx context.Context, req *v1.RefreshRequest, c Client)
 		if err != nil {
 			return err
 		}
+		seal, err := sealReplay(sess.ID, secret, newSecret)
+		if err != nil {
+			return err
+		}
 		sess, err = q.RotateSession(ctx, sqlc.RotateSessionParams{
 			ID:               sess.ID,
 			RefreshTokenHash: newHash,
 			ExpiresAt:        now.Add(ttl),
 			Ip:               clip(c.IP, 64),
 			UserAgent:        clip(c.UserAgent, 256),
+			ReplaySeal:       seal,
 		})
 		if err != nil {
 			return err
 		}
-		// Before the commit, under the row lock: a retry right after the commit finds it.
-		s.storeReplay(ctx, sess.ID, secret, newSecret)
 		tokens, err = s.tokenPair(sess, newSecret)
 		return err
 	})
 	if err != nil {
 		return nil, err
 	}
-	if revoked {
-		s.afterRevoke(ctx, sid)
-		return nil, errInvalidRefresh
+	if revoked != "" {
+		if revoked == RevokeReuse {
+			slog.WarnContext(ctx, "refresh token reuse: session revoked", "session_id", sid)
+		}
+		s.afterRevoke(ctx, sid, revoked)
+		return nil, errRevoked(revoked)
 	}
 	return &v1.RefreshResponse{Tokens: tokens}, nil
+}
+
+func derefStr(p *string) string {
+	if p == nil {
+		return ""
+	}
+	return *p
 }
 
 // Logout revokes the caller's session, or all of the user's sessions.
 func (s *Service) Logout(ctx context.Context, id Identity, all bool) error {
 	if all {
-		ids, err := s.db.Q.RevokeAllUserSessions(ctx, id.UserID)
+		ids, err := s.db.Q.RevokeAllUserSessions(ctx, sqlc.RevokeAllUserSessionsParams{UserID: id.UserID, Reason: RevokeLogoutAll})
 		if err != nil {
 			return err
 		}
-		s.afterRevokeMany(ctx, ids)
+		s.afterRevokeMany(ctx, ids, RevokeLogoutAll)
 		return nil
 	}
-	if _, err := s.db.Q.RevokeSession(ctx, id.SessionID); err != nil {
+	if _, err := s.db.Q.RevokeSession(ctx, sqlc.RevokeSessionParams{ID: id.SessionID, Reason: RevokeLogout}); err != nil {
 		return err
 	}
-	s.afterRevoke(ctx, id.SessionID)
+	s.afterRevoke(ctx, id.SessionID, RevokeLogout)
 	return nil
 }
 
 // LogoutByRefresh revokes the session a refresh token belongs to (or all of its user's
-// sessions). The token must be the session's current one or the one rotated within the
-// grace window; anything else is rejected without side effects (no reuse revocation here).
+// sessions). The token must be the session's current one, or — for this session only — the
+// previous one while the current is unused (a lost refresh answer); anything else is rejected
+// without side effects (no reuse revocation here). "Log out everywhere" needs the current
+// token: a stale copy must not end the user's other devices.
 func (s *Service) LogoutByRefresh(ctx context.Context, token string, all bool) error {
 	sid, secret, ok := ParseRefreshToken(token)
 	if !ok {
@@ -553,7 +617,7 @@ func (s *Service) LogoutByRefresh(ctx context.Context, token string, all bool) e
 	}
 	h := HashRefreshSecret(secret)
 	current := subtle.ConstantTimeCompare(h, sess.RefreshTokenHash) == 1
-	recent := sess.PrevRefreshTokenHash != nil && sess.RotatedAt != nil && s.now().Sub(*sess.RotatedAt) < refreshGrace &&
+	recent := !all && sess.PrevRefreshTokenHash != nil && sess.RefreshUsedAt == nil &&
 		subtle.ConstantTimeCompare(h, sess.PrevRefreshTokenHash) == 1
 	if !current && !recent {
 		return errInvalidRefresh
@@ -566,14 +630,14 @@ func (s *Service) LogoutByRefresh(ctx context.Context, token string, all bool) e
 
 // RevokeSession revokes one of the user's own sessions.
 func (s *Service) RevokeSession(ctx context.Context, userID, sessionID uuid.UUID) error {
-	n, err := s.db.Q.RevokeUserSession(ctx, sqlc.RevokeUserSessionParams{ID: sessionID, UserID: userID})
+	n, err := s.db.Q.RevokeUserSession(ctx, sqlc.RevokeUserSessionParams{ID: sessionID, UserID: userID, Reason: RevokeOtherDevice})
 	if err != nil {
 		return err
 	}
 	if n == 0 {
 		return httpx.NotFound("session")
 	}
-	s.afterRevoke(ctx, sessionID)
+	s.afterRevoke(ctx, sessionID, RevokeOtherDevice)
 	return nil
 }
 
@@ -590,9 +654,12 @@ func (s *Service) ListSessions(ctx context.Context, id Identity) (*v1.ListSessio
 	return out, nil
 }
 
-// MarkRevoked makes sessions revoked in the DB by someone else (e.g. guest cleanup)
-// effective immediately: live access tokens are rejected and the gateway drops the sockets.
-func (s *Service) MarkRevoked(ctx context.Context, sids ...uuid.UUID) { s.afterRevokeMany(ctx, sids) }
+// MarkRevoked makes sessions revoked in the DB by someone else (e.g. guest cleanup, with
+// its reason) effective immediately: live access tokens are rejected and the gateway drops
+// the sockets.
+func (s *Service) MarkRevoked(ctx context.Context, reason string, sids ...uuid.UUID) {
+	s.afterRevokeMany(ctx, sids, reason)
+}
 
 func revokedKey(sid uuid.UUID) string { return redisx.Key("auth:revoked:" + sid.String()) }
 
@@ -604,14 +671,15 @@ func revokedKey(sid uuid.UUID) string { return redisx.Key("auth:revoked:" + sid.
 const revokeBudget = 3 * time.Second
 
 // afterRevoke makes outstanding access tokens of the session invalid immediately (Redis
-// marker living as long as an access token can) and tells the gateway to drop the socket.
-func (s *Service) afterRevoke(ctx context.Context, sid uuid.UUID) {
-	s.afterRevokeMany(ctx, []uuid.UUID{sid})
+// marker living as long as an access token can, holding the reason) and tells the gateway to
+// drop the socket (4010 with the reason).
+func (s *Service) afterRevoke(ctx context.Context, sid uuid.UUID, reason string) {
+	s.afterRevokeMany(ctx, []uuid.UUID{sid}, reason)
 }
 
 // afterRevokeMany is afterRevoke for several sessions: all markers in one pipeline, then
 // the socket-close events — each step with its own revokeBudget.
-func (s *Service) afterRevokeMany(ctx context.Context, sids []uuid.UUID) {
+func (s *Service) afterRevokeMany(ctx context.Context, sids []uuid.UUID, reason string) {
 	if len(sids) == 0 {
 		return
 	}
@@ -619,7 +687,7 @@ func (s *Service) afterRevokeMany(ctx context.Context, sids []uuid.UUID) {
 	ttl := s.accessTL + time.Minute
 	cmds := make(rueidis.Commands, len(sids))
 	for i, sid := range sids {
-		cmds[i] = s.redis.B().Set().Key(revokedKey(sid)).Value("1").Ex(ttl).Build()
+		cmds[i] = s.redis.B().Set().Key(revokedKey(sid)).Value(markerValue(reason)).Ex(ttl).Build()
 	}
 	mctx, done := events.Detached(events.WithBudget(ctx, revokeBudget), revokeBudget)
 	res := s.redis.DoMulti(mctx, cmds...)
@@ -634,18 +702,54 @@ func (s *Service) afterRevokeMany(ctx context.Context, sids []uuid.UUID) {
 	done()
 	pctx := events.WithBudget(ctx, revokeBudget)
 	for _, sid := range sids {
-		s.events.SessionRevoked(pctx, sid)
+		s.events.SessionRevoked(pctx, sid, reason)
 	}
+}
+
+// markerValue is the value of the revocation marker: the reason, "1" when unknown.
+func markerValue(reason string) string {
+	if reason == "" {
+		return "1"
+	}
+	return reason
 }
 
 // IsRevoked reports whether the session was revoked while access tokens may still be live.
 // Uses rueidis client-side caching: Redis invalidates the cached value on SET.
 func (s *Service) IsRevoked(ctx context.Context, sid uuid.UUID) (bool, error) {
-	err := s.redis.DoCache(ctx, s.redis.B().Get().Key(revokedKey(sid)).Cache(), s.accessTL).Error()
+	_, revoked, err := s.revokedReason(ctx, sid)
+	return revoked, err
+}
+
+// revokedReason is IsRevoked with the marker's reason ("" = unknown).
+func (s *Service) revokedReason(ctx context.Context, sid uuid.UUID) (string, bool, error) {
+	v, err := s.redis.DoCache(ctx, s.redis.B().Get().Key(revokedKey(sid)).Cache(), s.accessTL).ToString()
 	if rueidis.IsRedisNil(err) {
+		return "", false, nil
+	}
+	if err != nil {
+		return "", false, err
+	}
+	if v == "1" {
+		v = ""
+	}
+	return v, true, nil
+}
+
+// similarAccount reports another account with the same local part at a sibling domain of the
+// same organisation (docs/09 #119, HasSimilarAccount): kv@gptunnel.ai signing up while
+// kv@gptunnel.ru exists. ws is the workspace whose invite let the sign-up in (its email
+// invitations' domains count as the organisation's). Runs inside the sign-up transaction after
+// the account row was inserted, so the exact address is already the usual 409 and the query
+// skips it. The other address itself is never returned.
+func similarAccount(ctx context.Context, q *sqlc.Queries, email string, ws *uuid.UUID) (bool, error) {
+	at := strings.LastIndexByte(email, '@')
+	local, domain := email[:at], email[at+1:]
+	dot := strings.LastIndexByte(domain, '.')
+	if dot <= 0 {
 		return false, nil
 	}
-	return err == nil, err
+	return q.HasSimilarAccount(ctx, sqlc.HasSimilarAccountParams{Email: email, Local: local, DomainName: domain[:dot], WorkspaceID: ws})
 }
 
 // inviteLive: not expired and not used up.

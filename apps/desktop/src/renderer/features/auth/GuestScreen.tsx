@@ -15,6 +15,8 @@ import { beginSession } from '../../services/session';
 import { usePrefs } from '../../stores/prefs';
 import { useSession } from '../../stores/session';
 import { openWhenReady, roomLinkError, useRoomLink } from '../people/roomLink';
+import { ApprovalNote } from '../guests/ApprovalNote';
+import { startWaiting } from '../guests/services/admissions';
 
 /**
  * `/r/<code>` without a session (docs/09 #35, ADR-0016): logo, room + workspace, «Ваше имя» →
@@ -40,13 +42,19 @@ export function GuestScreen({ code }: { code: string }): ReactNode {
     const res = await guestJoin(code, nick);
     setBusy(false);
     if (!res.ok) {
-      setErr(res.error.code === 'ERROR_CODE_VALIDATION' ? t('guest.nameInvalid') : roomLinkError(new ApiError(res.error.code, res.error.message, res.error.status)));
+      setErr(
+        res.error.code === 'ERROR_CODE_VALIDATION'
+          ? t('guest.nameInvalid')
+          : roomLinkError(new ApiError(res.error.code, res.error.message, res.error.status, undefined, res.error.reason ? { reason: res.error.reason } : {})),
+      );
       return;
     }
     useRoomLink.setState({ code: null, preferLogin: false });
     usePrefs.getState().setPrefs({ onboarded: true }); // a guest goes straight to the room
+    // ADR-0040: a room with approval — the waiting screen until the organizer decides.
+    const waits = res.data.admission !== undefined && startWaiting(res.data.admission, code);
     beginSession(res.data.session);
-    openWhenReady(res.data.workspaceId, res.data.roomId);
+    if (!waits) openWhenReady(res.data.workspaceId, res.data.roomId);
   };
 
   const p = preview.data;
@@ -74,7 +82,7 @@ export function GuestScreen({ code }: { code: string }): ReactNode {
   } else if (!p.allowGuests || !guestJoin) {
     body = (
       <div className="flex flex-col gap-4">
-        <p className="text-center text-body text-muted">{!p.allowGuests ? t('guest.accountOnly') : t('guest.desktop')}</p>
+        <p className="text-center text-body text-muted">{p.membersOnly ? t('people.link.membersOnly') : !p.allowGuests ? t('guest.accountOnly') : t('guest.desktop')}</p>
         {p.allowGuests && browserLink ? (
           <Button variant="secondary" className="h-9 w-full" onClick={() => void platform.app.openExternal(browserLink)}>
             {t('guest.openBrowser')}
@@ -88,6 +96,7 @@ export function GuestScreen({ code }: { code: string }): ReactNode {
   } else {
     body = (
       <form onSubmit={(e) => void submit(e)} className="flex flex-col gap-4">
+        {p.requiresApproval ? <ApprovalNote /> : null}
         <Field label={t('guest.name')} hint={t('guest.nameHint')} error={err}>
           <Input
             autoFocus

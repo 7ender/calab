@@ -152,8 +152,9 @@ func (h *Hub) onMessage(m rueidis.PubSubMessage) {
 		return
 	case strings.HasPrefix(ch, events.RevokedPrefix):
 		if sid, err := uuid.Parse(strings.TrimPrefix(ch, events.RevokedPrefix)); err == nil {
+			reason := revokedCloseReason(m.Message)
 			for _, s := range h.sessionsWhere(func(s *Session) bool { return s.asess == sid }) {
-				go h.destroy(s, 4010, "session revoked") // Redis/DB work off the fan-out path
+				go h.destroy(s, 4010, reason) // Redis/DB work off the fan-out path
 			}
 		}
 		return
@@ -253,6 +254,7 @@ func (h *Hub) loadInto(ctx context.Context, st *wsState, wid uuid.UUID) {
 	}
 	st.ws, st.rooms, st.targets = loaded.ws, loaded.rooms, loaded.targets
 	st.roleDefs, st.roleIDs, st.members = loaded.roleDefs, loaded.roleIDs, loaded.members
+	st.boardState = loaded.boardState
 	for len(st.backlog) > 0 {
 		p := st.backlog[0]
 		st.backlog = st.backlog[1:]
@@ -347,6 +349,9 @@ func (h *Hub) routeLocked(st *wsState, wid, id uuid.UUID, ev *v1.DispatchEvent) 
 			}
 		}
 		defer h.syncGuestMembers(st, wid, guestBefore, subject)
+	}
+	if h.routeBoards(st, wid, id, sessions, ev) {
+		return
 	}
 	switch e := ev.GetEvent().(type) {
 	case *v1.DispatchEvent_RoomCreate, *v1.DispatchEvent_RoomUpdate:
@@ -453,11 +458,14 @@ func (h *Hub) routeLocked(st *wsState, wid, id uuid.UUID, ev *v1.DispatchEvent) 
 		m := e.WorkspaceMemberUpdate.GetMember()
 		uid := parseID(m.GetUser().GetId())
 		// The member's own sessions see rooms appear / disappear with the role change.
-		h.reviewRooms(st, wid, sessions, func(u uuid.UUID) bool { return u == uid }, func() {
-			if r, ok := perm.RoleFromProto(m.GetRole()); ok {
-				st.setMember(uid, r, m.GetRoleIds())
-			}
-			about(uid)
+		who := func(u uuid.UUID) bool { return u == uid }
+		h.reviewRooms(st, wid, sessions, who, func() {
+			h.reviewBoards(st, wid, sessions, who, func() {
+				if r, ok := perm.RoleFromProto(m.GetRole()); ok {
+					st.setMember(uid, r, m.GetRoleIds())
+				}
+				about(uid)
+			})
 		})
 	case *v1.DispatchEvent_RoleCreate, *v1.DispatchEvent_RoleUpdate:
 		r := ev.GetRoleCreate().GetRole()
@@ -465,14 +473,20 @@ func (h *Hub) routeLocked(st *wsState, wid, id uuid.UUID, ev *v1.DispatchEvent) 
 			r = ev.GetRoleUpdate().GetRole()
 		}
 		// A role's permissions / position change what its holders see.
-		h.reviewRooms(st, wid, sessions, func(uuid.UUID) bool { return true }, func() {
-			st.setRoleDef(r)
-			h.toAll(sessions, id, shared)
+		all := func(uuid.UUID) bool { return true }
+		h.reviewRooms(st, wid, sessions, all, func() {
+			h.reviewBoards(st, wid, sessions, all, func() {
+				st.setRoleDef(r)
+				h.toAll(sessions, id, shared)
+			})
 		})
 	case *v1.DispatchEvent_RoleDelete:
-		h.reviewRooms(st, wid, sessions, func(uuid.UUID) bool { return true }, func() {
-			st.delRoleDef(e.RoleDelete.GetRoleId())
-			h.toAll(sessions, id, shared)
+		all := func(uuid.UUID) bool { return true }
+		h.reviewRooms(st, wid, sessions, all, func() {
+			h.reviewBoards(st, wid, sessions, all, func() {
+				st.delRoleDef(e.RoleDelete.GetRoleId())
+				h.toAll(sessions, id, shared)
+			})
 		})
 	case *v1.DispatchEvent_WorkspaceMemberRemove:
 		uid := parseID(e.WorkspaceMemberRemove.GetUserId())
@@ -520,6 +534,22 @@ func (h *Hub) routeLocked(st *wsState, wid, id uuid.UUID, ev *v1.DispatchEvent) 
 		h.toAll(sessions, id, shared)
 		for _, s := range sessions {
 			h.leaveWorkspace(s, wid)
+		}
+	case *v1.DispatchEvent_EventCreate, *v1.DispatchEvent_EventUpdate, *v1.DispatchEvent_EventDelete,
+		*v1.DispatchEvent_EventRsvp, *v1.DispatchEvent_RoomEventActive, *v1.DispatchEvent_RoomEventEnded:
+		h.routeCalendar(st, sessions, view, id, ev)
+	case *v1.DispatchEvent_RoomAdmissionRequest, *v1.DispatchEvent_RoomAdmissionDecided:
+		// Guest admission (ADR-0040): to the room's deciders — INVITE_GUESTS there (not guests), or the
+		// author of the link the guest came by. The guest gets DECIDED on their user channel.
+		a := ev.GetRoomAdmissionRequest().GetAdmission()
+		if a == nil {
+			a = ev.GetRoomAdmissionDecided().GetAdmission()
+		}
+		rid, author := parseID(a.GetRoomId()), parseID(a.GetInviteCreatedBy())
+		for _, s := range sessions {
+			if st.role(s.user) != perm.RoleGuest && (st.bits(rid, s.user).Has(perm.InviteGuests) || (author != uuid.Nil && s.user == author)) {
+				s.dispatchEnc(id, shared)
+			}
 		}
 	default: // categories and other workspace-wide events
 		h.toAll(sessions, id, shared)
@@ -925,7 +955,7 @@ func (h *Hub) TouchBot(_ context.Context, id auth.Identity) {
 	go func() { //nolint:gosec // G118: presence outlives the request that reported it
 		ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
 		defer cancel()
-		if err := h.pres.set(ctx, id.UserID, id.SessionID, v1.PresenceStatus_PRESENCE_STATUS_ONLINE); err != nil {
+		if err := h.pres.set(ctx, id.UserID, id.SessionID, v1.PresenceStatus_PRESENCE_STATUS_ONLINE, clientInfo{}); err != nil {
 			return
 		}
 		h.publishPresence(ctx, id.UserID)
@@ -940,6 +970,20 @@ func (h *Hub) publishPresence(ctx context.Context, user uuid.UUID) {
 // one-to-one call is answered or ends (internal/calls).
 func (h *Hub) PresenceChanged(ctx context.Context, user uuid.UUID) {
 	h.announcePresence(context.WithoutCancel(ctx), user, false)
+}
+
+// Statuses returns users' aggregated presence status (as others see it; a manual DND
+// included), e.g. meeting reminders that respect DND (ADR-0038 §5).
+func (h *Hub) Statuses(ctx context.Context, users []uuid.UUID) (map[uuid.UUID]v1.PresenceStatus, error) {
+	ps, err := h.pres.get(ctx, users)
+	if err != nil {
+		return nil, err
+	}
+	out := make(map[uuid.UUID]v1.PresenceStatus, len(ps))
+	for u, p := range ps {
+		out[u] = p.GetStatus()
+	}
+	return out, nil
 }
 
 // StatusChanged announces a custom status change (PATCH /api/me/status) even if the

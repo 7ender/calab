@@ -142,7 +142,7 @@ if step web; then
     (cd "$WORK/src" && pnpm install --frozen-lockfile)
     echo "$COMMIT" > "$WORK/src/.release-commit"
   fi
-  (cd "$WORK/src" && pnpm -F @calaba/desktop build:web)
+  (cd "$WORK/src" && VERSION="$VERSION" pnpm -F @calaba/desktop build:web)
   [[ -f "$WORK/src/apps/desktop/dist-web/index.html" ]] && ok "dist-web built" || { bad "dist-web missing"; exit 1; }
   if [[ -n "$LAND" ]]; then
     log "build landing ($COMMIT)"

@@ -39,9 +39,18 @@ export interface Env {
   close(): Promise<void>;
 }
 
-export async function launch(opts: { theme: Theme; viewport: Viewport; scenario?: 'data' | 'empty'; onboarded?: boolean; port?: number }): Promise<Env> {
+export async function launch(opts: {
+  theme: Theme;
+  viewport: Viewport;
+  scenario?: 'data' | 'empty';
+  onboarded?: boolean;
+  port?: number;
+  /** Files main finds in userData at startup (e.g. resume-voice.json), written before the launch. */
+  seedUserData?: (userData: string, serverUrl: string) => void;
+}): Promise<Env> {
   const mock = await startMockServer({ port: opts.port ?? MOCK_PORT, scenario: opts.scenario ?? 'data' });
   const userData = mkdtempSync(join(tmpdir(), 'calaba-visual-'));
+  opts.seedUserData?.(userData, mock.url);
   const app = await electron.launch({
     // --lang=ru: app.getLocale() → ru, so «as in the system» is Russian on any host (ADR-0022).
     // --mute-audio: no join/leave sounds through the machine's speakers during the run.
@@ -241,8 +250,11 @@ export async function layoutProblems(page: Page): Promise<LayoutProblem[]> {
       let p = el.parentElement;
       let scrolled = false;
       while (p) {
-        const o = getComputedStyle(p).overflowY;
+        const cs = getComputedStyle(p);
+        const o = cs.overflowY;
         if ((o === 'auto' || o === 'scroll') && p.scrollHeight > p.clientHeight) scrolled = true;
+        // Horizontal scrollers too (a kanban's columns).
+        if ((cs.overflowX === 'auto' || cs.overflowX === 'scroll') && p.scrollWidth > p.clientWidth) scrolled = true;
         p = p.parentElement;
       }
       if (scrolled) continue;

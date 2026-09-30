@@ -26,6 +26,7 @@ export const esRoles: DictShape<typeof ruRoles> = {
   'roles.group.rooms': 'Salas',
   'roles.group.voice': 'Voz',
   'roles.group.moderation': 'Moderación',
+  'roles.group.invites': 'Invitaciones',
   'roles.members': 'Miembros con este rol',
   'roles.everyMember': 'Todos los miembros (salvo invitados) tienen este rol.',
   'roles.everyGuest': 'Todos los invitados tienen este rol.',

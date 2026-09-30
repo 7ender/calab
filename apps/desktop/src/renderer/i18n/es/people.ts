@@ -23,6 +23,9 @@ export const esPeople: DictShape<typeof enPeople> = {
   'people.profile.name': 'Nombre del perfil',
   'people.profile.status': 'Estado',
   'people.profile.lastSeen': 'Última conexión {when}',
+  // client version line (docs/09 #143)
+  'people.client.title': 'Aplicación',
+  'people.client.last': 'Última versión conocida',
   // local time line (docs/09 #48)
   'people.tz.title': 'Hora local',
   'people.tz.hours': '{h} h',
@@ -152,6 +155,7 @@ export const esPeople: DictShape<typeof enPeople> = {
   'people.link.guestsOff': 'requiere cuenta',
   'people.link.open': 'Entrar a la sala',
   'people.link.invalid': 'El enlace no es válido o ha caducado',
+  'people.link.membersOnly': 'Este enlace es solo para miembros del espacio.',
   'people.link.needAccount': 'Este enlace requiere una cuenta',
   'people.link.unreachable': 'El servidor no está disponible — inténtalo más tarde',
   'guestInvite.title': 'Invitar a un invitado sin cuenta',
@@ -223,7 +227,7 @@ export const esPeople: DictShape<typeof enPeople> = {
   'birthday.whenToday': 'Hoy',
   'birthday.whenTomorrow': 'Mañana',
   'birthday.congratulate': 'Felicitar',
-  'birthday.congratulateName': 'Felicitar a {name}: enviar un mensaje directo',
+  'birthday.congratulateName': 'Felicitar a {name} en el chat general',
   'birthday.cardAt': 'La tarjeta aparecerá en el chat a las {time}',
   'birthday.age': { one: '{n} año', many: '{n} años', other: '{n} años' },
   'birthday.inDays': { one: 'Dentro de {n} día', many: 'Dentro de {n} días', other: 'Dentro de {n} días' },

@@ -6,7 +6,14 @@ import { platform } from '../../platform';
 import { useLocale } from '../../i18n';
 
 function open(href: string): void {
-  if (isSafeHref(href)) void platform.app.openExternal(href);
+  if (!isSafeHref(href)) return;
+  // Our own /m/, /t/, /b/ links open in the app (ADR-0042); loaded lazily, off the render path.
+  void import('../../services/links').then(
+    (m) => {
+      if (!m.openOwnLink(href)) void platform.app.openExternal(href);
+    },
+    () => void platform.app.openExternal(href),
+  );
 }
 
 /** Search hits inside a message (in-room search): words to mark; `current` = the hit being viewed. */

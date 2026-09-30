@@ -6,6 +6,8 @@ export interface GuestJoin {
   session: AuthSession;
   roomId: string;
   workspaceId: string;
+  /** Set = the guest waits for the organizer (ADR-0040): the RoomAdmission as JSON. */
+  admission?: unknown;
 }
 
 /**

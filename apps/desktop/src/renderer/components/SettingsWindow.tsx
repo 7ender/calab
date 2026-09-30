@@ -14,6 +14,29 @@ export interface SettingsSection {
   content: ReactNode;
   /** Red label (e.g. «Удалить пространство»). */
   destructive?: boolean;
+  /** A small accent pill after the label (e.g. «Обновление» on «О программе», docs/09 #125). */
+  badge?: string;
+  /** Extra words the search matches the section by (e.g. «обновление» for «О программе»). */
+  keywords?: string;
+}
+
+/**
+ * A section's name in the list / search results; with a badge, its accent pill goes under the
+ * name (the phone's pill row keeps it beside). White on the selected (accent) row.
+ */
+function SectionLabel({ label, badge }: { label: string; badge: string | undefined }): ReactNode {
+  if (!badge) return <span className="min-w-0 truncate">{label}</span>;
+  return (
+    <span className="flex min-w-0 flex-col items-start gap-0.5 mobile:flex-row mobile:items-center mobile:gap-1.5">
+      <span className="min-w-0 max-w-full truncate">{label}</span>
+      <span
+        className="shrink-0 rounded-full bg-accent-strong px-1.5 text-[10px] font-semibold leading-4 text-accent-fg group-data-[state=active]:bg-white group-data-[state=active]:text-[var(--color-accent-strong)]"
+        data-testid="settings-section-badge"
+      >
+        {badge}
+      </span>
+    </span>
+  );
 }
 
 /** Opens another section of the enclosing settings window (a cross-link between sections). */
@@ -233,12 +256,12 @@ export function SettingsWindow({
                       results.current?.querySelector<HTMLElement>('button')?.focus();
                     }
                   }}
-                  className="selectable h-7 w-full min-w-0 rounded-[var(--radius-control)] border border-line bg-elev pl-7 pr-2 mobile:h-10 text-body text-fg shadow-[var(--shadow-card)] placeholder:text-muted focus-visible:outline-offset-0 [&::-webkit-search-cancel-button]:hidden"
+                  className="selectable h-7 w-full min-w-0 rounded-[var(--radius-control)] border border-line bg-elev pl-7 pr-2 mobile:h-10 text-body text-fg shadow-[var(--shadow-card)] placeholder:text-muted [&::-webkit-search-cancel-button]:hidden"
                 />
               </label>
               ) : null}
               {searching ? (
-                <nav ref={results} aria-label={t('settings.searchResults')} className="flex min-h-0 flex-col gap-px overflow-y-auto" onKeyDown={arrowNav}>
+                <nav ref={results} aria-label={t('settings.searchResults')} className="-m-1 flex min-h-0 flex-col gap-px overflow-y-auto p-1" onKeyDown={arrowNav}>
                   {groups.length === 0 ? <p className="px-2 py-2 text-body text-muted">{t('settings.searchNone')}</p> : null}
                   {groups.map((g) => {
                     const s = sections.find((x) => x.id === g.section);
@@ -250,13 +273,14 @@ export function SettingsWindow({
                           onClick={() => openSection(s.id)}
                           aria-current={tab === s.id && !hit ? 'true' : undefined}
                           className={cx(
-                            'flex h-8 items-center gap-2.5 rounded-[var(--radius-row)] px-2 text-left text-body hover:bg-hover',
+                            'flex items-center gap-2.5 rounded-[var(--radius-row)] px-2 text-left text-body hover:bg-hover',
+                            s.badge ? 'min-h-8 py-1' : 'h-8',
                             tab === s.id && !hit ? 'bg-active' : '',
                             s.destructive ? 'text-danger-text' : 'text-fg',
                           )}
                         >
                           <s.icon className="size-4 shrink-0" aria-hidden />
-                          <span className="min-w-0 truncate">{s.label}</span>
+                          <SectionLabel label={s.label} badge={s.badge} />
                         </button>
                         {g.rows.map((r) => (
                           <button
@@ -286,19 +310,21 @@ export function SettingsWindow({
                   })}
                 </nav>
               ) : (
-                <Tabs.List aria-label={title} className="flex min-h-0 flex-col gap-px overflow-y-auto mobile:flex-row mobile:gap-1.5 mobile:overflow-x-auto mobile:overflow-y-hidden">
+                <Tabs.List aria-label={title} className="-m-1 flex min-h-0 flex-col gap-px overflow-y-auto p-1 mobile:flex-row mobile:gap-1.5 mobile:overflow-x-auto mobile:overflow-y-hidden">
                   {sections.map((s) => (
                     <Tabs.Trigger
                       key={s.id}
                       value={s.id}
                       className={cx(
-                        'flex h-8 shrink-0 items-center gap-2.5 rounded-[var(--radius-row)] px-2 text-left text-body mobile:h-9 mobile:gap-1.5 mobile:rounded-full mobile:px-3',
+                        'group flex shrink-0 items-center gap-2.5 rounded-[var(--radius-row)] px-2 text-left text-body mobile:h-9 mobile:gap-1.5 mobile:rounded-full mobile:px-3',
+                        // A badged row takes a second line for its pill: the 200 px column has no room beside the label.
+                        s.badge ? 'min-h-8 py-1 mobile:py-0' : 'h-8',
                         'hover:bg-hover data-[state=active]:bg-accent-strong data-[state=active]:text-accent-fg data-[state=active]:hover:bg-accent-strong',
                         s.destructive ? 'text-danger-text' : 'text-fg',
                       )}
                     >
                       <s.icon className="size-4 shrink-0" aria-hidden />
-                      <span className="min-w-0 truncate">{s.label}</span>
+                      <SectionLabel label={s.label} badge={s.badge} />
                     </Tabs.Trigger>
                   ))}
                 </Tabs.List>

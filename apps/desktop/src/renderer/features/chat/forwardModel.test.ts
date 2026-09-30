@@ -2,7 +2,7 @@ import { create } from '@bufbuild/protobuf';
 import { RoomSchema, RoomType, type Room } from '@calaba/protocol';
 import { describe, expect, it } from 'vitest';
 import type { MemberPickItem } from '../people/memberPickItems';
-import { MAX_FORWARD_TARGETS, forwardGroups, isSelected, roomItems, targetKey, toggleTarget, type ForwardItem, type RoomPickItem } from './forwardModel';
+import { MAX_FORWARD_TARGETS, forwardGroups, isSelected, roomItems, shelfItems, targetKey, toggleTarget, type ForwardItem, type RoomPickItem } from './forwardModel';
 
 const person = (id: string, name: string): MemberPickItem => ({
   kind: 'member',
@@ -59,5 +59,20 @@ describe('forward targets', () => {
     expect(g.map((x) => x.id)).toEqual(['people', 'rooms:ws']);
     expect(g[1]?.items.map((i) => i.id)).toEqual(['r2']);
     expect(forwardGroups([], rooms, 'нет такого', 'Личные')).toEqual([]);
+  });
+
+  it('puts my shelves first, without the source shelf, and filters them by the query', () => {
+    const shelves = shelfItems(
+      [
+        { roomId: 's1', name: 'Идеи', emoji: '💡' },
+        { roomId: 's2', name: 'Ссылки', emoji: '' },
+      ],
+      's2',
+    );
+    expect(shelves.map((i) => [i.roomId, i.notes, i.emoji])).toEqual([['s1', true, '💡']]);
+    const rooms = [{ id: 'ws', label: 'Комнаты', items: [roomItem('r1', 'идеи команды')] }];
+    const g = forwardGroups([person('a', 'Аня')], rooms, 'иде', 'Личные', { label: 'Заметки', items: shelves });
+    expect(g.map((x) => x.id)).toEqual(['notes', 'people', 'rooms:ws']);
+    expect(roomItems([room('n', 'Идеи', RoomType.NOTES, 0)], () => true, (r) => r.name)).toEqual([]);
   });
 });

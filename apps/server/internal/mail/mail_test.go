@@ -17,7 +17,8 @@ import (
 
 func params() Params {
 	return Params{"code": "042917", "minutes": "10", "workspace": "Team <b>", "inviter": "Ann", "days": "7",
-		"url": "https://app.example.com/join/AbCdEf2345"}
+		"url":   "https://app.example.com/join/AbCdEf2345",
+		"title": "Standup", "date": "2026-10-05", "when": "2026-10-05 10:00–10:30", "organizer": "Ann"}
 }
 
 // Every template in every locale: subject, the action (code or link) in text and HTML, the
@@ -30,7 +31,7 @@ func TestTemplatesAllLocales(t *testing.T) {
 				t.Fatalf("%s/%s: %v", tmpl, loc, err)
 			}
 			action := "042917"
-			if tmpl == TemplateWorkspaceAdded || tmpl == TemplateWorkspaceInvite {
+			if tmpl != TemplateVerifyCode && tmpl != TemplatePasswordReset {
 				action = "https://app.example.com/join/AbCdEf2345"
 			}
 			for part, body := range map[string]string{"text": m.Text, "html": m.HTML} {

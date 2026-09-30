@@ -146,8 +146,8 @@ func (p SyncPublisher) sync(wid uuid.UUID, ev *v1.DispatchEvent) {
 }
 
 // SessionRevoked implements events.Publisher: the device is removed from LiveKit.
-func (p SyncPublisher) SessionRevoked(ctx context.Context, sid uuid.UUID) {
-	p.Publisher.SessionRevoked(ctx, sid)
+func (p SyncPublisher) SessionRevoked(ctx context.Context, sid uuid.UUID, reason string) {
+	p.Publisher.SessionRevoked(ctx, sid, reason)
 	p.async(func(ctx context.Context) {
 		wid, _, ok, err := p.S.voice.Location(ctx, sid)
 		if err != nil || !ok {

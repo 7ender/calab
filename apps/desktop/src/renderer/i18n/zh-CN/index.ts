@@ -2,6 +2,7 @@ import type { Dict } from '../types';
 import { zhApp } from './app';
 import { zhChat } from './chat';
 import { zhDm } from './dm';
+import { zhNotes } from './notes';
 import { zhCall } from './call';
 import { zhEcho } from './echo';
 import { zhMedia } from './media';
@@ -12,12 +13,16 @@ import { zhPeople } from './people';
 import { zhModeration } from './moderation';
 import { zhPicker } from './picker';
 import { zhRoles } from './roles';
+import { zhCalendar } from './calendar';
+import { zhBoards } from './boards';
 import { zhPlan } from './plan';
 import { zhShell } from './shell';
 import { zhVideo } from './video';
 import { zhStickers } from './stickers';
 import { zhSounds } from './sounds';
 import { zhBots } from './bots';
+import { zhGuests } from './guests';
+import { zhTemp } from './temp';
 
 /** Simplified Chinese UI strings (ADR-0022): same keys and placeholders as `ru`/`en`; glossary docs/i18n-glossary.md. */
 export const zhCN: Dict = {
@@ -29,7 +34,10 @@ export const zhCN: Dict = {
   ...zhStickers,
   ...zhSounds,
   ...zhBots,
+  ...zhGuests,
+  ...zhTemp,
   ...zhDm,
+  ...zhNotes,
   ...zhCall,
   ...zhEcho,
   ...zhMedia,
@@ -40,6 +48,8 @@ export const zhCN: Dict = {
   ...zhAnnot,
   ...zhPicker,
   ...zhRoles,
+  ...zhCalendar,
+  ...zhBoards,
   'voice.pendingMember': '连接中…',
   // common
   'common.cancel': '取消',
@@ -74,6 +84,7 @@ export const zhCN: Dict = {
   'auth.toRegister': '注册',
   'auth.toLogin': '登录',
   'auth.revoked': '你的会话已在其他设备结束，请重新登录。',
+  'auth.reset': '连接中断后会话已重置，请重新登录。',
   'auth.expired': '会话已过期，请重新登录。',
   'auth.err.credentials': '邮箱或密码错误',
   'auth.err.inviteOnly': '此服务器仅限邀请注册，请输入邀请码。',
@@ -261,6 +272,16 @@ export const zhCN: Dict = {
   'perm.MANAGE_WORKSPACE': '管理工作区',
   'perm.MANAGE_ROLES': '管理角色',
   'perm.MANAGE_STICKERS': '管理贴纸',
+  'perm.VIEW_BOARD': '查看看板',
+  'perm.CREATE_TASKS': '创建任务',
+  'perm.EDIT_TASKS': '编辑任何任务',
+  'perm.MANAGE_BOARD': '管理看板',
+  'perm.INVITE_MEMBERS': '邀请成员',
+  'perm.INVITE_GUESTS': '邀请访客',
+  'perm.CREATE_TEMP_ROOMS': '创建临时房间',
+  'perm.hint.INVITE_MEMBERS': '空间的邀请链接和邮件邀请；在房间中为仅限空间成员的链接。',
+  'perm.hint.INVITE_GUESTS': '房间的访客链接，以及决定放行哪些等待中的访客。',
+  'perm.hint.CREATE_TEMP_ROOMS': '可用一小时或几天、带访客链接的房间；到期自动关闭，历史保留在归档中。',
   'perm.ADMINISTRATOR': '管理员',
   'perm.allow': '允许',
   'perm.deny': '禁止',
@@ -374,7 +395,8 @@ export const zhCN: Dict = {
   'stream.systemAudioNo': '此操作系统不支持',
   'stream.systemAudioMac':
     'macOS：其他人的语音也会被共享出去（产生回声）。请仅在佩戴耳机且房间内无人说话时开启。',
-  'stream.systemAudioWin': 'Calab 自身的音频不会被采集',
+  'stream.systemAudioWin10': 'Windows 10：其他人的语音也会被共享出去——只有 Windows 11 能排除 Calab 自身的声音。请仅在房间内无人说话时开启。',
+  'stream.systemAudioWin':'Calab 自身的音频不会被采集',
   'stream.noScreenAccess': 'macOS 未授予屏幕录制权限——请在"屏幕录制"中允许 Calab 并重启应用。',
   'stream.webPicker': '点击"开始共享"后，浏览器会显示自己的选择窗口：整个屏幕、某个窗口或某个标签页。',
   'stream.expand': '展开',
@@ -600,6 +622,7 @@ export const zhCN: Dict = {
   'chat.rateLimited': '发送过快——请稍等几秒',
   'notify.attachment': '📎 附件',
   'session.revokedToast': '你的会话已在其他设备结束',
+  'session.resetToast': '连接中断后会话已重置，请重新登录',
   'session.expiredToast': '会话已过期——请重新登录',
   'stream.stoppedLimit': '屏幕共享已停止：房间共享数量已超出上限',
   'stream.stoppedModerator': '版主已停止你的屏幕共享',

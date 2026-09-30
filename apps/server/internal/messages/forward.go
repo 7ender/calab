@@ -127,7 +127,7 @@ func (h *Handlers) forward(w http.ResponseWriter, r *http.Request) error {
 		return err
 	}
 	pb := out[0]
-	if dst.DM { // docs/09 item 51: an incoming message takes the DM out of the recipient's archive
+	if dst.DM && !dst.Notes { // docs/09 item 51: an incoming message takes the DM out of the recipient's archive
 		states, err := h.db.Q.UnarchiveDMForRecipients(ctx, sqlc.UnarchiveDMForRecipientsParams{RoomID: toID, AuthorID: me})
 		if err != nil {
 			return err
@@ -139,6 +139,9 @@ func (h *Handlers) forward(w http.ResponseWriter, r *http.Request) error {
 	rooms.Publish(ctx, h.events, dst, &v1.DispatchEvent{Event: &v1.DispatchEvent_MessageCreate{
 		MessageCreate: &v1.MessageCreate{WorkspaceId: rooms.WorkspaceIDString(dst), Message: pb},
 	}})
+	if dst.Task && h.TaskHook != nil {
+		h.TaskHook(ctx, dst, msg)
+	}
 	h.events.User(ctx, me, &v1.DispatchEvent{Event: &v1.DispatchEvent_ReadStateUpdate{
 		ReadStateUpdate: &v1.ReadStateUpdate{ReadState: &v1.ReadState{RoomId: toID.String(), LastReadMessageId: msg.ID.String()}},
 	}})

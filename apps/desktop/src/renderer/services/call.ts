@@ -97,6 +97,27 @@ export function onReadyCall(call: Call | undefined): void {
   applyCallEvent({ kind: 'ready', call: call ?? null });
 }
 
+/**
+ * After a restart for an update (docs/09 #126, services/resumeVoice.ts): take the READY call
+ * again on this device — it joins the call's voice session (effects). false when a CALL_STATE
+ * seen since READY ended it, or it is not ACTIVE any more.
+ */
+export function resumeCall(call: Call): boolean {
+  if (call.state !== CallState.ACTIVE) return false;
+  if (ended?.id === call.id && ended.state !== CallState.ACTIVE) return false;
+  applyCallEvent({ kind: 'resume', call });
+  return useCall.getState().phase === 'active' && useCall.getState().call?.id === call.id;
+}
+
+/**
+ * The app restarts for an update and comes back into the call (docs/09 #126): closing the page
+ * must not hang it up — the server keeps an ACTIVE call through a 30 s loss (ADR-0034).
+ */
+let keepOnExit = false;
+export function keepCallOnExit(): void {
+  keepOnExit = true;
+}
+
 // ---------------------------------------------------------------- actions
 
 /**
@@ -254,6 +275,10 @@ export function installCalls(): void {
   window.addEventListener('pagehide', () => {
     const c = useCall.getState();
     if (!c.call) return;
+    if (c.phase === 'active' && keepOnExit) {
+      stopRing();
+      return;
+    }
     if (c.phase === 'active') void api.calls.act(c.call.id, 'hangup').catch(() => undefined);
     else if (c.phase === 'outgoing') void api.calls.act(c.call.id, 'cancel').catch(() => undefined);
     stopRing();

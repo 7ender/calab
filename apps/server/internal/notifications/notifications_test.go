@@ -22,6 +22,14 @@ type vector struct {
 	WorkspaceMuted bool   `json:"workspaceMuted"`
 	Effective      string `json:"effective"`
 	Notifies       bool   `json:"notifies"`
+	// ADR-0042: a task notification vector (the other fields unused).
+	Task *struct {
+		Kind           string `json:"kind"`
+		Level          string `json:"level"`
+		Subscribed     bool   `json:"subscribed"`
+		Muted          bool   `json:"muted"`
+		WorkspaceMuted bool   `json:"workspaceMuted"`
+	} `json:"task"`
 }
 
 func TestVectors(t *testing.T) {
@@ -39,7 +47,16 @@ func TestVectors(t *testing.T) {
 	lvl := func(s string) v1.NotificationLevel {
 		return LevelFromDB(s, v1.NotificationLevel_NOTIFICATION_LEVEL_UNSPECIFIED)
 	}
+	tasks := 0
 	for _, v := range vs {
+		if tv := v.Task; tv != nil {
+			tasks++
+			f := TaskFacts{Kind: TaskKind(tv.Kind), Level: lvl(tv.Level), Subscribed: tv.Subscribed, Muted: tv.Muted, Workspace: tv.WorkspaceMuted}
+			if got := TaskNotifies(f); got != v.Notifies {
+				t.Errorf("%s: task notifies %v, want %v", v.Name, got, v.Notifies)
+			}
+			continue
+		}
 		if got := Effective(lvl(v.Room), lvl(v.Workspace), v.DM); got != lvl(v.Effective) {
 			t.Errorf("%s: effective %v, want %s", v.Name, got, v.Effective)
 		}
@@ -47,6 +64,9 @@ func TestVectors(t *testing.T) {
 		if got := Notifies(f); got != v.Notifies {
 			t.Errorf("%s: notifies %v, want %v", v.Name, got, v.Notifies)
 		}
+	}
+	if tasks < 50 {
+		t.Fatalf("only %d task vectors", tasks)
 	}
 }
 

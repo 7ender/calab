@@ -33,7 +33,8 @@ func WithIdentity(ctx context.Context, id Identity) context.Context {
 }
 
 // Require authenticates `Authorization: Bearer <access JWT | bot token>` and rejects revoked
-// sessions and tokens. Redis failure fails closed (503): a revoked session must not slip
+// sessions and tokens (Valkey marker + a periodic DB recheck, sessioncheck.go). With Valkey
+// down the DB decides; with both down it fails closed (503): a revoked session must not slip
 // through. Bot identities (ADR-0031) pass here; whether a route admits them is decided by
 // the route table of the app (NoBots). Bots are rate limited per bot (BotLimiter).
 func (s *Service) Require(next http.Handler) http.Handler {
@@ -107,12 +108,10 @@ func (s *Service) AuthenticateToken(ctx context.Context, tok string) (Identity, 
 	if err != nil {
 		return Identity{}, ErrInvalidToken
 	}
-	revoked, err := s.IsRevoked(ctx, id.SessionID)
-	if err != nil {
+	if err := s.checkSession(ctx, id.SessionID); err != nil {
 		return Identity{}, err
 	}
-	if revoked {
-		return Identity{}, ErrSessionRevoked
-	}
+	// The pair this token came with has arrived: its previous refresh token is reuse now.
+	s.markGenUsed(ctx, id)
 	return id, nil
 }

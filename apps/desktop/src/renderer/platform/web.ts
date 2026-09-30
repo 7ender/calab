@@ -12,8 +12,10 @@ import type {
   PttStatus,
   RegisterArgs,
 } from '../../shared/ipc';
+import { noSession } from '../../shared/ipc';
 import { PttGate } from '../../shared/pttGate';
 import { mouseName } from '../../shared/pttKeys';
+import { logoutReasonFromRefresh } from '../../shared/logoutReason';
 import { AUTH_TIMEOUT_MS, refreshGate } from '../../shared/refreshGate';
 import type { GuestJoin, Platform } from './types';
 
@@ -64,7 +66,7 @@ function clear(reason: LogoutReason | null): void {
 async function readError(res: Response): Promise<ApiErrorJson> {
   try {
     const b = (await res.json()) as Partial<ApiErrorJson>;
-    return { code: b.code ?? 'ERROR_CODE_UNSPECIFIED', message: b.message ?? res.statusText, ...(b.field ? { field: b.field } : {}), status: res.status };
+    return { code: b.code ?? 'ERROR_CODE_UNSPECIFIED', message: b.message ?? res.statusText, ...(b.field ? { field: b.field } : {}), ...(typeof b.reason === 'string' && b.reason ? { reason: b.reason } : {}), status: res.status };
   } catch {
     return { code: 'ERROR_CODE_UNSPECIFIED', message: res.statusText || `HTTP ${res.status}`, status: res.status };
   }
@@ -83,8 +85,9 @@ function postAuth(path: string, body: unknown, bearer?: string): Promise<Respons
 
 /**
  * 409 on /api/auth/refresh = another refresh of the same session won the race and the server
- * could not replay it (normally an old cookie within 60 s just gets the same new cookie again,
- * docs/09 #89): retry, the cookie may already hold the new token. Still 409 → transient.
+ * could not replay it (normally an old cookie gets the same new cookie again while the new one
+ * is unused, docs/09 #89, #123): retry, the cookie may already hold the new token. Still 409 →
+ * transient.
  */
 const REFRESH_CONFLICT_RETRIES = 3;
 
@@ -111,7 +114,12 @@ async function doRefresh(): Promise<string | null> {
       }
       if (res.status === 401 || res.status === 400 || res.status === 403) {
         const hadSession = access !== null;
-        clear(hadSession ? 'expired' : null);
+        let reason: LogoutReason = 'expired';
+        if (res.status === 401) {
+          const body = (await res.json().catch(() => ({}))) as { code?: string; reason?: string };
+          reason = logoutReasonFromRefresh(body.code, body.reason);
+        }
+        clear(hadSession ? reason : null);
         return null;
       }
       return null; // 5xx / rate limit: keep the session, retry later
@@ -143,7 +151,8 @@ async function authenticate(path: string, body: Record<string, unknown>): Promis
   try {
     const res = await postAuth(path, { ...body, deviceName: deviceName() });
     if (!res.ok) return { ok: false, error: await readError(res) };
-    const data = (await res.json()) as { tokens: TokensJson; me: unknown };
+    const data = (await res.json()) as { tokens?: TokensJson; me: unknown; similarAccount?: boolean };
+    if (!data.tokens) return { ok: false, error: noSession(data.similarAccount, res.status) };
     applyTokens(data.tokens);
     return { ok: true, data: { serverUrl: location.origin, sessionId: data.tokens.sessionId, me: data.me } };
   } catch (e) {
@@ -156,7 +165,7 @@ async function guestJoin(code: string, nickname: string): Promise<IpcResult<Gues
   try {
     const res = await postAuth(`/api/room-invites/${encodeURIComponent(code)}/join`, { nickname, deviceName: deviceName() });
     if (!res.ok) return { ok: false, error: await readError(res) };
-    const data = (await res.json()) as { roomId: string; workspaceId: string; tokens?: TokensJson; me?: unknown };
+    const data = (await res.json()) as { roomId: string; workspaceId: string; tokens?: TokensJson; me?: unknown; admission?: unknown };
     if (!data.tokens) return { ok: false, error: { code: 'ERROR_CODE_INTERNAL', message: 'no guest session in the response', status: res.status } };
     applyTokens(data.tokens);
     return {
@@ -165,6 +174,7 @@ async function guestJoin(code: string, nickname: string): Promise<IpcResult<Gues
         session: { serverUrl: location.origin, sessionId: data.tokens.sessionId, me: data.me },
         roomId: data.roomId,
         workspaceId: data.workspaceId,
+        ...(data.admission ? { admission: data.admission } : {}),
       },
     };
   } catch (e) {
@@ -389,11 +399,13 @@ const settings = (): AppSettings => ({ serverUrl: location.origin, updateUrl: ''
 
 /**
  * Links on the web: https://<domain>/join/<code> (workspace invite) and https://<domain>/r/<code>
- * (room link, ADR-0016), https://<domain>/dm/<id> (a DM, ADR-0020) — the same URLs the app shares. Handed on as the https link; the address
+ * (room link, ADR-0016), https://<domain>/dm/<id> (a DM, ADR-0020), https://<domain>/e/<id> (a meeting, ADR-0038) — the same URLs the app shares. Handed on as the https link; the address
  * bar keeps the path while the link card is shown (docs/09 #53, services/linkLanding.ts).
  */
 function takeDeepLink(): Promise<string | null> {
-  const m = /^\/(join|r|dm)\/([A-Za-z0-9_-]{4,64})\/?$/.exec(location.pathname);
+  const msg = /^\/m\/([0-9a-fA-F-]{36})\/([0-9a-fA-F-]{36})\/?$/.exec(location.pathname);
+  if (msg?.[1] && msg[2]) return Promise.resolve(`${location.origin}/m/${msg[1]}/${msg[2]}`);
+  const m = /^\/(join|r|dm|e|b|t)\/([A-Za-z0-9_-]{4,64})\/?$/.exec(location.pathname);
   if (!m?.[1] || !m[2]) return Promise.resolve(null);
   return Promise.resolve(`${location.origin}/${m[1]}/${m[2]}`);
 }
@@ -426,7 +438,14 @@ export function createWebPlatform(): Platform {
       },
       login: (a: LoginArgs) => authenticate('/api/auth/login', { email: a.email, password: a.password }),
       register: (a: RegisterArgs) =>
-        authenticate('/api/auth/register', { email: a.email, password: a.password, displayName: a.displayName, inviteCode: a.inviteCode, locale: a.locale ?? '' }),
+        authenticate('/api/auth/register', {
+          email: a.email,
+          password: a.password,
+          displayName: a.displayName,
+          inviteCode: a.inviteCode,
+          locale: a.locale ?? '',
+          ...(a.checkSimilar ? { checkSimilarAccount: true } : {}),
+        }),
       guestJoin,
       logout: async (allSessions) => {
         const t = access?.token;
@@ -482,6 +501,10 @@ export function createWebPlatform(): Platform {
       updateStatus: () => Promise.resolve({ state: 'disabled' }),
       installUpdate: () => Promise.resolve(false),
       downloadUpdate: () => Promise.resolve(false),
+      // No restart for an update on the web (docs/09 #126 is desktop only).
+      onPrepareRestart: noop,
+      setResumeVoice: () => Promise.resolve(),
+      takeResumeVoice: () => Promise.resolve(null),
       networkOnline: () => undefined,
       log: (level, message) => {
         (level === 'error' ? console.error : level === 'warn' ? console.warn : console.info)(message);

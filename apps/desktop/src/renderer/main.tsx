@@ -8,6 +8,7 @@ import { installWindowVisibility } from './lib/windowVisibility';
 import { startLocale } from './services/locale';
 import { installPlayer } from './services/player';
 import { installCalls } from './services/call';
+import { installResumeVoice } from './services/resumeVoice';
 import { installTimeFormat } from './services/timeFormat';
 import { bootstrap } from './services/session';
 import './app/styles.css';
@@ -27,6 +28,9 @@ installPlayer();
 
 // One-to-one calls (ADR-0034): leaving the call's voice session or closing the app ends the call.
 installCalls();
+
+// After a restart for an update: back into the same room / call (docs/09 #126).
+installResumeVoice();
 
 // The clock format follows the current workspace (docs/09 #73): `fmt` reads it at call time.
 installTimeFormat();

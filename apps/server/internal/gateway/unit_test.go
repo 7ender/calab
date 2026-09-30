@@ -13,6 +13,22 @@ import (
 	"github.com/calaba/calaba/server/internal/perm"
 )
 
+// 4010 carries the revocation reason for clients (gateway.proto); junk stays out.
+func TestRevokedCloseReason(t *testing.T) {
+	for in, want := range map[string]string{
+		"":                                     "session revoked",
+		"REUSE":                                "session revoked: REUSE",
+		"LOGOUT_ALL":                           "session revoked: LOGOUT_ALL",
+		"1":                                    "session revoked",
+		"reuse\n<x>":                           "session revoked",
+		"A_VERY_LONG_REASON_THAT_DOES_NOT_FIT": "session revoked",
+	} {
+		if got := revokedCloseReason(in); got != want {
+			t.Errorf("%q: %q, want %q", in, got, want)
+		}
+	}
+}
+
 func TestEntryRoundTripAndSince(t *testing.T) {
 	var es []entry
 	for i := uint64(5); i <= 9; i++ {

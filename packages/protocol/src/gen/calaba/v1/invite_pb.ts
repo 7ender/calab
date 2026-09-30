@@ -2,15 +2,15 @@
 // @generated from file calaba/v1/invite.proto (package calaba.v1, syntax proto3)
 /* eslint-disable */
 
-import type { GenFile, GenMessage } from "@bufbuild/protobuf/codegenv2";
-import { fileDesc, messageDesc } from "@bufbuild/protobuf/codegenv2";
+import type { GenEnum, GenFile, GenMessage } from "@bufbuild/protobuf/codegenv2";
+import { enumDesc, fileDesc, messageDesc } from "@bufbuild/protobuf/codegenv2";
 import type { Timestamp } from "@bufbuild/protobuf/wkt";
 import { file_google_protobuf_timestamp } from "@bufbuild/protobuf/wkt";
 import type { AuthTokens } from "./auth_pb.js";
 import { file_calaba_v1_auth } from "./auth_pb.js";
 import type { RoomType } from "./room_pb.js";
 import { file_calaba_v1_room } from "./room_pb.js";
-import type { Me } from "./user_pb.js";
+import type { Me, User } from "./user_pb.js";
 import { file_calaba_v1_user } from "./user_pb.js";
 import type { Message } from "@bufbuild/protobuf";
 
@@ -18,7 +18,7 @@ import type { Message } from "@bufbuild/protobuf";
  * Describes the file calaba/v1/invite.proto.
  */
 export const file_calaba_v1_invite: GenFile = /*@__PURE__*/
-  fileDesc("ChZjYWxhYmEvdjEvaW52aXRlLnByb3RvEgljYWxhYmEudjEizwIKClJvb21JbnZpdGUSCgoCaWQYASABKAkSDwoHcm9vbV9pZBgCIAEoCRIUCgx3b3Jrc3BhY2VfaWQYAyABKAkSDAoEY29kZRgEIAEoCRISCgpjcmVhdGVkX2J5GAUgASgJEi4KCmV4cGlyZXNfYXQYBiABKAsyGi5nb29nbGUucHJvdG9idWYuVGltZXN0YW1wEhAKCG1heF91c2VzGAcgASgNEgwKBHVzZXMYCCABKA0SFAoMYWxsb3dfZ3Vlc3RzGAkgASgIEhMKC2FsbG93X3NwZWFrGAogASgIEhYKDmFsbG93X21lc3NhZ2VzGAsgASgIEhMKC2FsbG93X2ZpbGVzGAwgASgIEhQKDGFsbG93X3N0cmVhbRgNIAEoCBIuCgpjcmVhdGVkX2F0GA4gASgLMhouZ29vZ2xlLnByb3RvYnVmLlRpbWVzdGFtcCK/AgoXQ3JlYXRlUm9vbUludml0ZVJlcXVlc3QSHwoSZXhwaXJlc19pbl9zZWNvbmRzGAEgASgNSACIAQESEAoIbWF4X3VzZXMYAiABKA0SGQoMYWxsb3dfZ3Vlc3RzGAMgASgISAGIAQESGAoLYWxsb3dfc3BlYWsYBCABKAhIAogBARIbCg5hbGxvd19tZXNzYWdlcxgFIAEoCEgDiAEBEhgKC2FsbG93X2ZpbGVzGAYgASgISASIAQESGQoMYWxsb3dfc3RyZWFtGAcgASgISAWIAQFCFQoTX2V4cGlyZXNfaW5fc2Vjb25kc0IPCg1fYWxsb3dfZ3Vlc3RzQg4KDF9hbGxvd19zcGVha0IRCg9fYWxsb3dfbWVzc2FnZXNCDgoMX2FsbG93X2ZpbGVzQg8KDV9hbGxvd19zdHJlYW0iQQoYQ3JlYXRlUm9vbUludml0ZVJlc3BvbnNlEiUKBmludml0ZRgBIAEoCzIVLmNhbGFiYS52MS5Sb29tSW52aXRlIkEKF0xpc3RSb29tSW52aXRlc1Jlc3BvbnNlEiYKB2ludml0ZXMYASADKAsyFS5jYWxhYmEudjEuUm9vbUludml0ZSLQAQoVR2V0Um9vbUludml0ZVJlc3BvbnNlEhEKCXJvb21fbmFtZRgBIAEoCRImCglyb29tX3R5cGUYAiABKA4yEy5jYWxhYmEudjEuUm9vbVR5cGUSFgoOd29ya3NwYWNlX25hbWUYAyABKAkSHgoWd29ya3NwYWNlX2ljb25fZmlsZV9pZBgEIAEoCRIUCgxhbGxvd19ndWVzdHMYBSABKAgSLgoKZXhwaXJlc19hdBgGIAEoCzIaLmdvb2dsZS5wcm90b2J1Zi5UaW1lc3RhbXAiPgoVSm9pblJvb21JbnZpdGVSZXF1ZXN0EhAKCG5pY2tuYW1lGAEgASgJEhMKC2RldmljZV9uYW1lGAIgASgJIoEBChZKb2luUm9vbUludml0ZVJlc3BvbnNlEg8KB3Jvb21faWQYASABKAkSFAoMd29ya3NwYWNlX2lkGAIgASgJEiUKBnRva2VucxgDIAEoCzIVLmNhbGFiYS52MS5BdXRoVG9rZW5zEhkKAm1lGAQgASgLMg0uY2FsYWJhLnYxLk1lQpkBCg1jb20uY2FsYWJhLnYxQgtJbnZpdGVQcm90b1ABWjZnaXRodWIuY29tL2NhbGFiYS9jYWxhYmEvc2VydmVyL2dlbi9jYWxhYmEvdjE7Y2FsYWJhdjGiAgNDWFiqAglDYWxhYmEuVjHKAglDYWxhYmFcVjHiAhVDYWxhYmFcVjFcR1BCTWV0YWRhdGHqAgpDYWxhYmE6OlYxYgZwcm90bzM", [file_google_protobuf_timestamp, file_calaba_v1_auth, file_calaba_v1_room, file_calaba_v1_user]);
+  fileDesc("ChZjYWxhYmEvdjEvaW52aXRlLnByb3RvEgljYWxhYmEudjEi2wMKClJvb21JbnZpdGUSCgoCaWQYASABKAkSDwoHcm9vbV9pZBgCIAEoCRIUCgx3b3Jrc3BhY2VfaWQYAyABKAkSDAoEY29kZRgEIAEoCRISCgpjcmVhdGVkX2J5GAUgASgJEi4KCmV4cGlyZXNfYXQYBiABKAsyGi5nb29nbGUucHJvdG9idWYuVGltZXN0YW1wEhAKCG1heF91c2VzGAcgASgNEgwKBHVzZXMYCCABKA0SFAoMYWxsb3dfZ3Vlc3RzGAkgASgIEhMKC2FsbG93X3NwZWFrGAogASgIEhYKDmFsbG93X21lc3NhZ2VzGAsgASgIEhMKC2FsbG93X2ZpbGVzGAwgASgIEhQKDGFsbG93X3N0cmVhbRgNIAEoCBIuCgpjcmVhdGVkX2F0GA4gASgLMhouZ29vZ2xlLnByb3RvYnVmLlRpbWVzdGFtcBIuCgpub3RfYmVmb3JlGA8gASgLMhouZ29vZ2xlLnByb3RvYnVmLlRpbWVzdGFtcBIQCghldmVudF9pZBgQIAEoCRIdChByZXF1aXJlX2FwcHJvdmFsGBEgASgISACIAQESFAoMbWVtYmVyc19vbmx5GBIgASgIQhMKEV9yZXF1aXJlX2FwcHJvdmFsIokDChdDcmVhdGVSb29tSW52aXRlUmVxdWVzdBIfChJleHBpcmVzX2luX3NlY29uZHMYASABKA1IAIgBARIQCghtYXhfdXNlcxgCIAEoDRIZCgxhbGxvd19ndWVzdHMYAyABKAhIAYgBARIYCgthbGxvd19zcGVhaxgEIAEoCEgCiAEBEhsKDmFsbG93X21lc3NhZ2VzGAUgASgISAOIAQESGAoLYWxsb3dfZmlsZXMYBiABKAhIBIgBARIZCgxhbGxvd19zdHJlYW0YByABKAhIBYgBARIdChByZXF1aXJlX2FwcHJvdmFsGAggASgISAaIAQESFAoMbWVtYmVyc19vbmx5GAkgASgIQhUKE19leHBpcmVzX2luX3NlY29uZHNCDwoNX2FsbG93X2d1ZXN0c0IOCgxfYWxsb3dfc3BlYWtCEQoPX2FsbG93X21lc3NhZ2VzQg4KDF9hbGxvd19maWxlc0IPCg1fYWxsb3dfc3RyZWFtQhMKEV9yZXF1aXJlX2FwcHJvdmFsIkEKGENyZWF0ZVJvb21JbnZpdGVSZXNwb25zZRIlCgZpbnZpdGUYASABKAsyFS5jYWxhYmEudjEuUm9vbUludml0ZSJnChdVcGRhdGVSb29tSW52aXRlUmVxdWVzdBIdChByZXF1aXJlX2FwcHJvdmFsGAEgASgISACIAQESGAoQaW5oZXJpdF9hcHByb3ZhbBgCIAEoCEITChFfcmVxdWlyZV9hcHByb3ZhbCJBChhVcGRhdGVSb29tSW52aXRlUmVzcG9uc2USJQoGaW52aXRlGAEgASgLMhUuY2FsYWJhLnYxLlJvb21JbnZpdGUiQQoXTGlzdFJvb21JbnZpdGVzUmVzcG9uc2USJgoHaW52aXRlcxgBIAMoCzIVLmNhbGFiYS52MS5Sb29tSW52aXRlIrECChVHZXRSb29tSW52aXRlUmVzcG9uc2USEQoJcm9vbV9uYW1lGAEgASgJEiYKCXJvb21fdHlwZRgCIAEoDjITLmNhbGFiYS52MS5Sb29tVHlwZRIWCg53b3Jrc3BhY2VfbmFtZRgDIAEoCRIeChZ3b3Jrc3BhY2VfaWNvbl9maWxlX2lkGAQgASgJEhQKDGFsbG93X2d1ZXN0cxgFIAEoCBIuCgpleHBpcmVzX2F0GAYgASgLMhouZ29vZ2xlLnByb3RvYnVmLlRpbWVzdGFtcBIuCgpub3RfYmVmb3JlGAcgASgLMhouZ29vZ2xlLnByb3RvYnVmLlRpbWVzdGFtcBIZChFyZXF1aXJlc19hcHByb3ZhbBgIIAEoCBIUCgxtZW1iZXJzX29ubHkYCSABKAgiPgoVSm9pblJvb21JbnZpdGVSZXF1ZXN0EhAKCG5pY2tuYW1lGAEgASgJEhMKC2RldmljZV9uYW1lGAIgASgJIq4BChZKb2luUm9vbUludml0ZVJlc3BvbnNlEg8KB3Jvb21faWQYASABKAkSFAoMd29ya3NwYWNlX2lkGAIgASgJEiUKBnRva2VucxgDIAEoCzIVLmNhbGFiYS52MS5BdXRoVG9rZW5zEhkKAm1lGAQgASgLMg0uY2FsYWJhLnYxLk1lEisKCWFkbWlzc2lvbhgFIAEoCzIYLmNhbGFiYS52MS5Sb29tQWRtaXNzaW9uIucCCg1Sb29tQWRtaXNzaW9uEg8KB3Jvb21faWQYASABKAkSFAoMd29ya3NwYWNlX2lkGAIgASgJEh0KBHVzZXIYAyABKAsyDy5jYWxhYmEudjEuVXNlchIRCglpbnZpdGVfaWQYBCABKAkSGQoRaW52aXRlX2NyZWF0ZWRfYnkYBSABKAkSLgoGc3RhdHVzGAYgASgOMh4uY2FsYWJhLnYxLlJvb21BZG1pc3Npb25TdGF0dXMSMAoMcmVxdWVzdGVkX2F0GAcgASgLMhouZ29vZ2xlLnByb3RvYnVmLlRpbWVzdGFtcBISCgpkZWNpZGVkX2J5GAggASgJEi4KCmRlY2lkZWRfYXQYCSABKAsyGi5nb29nbGUucHJvdG9idWYuVGltZXN0YW1wEhEKCW5vX2Fuc3dlchgKIAEoCBIRCglyb29tX25hbWUYCyABKAkSFgoOd29ya3NwYWNlX25hbWUYDCABKAkiSgoaTGlzdFJvb21BZG1pc3Npb25zUmVzcG9uc2USLAoKYWRtaXNzaW9ucxgBIAMoCzIYLmNhbGFiYS52MS5Sb29tQWRtaXNzaW9uIpwBChpEZWNpZGVSb29tQWRtaXNzaW9uUmVxdWVzdBIuCgZzdGF0dXMYASABKA4yHi5jYWxhYmEudjEuUm9vbUFkbWlzc2lvblN0YXR1cxIZCgxkaXNwbGF5X25hbWUYAiABKAlIAIgBARIVCghiYWRnZV9pZBgDIAEoCUgBiAEBQg8KDV9kaXNwbGF5X25hbWVCCwoJX2JhZGdlX2lkIkoKG0RlY2lkZVJvb21BZG1pc3Npb25SZXNwb25zZRIrCglhZG1pc3Npb24YASABKAsyGC5jYWxhYmEudjEuUm9vbUFkbWlzc2lvbirMAQoTUm9vbUFkbWlzc2lvblN0YXR1cxIlCiFST09NX0FETUlTU0lPTl9TVEFUVVNfVU5TUEVDSUZJRUQQABIhCh1ST09NX0FETUlTU0lPTl9TVEFUVVNfUEVORElORxABEiIKHlJPT01fQURNSVNTSU9OX1NUQVRVU19BRE1JVFRFRBACEiIKHlJPT01fQURNSVNTSU9OX1NUQVRVU19ERUNMSU5FRBADEiMKH1JPT01fQURNSVNTSU9OX1NUQVRVU19DQU5DRUxMRUQQBEKZAQoNY29tLmNhbGFiYS52MUILSW52aXRlUHJvdG9QAVo2Z2l0aHViLmNvbS9jYWxhYmEvY2FsYWJhL3NlcnZlci9nZW4vY2FsYWJhL3YxO2NhbGFiYXYxogIDQ1hYqgIJQ2FsYWJhLlYxygIJQ2FsYWJhXFYx4gIVQ2FsYWJhXFYxXEdQQk1ldGFkYXRh6gIKQ2FsYWJhOjpWMWIGcHJvdG8z", [file_google_protobuf_timestamp, file_calaba_v1_auth, file_calaba_v1_room, file_calaba_v1_user]);
 
 /**
  * Room link (ADR-0016): https://<domain>/r/<code>, calaba://r/<code>. A capability for one
@@ -105,6 +105,37 @@ export type RoomInvite = Message<"calaba.v1.RoomInvite"> & {
    * @generated from field: google.protobuf.Timestamp created_at = 14;
    */
   createdAt?: Timestamp | undefined;
+
+  /**
+   * Meeting guest links (ADR-0038 «Дополнение»): made by the server for one external attendee
+   * of event_id, single-use, valid from not_before (15 minutes before the meeting) until 1 h
+   * after it ends.
+   *
+   * @generated from field: google.protobuf.Timestamp not_before = 15;
+   */
+  notBefore?: Timestamp | undefined;
+
+  /**
+   * @generated from field: string event_id = 16;
+   */
+  eventId: string;
+
+  /**
+   * Guest admission (ADR-0040): unset = as the room (Room.guest_approval); true = guests
+   * arriving by this link wait for a decision; false = they come in at once. Meeting guest
+   * links are made unset.
+   *
+   * @generated from field: optional bool require_approval = 17;
+   */
+  requireApproval?: boolean | undefined;
+
+  /**
+   * Members-only link (ADR-0043): gives members of the workspace (not guests) access to the
+   * room; anyone else is refused (403 INVITE_MEMBERS_ONLY). allow_guests is false then.
+   *
+   * @generated from field: bool members_only = 18;
+   */
+  membersOnly: boolean;
 };
 
 /**
@@ -115,8 +146,9 @@ export const RoomInviteSchema: GenMessage<RoomInvite> = /*@__PURE__*/
   messageDesc(file_calaba_v1_invite, 0);
 
 /**
- * POST /api/rooms/{id}/invites (MANAGE_ROOM). Unset fields take the defaults:
- * 7 days, unlimited uses, allow_guests true, speak true, messages true, files false, stream false.
+ * POST /api/rooms/{id}/invites: INVITE_GUESTS in the room; a members_only link also with
+ * INVITE_MEMBERS there (ADR-0043). Unset fields take the defaults: 7 days, unlimited uses,
+ * allow_guests true, speak true, messages true, files false, stream false.
  *
  * @generated from message calaba.v1.CreateRoomInviteRequest
  */
@@ -157,6 +189,20 @@ export type CreateRoomInviteRequest = Message<"calaba.v1.CreateRoomInviteRequest
    * @generated from field: optional bool allow_stream = 7;
    */
   allowStream?: boolean | undefined;
+
+  /**
+   * unset = as the room (ADR-0040)
+   *
+   * @generated from field: optional bool require_approval = 8;
+   */
+  requireApproval?: boolean | undefined;
+
+  /**
+   * ADR-0043: only for members of the workspace; forces allow_guests false
+   *
+   * @generated from field: bool members_only = 9;
+   */
+  membersOnly: boolean;
 };
 
 /**
@@ -184,7 +230,51 @@ export const CreateRoomInviteResponseSchema: GenMessage<CreateRoomInviteResponse
   messageDesc(file_calaba_v1_invite, 2);
 
 /**
- * GET /api/rooms/{id}/invites (MANAGE_ROOM): active links.
+ * PATCH /api/rooms/{id}/invites/{invite_id} (INVITE_GUESTS): the link's approval setting
+ * (ADR-0040). inherit_approval true resets it to the room's (require_approval must then be
+ * unset); otherwise require_approval, when set, overrides the room for this link.
+ *
+ * @generated from message calaba.v1.UpdateRoomInviteRequest
+ */
+export type UpdateRoomInviteRequest = Message<"calaba.v1.UpdateRoomInviteRequest"> & {
+  /**
+   * @generated from field: optional bool require_approval = 1;
+   */
+  requireApproval?: boolean | undefined;
+
+  /**
+   * @generated from field: bool inherit_approval = 2;
+   */
+  inheritApproval: boolean;
+};
+
+/**
+ * Describes the message calaba.v1.UpdateRoomInviteRequest.
+ * Use `create(UpdateRoomInviteRequestSchema)` to create a new message.
+ */
+export const UpdateRoomInviteRequestSchema: GenMessage<UpdateRoomInviteRequest> = /*@__PURE__*/
+  messageDesc(file_calaba_v1_invite, 3);
+
+/**
+ * @generated from message calaba.v1.UpdateRoomInviteResponse
+ */
+export type UpdateRoomInviteResponse = Message<"calaba.v1.UpdateRoomInviteResponse"> & {
+  /**
+   * @generated from field: calaba.v1.RoomInvite invite = 1;
+   */
+  invite?: RoomInvite | undefined;
+};
+
+/**
+ * Describes the message calaba.v1.UpdateRoomInviteResponse.
+ * Use `create(UpdateRoomInviteResponseSchema)` to create a new message.
+ */
+export const UpdateRoomInviteResponseSchema: GenMessage<UpdateRoomInviteResponse> = /*@__PURE__*/
+  messageDesc(file_calaba_v1_invite, 4);
+
+/**
+ * GET /api/rooms/{id}/invites: active links — all with INVITE_GUESTS in the room, only the
+ * members_only ones with INVITE_MEMBERS alone (ADR-0043).
  *
  * @generated from message calaba.v1.ListRoomInvitesResponse
  */
@@ -200,7 +290,7 @@ export type ListRoomInvitesResponse = Message<"calaba.v1.ListRoomInvitesResponse
  * Use `create(ListRoomInvitesResponseSchema)` to create a new message.
  */
 export const ListRoomInvitesResponseSchema: GenMessage<ListRoomInvitesResponse> = /*@__PURE__*/
-  messageDesc(file_calaba_v1_invite, 3);
+  messageDesc(file_calaba_v1_invite, 5);
 
 /**
  * GET /api/room-invites/{code} — public preview for the /r/<code> page (no auth).
@@ -237,6 +327,29 @@ export type GetRoomInviteResponse = Message<"calaba.v1.GetRoomInviteResponse"> &
    * @generated from field: google.protobuf.Timestamp expires_at = 6;
    */
   expiresAt?: Timestamp | undefined;
+
+  /**
+   * Set = the link works only from then (a meeting's guest link): join → 409
+   * INVITE_NOT_YET_VALID before it.
+   *
+   * @generated from field: google.protobuf.Timestamp not_before = 7;
+   */
+  notBefore?: Timestamp | undefined;
+
+  /**
+   * Guests arriving by this link wait for the organizer's approval (ADR-0040): the link's
+   * require_approval, else the room's guest_approval. Members of the workspace never wait.
+   *
+   * @generated from field: bool requires_approval = 8;
+   */
+  requiresApproval: boolean;
+
+  /**
+   * Only members of the workspace may use the link (ADR-0043).
+   *
+   * @generated from field: bool members_only = 9;
+   */
+  membersOnly: boolean;
 };
 
 /**
@@ -244,7 +357,7 @@ export type GetRoomInviteResponse = Message<"calaba.v1.GetRoomInviteResponse"> &
  * Use `create(GetRoomInviteResponseSchema)` to create a new message.
  */
 export const GetRoomInviteResponseSchema: GenMessage<GetRoomInviteResponse> = /*@__PURE__*/
-  messageDesc(file_calaba_v1_invite, 4);
+  messageDesc(file_calaba_v1_invite, 6);
 
 /**
  * POST /api/room-invites/{code}/join. With an access token: joins as the current user.
@@ -270,7 +383,7 @@ export type JoinRoomInviteRequest = Message<"calaba.v1.JoinRoomInviteRequest"> &
  * Use `create(JoinRoomInviteRequestSchema)` to create a new message.
  */
 export const JoinRoomInviteRequestSchema: GenMessage<JoinRoomInviteRequest> = /*@__PURE__*/
-  messageDesc(file_calaba_v1_invite, 5);
+  messageDesc(file_calaba_v1_invite, 7);
 
 /**
  * @generated from message calaba.v1.JoinRoomInviteResponse
@@ -299,6 +412,14 @@ export type JoinRoomInviteResponse = Message<"calaba.v1.JoinRoomInviteResponse">
    * @generated from field: calaba.v1.Me me = 4;
    */
   me?: Me | undefined;
+
+  /**
+   * Set = the caller waits for approval (ADR-0040, status PENDING): the room is not theirs
+   * until ROOM_ADMISSION_DECIDED (ADMITTED) arrives on their user channel.
+   *
+   * @generated from field: calaba.v1.RoomAdmission admission = 5;
+   */
+  admission?: RoomAdmission | undefined;
 };
 
 /**
@@ -306,5 +427,205 @@ export type JoinRoomInviteResponse = Message<"calaba.v1.JoinRoomInviteResponse">
  * Use `create(JoinRoomInviteResponseSchema)` to create a new message.
  */
 export const JoinRoomInviteResponseSchema: GenMessage<JoinRoomInviteResponse> = /*@__PURE__*/
-  messageDesc(file_calaba_v1_invite, 6);
+  messageDesc(file_calaba_v1_invite, 8);
+
+/**
+ * A guest's knock on a room. Deciders (MANAGE_ROOM in the room, or the author of the link
+ * the guest came by) see pending ones in GET /api/rooms/{id}/admissions, in
+ * WorkspaceSnapshot.admissions and in ROOM_ADMISSION_REQUEST; the guest sees their own in
+ * Ready.pending_admissions, JoinRoomInviteResponse.admission and ROOM_ADMISSION_DECIDED.
+ *
+ * @generated from message calaba.v1.RoomAdmission
+ */
+export type RoomAdmission = Message<"calaba.v1.RoomAdmission"> & {
+  /**
+   * @generated from field: string room_id = 1;
+   */
+  roomId: string;
+
+  /**
+   * @generated from field: string workspace_id = 2;
+   */
+  workspaceId: string;
+
+  /**
+   * The knocking user (to deciders; to the guest themselves only user.id is set).
+   *
+   * @generated from field: calaba.v1.User user = 3;
+   */
+  user?: User | undefined;
+
+  /**
+   * the link used; empty if it is gone
+   *
+   * @generated from field: string invite_id = 4;
+   */
+  inviteId: string;
+
+  /**
+   * its author, who may decide too; empty for the guest
+   *
+   * @generated from field: string invite_created_by = 5;
+   */
+  inviteCreatedBy: string;
+
+  /**
+   * @generated from field: calaba.v1.RoomAdmissionStatus status = 6;
+   */
+  status: RoomAdmissionStatus;
+
+  /**
+   * @generated from field: google.protobuf.Timestamp requested_at = 7;
+   */
+  requestedAt?: Timestamp | undefined;
+
+  /**
+   * empty = nobody (no answer, cancelled) or not decided
+   *
+   * @generated from field: string decided_by = 8;
+   */
+  decidedBy: string;
+
+  /**
+   * @generated from field: google.protobuf.Timestamp decided_at = 9;
+   */
+  decidedAt?: Timestamp | undefined;
+
+  /**
+   * DECLINED because nobody answered within 30 minutes: the guest may knock again at once.
+   * After a decline by a person a new knock is refused for 10 minutes (429, reason
+   * ADMISSION_DECLINED).
+   *
+   * @generated from field: bool no_answer = 10;
+   */
+  noAnswer: boolean;
+
+  /**
+   * Filled for the guest (the waiting screen): the room and workspace names.
+   *
+   * @generated from field: string room_name = 11;
+   */
+  roomName: string;
+
+  /**
+   * @generated from field: string workspace_name = 12;
+   */
+  workspaceName: string;
+};
+
+/**
+ * Describes the message calaba.v1.RoomAdmission.
+ * Use `create(RoomAdmissionSchema)` to create a new message.
+ */
+export const RoomAdmissionSchema: GenMessage<RoomAdmission> = /*@__PURE__*/
+  messageDesc(file_calaba_v1_invite, 9);
+
+/**
+ * GET /api/rooms/{id}/admissions: pending knocks, oldest first. MANAGE_ROOM sees all of the
+ * room; the author of a link without MANAGE_ROOM sees those who came by their links.
+ *
+ * @generated from message calaba.v1.ListRoomAdmissionsResponse
+ */
+export type ListRoomAdmissionsResponse = Message<"calaba.v1.ListRoomAdmissionsResponse"> & {
+  /**
+   * @generated from field: repeated calaba.v1.RoomAdmission admissions = 1;
+   */
+  admissions: RoomAdmission[];
+};
+
+/**
+ * Describes the message calaba.v1.ListRoomAdmissionsResponse.
+ * Use `create(ListRoomAdmissionsResponseSchema)` to create a new message.
+ */
+export const ListRoomAdmissionsResponseSchema: GenMessage<ListRoomAdmissionsResponse> = /*@__PURE__*/
+  messageDesc(file_calaba_v1_invite, 10);
+
+/**
+ * POST /api/rooms/{id}/admissions/{user_id} (a decider; not bots). status ADMITTED or
+ * DECLINED. On admission display_name (1..40, guest accounts only) renames the guest and
+ * badge_id ("" = none; from the workspace library) sets their badge. 409 CONFLICT when the
+ * knock is no longer pending.
+ *
+ * @generated from message calaba.v1.DecideRoomAdmissionRequest
+ */
+export type DecideRoomAdmissionRequest = Message<"calaba.v1.DecideRoomAdmissionRequest"> & {
+  /**
+   * @generated from field: calaba.v1.RoomAdmissionStatus status = 1;
+   */
+  status: RoomAdmissionStatus;
+
+  /**
+   * @generated from field: optional string display_name = 2;
+   */
+  displayName?: string | undefined;
+
+  /**
+   * @generated from field: optional string badge_id = 3;
+   */
+  badgeId?: string | undefined;
+};
+
+/**
+ * Describes the message calaba.v1.DecideRoomAdmissionRequest.
+ * Use `create(DecideRoomAdmissionRequestSchema)` to create a new message.
+ */
+export const DecideRoomAdmissionRequestSchema: GenMessage<DecideRoomAdmissionRequest> = /*@__PURE__*/
+  messageDesc(file_calaba_v1_invite, 11);
+
+/**
+ * @generated from message calaba.v1.DecideRoomAdmissionResponse
+ */
+export type DecideRoomAdmissionResponse = Message<"calaba.v1.DecideRoomAdmissionResponse"> & {
+  /**
+   * @generated from field: calaba.v1.RoomAdmission admission = 1;
+   */
+  admission?: RoomAdmission | undefined;
+};
+
+/**
+ * Describes the message calaba.v1.DecideRoomAdmissionResponse.
+ * Use `create(DecideRoomAdmissionResponseSchema)` to create a new message.
+ */
+export const DecideRoomAdmissionResponseSchema: GenMessage<DecideRoomAdmissionResponse> = /*@__PURE__*/
+  messageDesc(file_calaba_v1_invite, 12);
+
+/**
+ * Guest admission, the «waiting room» of room links (ADR-0040).
+ *
+ * @generated from enum calaba.v1.RoomAdmissionStatus
+ */
+export enum RoomAdmissionStatus {
+  /**
+   * @generated from enum value: ROOM_ADMISSION_STATUS_UNSPECIFIED = 0;
+   */
+  UNSPECIFIED = 0,
+
+  /**
+   * @generated from enum value: ROOM_ADMISSION_STATUS_PENDING = 1;
+   */
+  PENDING = 1,
+
+  /**
+   * @generated from enum value: ROOM_ADMISSION_STATUS_ADMITTED = 2;
+   */
+  ADMITTED = 2,
+
+  /**
+   * @generated from enum value: ROOM_ADMISSION_STATUS_DECLINED = 3;
+   */
+  DECLINED = 3,
+
+  /**
+   * Events only: the guest withdrew the knock (DELETE /api/rooms/{id}/admissions/me).
+   *
+   * @generated from enum value: ROOM_ADMISSION_STATUS_CANCELLED = 4;
+   */
+  CANCELLED = 4,
+}
+
+/**
+ * Describes the enum calaba.v1.RoomAdmissionStatus.
+ */
+export const RoomAdmissionStatusSchema: GenEnum<RoomAdmissionStatus> = /*@__PURE__*/
+  enumDesc(file_calaba_v1_invite, 0);
 

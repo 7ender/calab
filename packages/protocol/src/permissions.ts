@@ -23,6 +23,13 @@ export const PERMISSION_BITS = {
   VIDEO: BigInt(Permission.VIDEO),
   MANAGE_ROLES: BigInt(Permission.MANAGE_ROLES),
   MANAGE_STICKERS: BigInt(Permission.MANAGE_STICKERS),
+  VIEW_BOARD: BigInt(Permission.VIEW_BOARD),
+  CREATE_TASKS: BigInt(Permission.CREATE_TASKS),
+  EDIT_TASKS: BigInt(Permission.EDIT_TASKS),
+  MANAGE_BOARD: BigInt(Permission.MANAGE_BOARD),
+  INVITE_MEMBERS: BigInt(Permission.INVITE_MEMBERS),
+  INVITE_GUESTS: BigInt(Permission.INVITE_GUESTS),
+  CREATE_TEMP_ROOMS: BigInt(Permission.CREATE_TEMP_ROOMS),
 } as const;
 
 export type PermissionName = keyof typeof PERMISSION_BITS;
@@ -30,11 +37,32 @@ export type PermissionBits = bigint;
 
 export const ALL_PERMISSIONS: PermissionBits = Object.values(PERMISSION_BITS).reduce((a, b) => a | b, 0n);
 
-const { VIEW_ROOM, SEND_MESSAGES, ATTACH_FILES, CONNECT, SPEAK, STREAM, VIDEO, ADMINISTRATOR } = PERMISSION_BITS;
+const {
+  VIEW_ROOM,
+  SEND_MESSAGES,
+  ATTACH_FILES,
+  CONNECT,
+  SPEAK,
+  STREAM,
+  VIDEO,
+  ADMINISTRATOR,
+  VIEW_BOARD,
+  CREATE_TASKS,
+  CREATE_TEMP_ROOMS,
+} = PERMISSION_BITS;
 
 /**
- * Bits room overrides may touch. ADMINISTRATOR, MANAGE_WORKSPACE, MANAGE_NICKNAMES, MANAGE_ROLES
- * and MANAGE_STICKERS are workspace-level: computePermissions ignores them in overrides (Go: perm.RoomOnly).
+ * Bits of task boards (ADR-0042): board overrides touch only them, room overrides never do
+ * (Go: perm.BoardOnly).
+ */
+export const BOARD_ONLY_PERMISSIONS: PermissionBits =
+  VIEW_BOARD | CREATE_TASKS | PERMISSION_BITS.EDIT_TASKS | PERMISSION_BITS.MANAGE_BOARD;
+
+/**
+ * Bits room overrides may touch (INVITE_MEMBERS and INVITE_GUESTS included, ADR-0043).
+ * ADMINISTRATOR, MANAGE_WORKSPACE, MANAGE_NICKNAMES, MANAGE_ROLES, MANAGE_STICKERS and
+ * CREATE_TEMP_ROOMS (ADR-0044) are workspace-level, the board bits apply to boards only:
+ * computePermissions ignores them in room overrides (Go: perm.RoomOnly).
  */
 export const ROOM_ONLY_PERMISSIONS: PermissionBits =
   ALL_PERMISSIONS &
@@ -43,7 +71,9 @@ export const ROOM_ONLY_PERMISSIONS: PermissionBits =
     PERMISSION_BITS.MANAGE_WORKSPACE |
     PERMISSION_BITS.MANAGE_NICKNAMES |
     PERMISSION_BITS.MANAGE_ROLES |
-    PERMISSION_BITS.MANAGE_STICKERS
+    PERMISSION_BITS.MANAGE_STICKERS |
+    CREATE_TEMP_ROOMS |
+    BOARD_ONLY_PERMISSIONS
   );
 
 /** Initial permissions of the built-in roles (the member / guest roles are editable since ADR-0026). */
@@ -51,7 +81,17 @@ export const ROLE_DEFAULTS: Record<WorkspaceRole, PermissionBits> = {
   [WorkspaceRole.UNSPECIFIED]: 0n,
   [WorkspaceRole.OWNER]: ADMINISTRATOR,
   [WorkspaceRole.ADMIN]: ADMINISTRATOR,
-  [WorkspaceRole.MEMBER]: VIEW_ROOM | SEND_MESSAGES | ATTACH_FILES | CONNECT | SPEAK | STREAM | VIDEO,
+  [WorkspaceRole.MEMBER]:
+    VIEW_ROOM |
+    SEND_MESSAGES |
+    ATTACH_FILES |
+    CONNECT |
+    SPEAK |
+    STREAM |
+    VIDEO |
+    VIEW_BOARD |
+    CREATE_TASKS |
+    CREATE_TEMP_ROOMS,
   // Guests see only rooms with an explicit VIEW_ROOM allow override.
   [WorkspaceRole.GUEST]: CONNECT | SPEAK,
 };
@@ -116,6 +156,13 @@ export interface ComputePermissionsInput {
   restricted?: boolean | undefined;
   /** The user is the workspace owner (Workspace.owner_id; holder of the built-in owner role). */
   owner?: boolean | undefined;
+  /**
+   * Set for a task board (ADR-0042): the overrides are the board's and touch only
+   * BOARD_ONLY_PERMISSIONS; a private board (Board.isPrivate) drops the roles' VIEW_BOARD
+   * first; without VIEW_BOARD nothing; a guest (highest built-in role GUEST) gets nothing.
+   * `restricted` / `owner` do not apply. Go: perm.ComputeBoard.
+   */
+  board?: { private: boolean; guest?: boolean | undefined } | undefined;
 }
 
 /** The plain OR of the roles' permissions (ADMINISTRATOR not expanded). */
@@ -136,13 +183,12 @@ export function holdsOwnerRole(roles: readonly Pick<RoleBits, 'builtin'>[]): boo
   return roles.some((r) => r.builtin === WorkspaceRole.OWNER);
 }
 
-function overrideOf(
-  ovs: ComputePermissionsInput['roleOverrides'],
-  id: string,
-): OverrideBits | undefined {
+function overrideOf(ovs: ComputePermissionsInput['roleOverrides'], id: string): OverrideBits | undefined {
   if (!ovs) return undefined;
   if (ovs instanceof Map) return ovs.get(id);
-  return Object.prototype.hasOwnProperty.call(ovs, id) ? (ovs as Readonly<Record<string, OverrideBits>>)[id] : undefined;
+  return Object.prototype.hasOwnProperty.call(ovs, id)
+    ? (ovs as Readonly<Record<string, OverrideBits>>)[id]
+    : undefined;
 }
 
 /**
@@ -163,10 +209,22 @@ export function computePermissions(input: ComputePermissionsInput): PermissionBi
     const role = input.role ?? WorkspaceRole.UNSPECIFIED;
     if (role === WorkspaceRole.UNSPECIFIED) return 0n;
     const id = ROLE_TARGET_ID[role];
-    roles = [{ id, position: BUILTIN_ROLE_POSITION[role], permissions: ROLE_DEFAULTS[role] }];
+    roles = [
+      {
+        id,
+        position: BUILTIN_ROLE_POSITION[role],
+        permissions: ROLE_DEFAULTS[role],
+      },
+    ];
     roleOverrides = input.roleOverride ? { [id]: input.roleOverride } : undefined;
   }
   let perms = rawPermissions(roles);
+  if (input.board) {
+    if (input.board.guest) return 0n;
+    if (perms & ADMINISTRATOR) return ALL_PERMISSIONS;
+    if (input.board.private) perms &= ~VIEW_BOARD;
+    return applyOverrides(perms, roles, roleOverrides, input.userOverride, BOARD_ONLY_PERMISSIONS, VIEW_BOARD);
+  }
   if (input.restricted) {
     if (input.owner) return ALL_PERMISSIONS;
     perms &= ~ADMINISTRATOR;
@@ -174,20 +232,71 @@ export function computePermissions(input: ComputePermissionsInput): PermissionBi
     return ALL_PERMISSIONS;
   }
 
+  return applyOverrides(perms, roles, roleOverrides, input.userOverride, ROOM_ONLY_PERMISSIONS, VIEW_ROOM);
+}
+
+/**
+ * Each role's override lowest position first (deny, then allow), then the user's own, limited to
+ * `mask`; without `view` nothing.
+ */
+function applyOverrides(
+  start: PermissionBits,
+  roles: readonly RoleBits[],
+  roleOverrides: ComputePermissionsInput['roleOverrides'],
+  userOverride: OverrideBits | undefined,
+  mask: PermissionBits,
+  view: PermissionBits,
+): PermissionBits {
+  let perms = start;
   const ordered = [...roles].sort((a, b) => a.position - b.position);
   for (const r of ordered) {
     const o = overrideOf(roleOverrides, r.id);
     if (o) {
-      perms &= ~(o.deny & ROOM_ONLY_PERMISSIONS);
-      perms |= o.allow & ROOM_ONLY_PERMISSIONS;
+      perms &= ~(o.deny & mask);
+      perms |= o.allow & mask;
     }
   }
-  if (input.userOverride) {
-    perms &= ~(input.userOverride.deny & ROOM_ONLY_PERMISSIONS);
-    perms |= input.userOverride.allow & ROOM_ONLY_PERMISSIONS;
+  if (userOverride) {
+    perms &= ~(userOverride.deny & mask);
+    perms |= userOverride.allow & mask;
   }
-  if (!(perms & VIEW_ROOM)) return 0n;
+  if (!(perms & view)) return 0n;
   return perms;
+}
+
+/**
+ * Effective permissions of a member with `roles` on a task board, given Board.permissionOverrides
+ * and Board.isPrivate (ADR-0042). `guest`: the member's highest built-in role is GUEST.
+ */
+export function computeMemberBoardPermissions(
+  roles: readonly RoleBits[],
+  userId: string,
+  overrides: readonly RoomPermissionOverride[],
+  isPrivate: boolean,
+  guest = false,
+): PermissionBits {
+  const roleOverrides = new Map<string, OverrideBits>();
+  for (const o of overrides) {
+    if (o.targetType === PermissionTargetType.ROLE && !roleOverrides.has(o.targetId)) roleOverrides.set(o.targetId, o);
+  }
+  return computePermissions({
+    roles,
+    roleOverrides,
+    userOverride: overrides.find((o) => o.targetType === PermissionTargetType.USER && o.targetId === userId),
+    board: { private: isPrivate, guest },
+  });
+}
+
+/**
+ * Bits in a task's comment room (Go: perm.TaskRoom): VIEW_BOARD → VIEW_ROOM | SEND_MESSAGES |
+ * ATTACH_FILES (read-only for an archived task), EDIT_TASKS adds MANAGE_MESSAGES.
+ */
+export function taskRoomPermissions(board: PermissionBits, archived = false): PermissionBits {
+  if (!(board & VIEW_BOARD)) return 0n;
+  let p = VIEW_ROOM;
+  if (!archived) p |= SEND_MESSAGES | ATTACH_FILES;
+  if (board & PERMISSION_BITS.EDIT_TASKS) p |= PERMISSION_BITS.MANAGE_MESSAGES;
+  return p;
 }
 
 /** The member's roles among the workspace's (WorkspaceMember.roleIds → WorkspaceSnapshot.roles). */

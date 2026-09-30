@@ -1,5 +1,5 @@
 import { Compass, Plus, Volume2 } from 'lucide-react';
-import { useMemo, type ReactNode } from 'react';
+import { useMemo, useRef, type ReactNode } from 'react';
 import { Logo } from '../../components/Logo';
 import { MediaImg } from '../../components/MediaImg';
 import { Tip, cx } from '../../components/ui';
@@ -12,6 +12,7 @@ import { useSession } from '../../stores/session';
 import { useUi } from '../../stores/ui';
 import { useVoice } from '../../stores/voice';
 import { RailContextMenu } from './RailContextMenu';
+import { useHomeDrop } from '../notes/HomeDrop';
 import { useWorkspaces } from '../../stores/workspaces';
 
 /** 48 px tile: squircle radius 16 → 12 on hover/active (Discord-like morph, 160 ms). */
@@ -154,9 +155,20 @@ function HomeItem(): ReactNode {
     };
   }, [byId, readState, lastMessage, unreadMap, mentionMap, notify, wsNotify]);
   if (guest) return null;
+  return <HomeTile isActive={isActive} unread={unread} count={count} onOpen={() => setWs(HOME)} />;
+}
+
+/**
+ * The tile itself; during a message drag it also leads into «Заметки» (features/notes/HomeDrop):
+ * a drop saves into the first shelf, holding opens the list of shelves.
+ */
+function HomeTile({ isActive, unread, count, onOpen }: { isActive: boolean; unread: boolean; count: number; onOpen: () => void }): ReactNode {
+  const ref = useRef<HTMLDivElement>(null);
+  const home = useHomeDrop(ref);
   const label = count > 0 ? t('dm.homeUnread', { n: count }) : t('dm.home');
   return (
-    <div className="group relative flex w-full shrink-0 justify-center" data-testid="rail-home">
+    <div ref={ref} className="group relative flex w-full shrink-0 justify-center" data-testid="rail-home" data-over={home.over || undefined} {...home.handlers}>
+      {home.flyout}
       <span
         aria-hidden
         className={cx(
@@ -167,10 +179,10 @@ function HomeItem(): ReactNode {
       <Tip label={t('dm.home')} side="right">
         <button
           type="button"
-          onClick={() => setWs(HOME)}
+          onClick={onOpen}
           aria-current={isActive ? 'page' : undefined}
           aria-label={label}
-          className={cx(tile, 'bg-transparent', isActive && 'rounded-[12px]')}
+          className={cx(tile, 'bg-transparent', (isActive || home.over) && 'rounded-[12px]', home.over && 'ring-2 ring-accent')}
         >
           <Logo size={48} className="size-full rounded-[inherit] object-cover" />
           {count > 0 ? (

@@ -2,6 +2,7 @@ syntax = "proto3";
 package calaba.v1;
 
 import "google/protobuf/timestamp.proto";
+import "calaba/v1/event.proto";
 import "calaba/v1/media.proto";
 
 enum RoomType {
@@ -9,6 +10,8 @@ enum RoomType {
   ROOM_TYPE_VOICE = 1; // voice room with its own text chat
   ROOM_TYPE_TEXT = 2;
   ROOM_TYPE_DM = 3;    // direct message (ADR-0020): no workspace, two participants
+  ROOM_TYPE_NOTES = 4; // notes shelf (ADR-0039): no workspace, only its owner
+  ROOM_TYPE_TASK = 5;  // comments of a task (ADR-0042): hidden, access from the task's board
 }
 
 enum PermissionTargetType {
@@ -71,6 +74,21 @@ message Room {
   // admins see the room only through an allow VIEW_ROOM override (by role or personally),
   // the workspace owner always does. Changed with PATCH /api/rooms/{id} restricted.
   bool restricted = 19;
+  // Guests arriving by a link of the room wait for a decision (ADR-0040); a link may
+  // override it (RoomInvite.require_approval). Changed with PATCH /api/rooms/{id}.
+  bool guest_approval = 20;
+  // Temporary rooms (ADR-0044). A room is temporary when expires_at is set (there is no
+  // separate is_temp flag): a VOICE room archived by the server at expires_at (ROOM_DELETE).
+  // Clients list temporary rooms in the virtual group «Временные» sorted by expires_at and
+  // ignore category_id / position for them.
+  google.protobuf.Timestamp expires_at = 21;
+  // Who created the room (empty for older rooms). The creator of a temporary room manages it
+  // like MANAGE_ROOM (rename, extend, links, access, delete) — clients: mayManageRoom(room, me)
+  // = MANAGE_ROOM in the room || (expires_at set && created_by == me && not a guest).
+  string created_by = 22;
+  // Set only in the archive listing (GET /api/workspaces/{id}/rooms?archived=1).
+  google.protobuf.Timestamp archived_at = 23;
+  uint32 message_count = 24; // the archive listing only: live messages of the room
 }
 
 // Per-user notification level of a room or a workspace (docs/05 «Уведомления»). UNSPECIFIED
@@ -111,6 +129,9 @@ message WorkspaceNotificationSettings {
   string workspace_id = 1;
   NotificationLevel level = 2; // ALL | MENTIONS | NONE
   google.protobuf.Timestamp muted_until = 3; // unset = not muted; in the past = no longer muted
+  // Task notifications of the workspace's boards (ADR-0042 §4, «Задачи»): ALL (default) |
+  // MENTIONS (assigned to me, @me) | NONE. The workspace mute silences them too.
+  NotificationLevel task_level = 4;
 }
 
 // PUT /api/workspaces/{id}/notifications (member). Replaces the caller's settings for the
@@ -119,6 +140,8 @@ message WorkspaceNotificationSettings {
 message UpdateWorkspaceNotificationSettingsRequest {
   NotificationLevel level = 1;
   google.protobuf.Timestamp muted_until = 2; // at most 1 year ahead
+  // ALL | MENTIONS | NONE; unset = keep the stored task level (older clients).
+  optional NotificationLevel task_level = 3;
 }
 
 message UpdateWorkspaceNotificationSettingsResponse {
@@ -198,6 +221,12 @@ message CreateRoomResponse {
 }
 
 // GET /api/workspaces/{id}/rooms — only rooms where the caller has VIEW_ROOM.
+// ?archived=1 (ADR-0044): the archive of temporary rooms instead — MANAGE_ROOM at workspace
+// level (else 403), only rooms where the caller has VIEW_ROOM, newest archived first, with
+// archived_at, created_by, expires_at and message_count. Their history is read with GET
+// /api/rooms/{id}/messages (and /messages/{messageId}, /pins; VIEW_ROOM); anything else on an
+// archived temporary room (writes, reactions, voice, links, settings) answers 410 ROOM_ARCHIVED.
+// Archived permanent rooms stay hidden (404) as before.
 message ListRoomsResponse {
   repeated Room rooms = 1;
 }
@@ -208,7 +237,8 @@ message GetRoomResponse {
   uint64 permissions = 2; // caller's effective permissions in this room
 }
 
-// PATCH /api/rooms/{id} (MANAGE_ROOM). Unset fields are left unchanged.
+// PATCH /api/rooms/{id} (MANAGE_ROOM; on a temporary room also its creator, ADR-0044). Unset
+// fields are left unchanged.
 // media_override, when present, replaces the whole override (unset inner fields = default).
 message UpdateRoomRequest {
   optional string name = 1;
@@ -223,6 +253,19 @@ message UpdateRoomRequest {
   // Private rooms only (ADR-0029). Only the workspace owner (Workspace.owner_id) may change
   // it: anyone else gets 403 FORBIDDEN with reason OWNER_ONLY.
   optional bool restricted = 8;
+  optional bool guest_approval = 9; // ADR-0040
+  // Temporary rooms only (ADR-0044; 422 on a permanent room). A new end: in the future and at
+  // most 7 days from now (422 otherwise; extend or shorten). The room's links that ended with
+  // the room follow it. MANAGE_ROOM or the creator.
+  google.protobuf.Timestamp expires_at = 10;
+  // Temporary rooms only: true makes the room permanent (expires_at cleared). Needs real
+  // MANAGE_ROOM in the room (the creator's implicit right is not enough: 403).
+  bool make_permanent = 11;
+  // Temporary rooms only (ADR-0044, «Доступ»): private = the member role loses VIEW_ROOM (a
+  // deny override, as a private room at creation); public = that deny is removed. Personal
+  // overrides stay. MANAGE_ROOM or the creator. Permanent rooms: 422 (their access dialog
+  // edits the overrides with PUT /api/rooms/{id}/permissions).
+  optional bool is_private = 12;
 }
 
 // PATCH /api/rooms/{id}/voice-status (voice rooms): CONNECT and being in the call now, or
@@ -235,11 +278,46 @@ message UpdateRoomResponse {
   Room room = 1;
 }
 
-// PUT /api/rooms/{id}/permissions (MANAGE_ROOM). Replaces all overrides of the room.
+// PUT /api/rooms/{id}/permissions (MANAGE_ROOM; on a temporary room also its creator, who
+// may allow only bits they hold there). Replaces all overrides of the room.
 message SetRoomPermissionsRequest {
   repeated RoomPermissionOverride overrides = 1;
 }
 
 message SetRoomPermissionsResponse {
   Room room = 1;
+}
+
+// POST /api/workspaces/{id}/rooms/temp (ADR-0044): a temporary voice room with a ready link.
+// Needs CREATE_TEMP_ROOMS at workspace level (403 otherwise). One transaction: the room
+// (after the last room, no category, created_by = caller), for a private room the member
+// role's VIEW_ROOM deny plus a personal allow for the caller and member_ids, the room link
+// (expires with the room; approval as the room's guest_approval) and, with with_event, a
+// calendar meeting. Everyone who sees the room gets ROOM_CREATE (and EVENT_CREATE).
+// Limits: 20 live temporary rooms per workspace, 5 per creator — 409 TEMP_ROOM_LIMIT with
+// used / limit, reason "PER_USER" for the creator's cap.
+message CreateTempRoomRequest {
+  string name = 1;         // 1..100 characters
+  uint32 ttl_seconds = 2;  // 900 (15 min) .. 604800 (7 days); expires_at = now + ttl
+  bool with_event = 3;     // a meeting from now (rounded up to 5 min) to expires_at, room = this
+  // The link admits guests (ADR-0016; default true). Needs INVITE_GUESTS at workspace level and
+  // a verified email (403 FORBIDDEN / EMAIL_NOT_VERIFIED). false = a members-only link
+  // (RoomInvite.members_only, ADR-0043): workspace members only.
+  optional bool guests = 4;
+  // Visible only to the creator, member_ids and whoever joins by the link (workspace
+  // admins see it as any private room). false (default) = every member sees it.
+  bool private = 5;
+  // Private rooms: up to 50 workspace members (not guests; 422 otherwise) who get access too.
+  repeated string member_ids = 6;
+}
+
+message TempRoomResponse {
+  Room room = 1;
+  // The room link for sharing: <PUBLIC_APP_URL>/r/<invite_code>. Its bits: VIEW_ROOM,
+  // CONNECT, SPEAK, VIDEO, STREAM, SEND_MESSAGES, ATTACH_FILES — those the creator holds.
+  // A workspace member joining a private room by it gets the same personal allow
+  // (ROOM_PERMISSIONS_UPDATE); the link lists in GET /api/rooms/{id}/invites.
+  string invite_url = 2;
+  string invite_code = 3;
+  CalendarEvent event = 4; // with_event only
 }

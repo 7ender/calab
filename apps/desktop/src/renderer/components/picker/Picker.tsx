@@ -57,6 +57,10 @@ export interface PickerPanelProps<T extends PickerItem> {
   autoFocus?: boolean;
   inputRef?: RefObject<HTMLInputElement | null>;
   testId?: string;
+  /** Every keystroke of the field (a host adds items from it, e.g. «Создать лейбл «…»»). */
+  onInput?: (text: string) => void;
+  /** 1–9 with an empty field pick the n-th item (board status / priority menus, as in Linear). */
+  digits?: boolean;
 }
 
 /**
@@ -82,6 +86,8 @@ export function PickerPanel<T extends PickerItem>({
   autoFocus = true,
   inputRef,
   testId,
+  onInput,
+  digits = false,
 }: PickerPanelProps<T>): ReactNode {
   const listId = useId();
   const ownInput = useRef<HTMLInputElement>(null);
@@ -122,6 +128,14 @@ export function PickerPanel<T extends PickerItem>({
   }, [activeRow, virtual]);
 
   const onKey = (e: KeyboardEvent<HTMLInputElement>): void => {
+    if (digits && text === '' && /^Digit[1-9]$|^Numpad[1-9]$/.test(e.code) && !e.metaKey && !e.ctrlKey && !e.altKey) {
+      e.preventDefault();
+      e.stopPropagation();
+      const n = Number(e.code.slice(-1)) - 1;
+      const row = rows.find((r) => r.kind === 'item' && r.nav === n);
+      if (row?.kind === 'item') onSelect(row.item);
+      return;
+    }
     if (NAV_KEYS.has(e.key)) {
       e.preventDefault();
       e.stopPropagation();
@@ -192,7 +206,10 @@ export function PickerPanel<T extends PickerItem>({
           type="search"
           autoFocus={autoFocus && autoFocusAllowed()}
           value={text}
-          onChange={(e) => setText(e.target.value)}
+          onChange={(e) => {
+            setText(e.target.value);
+            onInput?.(e.target.value);
+          }}
           onKeyDown={onKey}
           maxLength={64}
           role="combobox"
@@ -204,7 +221,7 @@ export function PickerPanel<T extends PickerItem>({
           placeholder={placeholder}
           autoComplete="off"
           spellCheck={false}
-          className="selectable h-8 w-full min-w-0 rounded-[var(--radius-control)] border border-line bg-elev pl-8 pr-2 text-body text-fg placeholder:text-faint focus-visible:outline-offset-0 mobile:h-10 mobile:text-[16px] [&::-webkit-search-cancel-button]:hidden"
+          className="selectable h-8 w-full min-w-0 rounded-[var(--radius-control)] border border-line bg-elev pl-8 pr-2 text-body text-fg placeholder:text-faint mobile:h-10 mobile:text-[16px] [&::-webkit-search-cancel-button]:hidden"
         />
       </div>
       <div
@@ -252,8 +269,15 @@ export function PickerPopover<T extends PickerItem>({
   width = 320,
   align = 'start',
   side = 'bottom',
+  restoreFocus = 'always',
   ...panel
 }: PickerPanelProps<T> & {
+  /**
+   * `keyboard`: the trigger gets the focus back only when Esc closed the picker — after a click
+   * outside it stays where the click put it (a programmatic focus after typing in the search would
+   * show the trigger's keyboard ring).
+   */
+  restoreFocus?: 'always' | 'keyboard';
   /** The trigger (Radix `asChild`). */
   children: ReactNode;
   open: boolean;
@@ -263,6 +287,7 @@ export function PickerPopover<T extends PickerItem>({
   side?: 'top' | 'bottom' | 'left' | 'right';
 }): ReactNode {
   const input = useRef<HTMLInputElement>(null);
+  const byKey = useRef(false);
   return (
     <Popover.Root open={open} onOpenChange={onOpenChange} modal={false}>
       <Popover.Trigger asChild>{children}</Popover.Trigger>
@@ -274,8 +299,15 @@ export function PickerPopover<T extends PickerItem>({
           collisionPadding={8}
           aria-label={panel.label}
           onOpenAutoFocus={(e) => {
+            byKey.current = false;
             e.preventDefault();
             if (autoFocusAllowed()) input.current?.focus();
+          }}
+          onEscapeKeyDown={() => {
+            byKey.current = true;
+          }}
+          onCloseAutoFocus={(e) => {
+            if (restoreFocus === 'keyboard' && !byKey.current) e.preventDefault();
           }}
           className="mat-popover anim-in z-[var(--z-modal-popover)] flex flex-col rounded-[var(--radius-card)] p-1.5"
           // Never past the window edge: the list gives up rows when there is less room (960×600).

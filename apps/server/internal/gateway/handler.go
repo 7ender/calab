@@ -18,10 +18,13 @@ import (
 
 	v1 "github.com/calaba/calaba/server/gen/calaba/v1"
 	"github.com/calaba/calaba/server/internal/auth"
+	"github.com/calaba/calaba/server/internal/calendar"
 	"github.com/calaba/calaba/server/internal/calls"
 	"github.com/calaba/calaba/server/internal/db"
 	"github.com/calaba/calaba/server/internal/db/sqlc"
 	"github.com/calaba/calaba/server/internal/dms"
+	"github.com/calaba/calaba/server/internal/guests"
+	"github.com/calaba/calaba/server/internal/notes"
 	"github.com/calaba/calaba/server/internal/pbconv"
 	"github.com/calaba/calaba/server/internal/perm"
 	"github.com/calaba/calaba/server/internal/redisx"
@@ -190,6 +193,9 @@ func (h *Hub) loop(c *conn, s *Session) {
 		case *v1.GatewayFrame_Heartbeat:
 			c.sendFrame(&v1.GatewayFrame{Payload: &v1.GatewayFrame_HeartbeatAck{HeartbeatAck: &v1.HeartbeatAck{}}})
 			h.touch(s)
+			if h.sessionRevoked(s) {
+				return
+			}
 		case *v1.GatewayFrame_SetPresence:
 			if p.SetPresence.GetUntil() != nil {
 				h.setManualPresence(s.user, p.SetPresence.GetStatus(), p.SetPresence.GetUntil())
@@ -220,11 +226,48 @@ func (h *Hub) authenticate(c *conn, token string) (auth.Identity, bool) {
 	case errors.Is(err, auth.ErrInvalidToken):
 		c.closeGraceful(4004, "authentication failed")
 	case errors.Is(err, auth.ErrSessionRevoked):
-		c.closeGraceful(4010, "session revoked")
+		c.closeGraceful(4010, revokedCloseReason(auth.RevokedReason(err)))
 	default:
 		c.closeGraceful(4000, "try again")
 	}
 	return id, false
+}
+
+// sessionRevoked rechecks the auth session of a live socket (on its heartbeat) and closes it
+// with 4010 when the session was revoked. The socket event of a revocation closes it at
+// once; this catches a revocation whose marker and event were both lost (Valkey refused
+// them), within sessionRecheck + a heartbeat (docs/04 «Auth»). The check is the REST one:
+// a cached marker read plus at most one DB read per minute per session and instance. A
+// dependency error keeps the socket (already authenticated; a Postgres blip must not drop
+// every socket at once). Bot tokens have no session row: their revocation is the marker +
+// event (BotTokenChanged).
+func (h *Hub) sessionRevoked(s *Session) bool {
+	if s.bot {
+		return false
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+	defer cancel()
+	err := h.auth.CheckSession(ctx, s.asess)
+	switch {
+	case err == nil:
+		return false
+	case errors.Is(err, auth.ErrSessionRevoked):
+		h.destroy(s, 4010, revokedCloseReason(auth.RevokedReason(err)))
+		return true
+	default:
+		slog.Warn("gateway: session recheck failed", "session_id", s.asess, "err", err)
+		return false
+	}
+}
+
+// revokedCloseReason is the 4010 close reason: "session revoked", with ": <REASON>" when the
+// reason is known (clients tell a reuse revocation from an explicit one, gateway.proto).
+func revokedCloseReason(reason string) string {
+	const base = "session revoked"
+	if reason == "" || len(reason) > 32 || strings.ContainsFunc(reason, func(r rune) bool { return (r < 'A' || r > 'Z') && r != '_' }) {
+		return base
+	}
+	return base + ": " + reason
 }
 
 func deviceKey(user uuid.UUID) string { return redisx.Key("gw:user:" + user.String()) }
@@ -306,7 +349,7 @@ func (h *Hub) touch(s *Session) {
 	st := s.status
 	s.mu.Unlock()
 	ttl := 2*h.cfg.HeartbeatInterval + resumeWindow
-	_ = h.pres.set(ctx, s.user, s.id, st)
+	_ = h.pres.set(ctx, s.user, s.id, st, s.client)
 	h.buf.touch(ctx, s.id)
 	h.redis.DoMulti(ctx,
 		h.redis.B().Zadd().Key(deviceKey(s.user)).ScoreMember().ScoreMember(expiryScore(ttl), s.asess.String()).Build(),
@@ -340,12 +383,13 @@ func (h *Hub) identify(c *conn, req *v1.Identify) *Session {
 		return nil
 	}
 	s := newSession(h, gsid, id.UserID, id.SessionID, id.IsBot)
+	s.client = newClientInfo(req.GetDevice(), time.Now())
 	// Register first so that events published while READY is being built are queued.
 	h.register(s, wids)
 	for _, w := range wids {
 		h.ensureState(ctx, w)
 	}
-	_ = h.pres.set(ctx, s.user, s.id, s.status)
+	_ = h.pres.set(ctx, s.user, s.id, s.status, s.client)
 	ready, err := h.buildReady(ctx, s, id.UserID)
 	if err != nil {
 		slog.Error("gateway: build READY", "err", err)
@@ -394,6 +438,17 @@ func (h *Hub) buildReady(ctx context.Context, s *Session, uid uuid.UUID) (*v1.Re
 		h.fillLive(ctx, w.ID, snap)
 		ready.Workspaces = append(ready.Workspaces, snap)
 	}
+	// Guest admission (ADR-0040): the recipient's own knocks, and the knocks they decide.
+	if ready.PendingAdmissions, err = guests.OwnAdmissions(ctx, h.db.Q, uid); err != nil {
+		return nil, err
+	}
+	if err := guests.FillAdmissions(ctx, h.db.Q, uid, ready.Workspaces); err != nil {
+		return nil, err
+	}
+	// Meetings around now in the visible rooms (ADR-0038 §6): one query for all workspaces.
+	if err := calendar.FillActive(ctx, h.db.Q, uid, u.IsBot, ready.Workspaces, time.Now()); err != nil {
+		return nil, err
+	}
 	// Read state with unread / mention counts for every room the user can see now (also
 	// rooms never opened: review 4 M1).
 	var visible []uuid.UUID
@@ -412,6 +467,12 @@ func (h *Hub) buildReady(ctx context.Context, s *Session, uid uuid.UUID) (*v1.Re
 		dmRooms = append(dmRooms, rid)
 		s.rememberDM(rid, parseID(d.GetPeer().GetId()))
 		ready.ReadStates = append(ready.ReadStates, d.GetReadState())
+	}
+	// Notes shelves (ADR-0039): people only; nothing in them is ever unread (own messages).
+	if !u.IsBot && !u.IsGuest {
+		if ready.Notes, err = notes.List(ctx, h.db.Q, uid); err != nil {
+			return nil, err
+		}
 	}
 	rs, err := h.db.Q.ListReadStates(ctx, sqlc.ListReadStatesParams{UserID: uid, RoomIds: visible})
 	if err != nil {
@@ -523,6 +584,7 @@ func (h *Hub) takeover(ctx context.Context, gsid uuid.UUID, meta sessMeta) *Sess
 		return nil
 	}
 	s := newSession(h, gsid, meta.user, meta.asess, meta.bot)
+	s.client = h.pres.client(ctx, meta.user, gsid)
 	h.register(s, wids) // events from now on are queued (s.ready=false)
 	for _, w := range wids {
 		h.ensureState(ctx, w)
@@ -687,7 +749,7 @@ func (h *Hub) setPresence(s *Session, st v1.PresenceStatus) {
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
 	defer cancel()
-	if err := h.pres.set(ctx, s.user, s.id, st); err == nil {
+	if err := h.pres.set(ctx, s.user, s.id, st, s.client); err == nil {
 		h.publishPresence(ctx, s.user)
 	}
 }

@@ -71,6 +71,7 @@ import {
   type Workspace,
 } from '@calaba/protocol';
 import { buildMarketingState } from './fixtures-marketing';
+import type { AdmissionRec } from './mock-admissions';
 import { avatarPicture, cardPicture, encodePng } from './png';
 
 /**
@@ -86,7 +87,7 @@ import { avatarPicture, cardPicture, encodePng } from './png';
 export type Scenario = 'data' | 'empty' | 'marketing';
 export const SCENARIOS: readonly Scenario[] = ['data', 'empty', 'marketing'];
 
-const KIND = { user: 1, workspace: 2, room: 3, message: 4, file: 5, invite: 6, session: 7, category: 8, role: 9, sticker: 10, stickerPack: 11, badge: 12, background: 13, sound: 14 } as const;
+const KIND = { user: 1, workspace: 2, room: 3, message: 4, file: 5, invite: 6, session: 7, category: 8, role: 9, sticker: 10, stickerPack: 11, badge: 12, background: 13, sound: 14, event: 15 } as const;
 export type IdKind = keyof typeof KIND;
 
 export function mockId(kind: IdKind, n: number): string {
@@ -364,6 +365,8 @@ export interface FileRec {
 
 export interface MockState {
   scenario: Scenario;
+  /** GET /api/version `version` ('dev' = never newer than a bundle; a test sets e.g. '99.0.0'). */
+  serverVersion: string;
   users: Map<string, UserRec>;
   workspaces: Map<string, Workspace>;
   members: MemberRec[];
@@ -381,8 +384,12 @@ export interface MockState {
   invites: Map<string, Invite>;
   /** Room links (ADR-0016), by id. */
   roomInvites: Map<string, RoomInvite>;
+  /** Waiting guest knocks (ADR-0040), by admissionKey(roomId, userId). */
+  admissions: Map<string, AdmissionRec>;
   /** DM rooms (type DM, no workspace): roomId → the two participants (ADR-0020). */
   dmMembers: Map<string, [string, string]>;
+  /** Notes shelves (ADR-0039): room id → owner and emoji (name and position live on the room). */
+  shelves: Map<string, { ownerId: string; emoji: string }>;
   /** userId → roomId → own DM state (docs/09 #51): archived since (ms, 0 = no), cleared up to a message id. */
   dmState: Map<string, Map<string, { archivedAt: number; clearedBefore: string }>>;
   /** userId → roomId → stored notification settings (READY notification_settings; absent = default). */
@@ -497,6 +504,8 @@ export function defaultSettings(): UserSettings {
     pushToTalk: false,
     pushToTalkKey: '',
     micMode: MicMode.VAD,
+    eventReminders: [60, 5], // ADR-0038 §5 defaults
+    eventRemindersDnd: true,
   });
 }
 
@@ -697,11 +706,13 @@ export const GENERAL_MESSAGE_COUNT = MESSAGES.filter((m) => m.room === R.general
 export function buildState(scenario: Scenario): MockState {
   const s: MockState = {
     scenario,
+    serverVersion: 'dev',
     users: new Map(),
     workspaces: new Map(),
     members: [],
     rooms: new Map(),
     dmMembers: new Map(),
+    shelves: new Map(),
     dmState: new Map(),
     messages: new Map(),
     readStates: new Map(),
@@ -712,6 +723,7 @@ export function buildState(scenario: Scenario): MockState {
     presences: new Map(),
     invites: new Map(),
     roomInvites: new Map(),
+    admissions: new Map(),
     reactions: new Map(),
     files: new Map(),
     sessions: new Map(),
@@ -735,7 +747,7 @@ export function buildState(scenario: Scenario): MockState {
     userStickerPacks: new Map(),
     bots: new Map(),
     blockedBots: new Map(),
-    next: { user: 0x100, workspace: 0x100, room: 0x100, message: 0x1000, file: 0x100, invite: 0x100, session: 0x100, category: 0x100, role: 0x100, sticker: 0x100, stickerPack: 0x100, badge: 0x100, background: 0x100, sound: 0x100 },
+    next: { user: 0x100, workspace: 0x100, room: 0x100, message: 0x1000, file: 0x100, invite: 0x100, session: 0x100, category: 0x100, role: 0x100, sticker: 0x100, stickerPack: 0x100, badge: 0x100, background: 0x100, sound: 0x100, event: 0x100 },
     clock: 0,
   };
   if (scenario === 'marketing') return buildMarketingState(s);
@@ -794,6 +806,9 @@ export function buildState(scenario: Scenario): MockState {
   presence(U.vera, PresenceStatus.ONLINE, '2026-01-15T11:05:00Z');
   presence(U.grigory, PresenceStatus.IDLE, '2026-01-15T10:40:00Z');
   presence(U.dina, PresenceStatus.OFFLINE);
+  // docs/09 #143: the app of Boris's latest session (the profile card shows «Calab 1.1.0 · macOS»).
+  const boris = s.presences.get(U.boris);
+  if (boris) Object.assign(boris, { clientVersion: '1.1.0', clientPlatform: 'darwin' });
 
   if (scenario === 'empty') return s;
 

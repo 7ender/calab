@@ -1,16 +1,17 @@
 import { RoomType, type Message, type PermissionBits, type Room } from '@calaba/protocol';
-import { ChevronDown, ChevronUp, Hash, Pin, Search, Settings, UserPlus, Volume2 } from 'lucide-react';
+import { ChevronDown, ChevronUp, Hash, NotebookText, Pin, Search, Settings, UserPlus, Volume2 } from 'lucide-react';
 import { useEffect, useLayoutEffect, useMemo, useRef, useState, type KeyboardEvent, type ReactNode } from 'react';
 import { Button, CloseButton, IconButton, Spinner, cx } from '../../components/ui';
 import { t } from '../../i18n';
 import { api } from '../../lib/api/endpoints';
-import { can, mayManageWorkspace } from '../../lib/permissions';
+import { can, mayInviteMembers } from '../../lib/permissions';
 import { loadPins } from '../../services/chat';
 import { useMessages } from '../../stores/messages';
 import { useSession } from '../../stores/session';
 import { useUi } from '../../stores/ui';
 import { memberName, useMemberName, useMemberRoles, useWorkspaces } from '../../stores/workspaces';
 import { isDm, useDms } from '../../stores/dms';
+import { isNotes, useNotes } from '../../stores/notes';
 import { Avatar } from '../../components/Avatar';
 import { useChatView } from './chatView';
 import { previewPartsOf } from './mentionText';
@@ -142,7 +143,7 @@ export function SearchPanel({ roomId }: { roomId: string }): ReactNode {
         onKeyDown={onKey}
         placeholder={t('chat.searchPlaceholder')}
         aria-label={t('chat.searchPlaceholder')}
-        className="selectable h-8 min-w-0 flex-1 bg-transparent text-body text-fg placeholder:text-faint focus:outline-none focus-visible:outline-none"
+        className="selectable h-8 min-w-0 flex-1 bg-transparent text-body text-fg placeholder:text-faint"
       />
       {busy ? <Spinner className="size-4" /> : null}
       {results ? (
@@ -180,8 +181,8 @@ export function EmptyRoom({ workspaceId, room, perms, underStage = false }: { wo
   const peerId = useDms((s) => s.byRoom[room.id]?.peerId ?? '');
   const peerName = useMemberName(null, peerId);
   const peerAvatar = useWorkspaces((s) => s.users[peerId]?.avatarFileId ?? '');
-  // The workspace invite: MANAGE_WORKSPACE (a custom role's included), as the server checks.
-  const canInvite = !dm && mayManageWorkspace(myRoles);
+  // The workspace invite: INVITE_MEMBERS (ADR-0043, a custom role's included), as the server checks.
+  const canInvite = !dm && !isNotes(room) && mayInviteMembers(myRoles);
   const canSetup = can(perms, 'MANAGE_ROOM');
   const ref = useRef<HTMLDivElement>(null);
   const [short, setShort] = useState(false);
@@ -195,10 +196,17 @@ export function EmptyRoom({ workspaceId, room, perms, underStage = false }: { wo
     ro.observe(el);
     return () => ro.disconnect();
   }, []);
-  const title = dm ? peerName : voice ? t('chat.welcomeVoiceTitle', { name: room.name }) : t('chat.welcomeTitle', { name: room.name });
+  // A notes shelf (ADR-0039): its emoji and name, the drag-and-drop hint.
+  const notes = isNotes(room);
+  const shelfEmoji = useNotes((s) => (notes ? (s.byRoom[room.id]?.emoji ?? '') : ''));
+  const title = dm ? peerName : notes ? room.name : voice ? t('chat.welcomeVoiceTitle', { name: room.name }) : t('chat.welcomeTitle', { name: room.name });
   const badge = (size: number, icon: string): ReactNode =>
     dm ? (
       <Avatar userId={peerId} name={peerName} fileId={peerAvatar || undefined} size={size} />
+    ) : notes ? (
+      <span className="grid shrink-0 place-items-center rounded-[var(--radius-card)] bg-[color-mix(in_srgb,var(--color-accent)_16%,transparent)] leading-none text-accent-text" style={{ width: size, height: size, fontSize: Math.round(size * 0.5) }}>
+        {shelfEmoji || <NotebookText className={icon} strokeWidth={size > 40 ? 1.5 : 1.75} aria-hidden />}
+      </span>
     ) : (
       <span className="grid shrink-0 place-items-center rounded-full bg-[color-mix(in_srgb,var(--color-accent)_16%,transparent)] text-accent-text" style={{ width: size, height: size }}>
         <Icon className={icon} strokeWidth={size > 40 ? 1.5 : 1.75} aria-hidden />
@@ -233,7 +241,7 @@ export function EmptyRoom({ workspaceId, room, perms, underStage = false }: { wo
         <div className="mx-auto my-auto flex max-w-sm flex-col items-center py-6 text-center" data-testid="empty-room-welcome">
           {badge(80, 'size-10')}
           <h2 className="mt-4 text-title font-semibold">{title}</h2>
-          <p className="mt-1 text-body text-muted">{dm ? t('dm.welcomeText', { name: peerName }) : voice ? t('chat.welcomeVoice') : t('chat.welcomeText')}</p>
+          <p className="mt-1 text-body text-muted">{dm ? t('dm.welcomeText', { name: peerName }) : notes ? t('notes.welcomeText') : voice ? t('chat.welcomeVoice') : t('chat.welcomeText')}</p>
           {actions}
         </div>
       )}

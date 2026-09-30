@@ -1,10 +1,11 @@
 import { existsSync, readFileSync, renameSync, rmSync, writeFileSync } from 'node:fs';
 import { hostname } from 'node:os';
 import { join } from 'node:path';
-import { app, BrowserWindow, net, safeStorage } from 'electron';
+import { app, BrowserWindow, net, safeStorage, session, type Session } from 'electron';
 import log from 'electron-log/main';
 import {
   IPC,
+  noSession,
   type ApiErrorJson,
   type AuthSession,
   type IpcResult,
@@ -72,10 +73,11 @@ function broadcast(channel: string, payload: unknown): void {
 
 /** Token state + refresh policy (tokenBroker.ts: single-flight, 401 / repeated 409 end, rest transient). */
 const broker = new TokenBroker({
-  refresh: async (base, refreshToken) => {
-    const res = await postJson(base, '/api/auth/refresh', { refreshToken });
+  refresh: async (base, refreshToken, fresh) => {
+    const res = await postJson(base, '/api/auth/refresh', { refreshToken }, undefined, fresh ? await freshSession() : undefined);
     if (res.ok) return { status: res.status, tokens: ((await res.json()) as { tokens: TokensJson }).tokens };
-    return { status: res.status, code: (await readError(res)).code };
+    const err = await readError(res);
+    return { status: res.status, code: err.code, ...(err.reason ? { reason: err.reason } : {}) };
   },
   persist,
   onLoggedOut: (reason) => broadcast(IPC.authLoggedOut, reason),
@@ -89,6 +91,7 @@ async function readError(res: Response): Promise<ApiErrorJson> {
       code: body.code ?? 'ERROR_CODE_UNSPECIFIED',
       message: body.message ?? res.statusText,
       ...(body.field ? { field: body.field } : {}),
+      ...(typeof body.reason === 'string' && body.reason ? { reason: body.reason } : {}),
       status: res.status,
     };
   } catch {
@@ -100,8 +103,24 @@ function networkError(err: unknown): ApiErrorJson {
   return { code: 'ERROR_CODE_UNAVAILABLE', message: err instanceof Error ? err.message : String(err), status: 0 };
 }
 
-async function postJson(base: string, path: string, body: unknown, access?: string): Promise<Response> {
-  return net.fetch(`${base}${path}`, {
+/**
+ * The retry of a refresh that failed on the network (incident 29.09: two refreshes aborted by
+ * AUTH_TIMEOUT_MS while reading the answer, while the gateway socket stayed alive — a stalled
+ * pooled connection). Chromium keeps a socket pool per session and `net.fetch` has no
+ * per-request "new connection" switch, so the retry goes through a separate in-memory session
+ * (own network context, own pool; system proxy / VPN settings as the default one) whose pooled
+ * connections are closed first: it always opens a new TCP/TLS connection. Only the auth POST
+ * uses it; the default session (gateway socket, LiveKit, API calls) is left alone.
+ */
+let authRetrySession: Session | null = null;
+async function freshSession(): Promise<Session> {
+  authRetrySession ??= session.fromPartition('calaba-auth-retry', { cache: false });
+  await authRetrySession.closeAllConnections();
+  return authRetrySession;
+}
+
+async function postJson(base: string, path: string, body: unknown, access?: string, via?: Session): Promise<Response> {
+  return (via ?? net).fetch(`${base}${path}`, {
     method: 'POST',
     // Bounded: a black-holed refresh would otherwise hang every API call behind the broker (review N3).
     signal: AbortSignal.timeout(AUTH_TIMEOUT_MS),
@@ -136,7 +155,7 @@ export function getAccessToken(): Promise<string | null> {
 
 /**
  * Waits (≤ timeoutMs) for a refresh in flight: quitting for an update in the middle of one
- * would lose its answer — the next start then relies on the server's grace window.
+ * would lose its answer — the next start then relies on the server's replay (docs/04 «Auth»).
  */
 export function refreshSettled(timeoutMs: number): Promise<void> {
   return broker.settled(timeoutMs);
@@ -196,7 +215,8 @@ async function authenticate(
   try {
     const res = await postJson(base, path, body);
     if (!res.ok) return { ok: false, error: await readError(res) };
-    const data = (await res.json()) as { tokens: TokensJson; me: unknown };
+    const data = (await res.json()) as { tokens?: TokensJson; me: unknown; similarAccount?: boolean };
+    if (!data.tokens) return { ok: false, error: noSession(data.similarAccount, res.status) };
     const tokens = toTokens(data.tokens);
     broker.set(base, tokens);
     if (getSettings().serverUrl !== base) updateSettings({ serverUrl: base });
@@ -222,6 +242,7 @@ export function register(args: RegisterArgs): Promise<IpcResult<AuthSession>> {
     inviteCode: args.inviteCode,
     locale: args.locale ?? '',
     deviceName: deviceName(),
+    ...(args.checkSimilar ? { checkSimilarAccount: true } : {}),
   });
 }
 
@@ -230,19 +251,20 @@ export function register(args: RegisterArgs): Promise<IpcResult<AuthSession>> {
  * POST /api/room-invites/{code}/join {nickname} without a session → the server creates a
  * guest account and returns tokens like a login; the refresh token is kept in main as usual.
  */
-export async function guestJoin(code: string, nickname: string): Promise<IpcResult<{ session: AuthSession; roomId: string; workspaceId: string }>> {
+export async function guestJoin(code: string, nickname: string): Promise<IpcResult<{ session: AuthSession; roomId: string; workspaceId: string; admission?: unknown }>> {
   const base = normalizeServerUrl(currentServerUrl());
   const bad = insecure(base);
   if (bad) return bad;
   try {
     const res = await postJson(base, `/api/room-invites/${encodeURIComponent(code)}/join`, { nickname, deviceName: deviceName() });
     if (!res.ok) return { ok: false, error: await readError(res) };
-    const data = (await res.json()) as { roomId: string; workspaceId: string; tokens?: TokensJson; me?: unknown };
+    const data = (await res.json()) as { roomId: string; workspaceId: string; tokens?: TokensJson; me?: unknown; admission?: unknown };
     if (!data.tokens) return { ok: false, error: { code: 'ERROR_CODE_INTERNAL', message: 'no guest session in the response', status: res.status } };
     const tokens = toTokens(data.tokens);
     broker.set(base, tokens);
     const me = data.me ?? (await fetchMe());
-    return { ok: true, data: { session: { serverUrl: base, sessionId: tokens.sessionId, me }, roomId: data.roomId, workspaceId: data.workspaceId } };
+    // ADR-0040: a knock that waits for the organizer travels to the renderer as JSON.
+    return { ok: true, data: { session: { serverUrl: base, sessionId: tokens.sessionId, me }, roomId: data.roomId, workspaceId: data.workspaceId, ...(data.admission ? { admission: data.admission } : {}) } };
   } catch (e) {
     return { ok: false, error: networkError(e) };
   }

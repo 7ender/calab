@@ -19,6 +19,7 @@ export const esChat: DictShape<typeof enChat> = {
   'chat.reactionLabel': 'Reacción {emoji}: {count}',
   'chat.replyOpen': 'Mostrar mensaje original',
   'chat.messageGone': 'Mensaje eliminado o no disponible',
+  'chat.rowFailed': 'No se pudo mostrar este mensaje',
   'chat.historyStart': 'Inicio del historial de la sala',
   // plural keys: one object of Intl.PluralRules forms (one/other for Spanish), picked by plural()
   'chat.unreadBanner': { one: '{n} mensaje nuevo desde las {time}', many: '{n} mensajes nuevos desde las {time}', other: '{n} mensajes nuevos desde las {time}' },

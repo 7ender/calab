@@ -4,6 +4,7 @@ import { expect, test, type Locator, type Page } from '@playwright/test';
 import { RecordingStatus } from '@calaba/protocol';
 import { CODE_FIXTURE, IDS, MOCK_GPTUNNEL_WEB, startMockServer, type MockServer } from '../e2e-support/mock-server';
 import { expectAccessible, layoutProblems, NOW, PASSWORD, settle } from './harness';
+import { seedDay } from './calendarWeb';
 
 /**
  * Mobile web (ADR-0021) in Playwright's WebKit — the engine of iOS Safari — on iPhone
@@ -212,6 +213,21 @@ test('m-join', async ({ page }) => {
   await checkpoint(page, 'm-join');
 });
 
+// Guest admission (ADR-0040): a room with approval — the guest's waiting screen on the phone.
+test('m-guest-waiting', async ({ page }) => {
+  mock.setGuestApproval(IDS.rooms.call, true);
+  await open(page, '/r/call-guest-link');
+  await page.getByTestId('link-landing').getByRole('button', { name: 'Продолжить в браузере' }).tap();
+  await expect(page.getByTestId('approval-note')).toContainText('Комната требует подтверждения организатора');
+  await page.getByLabel('Ваше имя').fill('Гость Ромашка');
+  await page.getByRole('button', { name: 'Войти как гость' }).tap();
+  const waiting = page.getByTestId('guest-waiting');
+  await expect(waiting.getByText('Ожидаем подтверждения организатора…')).toBeVisible();
+  await expect(waiting.getByRole('button', { name: 'Отменить' })).toBeVisible();
+  await insets(page);
+  await checkpoint(page, 'm-guest-waiting');
+});
+
 // ---------------------------------------------------------------- onboarding
 
 test('m-onboarding', async ({ page }) => {
@@ -256,6 +272,21 @@ test('m-chat', async ({ page }) => {
   await box.fill('Длинное сообщение\nв несколько\nстрок\nс переносами\nи ещё одной');
   await page.evaluate(() => (document.activeElement as HTMLElement | null)?.blur());
   await checkpoint(page, 'm-chat-multiline', { main: true, snapshot: false });
+});
+
+/**
+ * docs/09 #125: the server (GET /api/version at READY) is newer than the loaded bundle — the accent
+ * bar under the top with «Обновить страницу» (the web has no updater).
+ */
+test('m-update-bar', async ({ page }) => {
+  mock.state.serverVersion = '99.0.0';
+  await signedIn(page);
+  const bar = page.getByTestId('update-bar');
+  await expect(bar).toContainText('Доступна версия 99.0.0');
+  await expect(bar.getByRole('button', { name: 'Обновить страницу' })).toBeVisible();
+  await expect(bar.getByRole('button', { name: 'Позже' })).toBeVisible();
+  await feedToBottom(page);
+  await checkpoint(page, 'm-update-bar', { main: true });
 });
 
 /** The feed never scrolls sideways and nothing in it pokes past the screen (issue #9). */
@@ -446,6 +477,99 @@ test('m-members', async ({ page }) => {
   await checkpoint(page, 'm-members');
 });
 
+// Calendar (ADR-0038 §7): drawer → the header's calendar icon → a day, full screen; the meeting card
+// replaces it full screen (← back).
+test('m-calendar-day', async ({ page }) => {
+  mock.setClock(NOW.getTime());
+  seedDay(mock);
+  await signedIn(page);
+  await page.getByRole('button', { name: 'Комнаты и пространства' }).first().tap();
+  const nav = page.getByTestId('mobile-nav');
+  // The icon opens today at once (ADR-0041 §3): the drawer closes.
+  await nav.getByTestId('calendar-button').tap();
+  await expect(nav).toHaveCount(0);
+  await expect(page.getByTestId('day-view')).toBeVisible();
+  await expect(page.getByTestId('now-line')).toBeVisible();
+  await checkpoint(page, 'm-calendar-day');
+  await page.getByTestId('event-block').filter({ hasText: 'Планёрка' }).tap();
+  await expect(page.getByTestId('event-panel').getByTestId('event-title')).toHaveText('Планёрка');
+  await checkpoint(page, 'm-calendar-event-card', { snapshot: false });
+  await page.getByRole('button', { name: 'Назад' }).tap();
+  await expect(page.getByTestId('day-view')).toBeVisible();
+});
+
+// «Подобрать время» on a phone (ADR-0041 §3): the chips, the duration, «в рабочие часы» and the
+// nearest windows as a list — no grid.
+test('m-calendar-findtime', async ({ page }) => {
+  mock.setClock(NOW.getTime());
+  seedDay(mock);
+  await signedIn(page);
+  await page.getByRole('button', { name: 'Комнаты и пространства' }).first().tap();
+  await page.getByTestId('mobile-nav').getByTestId('calendar-button').tap();
+  await expect(page.getByTestId('day-view')).toBeVisible();
+  await page.getByTestId('day-find').tap();
+  const pane = page.getByTestId('find-time');
+  await pane.getByTestId('find-people-add').tap();
+  await page.getByTestId('find-people-picker').getByRole('option', { name: /Борис/ }).tap();
+  await page.keyboard.press('Escape');
+  await expect(pane.getByTestId('person-chip')).toHaveCount(2);
+  await expect(pane.getByTestId('find-slot')).not.toHaveCount(0);
+  await expect(pane.getByTestId('availability')).toHaveCount(0);
+  await page.evaluate(() => (document.activeElement as HTMLElement | null)?.blur());
+  await checkpoint(page, 'm-calendar-findtime');
+});
+
+// The public meeting page of an invited address (ADR-0038 «Диплинки для приглашённых»), no account.
+test('m-calendar-public', async ({ page }) => {
+  mock.setClock(NOW.getTime());
+  const id = seedDay(mock);
+  mock.eventGuestLink(id, 'ext@example.com');
+  await open(page, `/e/${id}?t=${encodeURIComponent(mock.eventViewToken(id, 'ext@example.com'))}`);
+  await expect(page.getByTestId('event-public').getByTestId('event-title')).toHaveText('Планёрка');
+  await checkpoint(page, 'm-calendar-public');
+});
+
+// Task boards on a phone (ADR-0042 §5): boards in the drawer, the list by default, the task full screen.
+test('m-boards-list', async ({ page }) => {
+  mock.setClock(NOW.getTime());
+  await signedIn(page);
+  await page.getByRole('button', { name: 'Комнаты и пространства' }).first().tap();
+  const nav = page.getByTestId('mobile-nav');
+  await nav.getByTestId('boards-button').tap();
+  await nav.getByTestId('board-row').filter({ hasText: 'Разработка' }).getByRole('button').first().tap();
+  await expect(nav).toHaveCount(0);
+  await expect(page.getByTestId('list-view')).toBeVisible();
+  await checkpoint(page, 'm-boards-list');
+});
+
+test('m-boards-task', async ({ page }) => {
+  mock.setClock(NOW.getTime());
+  await signedIn(page);
+  await page.getByRole('button', { name: 'Комнаты и пространства' }).first().tap();
+  const nav = page.getByTestId('mobile-nav');
+  await nav.getByTestId('boards-button').tap();
+  await nav.getByTestId('board-row').filter({ hasText: 'Разработка' }).getByRole('button').first().tap();
+  await page.getByTestId('list-row').filter({ hasText: 'CAL-3' }).tap();
+  const panel = page.getByTestId('task-panel');
+  await expect(panel.getByTestId('assignee-row')).toHaveCount(2);
+  await checkpoint(page, 'm-boards-task');
+});
+
+// The kanban on a phone: columns a screen wide, swiped horizontally with snap (ADR-0042 §5).
+test('m-boards-kanban', async ({ page }) => {
+  mock.setClock(NOW.getTime());
+  await signedIn(page);
+  await page.getByRole('button', { name: 'Комнаты и пространства' }).first().tap();
+  const nav = page.getByTestId('mobile-nav');
+  await nav.getByTestId('boards-button').tap();
+  await nav.getByTestId('board-row').filter({ hasText: 'Разработка' }).getByRole('button').first().tap();
+  await page.getByTestId('view-kanban').tap();
+  const kanban = page.getByTestId('kanban');
+  await expect(kanban.getByTestId('kanban-column').first()).toBeVisible();
+  await expect(kanban).toHaveCSS('scroll-snap-type', /x mandatory/);
+  await checkpoint(page, 'm-boards-kanban');
+});
+
 // The composer's «Стикеры» panel as a bottom sheet (ADR-0030): the pack strip, my pack, «Эмоции»
 // to add; animated stickers stand on their first frame (they play only on hover).
 test('m-sticker-picker', async ({ page }) => {
@@ -548,6 +672,21 @@ test('m-dm-list', async ({ page }) => {
   await checkpoint(page, 'm-dm-list');
 });
 
+// «Заметки» (ADR-0039): the same section above the DMs in the drawer.
+test('m-notes', async ({ page }) => {
+  const ideas = mock.addShelf(IDS.users.anna, 'Идеи', '💡');
+  mock.addShelf(IDS.users.anna, 'Черновики', '');
+  mock.injectMessage({ roomId: ideas, authorId: IDS.users.anna, content: 'Тёмная тема для лендинга' });
+  await signedIn(page);
+  await page.getByRole('button', { name: 'Комнаты и пространства' }).first().tap();
+  const nav = page.getByTestId('mobile-nav');
+  await nav.getByTestId('rail-home').getByRole('button').tap();
+  const shelves = nav.getByTestId('notes-shelf');
+  await expect(shelves).toHaveCount(2);
+  await expect(shelves.first()).toContainText('Тёмная тема для лендинга');
+  await checkpoint(page, 'm-notes');
+});
+
 /**
  * A finger swipe to the left over the element. Synthetic events: desktop WebKit has neither a
  * touch input API for Playwright nor a Touch constructor, so plain events carry `touches` (what
@@ -646,8 +785,8 @@ test('m-settings-bots', async ({ page }) => {
 test('m-room-new', async ({ page }) => {
   await signedIn(page);
   await page.getByRole('button', { name: 'Комнаты и пространства' }).first().tap();
-  // The workspace header's menu (not the rail icon of the same name).
-  await page.getByTestId('mobile-nav').locator('button[aria-haspopup="menu"]', { hasText: 'Команда Calab' }).tap();
+  // The room column's «+» (docs/09 #140: no longer in the workspace menu).
+  await page.getByTestId('mobile-nav').getByTestId('sidebar-create').tap();
   await page.getByRole('menuitem', { name: 'Создать комнату' }).tap();
   const dialog = page.getByRole('dialog', { name: 'Новая комната' });
   await expect(dialog).toBeVisible();

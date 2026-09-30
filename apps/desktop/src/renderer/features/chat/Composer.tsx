@@ -5,14 +5,14 @@ import { useCallback, useEffect, useId, useLayoutEffect, useMemo, useRef, useSta
 import { CLOSE_HIT, CloseButton, IconButton, Tip, cx } from '../../components/ui';
 import { t } from '../../i18n';
 import { fmt } from '../../lib/format';
-import { MENTION_EVENT, type MentionRequest } from './mentionRequest';
+import { MENTION_EVENT, takeMention, type MentionRequest } from './mentionRequest';
 import { applyMention, exactNames, filterCandidates, filterSpecial, fromWire, mentionQuery, toWire } from '../../lib/mentions';
 import { can } from '../../lib/permissions';
 import { systemPreview } from '../../lib/recording';
 import { autoFocusAllowed, useMobile } from '../../lib/mobile';
 import { MAX_ATTACHMENTS, MAX_CONTENT, editMessage, loadPresent, notifyTyping, sendMessage, type OutgoingFile } from '../../services/chat';
 import { useMessages } from '../../stores/messages';
-import { useSession } from '../../stores/session';
+import { myUserId, useSession } from '../../stores/session';
 import { useUi } from '../../stores/ui';
 import { useDms } from '../../stores/dms';
 import { sendSticker } from '../../services/stickers';
@@ -177,20 +177,33 @@ export function Composer({
   };
 
   // «Упомянуть» from a member menu (mentionRequest.ts): append `@name ` and focus the field.
+  // A request for a given room (birthday «Поздравить») waits for that room's composer.
+  const roomIdRef = useRef(room.id);
+  useEffect(() => {
+    roomIdRef.current = room.id;
+  }, [room.id]);
+  const applyMentionRequest = useCallback((d: MentionRequest): void => {
+    setText((cur) => {
+      const next = `${cur && !/\s$/.test(cur) ? `${cur} ` : cur}@${d.name} `;
+      pendingCaret.current = next.length;
+      return next;
+    });
+    setMentions((m) => new Map(m).set(d.name, d.userId));
+    ref.current?.focus();
+  }, []);
   useEffect(() => {
     const onMention = (e: Event): void => {
       const d = (e as CustomEvent<MentionRequest>).detail;
-      setText((cur) => {
-        const next = `${cur && !/\s$/.test(cur) ? `${cur} ` : cur}@${d.name} `;
-        pendingCaret.current = next.length;
-        return next;
-      });
-      setMentions((m) => new Map(m).set(d.name, d.userId));
-      ref.current?.focus();
+      const req = d.roomId ? takeMention(roomIdRef.current) : d;
+      if (req) applyMentionRequest(req);
     };
     window.addEventListener(MENTION_EVENT, onMention);
     return () => window.removeEventListener(MENTION_EVENT, onMention);
-  }, []);
+  }, [applyMentionRequest]);
+  useEffect(() => {
+    const req = takeMention(room.id);
+    if (req) applyMentionRequest(req);
+  }, [room.id, applyMentionRequest]);
 
   /** Field text → wire format: picked names and exact member names become `@<id>`. */
   const wire = (content: string): string => toWire(content, new Map([...exactNames(mentionables.all), ...mentions]));
@@ -236,7 +249,8 @@ export function Composer({
   const voice = useVoiceRecorder({ onSend: sendVoice });
 
   // Stickers (ADR-0030): a message of their own, like a voice message; not while editing.
-  const dmPeer = useDms((s) => (room.type === RoomType.DM ? (s.byRoom[room.id]?.peerId ?? '') : ''));
+  // A notes shelf (ADR-0039): the packs of my workspaces, as in a DM with myself.
+  const dmPeer = useDms((s) => (room.type === RoomType.DM ? (s.byRoom[room.id]?.peerId ?? '') : room.type === RoomType.NOTES ? myUserId() : ''));
   const stickerPlace = useMemo<StickerPlace | null>(() => (workspaceId ? { workspaceId } : dmPeer ? { dmPeerId: dmPeer } : null), [workspaceId, dmPeer]);
   const stickers =
     stickerPlace && canSend && !suspended && !editMsg
@@ -392,7 +406,14 @@ export function Composer({
   const hasContent = !!text.trim() || (!editMsg && files.length > 0);
   // The mic replaces «send» while there is nothing to send (Telegram); it stays during a recording.
   const showMic = voice.active || (!hasContent && !editMsg && canAttach && voiceSupported());
-  const placeholder = room.type === RoomType.DM ? t('dm.placeholder', { name: roomLabel(room) }) : t('chat.placeholderIn', { room: roomLabel(room) });
+  const placeholder =
+    room.type === RoomType.DM
+      ? t('dm.placeholder', { name: roomLabel(room) })
+      : room.type === RoomType.NOTES
+        ? t('notes.placeholder', { name: room.name })
+        : room.type === RoomType.TASK
+          ? t('boards.commentPlaceholder')
+          : t('chat.placeholderIn', { room: roomLabel(room) });
   const bar = editMsg ? (
     <ContextBar
       icon={<Pencil className="size-4" aria-hidden />}
@@ -425,7 +446,7 @@ export function Composer({
         <div
           data-focus-box
           className={cx(
-            'flex min-h-10 min-w-0 flex-1 items-end rounded-[20px] border border-line bg-elev px-1 shadow-[var(--shadow-card)] focus-within:border-accent',
+            'flex min-h-10 min-w-0 flex-1 items-end rounded-[20px] border border-line bg-elev px-1 shadow-[var(--shadow-card)] focus-within:border-focus',
             voice.active && 'hidden',
           )}
         >
@@ -525,7 +546,7 @@ export function Composer({
             onKeyDown={onKey}
             onPaste={onPaste}
             aria-label={placeholder}
-            className="selectable min-h-[38px] min-w-0 flex-1 resize-none bg-transparent px-1.5 py-[9px] text-list leading-5 placeholder:text-faint focus:outline-none focus-visible:outline-none"
+            className="selectable min-h-[38px] min-w-0 flex-1 resize-none bg-transparent px-1.5 py-[9px] text-list leading-5 placeholder:text-faint"
             style={{ maxHeight: MAX_FIELD_H }}
           />
           {stickers ? <StickerButton place={stickers.place} onSend={stickers.onSend} /> : null}

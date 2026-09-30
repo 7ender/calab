@@ -45,6 +45,24 @@ var ErrBotsOnly = httpx.Forbidden("only bots may use this endpoint")
 // ErrSessionRevoked means the access token's session (or the bot's token) was revoked.
 var ErrSessionRevoked = errors.New("auth: session revoked")
 
+// RevokedError is ErrSessionRevoked (errors.Is holds) with the reason of the revocation
+// (RevokeReuse, …; "" = unknown).
+type RevokedError struct{ Reason string }
+
+func (e *RevokedError) Error() string { return ErrSessionRevoked.Error() }
+
+// Is makes errors.Is(err, ErrSessionRevoked) hold.
+func (e *RevokedError) Is(target error) bool { return target == ErrSessionRevoked }
+
+// RevokedReason returns the reason carried by a revocation error ("" = none / unknown).
+func RevokedReason(err error) string {
+	var re *RevokedError
+	if errors.As(err, &re) {
+		return re.Reason
+	}
+	return ""
+}
+
 // IsBotToken reports whether a bearer token has the bot token form (not whether it is valid).
 func IsBotToken(tok string) bool { return strings.HasPrefix(tok, BotTokenPrefix) }
 
@@ -193,7 +211,7 @@ func (s *Service) BotTokenChanged(ctx context.Context, botID uuid.UUID, oldToken
 	}
 	cancel()
 	if oldTokenID != nil {
-		s.afterRevoke(ctx, *oldTokenID)
+		s.afterRevoke(ctx, *oldTokenID, revokeBotToken)
 	}
 }
 

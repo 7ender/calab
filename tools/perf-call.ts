@@ -18,6 +18,13 @@
  *   npx tsx tools/perf-call.ts --seconds 0 --bench C --bench-seconds 90 --name after   # CPU of all app processes
  *   npx tsx tools/perf-call.ts --seconds 0 --no-emulate --no-stats --recording --bench C --bench-seconds 90 --name rec-after
  *
+ * `--calendar`: the day view (ADR-0038) open during the call (members column beside it); run ≥ 70 s so
+ * the «now» line's minute tick falls inside the window. `--findtime`: «Подобрать время» (ADR-0041)
+ * with Борис and Вера instead — BusyColumn / FreeOverlay must stay out of the voice / presence commits.
+ *
+ * `--boards`: the kanban (ADR-0042) open during the call; Борис renames CAL-2 every 3 s (TASK_UPDATE to
+ * the board): one TaskCard per event should render.
+ *
  * `--dm-call`: a one-to-one call instead (ADR-0034): Борис calls, I accept in his DM (open, with the
  * «Звонок · 00:42» header timer and the island); the same live events, typing and the voice state
  * in that DM.
@@ -87,6 +94,12 @@ const SPEAKER = argv.includes('--speaker');
 const POPOVER = argv.includes('--popover');
 const RECORDING = argv.includes('--recording');
 const DM_CALL = argv.includes('--dm-call');
+/** `--calendar`: in the call, the day view (ADR-0038) is open instead of «общий» — its «now» line ticks once a minute. */
+/** `--findtime`: «Подобрать время» (ADR-0041) open instead, with Борис and Вера: the busy columns must not re-render on voice / presence. */
+const FINDTIME = argv.includes('--findtime');
+const CALENDAR = argv.includes('--calendar') || FINDTIME;
+/** `--boards`: the kanban (ADR-0042) open during the call; another user renames a task every 3 s (TASK_UPDATE). */
+const BOARDS = argv.includes('--boards');
 /** `--viewer` (K): a second participant watches my camera at full size, so the encoder runs (dynacast). */
 const VIEWER = argv.includes('--viewer') || BENCH === 'F';
 /** F: what the stream shows — a still code page or one scrolling 30×/s. */
@@ -449,6 +462,35 @@ async function main(): Promise<void> {
       await aside.getByRole('button', { name: /общий/ }).first().click();
       await page.getByRole('heading', { name: 'общий' }).first().waitFor();
     }
+    if (CALENDAR) {
+      // Today's meetings (one past, one ahead, one overlapping it) and the day view with the members column.
+      // Meetings of today even late in the evening (the last one ends by 23:00).
+      const now = Math.min(Date.now(), new Date().setHours(21, 0, 0, 0));
+      const W = IDS.workspaces.main;
+      mock.addEvent({ workspaceId: W, title: 'Стендап', startMs: now - 90 * 60_000, endMs: now - 60 * 60_000, attendees: [{ userId: IDS.users.boris }] });
+      mock.addEvent({ workspaceId: W, title: 'Планёрка', startMs: now + 30 * 60_000, endMs: now + 90 * 60_000, roomId: IDS.rooms.meeting, attendees: [{ userId: IDS.users.boris }, { userId: IDS.users.vera }] });
+      mock.addEvent({ workspaceId: W, organizerId: IDS.users.boris, title: 'Ревью', startMs: now + 60 * 60_000, endMs: now + 120 * 60_000, attendees: [{ userId: IDS.users.anna }] });
+      await page.getByTestId('calendar-button').click();
+      const d = new Date(now);
+      const day = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+      await page.locator(`[data-cal-day="${day}"]`).click();
+      await page.getByTestId('now-line').waitFor({ timeout: 15_000 });
+      await page.getByTestId('event-block').filter({ hasText: 'Ревью' }).waitFor({ timeout: 15_000 });
+      if (FINDTIME) {
+        await page.getByTestId('day-find').click();
+        await page.getByTestId('find-people-add').click();
+        const picker = page.getByTestId('find-people-picker');
+        await picker.getByRole('option', { name: /Борис/ }).click();
+        await picker.getByRole('option', { name: /Вера/ }).click();
+        await page.keyboard.press('Escape');
+        await page.getByTestId('busy-column').nth(2).waitFor({ timeout: 15_000 });
+      }
+    }
+    if (BOARDS) {
+      await page.getByTestId('boards-button').click();
+      await page.getByTestId('kanban').waitFor({ timeout: 15_000 });
+      await page.getByTestId('task-card').first().waitFor({ timeout: 15_000 });
+    }
     await page.getByRole('button', { name: /^Качество связи/ }).first().waitFor({ timeout: 15_000 });
     const membersOpen = await page.getByRole('complementary').filter({ hasText: /В сети|Участники/ }).count();
 
@@ -530,6 +572,11 @@ async function main(): Promise<void> {
       const typing = DM_CALL ? { roomId: IDS.dms.boris, userId: IDS.users.boris } : { roomId: IDS.rooms.general, userId: IDS.users.vera };
       timers.push(setInterval(() => mock.setVoiceState({ userId: IDS.users.boris, roomId: voiceRoom, muted: m++ % 2 === 0, ...(BENCH === 'E' ? { camera: true } : {}) }), 10_000));
       timers.push(setInterval(() => void fetch(`${mock.url}/__mock/typing`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(typing) }), 4000));
+      if (BOARDS) {
+        const cal2 = mock.boards.taskByKey('CAL-2')?.task.id ?? '';
+        let n = 0;
+        timers.push(setInterval(() => mock.updateTaskAs(IDS.users.boris, cal2, { title: `Тёмная тема ${++n}` }), 3000));
+      }
     }
     // A real remote speaker: Chromium's fake microphone beeps once a second, so LiveKit's active
     // speakers and the level-driven rings flip on and off like in a conversation.

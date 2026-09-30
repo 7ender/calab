@@ -1567,3 +1567,170 @@ describe('VOICE_DISCONNECTED (docs/05 «Несколько устройств»)
     expect(useVoice.getState()).toMatchObject({ phase: 'idle', roomId: null });
   });
 });
+
+describe('stuck «Подключение…» (docs/09 #131)', () => {
+  /** A promise that never settles (a LiveKit call / network request that hangs). */
+  const never = (): Promise<never> => new Promise<never>(() => undefined);
+  const errors = async (): Promise<string[]> => {
+    const { toast } = await import('../stores/toasts');
+    return vi.mocked(toast.error).mock.calls.map((c) => c[0]);
+  };
+  beforeEach(async () => {
+    const { toast } = await import('../stores/toasts');
+    vi.mocked(toast.error).mockClear();
+  });
+
+  it('switch A → B while A is still connecting: B connected, A dropped, A settling late changes nothing', async () => {
+    let finishA!: () => void;
+    FakeRoom.onConnect = (token) => (token === 't-A' ? new Promise<void>((r) => (finishA = r)) : Promise.resolve());
+    const toA = voice.join('A', 'ws');
+    await settle();
+    expect(useVoice.getState()).toMatchObject({ roomId: 'A', phase: 'connecting' });
+    await voice.join('B', 'ws');
+    expect(useVoice.getState()).toMatchObject({ roomId: 'B', phase: 'connected', joining: null });
+    expect(FakeRoom.all[0]?.disconnects).toHaveLength(1);
+    finishA();
+    await toA;
+    await settle();
+    expect(useVoice.getState()).toMatchObject({ roomId: 'B', phase: 'connected' });
+    expect(voice.linkTruth().room).toBe(FakeRoom.all[1]?.name);
+  });
+
+  it('switch while the room is reconnecting (LiveKit resuming, then our rejoin cycle): the new room connects', async () => {
+    await voice.join('A', 'ws');
+    const a = FakeRoom.all[0];
+    if (a) a.state = 'Reconnecting';
+    a?.emit('ConnectionStateChanged', 'Reconnecting');
+    expect(useVoice.getState().phase).toBe('reconnecting');
+    await voice.join('B', 'ws');
+    expect(useVoice.getState()).toMatchObject({ roomId: 'B', phase: 'connected' });
+    // Our own cycle: B lost for good, the loop in its backoff when the user clicks C.
+    FakeRoom.all[1]?.emit('Disconnected', 'SIGNAL_CLOSE');
+    await settle();
+    expect(useVoice.getState().phase).toBe('reconnecting');
+    await voice.join('C', 'ws');
+    await vi.advanceTimersByTimeAsync(40_000);
+    expect(useVoice.getState()).toMatchObject({ roomId: 'C', phase: 'connected' });
+    expect(joinVoice.mock.calls.map((c) => c[0])).toEqual(['A', 'B', 'C']);
+  });
+
+  it('the old room’s disconnect() never settles: the switch still connects B (bounded), leave works too', async () => {
+    await voice.join('A', 'ws');
+    FakeRoom.disconnectGate = never();
+    const toB = voice.join('B', 'ws');
+    await vi.advanceTimersByTimeAsync(3_000);
+    await toB;
+    expect(useVoice.getState()).toMatchObject({ roomId: 'B', phase: 'connected' });
+    const leaving = voice.leave();
+    await vi.advanceTimersByTimeAsync(3_000);
+    await leaving;
+    expect(useVoice.getState()).toMatchObject({ roomId: null, phase: 'idle' });
+  });
+
+  it('events of the old room after the switch never touch the new room’s state', async () => {
+    await voice.join('A', 'ws');
+    await voice.join('B', 'ws');
+    playSound.mockClear();
+    const old = FakeRoom.all[0];
+    old?.emit('ConnectionStateChanged', 'Reconnecting');
+    old?.emit('Disconnected', 'SIGNAL_CLOSE');
+    old?.emit('ParticipantDisconnected', { identity: 'u2:s' });
+    await vi.advanceTimersByTimeAsync(10_000);
+    expect(useVoice.getState()).toMatchObject({ roomId: 'B', phase: 'connected' });
+    expect(joinVoice.mock.calls.map((c) => c[0])).toEqual(['A', 'B']); // no rejoin of A
+    expect(playSound).not.toHaveBeenCalled();
+  });
+
+  it('watchdog: a connect that never settles is retried once with a fresh Room and token after 15 s', async () => {
+    let calls = 0;
+    FakeRoom.onConnect = () => (++calls === 1 ? never() : Promise.resolve());
+    void voice.join('A', 'ws');
+    await vi.advanceTimersByTimeAsync(14_000);
+    expect(useVoice.getState().phase).toBe('connecting');
+    expect(voice.linkProbe()).toMatchObject({ phase: 'connecting', stage: 'signal' });
+    await vi.advanceTimersByTimeAsync(4_000);
+    expect(useVoice.getState()).toMatchObject({ roomId: 'A', phase: 'connected' });
+    expect(FakeRoom.all).toHaveLength(2); // the stuck Room is not reused
+    expect(FakeRoom.all[0]?.disconnects).toHaveLength(1);
+    expect(joinVoice.mock.calls.map((c) => c[0])).toEqual(['A', 'A']); // a fresh token
+    expect(await errors()).toEqual([]);
+  });
+
+  it('watchdog: stuck again after the retry → out of voice with the reason, nothing left spinning', async () => {
+    FakeRoom.onConnect = () => never();
+    void voice.join('A', 'ws');
+    await vi.advanceTimersByTimeAsync(16_000);
+    expect(useVoice.getState().phase).toBe('connecting');
+    expect(useVoice.getState().link.lastError).toBe('голосовой сервер не ответил за 15 с — повторяю');
+    await vi.advanceTimersByTimeAsync(16_000);
+    expect(useVoice.getState()).toMatchObject({ roomId: null, phase: 'idle', joining: null });
+    expect(await errors()).toEqual(['Не удалось подключиться к голосу: голосовой сервер не ответил']);
+    expect(useVoice.getState().link.lastError).toBe('голосовой сервер не ответил');
+    await vi.advanceTimersByTimeAsync(60_000);
+    expect(joinVoice).toHaveBeenCalledTimes(2);
+  });
+
+  it('watchdog: a /join that never answers is abandoned; the retry’s /join connects', async () => {
+    joinVoice.mockImplementationOnce(() => never());
+    void voice.join('A', 'ws');
+    await vi.advanceTimersByTimeAsync(10_000);
+    expect(voice.linkProbe().stage).toBe('join');
+    await vi.advanceTimersByTimeAsync(10_000);
+    expect(useVoice.getState()).toMatchObject({ roomId: 'A', phase: 'connected' });
+    expect(joinVoice).toHaveBeenCalledTimes(2);
+  });
+
+  it('a switch that hangs (connect and disconnect) does not poison the controller: the next join connects without a restart', async () => {
+    await voice.join('A', 'ws');
+    FakeRoom.onConnect = (token) => (token === 't-B' ? never() : Promise.resolve());
+    void voice.join('B', 'ws');
+    await vi.advanceTimersByTimeAsync(5_000);
+    expect(useVoice.getState()).toMatchObject({ roomId: 'B', phase: 'connecting' });
+    // B's Room will never let go either.
+    FakeRoom.disconnectGate = never();
+    const toC = voice.join('C', 'ws');
+    await vi.advanceTimersByTimeAsync(4_000);
+    await toC;
+    expect(useVoice.getState()).toMatchObject({ roomId: 'C', phase: 'connected', joining: null });
+    // And after a full watchdog failure, too.
+    FakeRoom.disconnectGate = null;
+    FakeRoom.onConnect = (token) => (token === 't-D' ? never() : Promise.resolve());
+    void voice.join('D', 'ws');
+    await vi.advanceTimersByTimeAsync(40_000);
+    expect(useVoice.getState()).toMatchObject({ roomId: null, phase: 'idle' });
+    await voice.join('E', 'ws');
+    expect(useVoice.getState()).toMatchObject({ roomId: 'E', phase: 'connected' });
+  });
+
+  it('a click on the room I am stuck connecting to starts afresh instead of reusing the dead Room', async () => {
+    FakeRoom.onConnect = () => (FakeRoom.all.length === 1 ? never() : Promise.resolve());
+    void voice.join('A', 'ws');
+    await settle();
+    const stuck = FakeRoom.all[0];
+    if (stuck) stuck.state = 'Connecting';
+    await vi.advanceTimersByTimeAsync(5_000);
+    await voice.join('A', 'ws'); // within the limit: the attempt in flight is kept
+    expect(FakeRoom.all).toHaveLength(1);
+    await vi.advanceTimersByTimeAsync(11_000); // the watchdog (15 s) replaces it
+    expect(FakeRoom.all).toHaveLength(2);
+    expect(useVoice.getState()).toMatchObject({ roomId: 'A', phase: 'connected' });
+  });
+
+  it('«Переподключение…» with nobody working on it: a fresh rejoin after 30 s', async () => {
+    await voice.join('A', 'ws');
+    const a = FakeRoom.all[0];
+    if (a) a.state = 'Disconnected';
+    useVoice.setState({ phase: 'reconnecting' }); // an orphaned phase: no LiveKit resume, no cycle
+    await vi.advanceTimersByTimeAsync(33_000);
+    expect(joinVoice).toHaveBeenCalledTimes(2);
+    expect(useVoice.getState()).toMatchObject({ roomId: 'A', phase: 'connected' });
+  });
+
+  it('«Переподключение…» while LiveKit is connected (a missed event): the phase is fixed', async () => {
+    await voice.join('A', 'ws');
+    useVoice.setState({ phase: 'reconnecting' });
+    await vi.advanceTimersByTimeAsync(30_000);
+    expect(useVoice.getState().phase).toBe('connected');
+    expect(joinVoice).toHaveBeenCalledTimes(1);
+  });
+});
