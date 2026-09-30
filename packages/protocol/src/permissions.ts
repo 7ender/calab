@@ -30,6 +30,8 @@ export const PERMISSION_BITS = {
   INVITE_MEMBERS: BigInt(Permission.INVITE_MEMBERS),
   INVITE_GUESTS: BigInt(Permission.INVITE_GUESTS),
   CREATE_TEMP_ROOMS: BigInt(Permission.CREATE_TEMP_ROOMS),
+  // ADR-0046: outbound phone calls; room-level too, nobody by default, never guests (server).
+  PLACE_CALLS: BigInt(Permission.PLACE_CALLS),
 } as const;
 
 export type PermissionName = keyof typeof PERMISSION_BITS;
@@ -59,7 +61,8 @@ export const BOARD_ONLY_PERMISSIONS: PermissionBits =
   VIEW_BOARD | CREATE_TASKS | PERMISSION_BITS.EDIT_TASKS | PERMISSION_BITS.MANAGE_BOARD;
 
 /**
- * Bits room overrides may touch (INVITE_MEMBERS and INVITE_GUESTS included, ADR-0043).
+ * Bits room overrides may touch (INVITE_MEMBERS and INVITE_GUESTS included, ADR-0043; PLACE_CALLS,
+ * ADR-0046).
  * ADMINISTRATOR, MANAGE_WORKSPACE, MANAGE_NICKNAMES, MANAGE_ROLES, MANAGE_STICKERS and
  * CREATE_TEMP_ROOMS (ADR-0044) are workspace-level, the board bits apply to boards only:
  * computePermissions ignores them in room overrides (Go: perm.RoomOnly).

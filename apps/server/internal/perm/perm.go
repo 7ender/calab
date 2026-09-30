@@ -37,8 +37,11 @@ const (
 	InviteGuests  Bits = 1 << 22 // room links admitting guests, their approval, admission decisions
 	// CreateTempRooms (ADR-0044): workspace-level, create temporary rooms (member default).
 	CreateTempRooms Bits = 1 << 23
+	// PlaceCalls (ADR-0046): outbound phone calls from a voice room; workspace and room level,
+	// nobody by default, never guests (the handlers refuse them).
+	PlaceCalls Bits = 1 << 24
 
-	All Bits = CreateTempRooms<<1 - 1
+	All Bits = PlaceCalls<<1 - 1
 )
 
 // BoardOnly are the bits of task boards (ADR-0042): board overrides touch only them, room

@@ -496,6 +496,42 @@ type Session struct {
 	RevokedReason        *string
 }
 
+type SipAccount struct {
+	WorkspaceID     uuid.UUID
+	Provider        string
+	Host            string
+	Transport       string
+	Username        string
+	AuthUsername    string
+	Port            int32
+	PasswordEnc     []byte
+	CallerID        string
+	OutboundPrefix  string
+	AllowedPrefixes []string
+	TrunkID         string
+	Enabled         bool
+	LastError       string
+	UpdatedAt       time.Time
+	UpdatedBy       *uuid.UUID
+}
+
+type SipCall struct {
+	ID                  uuid.UUID
+	WorkspaceID         uuid.UUID
+	RoomID              *uuid.UUID
+	Number              string
+	Direction           string
+	StartedBy           *uuid.UUID
+	ParticipantIdentity string
+	SipCallID           string
+	Status              string
+	Reason              string
+	EndedBy             *uuid.UUID
+	StartedAt           time.Time
+	AnsweredAt          *time.Time
+	EndedAt             *time.Time
+}
+
 type Sticker struct {
 	ID        uuid.UUID
 	PackID    uuid.UUID
@@ -658,6 +694,7 @@ type Workspace struct {
 	SuspendedReason         string
 	SuspendedBy             *uuid.UUID
 	TimeFormat              string
+	SipEnabled              bool
 }
 
 type WorkspaceAdminLog struct {

@@ -213,6 +213,22 @@ func Snapshot(ctx context.Context, q *sqlc.Queries, pl *plans.Service, ws sqlc.W
 			recordings = append(recordings, pbconv.RoomRecording(rec))
 		}
 	}
+	// Phone calls (ADR-0046) live in the visible rooms.
+	var sipCalls []*v1.SipCall
+	if ws.SipEnabled {
+		live, err := q.ListLiveSipCallsByWorkspace(ctx, ws.ID)
+		if err != nil {
+			return nil, err
+		}
+		for _, c := range live {
+			if c.RoomID == nil {
+				continue
+			}
+			if _, ok := bits[c.RoomID.String()]; ok {
+				sipCalls = append(sipCalls, pbconv.SipCall(c))
+			}
+		}
+	}
 	// Task boards (ADR-0042 §4): the visible ones with the recipient's bits, and their unread tasks.
 	bs, unread, err := boards.Snapshot(ctx, q, ws.ID, me)
 	if err != nil {
@@ -223,7 +239,7 @@ func Snapshot(ctx context.Context, q *sqlc.Queries, pl *plans.Service, ws sqlc.W
 	return &v1.WorkspaceSnapshot{Workspace: pbconv.ForViewer(pw, role), Role: role.Proto(), Rooms: rs, Members: members,
 		Permissions: bits, Categories: pbconv.Categories(cats), Recordings: recordings, Roles: pbconv.Roles(roles),
 		Badges: pbconv.Badges(badges), Backgrounds: pbconv.Backgrounds(backgrounds), Sounds: pbconv.Sounds(sounds),
-		Boards: bs, UnreadTaskIds: unread}, nil
+		Boards: bs, UnreadTaskIds: unread, SipCalls: sipCalls}, nil
 }
 
 // MemberPB loads a member's role ids and converts the membership row.

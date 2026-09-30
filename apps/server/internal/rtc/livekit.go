@@ -54,6 +54,8 @@ type Participant struct {
 	Sid      string  `json:"sid"` // one LiveKit connection; a reconnect with the same identity gets a new one
 	Identity string  `json:"identity"`
 	Tracks   []Track `json:"tracks"`
+	// Attributes: set on phone lines by LiveKit SIP (sip.callStatus, sip.callID; ADR-0046).
+	Attributes map[string]string `json:"attributes,omitempty"`
 }
 
 // Room is livekit.Room (subset).
@@ -111,6 +113,8 @@ type Error struct {
 	Status int
 	Code   string `json:"code"`
 	Msg    string `json:"msg"`
+	// Meta: twirp error metadata, e.g. sip_status_code / sip_status of a failed SIP call.
+	Meta map[string]string `json:"meta,omitempty"`
 }
 
 func (e *Error) Error() string { return fmt.Sprintf("livekit: %d %s: %s", e.Status, e.Code, e.Msg) }
@@ -148,6 +152,7 @@ type lkClaims struct {
 	jwt.RegisteredClaims
 	Name   string      `json:"name,omitempty"`
 	Video  *videoGrant `json:"video,omitempty"`
+	SIP    *sipGrant   `json:"sip,omitempty"` // SIP API (ADR-0046)
 	Sha256 string      `json:"sha256,omitempty"`
 }
 
@@ -222,7 +227,11 @@ func (c *client) callGrant(ctx context.Context, method string, g *videoGrant, in
 }
 
 func (c *client) callService(ctx context.Context, service, method string, g *videoGrant, in, out any) error {
-	tok, err := sign(c.key, c.secret, lkClaims{Video: g}, time.Minute)
+	return c.callClaims(ctx, service, method, lkClaims{Video: g}, in, out)
+}
+
+func (c *client) callClaims(ctx context.Context, service, method string, claims lkClaims, in, out any) error {
+	tok, err := sign(c.key, c.secret, claims, time.Minute)
 	if err != nil {
 		return err
 	}

@@ -43,6 +43,9 @@ message Workspace {
   // WORKSPACE_SUSPENDED). Unset = active.
   WorkspaceSuspension suspension = 13;
   TimeFormat time_format = 14;
+  // Telephony is on (ADR-0046): SIP settings enabled and accepted by LiveKit. Members with
+  // PLACE_CALLS in a voice room they are in may call phone numbers from it.
+  bool sip_enabled = 15;
 }
 
 message WorkspaceSuspension {

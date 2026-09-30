@@ -355,6 +355,7 @@ export const PERM_LABEL: Record<PermissionName, MessageKey> = {
   INVITE_MEMBERS: 'perm.INVITE_MEMBERS',
   INVITE_GUESTS: 'perm.INVITE_GUESTS',
   CREATE_TEMP_ROOMS: 'perm.CREATE_TEMP_ROOMS',
+  PLACE_CALLS: 'perm.PLACE_CALLS',
 };
 
 /** What a permission covers, where the label alone does not say it (ADR-0043). */

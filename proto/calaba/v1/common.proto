@@ -75,6 +75,19 @@ enum ErrorCode {
   // 410: the room is an archived temporary room (ADR-0044): its history is readable (VIEW_ROOM),
   // writes, reactions, voice, links and settings are not.
   ERROR_CODE_ROOM_ARCHIVED = 54;
+  // Telephony (ADR-0046, sip.proto).
+  // 409: telephony is off in the workspace (SIP settings disabled or not saved to LiveKit).
+  ERROR_CODE_SIP_DISABLED = 55;
+  // 409: the room already has a phone call that is dialing, ringing or active (one per room).
+  ERROR_CODE_SIP_CALL_ACTIVE = 56;
+  // 422: the number is outside the workspace's allowed_prefixes (field "number").
+  ERROR_CODE_SIP_NUMBER_NOT_ALLOWED = 57;
+  // 429: the workspace placed 20 calls within the last hour (Retry-After is set); for the
+  // connection test: 5 per hour.
+  ERROR_CODE_SIP_RATE_LIMITED = 58;
+  // 502: LiveKit refused the SIP settings (PUT …/sip); the message is LiveKit's text, also
+  // stored as SipSettings.last_error.
+  ERROR_CODE_SIP_PROVIDER_ERROR = 59;
 }
 
 // Error body of every non-2xx REST response.

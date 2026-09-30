@@ -121,12 +121,13 @@ BOARD_DELETE                  { workspace_id, board_id, purged } — в архи
 TASK_CREATE / TASK_UPDATE     { task } — полная задача без ленты; TASK_UPDATE в user:<id> — с viewer_state (subscribed, muted, unread) и notice
 TASK_DELETE                   { workspace_id, board_id, task_id, purged } — архив задачи (или переезд на другую доску)
 TASK_ACTIVITY                 { workspace_id, activity } — одна запись журнала задачи
+SIP_CALL_UPDATE               { call: SipCall } — телефонный звонок комнаты начат или сменил статус (ADR-0046); в READY — WorkspaceSnapshot.sip_calls (живые)
 ```
 
 Фильтрация по получателю (выполняет gateway, без запросов в БД — у инстанса кэш комнат и ролей каждого workspace, обновляемый самими событиями):
 - `ROOM_ADMISSION_*` (ADR-0040) — решающим: `MANAGE_ROOM` в комнате или автор ссылки (`admission.invite_created_by`, не гость). Гость получает `ROOM_ADMISSION_DECIDED` в `user:<id>`; после `ADMITTED` комната приходит обычным `ROOM_CREATE` (из `ROOM_PERMISSIONS_UPDATE`) — порядок между этими двумя событиями не гарантирован.
 - `BOT_*` — участникам с `MANAGE_WORKSPACE` и владельцу бота (ему `BOT_UPDATE` приходит и в `user:<id>`). `MESSAGE_CREATE` с `Message.command` — команда остаётся только у адресованного бота, остальные получают обычное сообщение (и в DM).
-- `MESSAGE_*`, `VOICE_STREAM_*`, `ROOM_RECORDING` — только тем, у кого `VIEW_ROOM` в комнате; `TYPING_START` — кроме того только сессиям, подписанным на комнату через `SUBSCRIBE` (и не самому печатающему).
+- `MESSAGE_*`, `VOICE_STREAM_*`, `ROOM_RECORDING`, `SIP_CALL_UPDATE` — только тем, у кого `VIEW_ROOM` в комнате; `TYPING_START` — кроме того только сессиям, подписанным на комнату через `SUBSCRIBE` (и не самому печатающему).
 - `ROOM_UPDATE` / `ROOM_PERMISSIONS_UPDATE` / `WORKSPACE_MEMBER_UPDATE` (смена ролей) / `ROLE_UPDATE` / `ROLE_DELETE` (права, порядок, удаление роли — для всех её держателей) пересчитывают видимость: доступ появился → получатель видит `ROOM_CREATE` с комнатой (голосовая с идущим звонком — с `voice_started_at`, за ней `VOICE_STATE_UPDATE` каждого участника: раньше их состояния приходили ему без комнаты), пропал → `ROOM_DELETE` (клиент убирает и голосовые состояния этой комнаты), остался → исходное событие. Смена `Room.restricted` (ADR-0029) — `ROOM_UPDATE` и следом `ROOM_PERMISSIONS_UPDATE` с теми же переопределениями (пересчёт грантов звонка).
 - `READ_RECEIPT` (docs/09 #92): публикуется `PUT /api/rooms/{id}/read`, только если маркер сдвинулся и не бот. DM — сразу собеседнику (`user:<id>`). Комната — если чьё-то «прочитали другие» выросло (маркер читателя дальше второго по дальности маркера остальных; `TopRoomReads`: индекс `read_states_room_id_idx` + top-3), не чаще раза в 3 с на комнату (Redis `rr:<room>`: первое событие сразу, одно завершающее в конце окна с текущими маркерами). В `ws:<id>` уходит самый дальний маркер с внутренним `except_user_id` (его владелец): gateway не шлёт событие ему и ботам и вырезает поле; владельцу — второй по дальности в `user:<id>`. Чтения ботов не считаются, ботам события не приходят. Клиент хранит максимум.
 - `VOICE_STATE_UPDATE` для невидимой получателю комнаты приходит с пустым `room_id` (пользователь выглядит не в голосе).
@@ -208,6 +209,10 @@ Payload'ы — protobuf-сообщения в `proto/calaba/v1/gateway.proto`; G
 - `READY` / `WORKSPACE_CREATE`: `WorkspaceSnapshot.recordings[]` — идущие записи видимых комнат (`state = ACTIVE`); таймер «REC» — от `since`.
 - Карточка в чате комнаты — системное сообщение: `Message.kind = SYSTEM`, `content` пуст, `system.recording = RecordingCard { recording_id, started_by, started_at, duration_sec, status: UPLOADING | PROCESSING | DONE | FAILED, web_url, error, file_gone, not_uploaded }`, автор — кто начал запись. Появляется при остановке (`MESSAGE_CREATE`), дальше обновляется (`MESSAGE_UPDATE`, без `edited_at`). Редактировать нельзя (403), удалять/закреплять/реагировать — как обычное. `error`: коды GPTunneL (`insufficient_balance`, `empty_audio`, …) или наши (`device_revoked`, `not_paired`, `upload_failed`, `no_audio`, `recorder_failed`, `timeout`). `FAILED`: `not_uploaded = false` → кнопка «Проверить снова»; `not_uploaded = true` и `file_gone = false` → «Отправить снова»; иначе кнопок нет (старые карточки без полей — «Проверить снова»).
 - `Room.allow_recording` (по умолчанию `true`) меняет `PATCH /api/rooms/{id}` `{ allowRecording }` — нужно `MANAGE_WORKSPACE`.
+
+## Телефония (ADR-0046)
+
+REST и коды ошибок — `proto/calaba/v1/sip.proto` и ADR-0046 «Контракт для клиента». Кратко: настройки `GET|PUT /api/workspaces/{id}/sip`, проверка `POST …/sip/test`, журнал `GET /api/workspaces/{id}/calls` (всё — `MANAGE_WORKSPACE`, не боты); звонок `POST /api/rooms/{id}/calls {number}` и `DELETE /api/rooms/{id}/calls/{cid}`. Статусы — `SIP_CALL_UPDATE`; телефонная линия — участник LiveKit `sip:<call id>` с именем = номер.
 
 ## Дни рождения (docs/09 #76)
 

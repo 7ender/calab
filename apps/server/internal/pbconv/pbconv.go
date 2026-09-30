@@ -310,6 +310,7 @@ func Workspace(w sqlc.Workspace) *v1.Workspace {
 		StorageUsedBytes:  uint64(max(w.StorageUsedBytes, 0)),
 		AllowSelfNickname: w.AllowSelfNickname,
 		TimeFormat:        timeFormatFromDB(w.TimeFormat),
+		SipEnabled:        w.SipEnabled,
 	}
 }
 

@@ -127,6 +127,7 @@ curl -s $CALAB/api/bots/me -H "Authorization: Bearer $TOKEN"
 | `PATCH /api/voice/self` · `PATCH /api/rooms/{id}/voice-status` | своё mute/deafen, статус звонка | в звонке |
 | `POST /api/rooms/{id}/voice/{userId}/mute · unmute · disconnect · move · stop-stream · stop-camera · allow-camera` | модерация голоса | `MUTE_MEMBERS` / `MOVE_MEMBERS` |
 | `GET /api/rooms/{id}/admissions` | гости, ожидающие подтверждения входа (ADR-0040); пустить/отклонить — 403 `BOT_NOT_ALLOWED` | `MANAGE_ROOM` |
+| `POST /api/rooms/{id}/calls {number}` · `DELETE /api/rooms/{id}/calls/{callId}` | телефония (ADR-0046): позвонить на номер из звонка комнаты — абонент входит в комнату участником `sip:<callId>`; положить свою линию (чужую — с `MUTE_MEMBERS`). Статусы — событие `sipCallUpdate`. Лимит — 20 звонков в час на пространство (`429 SIP_RATE_LIMITED`). Настройки SIP и журнал — 403 `BOT_NOT_ALLOWED` | `PLACE_CALLS`, бот в звонке комнаты, телефония включена |
 | `GET /api/workspaces/{id}/events?from=&to=` · `GET /api/events/{id}` | календарь (ADR-0038): встречи в видимых боту комнатах; только чтение (создавать, менять, отвечать — 403 `BOT_NOT_ALLOWED`), адреса внешних участников боту не показываются; свободно/занято, подбор времени и CalDAV (ADR-0041) — 403 `BOT_NOT_ALLOWED` | `VIEW_ROOM` |
 | доски задач (ADR-0042): `GET /api/workspaces/{id}/boards`, `GET /api/boards/{id}`, `GET/POST /api/boards/{id}/tasks`, `GET/PATCH /api/tasks/{id}`, `PUT /api/tasks/{id}/assignees`, `GET /api/workspaces/{id}/tasks/search?q=`, `GET /api/t/{KEY-N}`, `GET /api/me/tasks`, статусы/лейблы/вехи/виды, архив задач | бот работает как человек — по битам доски своих ролей и переопределений (бота можно назначить исполнителем и дать ему доступ к приватной доске лично); комментарий — сообщение в `task.roomId`. Доступ к доске (`PUT …/permissions`) и удаление навсегда (`DELETE …?purge=1`) — 403 `BOT_NOT_ALLOWED`. SDK: `bot.boards.list/get`, `bot.tasks.list/search/get/create/update/setAssignees/comment` | `VIEW_BOARD` / `CREATE_TASKS` / `EDIT_TASKS` / `MANAGE_BOARD` |
 | `GET /api/workspaces/{id}/sounds` · `POST /api/rooms/{id}/sounds/play {soundId}` | саундборд (ADR-0036): список звуков; проиграть звук всем в звонке (`builtin:<имя>` или id звука; 1 в 2 с на бота, 5 в 10 с на комнату) | бот в звонке комнаты; управление звуками — 403 |
@@ -240,6 +241,7 @@ JSON-кадры (`?encoding=json`):
 | `stickerPackCreate/Update/Delete` | стикерпаки пространства |
 | `soundCreate/Update/Delete` · `soundPlay` | саундборд пространства; `soundPlay` — только пока бот в звонке комнаты |
 | `botCreate/Update/Delete` | боты пространства — только при `MANAGE_WORKSPACE` |
+| `sipCallUpdate` | телефонный звонок комнаты начат или сменил статус (ADR-0046) |
 
 Боту доступны и исходящие опкоды `TYPING { roomId }` («печатает», не чаще раза в 3 с на комнату),
 `SUBSCRIBE { roomIds }` (≤ 100) и `PRESENCE_UPDATE`.

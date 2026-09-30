@@ -110,6 +110,32 @@ services:
       recordings-init: { condition: service_completed_successfully }
     logging: *logging
 
+  # LiveKit SIP (telephony, ADR-0046): puts phone lines of outbound calls into rooms. Only with
+  # SIP_ENABLED=1 in .env: deploy.sh turns on the compose profile "sip" and renders
+  # livekit/sip.yaml.tpl into SIP_CONFIG_BODY (it holds the Valkey password, so it is never
+  # written to disk); without the flag nothing starts and no port opens. Talks to LiveKit over
+  # Valkey (psrpc, DB 1). Public ports: 5060 udp+tcp (SIP), 10000–10200 udp (RTP) — docs/03.
+  # v1.14.0 is built on the same livekit/protocol commit as livekit-server v1.13.7 (psrpc
+  # 0.7.6 / 0.7.7); newer sip releases move to protocol 1.52 / psrpc 0.8 — upgrade together.
+  sip:
+    image: livekit/sip:v1.14.0@sha256:1487f39ca985f64879cc74b045e1ddc22f7afdb02e8a4739d92d749b9c3c3ad2
+    profiles: [sip]
+    network_mode: host
+    restart: unless-stopped
+    <<: *hardening                 # binds 5060 (> 1024): no capabilities needed
+    tmpfs: [/tmp]
+    environment:
+      - LIVEKIT_API_KEY=${LIVEKIT_API_KEY}
+      - LIVEKIT_API_SECRET=${LIVEKIT_API_SECRET}
+      - SIP_CONFIG_BODY=${SIP_CONFIG_BODY:-}   # from deploy.sh; empty = the service refuses to start
+    deploy:
+      resources:
+        limits: { cpus: "2", memory: 512m }
+    depends_on:
+      valkey: { condition: service_healthy }
+      livekit: { condition: service_started }
+    logging: *logging
+
   # One-shot: recordings_data belongs to the API user (distroless nonroot 65532), which creates
   # a world-writable directory per workspace for the egress user (1001) and deletes the files.
   # Reuses the Valkey image (already pulled) for its shell. FOWNER: from the second deploy on,

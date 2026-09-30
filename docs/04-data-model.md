@@ -217,6 +217,7 @@ export const Permission = {
   INVITE_MEMBERS:   1n << 21n,  // инвайты в пространство (ссылки, email, добавить); в комнате — ссылка «только для участников»
   INVITE_GUESTS:    1n << 22n,  // гостевые ссылки комнаты, их подтверждение, решение по ожидающим гостям, гостевые ссылки встреч
   CREATE_TEMP_ROOMS: 1n << 23n, // временные комнаты (ADR-0044); только уровень workspace, у member по умолчанию, гостям — никогда
+  PLACE_CALLS:      1n << 24n,  // звонки на телефонные номера из голосовой комнаты (ADR-0046); и на роли, и в комнате; по умолчанию — никому, гостям — никогда
 } as const;
 ```
 
@@ -238,7 +239,7 @@ perms &= ~userOverride.deny;  perms |= userOverride.allow   (персональ�
 if !(perms & VIEW_ROOM) → 0
 ```
 
-`ADMINISTRATOR`, `MANAGE_WORKSPACE`, `MANAGE_NICKNAMES`, `MANAGE_ROLES`, `MANAGE_STICKERS`, `CREATE_TEMP_ROOMS` — только уровень пространства, в переопределениях комнаты запрещены (API отвечает `422`), а `computePermissions` их в переопределениях игнорирует (`allow`/`deny` маскируются `RoomOnly` / `ROOM_ONLY_PERMISSIONS`). `INVITE_MEMBERS` / `INVITE_GUESTS` (ADR-0043) — и на ролях, и в переопределениях комнаты. Цель `role` в `room_permissions` — id роли (миграция 00021 перевела `member`/`guest` на id встроенных; API по-прежнему принимает имена встроенных ролей и сохраняет их id).
+`ADMINISTRATOR`, `MANAGE_WORKSPACE`, `MANAGE_NICKNAMES`, `MANAGE_ROLES`, `MANAGE_STICKERS`, `CREATE_TEMP_ROOMS` — только уровень пространства, в переопределениях комнаты запрещены (API отвечает `422`), а `computePermissions` их в переопределениях игнорирует (`allow`/`deny` маскируются `RoomOnly` / `ROOM_ONLY_PERMISSIONS`). `INVITE_MEMBERS` / `INVITE_GUESTS` (ADR-0043) и `PLACE_CALLS` (ADR-0046) — и на ролях, и в переопределениях комнаты; гостям сервер их не даёт по роли, что бы ни стояло в битах. Цель `role` в `room_permissions` — id роли (миграция 00021 перевела `member`/`guest` на id встроенных; API по-прежнему принимает имена встроенных ролей и сохраняет их id).
 
 Приватная комната = override для роли `member` с `deny: VIEW_ROOM` + allow для своих ролей или конкретных пользователей (гостям `VIEW_ROOM` и так не положен).
 
@@ -364,6 +365,12 @@ roomAdmin           = MUTE_MEMBERS (позволяет серверные mute/r
 - Права: создатель (не гость) управляет своей временной комнатой как с `MANAGE_ROOM` — одна проверка `rooms.MayManage` (сервер) / `mayManageRoom` (клиент); `computePermissions` не меняется. На постоянных комнатах `created_by` прав не даёт. `make_permanent` — только настоящий `MANAGE_ROOM`.
 - Приватная временная = deny `VIEW_ROOM` роли `member` + личные allow (`VIEW_ROOM | CONNECT | SPEAK | VIDEO | STREAM | SEND_MESSAGES | ATTACH_FILES` в пределах прав создателя) создателю, выбранным людям и всем, кто вошёл по ссылке.
 - Архив: `archived_at` (удаление или истечение), ссылки отозваны, LiveKit-комната закрыта. История читается с `VIEW_ROOM` (сообщения, закрепы, вложения), остальное — `410 ROOM_ARCHIVED`; постоянные архивные комнаты по-прежнему скрыты (`404`). Через `TEMP_ROOM_RETENTION_DAYS` (90) архивная временная комната удаляется с историей.
+
+## Телефония (ADR-0046, миграция 00051)
+- `sip_accounts` — один аккаунт SIP-провайдера на пространство: `provider` (подпись), `host` (без порта, только публичный адрес — иначе `422`), `port` (по умолчанию 5060), `transport udp|tcp|tls`, `username`, `auth_username` (пусто — аутентификация как `username`), `password_enc` (sealbox `calaba/sip-password/v1`, как пароль CalDAV; `GET` отдаёт только `has_password`, `PUT` без поля пароля его не трогает, `""` — удаляет), `caller_id` (E.164), `outbound_prefix` (`+` и/или до 8 цифр перед цифрами номера), `allowed_prefixes text[]` (пусто — любые номера), `trunk_id` (`SIPOutboundTrunk` LiveKit; строка всегда совпадает с тем, что в LiveKit: отказ LiveKit меняет только `last_error`), `enabled`, `last_error`, `updated_at/by`.
+- `workspaces.sip_enabled` = `enabled && trunk_id <> ''` — ставит `PUT …/sip` в той же транзакции; клиенту это `Workspace.sip_enabled` (READY, `WORKSPACE_UPDATE`).
+- `sip_calls` — журнал: `number` (E.164), `direction out|in` (`in` — задел под входящие), `room_id` (`SET NULL` при удалении комнаты; `NULL` с самого начала — проверка подключения), `started_by`, `participant_identity` (`sip:<id>` — участник LiveKit), `sip_call_id`, `status dialing|ringing|active|ended|failed`, `reason`, `ended_by`, `started_at/answered_at/ended_at`. Не больше одного живого звонка (`dialing|ringing|active`) на комнату — частичный уникальный индекс. Удаляется только с пространством.
+- Звонить: `PLACE_CALLS` + `VIEW_ROOM` + `CONNECT` в голосовой комнате (не гость, не архивная), звонящий сейчас в звонке этой комнаты; 20 звонков в час на пространство (Redis), номер в `allowed_prefixes`. Завершить: звонивший или `MUTE_MEMBERS`. Когда из звонка комнаты ушёл последний человек (или бот) — телефонная линия кладётся (`reason = empty`); выключение телефонии кладёт все линии пространства (`disabled`). Звонок длится не больше 2 ч, гудки — до 45 с.
 
 ## Auth (MVP)
 

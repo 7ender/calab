@@ -192,7 +192,12 @@ describe('roles (ADR-0026)', () => {
     expect(memberRoles(all, ['m']).map((r) => r.id)).toEqual(['m']);
     expect(workspacePermissions(memberRoles(all, ['m', 'a']))).toBe(ALL_PERMISSIONS);
     expect(ALL_PERMISSIONS & PERMISSION_BITS.MANAGE_ROLES).toBe(PERMISSION_BITS.MANAGE_ROLES);
-    expect(ALL_PERMISSIONS).toBe(16777215n);
+    expect(ALL_PERMISSIONS).toBe(33554431n);
+    // ADR-0046: settable per room, not in any default role.
+    expect(PERMISSION_BITS.PLACE_CALLS).toBe(16777216n);
+    expect(ROOM_ONLY_PERMISSIONS & PERMISSION_BITS.PLACE_CALLS).toBe(PERMISSION_BITS.PLACE_CALLS);
+    expect(ROLE_DEFAULTS[WorkspaceRole.MEMBER] & PERMISSION_BITS.PLACE_CALLS).toBe(0n);
+    expect(ROLE_DEFAULTS[WorkspaceRole.GUEST] & PERMISSION_BITS.PLACE_CALLS).toBe(0n);
     // ADR-0044: workspace-level, in the member default, never settable per room.
     expect(PERMISSION_BITS.CREATE_TEMP_ROOMS).toBe(8388608n);
     expect(ROOM_ONLY_PERMISSIONS & PERMISSION_BITS.CREATE_TEMP_ROOMS).toBe(0n);

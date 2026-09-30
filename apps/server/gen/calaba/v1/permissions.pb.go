@@ -71,36 +71,42 @@ const (
 	// default (migration 00048 added it to existing member roles); never for guests. The
 	// workspace switches the feature off by removing it from the member role.
 	Permission_PERMISSION_CREATE_TEMP_ROOMS Permission = 8388608
+	// 1 << 24 (ADR-0046): place outbound phone calls (SIP) from a voice room the caller is in
+	// (POST /api/rooms/{id}/calls). Workspace and room level (room overrides grant and take it).
+	// Nobody by default, calls cost money: admins grant it to roles or people. Never for guests
+	// (the server refuses them whatever the bits say; the guest role cannot hold it).
+	Permission_PERMISSION_PLACE_CALLS Permission = 16777216
 )
 
 // Enum value maps for Permission.
 var (
 	Permission_name = map[int32]string{
-		0:       "PERMISSION_UNSPECIFIED",
-		1:       "PERMISSION_VIEW_ROOM",
-		2:       "PERMISSION_SEND_MESSAGES",
-		4:       "PERMISSION_ATTACH_FILES",
-		8:       "PERMISSION_MANAGE_MESSAGES",
-		16:      "PERMISSION_CONNECT",
-		32:      "PERMISSION_SPEAK",
-		64:      "PERMISSION_STREAM",
-		128:     "PERMISSION_MUTE_MEMBERS",
-		256:     "PERMISSION_MANAGE_ROOM",
-		512:     "PERMISSION_MANAGE_WORKSPACE",
-		1024:    "PERMISSION_ADMINISTRATOR",
-		2048:    "PERMISSION_MOVE_MEMBERS",
-		4096:    "PERMISSION_MANAGE_NICKNAMES",
-		8192:    "PERMISSION_MENTION_EVERYONE",
-		16384:   "PERMISSION_VIDEO",
-		32768:   "PERMISSION_MANAGE_ROLES",
-		65536:   "PERMISSION_MANAGE_STICKERS",
-		131072:  "PERMISSION_VIEW_BOARD",
-		262144:  "PERMISSION_CREATE_TASKS",
-		524288:  "PERMISSION_EDIT_TASKS",
-		1048576: "PERMISSION_MANAGE_BOARD",
-		2097152: "PERMISSION_INVITE_MEMBERS",
-		4194304: "PERMISSION_INVITE_GUESTS",
-		8388608: "PERMISSION_CREATE_TEMP_ROOMS",
+		0:        "PERMISSION_UNSPECIFIED",
+		1:        "PERMISSION_VIEW_ROOM",
+		2:        "PERMISSION_SEND_MESSAGES",
+		4:        "PERMISSION_ATTACH_FILES",
+		8:        "PERMISSION_MANAGE_MESSAGES",
+		16:       "PERMISSION_CONNECT",
+		32:       "PERMISSION_SPEAK",
+		64:       "PERMISSION_STREAM",
+		128:      "PERMISSION_MUTE_MEMBERS",
+		256:      "PERMISSION_MANAGE_ROOM",
+		512:      "PERMISSION_MANAGE_WORKSPACE",
+		1024:     "PERMISSION_ADMINISTRATOR",
+		2048:     "PERMISSION_MOVE_MEMBERS",
+		4096:     "PERMISSION_MANAGE_NICKNAMES",
+		8192:     "PERMISSION_MENTION_EVERYONE",
+		16384:    "PERMISSION_VIDEO",
+		32768:    "PERMISSION_MANAGE_ROLES",
+		65536:    "PERMISSION_MANAGE_STICKERS",
+		131072:   "PERMISSION_VIEW_BOARD",
+		262144:   "PERMISSION_CREATE_TASKS",
+		524288:   "PERMISSION_EDIT_TASKS",
+		1048576:  "PERMISSION_MANAGE_BOARD",
+		2097152:  "PERMISSION_INVITE_MEMBERS",
+		4194304:  "PERMISSION_INVITE_GUESTS",
+		8388608:  "PERMISSION_CREATE_TEMP_ROOMS",
+		16777216: "PERMISSION_PLACE_CALLS",
 	}
 	Permission_value = map[string]int32{
 		"PERMISSION_UNSPECIFIED":       0,
@@ -128,6 +134,7 @@ var (
 		"PERMISSION_INVITE_MEMBERS":    2097152,
 		"PERMISSION_INVITE_GUESTS":     4194304,
 		"PERMISSION_CREATE_TEMP_ROOMS": 8388608,
+		"PERMISSION_PLACE_CALLS":       16777216,
 	}
 )
 
@@ -401,7 +408,7 @@ const file_calaba_v1_permissions_proto_rawDesc = "" +
 	"\abuiltin\x18\a \x01(\x0e2\x18.calaba.v1.WorkspaceRoleR\abuiltin\x12 \n" +
 	"\vmentionable\x18\b \x01(\bR\vmentionable\x129\n" +
 	"\n" +
-	"created_at\x18\t \x01(\v2\x1a.google.protobuf.TimestampR\tcreatedAt*\xf9\x05\n" +
+	"created_at\x18\t \x01(\v2\x1a.google.protobuf.TimestampR\tcreatedAt*\x98\x06\n" +
 	"\n" +
 	"Permission\x12\x1a\n" +
 	"\x16PERMISSION_UNSPECIFIED\x10\x00\x12\x18\n" +
@@ -428,7 +435,8 @@ const file_calaba_v1_permissions_proto_rawDesc = "" +
 	"\x17PERMISSION_MANAGE_BOARD\x10\x80\x80@\x12 \n" +
 	"\x19PERMISSION_INVITE_MEMBERS\x10\x80\x80\x80\x01\x12\x1f\n" +
 	"\x18PERMISSION_INVITE_GUESTS\x10\x80\x80\x80\x02\x12#\n" +
-	"\x1cPERMISSION_CREATE_TEMP_ROOMS\x10\x80\x80\x80\x04*\x98\x01\n" +
+	"\x1cPERMISSION_CREATE_TEMP_ROOMS\x10\x80\x80\x80\x04\x12\x1d\n" +
+	"\x16PERMISSION_PLACE_CALLS\x10\x80\x80\x80\b*\x98\x01\n" +
 	"\rWorkspaceRole\x12\x1e\n" +
 	"\x1aWORKSPACE_ROLE_UNSPECIFIED\x10\x00\x12\x18\n" +
 	"\x14WORKSPACE_ROLE_OWNER\x10\x01\x12\x18\n" +
