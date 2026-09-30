@@ -61,7 +61,8 @@ export function EventDialog({ workspaceId, eventKey, draft: init, onClose }: { w
     if (copy) return copyDraft(copy);
     // «Подобрать время» hands over the chosen people; I am the organizer, not an attendee.
     const me = myUserId();
-    return newDraft({ ...init, attendees: (init?.attendees ?? []).filter((u) => u !== me) });
+    const draft = newDraft({ ...init, attendees: (init?.attendees ?? []).filter((u) => u !== me) });
+    return init?.title ? { ...draft, title: init.title.slice(0, MAX_TITLE) } : draft;
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
   const [d, setD] = useState<EventDraft>(initial);
   const [finding, setFinding] = useState(false);
@@ -243,6 +244,12 @@ export function EventDialog({ workspaceId, eventKey, draft: init, onClose }: { w
         ) : null}
         <RoomField workspaceId={workspaceId} value={d.roomId} onChange={(roomId) => set({ roomId })} />
         <AttendeesField workspaceId={workspaceId} draft={d} onChange={(attendees) => set({ attendees })} error={err('attendees')} />
+        {init?.outside?.length ? (
+          // From an external event (ADR-0045 §3): who was there but is not a member here.
+          <p className="-mt-2 text-caption text-muted" data-testid="event-outside">
+            {t('ext.outside', { list: init.outside.join(', ') })}
+          </p>
+        ) : null}
         <Field label={t('cal.f.description')} error={err('description')}>
           <textarea
             value={d.description}

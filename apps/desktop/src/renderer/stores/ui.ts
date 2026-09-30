@@ -47,6 +47,9 @@ export interface EventDraftInit {
   attendees?: readonly string[];
   /** Copy everything else from this occurrence («Дублировать»). */
   copyOf?: string;
+  /** «Создать встречу в Calab» from an external event (ADR-0045 §3): its title, and the addresses of its attendees who are not members here. */
+  title?: string;
+  outside?: readonly string[];
 }
 
 interface UiState {

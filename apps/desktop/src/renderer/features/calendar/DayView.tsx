@@ -3,9 +3,11 @@ import { AttendeeStatus, EventRepeat } from '@calaba/protocol';
 import { CalendarPlus, CalendarSearch, ChevronLeft, ChevronRight, Link2, Pencil, Plus, Copy, Repeat, Trash2, Users, Video, X } from 'lucide-react';
 import { memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type PointerEvent as ReactPointerEvent, type ReactNode } from 'react';
 import { Button, IconButton, Modal, Toggle, cx } from '../../components/ui';
-import { t, useLocale } from '../../i18n';
+import { plural, t, useLocale } from '../../i18n';
 import { CLICK_DURATION, DRAG_THRESHOLD_PX, createRange, minutesAt, moveRange, resizeRange, type Range } from '../../lib/calendar/drag';
 import { dayKeys, daySignature, keyEventId, myStatusOf, parseSignature, type SigItem } from '../../lib/calendar/events';
+import { externalSignature, isExternalKey, parseExternalSignature, sharedLabel } from '../../lib/calendar/external';
+import { chunkOf } from '../../lib/calendar/freebusy';
 import { layoutDay } from '../../lib/calendar/layout';
 import { addDays, atMinutes, dayEnd, dayKey, dayStart, eventSpan, formatLongDay, formatMinutes, formatRange, formatTime, monthOf } from '../../lib/calendar/time';
 import { dateTimeFormat } from '../../lib/format';
@@ -13,7 +15,7 @@ import { addPeople } from '../../lib/calendar/people';
 import { useMobile } from '../../lib/mobile';
 import { calendarAvailable, canEditEvent, copyEventLink, ensureMonth, eventOf, moveOccurrence } from '../../services/calendar';
 import { useCalendar } from '../../stores/calendar';
-import { busySignature, ensureBusy, loadCalDav, parseBusySignature } from '../../services/freebusy';
+import { busySignature, ensureBusy, ensureExternal, loadCalDav, parseBusySignature } from '../../services/freebusy';
 import { entryKey, selectMine, selectPeople, useFreeBusy } from '../../stores/freebusy';
 import { useRooms } from '../../stores/rooms';
 import { myUserId } from '../../stores/session';
@@ -22,6 +24,7 @@ import { useUi } from '../../stores/ui';
 import { menuBox, menuItem, menuSeparator } from '../shell/menu';
 import { NavButton } from '../shell/MobileShell';
 import { cancelWithConfirm, duplicateEvent, editEvent, newEvent } from './actions';
+import { ExternalBlock, ExternalChip } from './ExternalEventCard';
 import { useDayDrag } from './dragState';
 import { useToday } from './MiniCalendar';
 import { FindTimePane } from './FindTime';
@@ -82,9 +85,20 @@ function DayGrid({ workspaceId }: { workspaceId: string }): ReactNode {
   const watched = useMemo(() => (!own ? people : me ? [me] : NO_PEOPLE), [own, people, me]);
   useEffect(() => ensureBusy(workspaceId, watched, dayStart(day), dayEnd(day)), [workspaceId, watched, day]);
   const fbSig = useFreeBusy((s) => watched.map((u) => `${u}#${busySignature(s.entries[entryKey(workspaceId, u)], dayStart(day), dayEnd(day))}`).join('¦'));
-  const busy = useMemo(() => busyItems(fbSig, items, own), [fbSig, items, own]);
-  const timed = useMemo(() => [...items.filter((i) => !i.allDay), ...busy.filter((i) => !i.allDay)], [items, busy]);
-  const allDay = useMemo(() => [...items.filter((i) => i.allDay), ...busy.filter((i) => i.allDay)].map((i) => i.key), [items, busy]);
+  // My external calendar's events with their details (ADR-0045 §3) wherever my busy time shows:
+  // cards instead of my grey external blocks once the day is loaded.
+  const ownExt = own || (!!me && people.includes(me));
+  const extOn = useFreeBusy((s) => !!s.caldav?.calendarHref && s.caldav.import);
+  const extLoaded = useFreeBusy((s) => s.externalWs === workspaceId && !!s.externalChunks[chunkOf(dayStart(day))] && !!s.externalChunks[chunkOf(dayEnd(day) - 1)]);
+  useEffect(() => {
+    if (ownExt && extOn && !extLoaded) ensureExternal(workspaceId, dayStart(day), dayEnd(day));
+  }, [workspaceId, day, ownExt, extOn, extLoaded]);
+  const extSig = useFreeBusy((s) => (ownExt && s.externalWs === workspaceId ? externalSignature(s.external[day]) : ''));
+  const extHeld = useFreeBusy((s) => ownExt && s.externalWs === workspaceId && s.external[day] !== undefined);
+  const ext = useMemo<SigItem[]>(() => parseExternalSignature(extSig).map((e) => ({ key: e.key, allDay: e.allDay, start: e.start, end: e.end })), [extSig]);
+  const busy = useMemo(() => busyItems(fbSig, items, own, extHeld ? me : ''), [fbSig, items, own, extHeld, me]);
+  const timed = useMemo(() => [...items.filter((i) => !i.allDay), ...busy.filter((i) => !i.allDay), ...ext.filter((i) => !i.allDay)], [items, busy, ext]);
+  const allDay = useMemo(() => [...items.filter((i) => i.allDay), ...ext.filter((i) => i.allDay), ...busy.filter((i) => i.allDay)].map((i) => i.key), [items, busy, ext]);
   const placed = useMemo(() => layoutDay(timed, dayStart(day), dayEnd(day)), [timed, day]);
 
   // Open at «now» (today) or the selected meeting, else at 08:00 / the first meeting.
@@ -159,6 +173,8 @@ function DayGrid({ workspaceId }: { workspaceId: string }): ReactNode {
             {placed.map((p) =>
               isBusyKey(p.key) ? (
                 <BusyBlock key={p.key} workspaceId={workspaceId} busyKey={p.key} top={p.top} height={p.height} col={p.col} cols={p.cols} />
+              ) : isExternalKey(p.key) ? (
+                <ExternalBlock key={p.key} workspaceId={workspaceId} day={day} extKey={p.key} top={p.top} height={p.height} col={p.col} cols={p.cols} />
               ) : (
                 <EventBlock key={p.key} occKey={p.key} top={p.top} height={p.height} col={p.col} cols={p.cols} onDown={drag.onBlockDown} />
               ),
@@ -168,7 +184,7 @@ function DayGrid({ workspaceId }: { workspaceId: string }): ReactNode {
           </div>
         </div>
       </div>
-      {items.length === 0 && busy.length === 0 && creatable ? (
+      {items.length === 0 && busy.length === 0 && ext.length === 0 && creatable ? (
         <p className="pointer-events-none absolute inset-x-0 top-1/2 px-6 text-center text-body text-muted" data-testid="day-empty">
           {t('cal.emptyHint')}
         </p>
@@ -344,37 +360,56 @@ const isBusyKey = (key: string): boolean => key.startsWith(BUSY);
 
 /**
  * Busy blocks of a day: `ownOnly` — my external calendar's; else the watched people's busy time
- * that is not a meeting shown on the grid. The same interval of several people is one block.
+ * that is not a meeting shown on the grid. The same interval of several people is one block (an
+ * external one only with the same shared title and attendees, ADR-0045 §4). `extOf`: whose
+ * external intervals are drawn as event cards instead (me, once my day's events are loaded).
  */
-function busyItems(fbSig: string, shown: readonly SigItem[], ownOnly: boolean): SigItem[] {
+function busyItems(fbSig: string, shown: readonly SigItem[], ownOnly: boolean, extOf: string): SigItem[] {
   if (!fbSig) return [];
   const visible = new Set(shown.map((i) => keyEventId(i.key)));
-  const groups = new Map<string, { start: number; end: number; kind: string; allDay: boolean; users: string[] }>();
+  const groups = new Map<string, { start: number; end: number; kind: string; allDay: boolean; users: string[]; title: string; attendees: string }>();
   for (const part of fbSig.split('¦')) {
     const at = part.indexOf('#');
     const user = part.slice(0, at);
     for (const b of parseBusySignature(part.slice(at + 1))) {
       if (ownOnly ? b.kind !== 'external' : b.eventId && visible.has(b.eventId)) continue;
-      const g = `${b.start}~${b.end}~${b.kind}~${b.allDay ? 1 : 0}`;
+      if (b.kind === 'external' && user === extOf) continue;
+      const title = b.kind === 'external' ? encodeURIComponent(b.title).replace(/~/g, '%7E') : '';
+      const attendees = b.kind === 'external' ? b.attendees.join(',') : '';
+      const g = `${b.start}~${b.end}~${b.kind}~${b.allDay ? 1 : 0}~${title}~${attendees}`;
       const cur = groups.get(g);
       if (cur) cur.users.push(user);
-      else groups.set(g, { start: b.start, end: b.end, kind: b.kind, allDay: b.allDay, users: [user] });
+      else groups.set(g, { start: b.start, end: b.end, kind: b.kind, allDay: b.allDay, users: [user], title, attendees });
     }
   }
-  return [...groups.values()].map((g) => ({ key: `${BUSY}${g.start}~${g.end}~${g.kind}~${g.users.join(',')}`, allDay: g.allDay, start: g.start, end: g.end }));
+  return [...groups.values()].map((g) => ({ key: `${BUSY}${g.start}~${g.end}~${g.kind}~${g.users.join(',')}~${g.title}~${g.attendees}`, allDay: g.allDay, start: g.start, end: g.end }));
 }
 
-function parseBusyKey(key: string): { start: number; end: number; external: boolean; users: string[] } {
-  const [, s, e, kind, users = ''] = key.split('~');
-  return { start: Number(s), end: Number(e), external: kind === 'external', users: users.split(',').filter(Boolean) };
+function parseBusyKey(key: string): { start: number; end: number; external: boolean; users: string[]; title: string; attendees: string[] } {
+  const [, s, e, kind, users = '', title = '', attendees = ''] = key.split('~');
+  let text: string;
+  try {
+    text = decodeURIComponent(title);
+  } catch {
+    text = '';
+  }
+  return { start: Number(s), end: Number(e), external: kind === 'external', users: users.split(',').filter(Boolean), title: text, attendees: attendees.split(',').filter(Boolean) };
 }
 
-/** «Занято · Анна, Борис» / mine from the external calendar: «Занято · внешний календарь». */
+/**
+ * «Занято · Анна, Борис» / mine from the external calendar: «Занято · внешний календарь»; a
+ * colleague's shared external event (ADR-0045 §4): «Название · Анна» / «Название · 3 участника · Анна».
+ */
 function useBusyLabel(workspaceId: string, busyKey: string): { text: string; external: boolean } {
   const b = parseBusyKey(busyKey);
   const names = useWorkspaces((s) => b.users.map((u) => s.byId[workspaceId]?.members[u]?.nickname || s.byId[workspaceId]?.members[u]?.user?.displayName || '').join(', '));
   const mineOnly = b.users.length === 1 && b.users[0] === myUserId();
   const who = mineOnly ? (b.external ? t('fb.external') : '') : names;
+  const shared = b.external ? sharedLabel(b) : null;
+  if (shared) {
+    const label = shared.count ? plural('fb.sharedCount', shared.count, { title: shared.title }) : shared.title;
+    return { text: who ? t('fb.sharedWho', { label, who }) : label, external: true };
+  }
   return { text: who ? t('fb.busyWho', { who }) : t('fb.busy'), external: b.external };
 }
 
@@ -578,7 +613,15 @@ function AllDayRow({ workspaceId, keys, day, onDown }: { workspaceId: string; ke
     >
       <span className={cx(GUTTER, 'shrink-0 self-center pr-2 text-right text-micro leading-3 text-faint')}>{t('cal.allDayRow')}</span>
       <div className="flex min-h-6 min-w-0 flex-1 flex-col gap-0.5">
-        {keys.map((k) => (isBusyKey(k) ? <BusyChip key={k} workspaceId={workspaceId} busyKey={k} /> : <AllDayChip key={k} occKey={k} onDown={onDown} />))}
+        {keys.map((k) =>
+          isBusyKey(k) ? (
+            <BusyChip key={k} workspaceId={workspaceId} busyKey={k} />
+          ) : isExternalKey(k) ? (
+            <ExternalChip key={k} workspaceId={workspaceId} day={day} extKey={k} />
+          ) : (
+            <AllDayChip key={k} occKey={k} onDown={onDown} />
+          ),
+        )}
       </div>
     </div>
   );

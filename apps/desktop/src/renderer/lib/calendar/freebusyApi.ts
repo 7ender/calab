@@ -2,7 +2,10 @@ import { timestampFromMs, timestampMs, type Timestamp } from '@bufbuild/protobuf
 import {
   BusyKind,
   CalDavAccountResponseSchema,
+  CalDavShareLevel,
   ConnectCalDavRequestSchema,
+  ExternalEventsResponseSchema,
+  SetCalDavShareRequestSchema,
   FreeBusyResponseSchema,
   SuggestSlotsRequestSchema,
   SuggestSlotsResponseSchema,
@@ -28,6 +31,10 @@ export interface BusyInterval extends Interval {
   eventId: string;
   kind: BusyKindName;
   allDay: boolean;
+  /** An external interval of a colleague: its title when they share it (ADR-0045 §4), else ''. */
+  title: string;
+  /** …and the attendees who are members of this workspace, at «details». */
+  attendees: readonly string[];
 }
 
 export interface FreeBusyUser {
@@ -52,6 +59,31 @@ export interface CalDavAccount {
   lastSyncAt: number | null;
   lastError: string;
   calendars: CalDavCalendar[];
+  /** What colleagues see of my external events (ADR-0045 §2). */
+  shareLevel: ShareLevel;
+}
+
+export type ShareLevel = 'busy' | 'title' | 'details';
+
+/** One attendee of my external event; `userId` — a member of the asked workspace with that address. */
+export interface ExternalAttendee {
+  email: string;
+  name: string;
+  userId: string;
+}
+
+/** One of my imported external events with its details (ADR-0045 §3). */
+export interface ExternalEvent {
+  /** Hash of the VEVENT UID: the same for the occurrences of a series (with `start` — a key). */
+  uid: string;
+  start: number;
+  end: number;
+  allDay: boolean;
+  summary: string;
+  location: string;
+  attendees: readonly ExternalAttendee[];
+  organizer: string;
+  url: string;
 }
 
 export interface SuggestInit {
@@ -76,7 +108,15 @@ function userOf(u: WireUser): FreeBusyUser {
     timezone: u.timezone || 'UTC',
     workHours: workHoursOf(u.workHours),
     busy: u.busy
-      .map((b) => ({ start: ms(b.startsAt), end: ms(b.endsAt), eventId: b.eventId, kind: b.kind === BusyKind.EXTERNAL ? ('external' as const) : ('meeting' as const), allDay: b.allDay }))
+      .map((b) => ({
+        start: ms(b.startsAt),
+        end: ms(b.endsAt),
+        eventId: b.eventId,
+        kind: b.kind === BusyKind.EXTERNAL ? ('external' as const) : ('meeting' as const),
+        allDay: b.allDay,
+        title: b.kind === BusyKind.EXTERNAL ? b.title : '',
+        attendees: b.kind === BusyKind.EXTERNAL ? b.attendeeUserIds : [],
+      }))
       .filter((b) => b.end > b.start),
   };
 }
@@ -93,8 +133,11 @@ function accountOf(r: CalDavAccountResponse): CalDavAccount | null {
     lastSyncAt: a.lastSyncAt ? ms(a.lastSyncAt) : null,
     lastError: a.lastError,
     calendars: a.calendars.map((c) => ({ href: c.href, name: c.name, color: c.color })),
+    shareLevel: a.shareLevel === CalDavShareLevel.DETAILS ? 'details' : a.shareLevel === CalDavShareLevel.TITLE ? 'title' : 'busy',
   };
 }
+
+const SHARE_WIRE: Record<ShareLevel, CalDavShareLevel> = { busy: CalDavShareLevel.BUSY, title: CalDavShareLevel.TITLE, details: CalDavShareLevel.DETAILS };
 
 const iso = (t: number): string => new Date(t).toISOString();
 
@@ -117,6 +160,26 @@ export const freebusyApi = {
     const r = await call('POST', `/api/workspaces/${workspaceId}/freebusy/suggest`, SuggestSlotsResponseSchema, req, signal);
     return r.slots.map((x) => ({ start: ms(x.startsAt), end: ms(x.endsAt) })).filter((x) => x.end > x.start);
   },
+  /**
+   * GET /api/me/external-events: my imported events of [from, to) (≤ 14 days) with their details;
+   * with a workspace, attendees who are its members carry their id. 403 for guests and bots.
+   */
+  async externalEvents(workspaceId: string, from: number, to: number, signal?: AbortSignal): Promise<ExternalEvent[]> {
+    const r = await call('GET', `/api/me/external-events${qs({ from: iso(from), to: iso(to), workspace: workspaceId })}`, ExternalEventsResponseSchema, undefined, signal);
+    return r.events
+      .map((e) => ({
+        uid: e.uid,
+        start: ms(e.startsAt),
+        end: ms(e.endsAt),
+        allDay: e.allDay,
+        summary: e.summary,
+        location: e.location,
+        attendees: e.attendees.map((a) => ({ email: a.email, name: a.name, userId: a.userId })),
+        organizer: e.organizer,
+        url: e.url,
+      }))
+      .filter((e) => e.end > e.start);
+  },
   /** PATCH /api/me {work_hours}: the updated Me. */
   saveWorkHours: (wh: WorkHours) => api.me.update({ workHours: { startMin: wh.startMin, endMin: wh.endMin, days: [...wh.days] } }),
   caldav: {
@@ -127,6 +190,9 @@ export const freebusyApi = {
       accountOf(await call('POST', '/api/me/caldav', CalDavAccountResponseSchema, body(ConnectCalDavRequestSchema, { url, username, password }))),
     update: async (p: { calendarHref: string; import: boolean; push: boolean }): Promise<CalDavAccount | null> =>
       accountOf(await call('PUT', '/api/me/caldav', CalDavAccountResponseSchema, body(UpdateCalDavRequestSchema, p))),
+    /** PATCH {share_level}: what colleagues see (ADR-0045 §2). */
+    setShare: async (level: ShareLevel): Promise<CalDavAccount | null> =>
+      accountOf(await call('PATCH', '/api/me/caldav', CalDavAccountResponseSchema, body(SetCalDavShareRequestSchema, { shareLevel: SHARE_WIRE[level] }))),
     remove: (): Promise<void> => callEmpty('DELETE', '/api/me/caldav'),
     /** A manual sync (≤ 1 a minute: 429). */
     sync: async (): Promise<CalDavAccount | null> => accountOf(await call('POST', '/api/me/caldav/sync', CalDavAccountResponseSchema)),

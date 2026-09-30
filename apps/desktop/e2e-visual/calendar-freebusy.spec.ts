@@ -149,7 +149,7 @@ test('find a time from the dialog hands the slot back; a conflict warns; NO_COMM
   await expect(page.getByTestId('find-slot').first()).toBeVisible();
 });
 
-test('CalDAV: connect → pick a calendar → busy time from it in my day view', async ({ page, mock }) => {
+test('CalDAV: connect → pick a calendar → its event in my day view; «Что видят коллеги» saved', async ({ page, mock }) => {
   await signIn(page, mock);
   await page.getByRole('button', { name: 'Настройки', exact: true }).click();
   const settings = page.getByRole('dialog', { name: 'Настройки' });
@@ -168,10 +168,15 @@ test('CalDAV: connect → pick a calendar → busy time from it in my day view',
   const patch = page.waitForRequest((r) => r.method() === 'PATCH' && r.url().endsWith('/api/me'));
   await settings.getByTestId('wh-start').selectOption({ label: '09:00' });
   expect((await patch).postDataJSON()).toMatchObject({ workHours: { startMin: 540, endMin: 1140, days: [1, 2, 3, 4, 5] } });
+  // ADR-0045 §2: what colleagues see — PATCH /api/me/caldav.
+  const share = page.waitForRequest((r) => r.method() === 'PATCH' && r.url().endsWith('/api/me/caldav'));
+  await account.getByRole('radio', { name: 'Название', exact: true }).click();
+  expect((await share).postDataJSON()).toEqual({ shareLevel: 'CAL_DAV_SHARE_LEVEL_TITLE' });
+  await expect(account.getByTestId('caldav-share')).toContainText('Коллеги видят название события');
   await page.keyboard.press('Escape');
 
+  // My external event (no title in the fake calendar) as a card instead of grey «Занято».
   await openDay(page);
-  const busy = page.getByTestId('busy-block');
-  await expect(busy).toHaveCount(1);
-  await expect(busy).toHaveAccessibleName(/Занято · внешний календарь, 11:00 – 12:00/);
+  await expect(page.getByTestId('busy-block')).toHaveCount(0);
+  await expect(page.getByTestId('external-block')).toHaveAccessibleName(/Без названия, 11:00 – 12:00 · внешний календарь/);
 });
