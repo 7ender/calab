@@ -150,6 +150,9 @@ const KEY = new Set([
   'calendar-filter',
   'calendar-findtime',
   'settings-calendar',
+  // External calendar event details (ADR-0045).
+  'calendar-external',
+  'settings-caldav',
   // Guest admission (ADR-0040).
   'members-admissions',
   // Task boards (ADR-0042 §5).
@@ -3457,6 +3460,26 @@ function freeBusyDay(mock: MockServer): void {
   mock.setBusy(IDS.users.vera, [{ startMs: at('2026-01-15T14:00:00Z'), endMs: at('2026-01-15T15:00:00Z') }]);
 }
 
+/**
+ * ADR-0045: Анна's CalDAV account and one external event of hers, 11:00–12:00 MSK, with a place,
+ * a link and attendees — Борис (a member) and an outside address.
+ */
+function externalEvent(mock: MockServer): void {
+  mock.setCalDav(IDS.users.anna);
+  mock.setBusy(IDS.users.anna, [
+    {
+      startMs: Date.parse('2026-01-15T08:00:00Z'),
+      endMs: Date.parse('2026-01-15T09:00:00Z'),
+      uid: 'ext-podryadchik',
+      summary: 'Созвон с подрядчиком',
+      location: 'Zoom',
+      url: 'https://zoom.us/j/123456',
+      organizer: 'pm@partner.org',
+      attendees: [{ email: 'boris@calaba.test', name: 'Борис Петров' }, { email: 'pm@partner.org', name: 'Ольга' }],
+    },
+  ]);
+}
+
 /** The calendar screens: a full day of meetings (calendarWeb.seedDay), the mock's clock at NOW. */
 async function calendarDay(win: Page, mock: MockServer): Promise<void> {
   mock.setClock(NOW.getTime());
@@ -3480,6 +3503,7 @@ test('calendar-mini', async ({ open, win, mock, shot }) => {
 test('calendar-day', async ({ open, win, mock, shot }) => {
   await open();
   await mainWindow(win, mock);
+  externalEvent(mock);
   await calendarDay(win, mock);
   await win.locator(`[data-cal-day="${DAY}"]`).click();
   await expect(win.getByTestId('day-view')).toBeVisible();
@@ -3488,6 +3512,8 @@ test('calendar-day', async ({ open, win, mock, shot }) => {
   const card = win.getByTestId('event-panel');
   await expect(card.getByTestId('event-title')).toHaveText('Планёрка');
   await expect(card.getByTestId('event-attendee')).toHaveCount(5);
+  // My external calendar's event (ADR-0045 §3): a dashed card with its title and place.
+  await expect(win.getByTestId('external-block')).toContainText('Созвон с подрядчиком');
   await checkpoint(shot, 'calendar-day');
 });
 
@@ -3542,6 +3568,40 @@ test('settings-calendar', async ({ open, win, mock, shot }) => {
   await openSettingsTab(win, openAppSettings(win), appTab('calendar'));
   await expect(win.getByTestId('caldav-connect')).toBeVisible();
   await checkpoint(shot, 'settings-calendar');
+});
+
+/** ADR-0045 §3: a click on my external event — its attendees (Борис by avatar and name, the rest by address), «Открыть», «Создать встречу в Calab». */
+test('calendar-external', async ({ open, win, mock, shot }) => {
+  await open();
+  await mainWindow(win, mock);
+  externalEvent(mock);
+  await calendarDay(win, mock);
+  await win.locator(`[data-cal-day="${DAY}"]`).click();
+  await win.getByTestId('external-block').click();
+  const pop = win.getByTestId('external-popover');
+  await expect(pop.getByTestId('external-title')).toHaveText('Созвон с подрядчиком');
+  await expect(pop.getByTestId('external-attendee')).toHaveCount(2);
+  await expect(pop.locator(`[data-user="${IDS.users.boris}"]`)).toBeVisible();
+  await expect(pop.getByTestId('external-create')).toBeVisible();
+  await checkpoint(shot, 'calendar-external');
+  // «Создать встречу в Calab»: the dialog with the title, the time, Борис; the address listed apart.
+  await pop.getByTestId('external-create').click();
+  const dialog = win.getByTestId('event-dialog');
+  await expect(dialog.getByTestId('event-title-input')).toHaveValue('Созвон с подрядчиком');
+  await expect(dialog.getByTestId('event-chip')).toHaveCount(1);
+  await expect(dialog.getByTestId('event-outside')).toHaveText('Не в пространстве: pm@partner.org');
+});
+
+/** Settings → Календарь with a connected account: «Что видят коллеги» at «Название и участники». */
+test('settings-caldav', async ({ open, win, mock, shot }) => {
+  await open();
+  await mainWindow(win, mock);
+  mock.setCalDav(IDS.users.anna, { shareLevel: 'details' });
+  await openSettingsTab(win, openAppSettings(win), appTab('calendar'));
+  const share = win.getByTestId('caldav-share');
+  await expect(share.getByRole('radio', { name: 'Название и участники' })).toHaveAttribute('aria-checked', 'true');
+  await share.scrollIntoViewIfNeeded();
+  await checkpoint(shot, 'settings-caldav');
 });
 
 /** «+ Встреча»: the dialog filled in — attendee chips (one optional, one external), a room, a repeat. */

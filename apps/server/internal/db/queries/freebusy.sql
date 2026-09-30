@@ -28,17 +28,34 @@ WHERE room_id = $1 AND cancelled_at IS NULL
 ORDER BY starts_at, id;
 
 -- name: ListExternalBusy :many
+-- With the owner's share_level (ADR-0045 §4): what of the details others may see.
+SELECT sqlc.embed(b), coalesce(a.share_level, 'busy')::text AS share_level FROM external_busy b
+LEFT JOIN caldav_accounts a ON a.user_id = b.user_id
+WHERE b.user_id = ANY(sqlc.arg('ids')::uuid[]) AND b.starts_at < sqlc.arg('to') AND b.ends_at > sqlc.arg('from')
+ORDER BY b.user_id, b.starts_at;
+
+-- name: ListMyExternalEvents :many
 SELECT * FROM external_busy
-WHERE user_id = ANY(sqlc.arg('ids')::uuid[]) AND starts_at < sqlc.arg('to') AND ends_at > sqlc.arg('from')
-ORDER BY user_id, starts_at;
+WHERE user_id = $1 AND starts_at < sqlc.arg('to') AND ends_at > sqlc.arg('from')
+ORDER BY starts_at, ends_at, uid;
+
+-- name: MatchMemberEmails :many
+-- Members of the workspace (people, not guests; enabled) whose confirmed e-mail is one of emails
+-- (lower case) — attendees of external events (ADR-0045 §3, §4).
+SELECT u.id, lower(u.email)::text AS email FROM workspace_members m
+JOIN users u ON u.id = m.user_id
+WHERE m.workspace_id = $1 AND m.role <> 'guest' AND NOT u.is_bot AND NOT u.is_guest AND u.disabled_at IS NULL
+  AND u.email_verified_at IS NOT NULL AND lower(u.email) = ANY(sqlc.arg('emails')::text[]);
 
 -- name: DeleteExternalBusy :exec
 DELETE FROM external_busy WHERE user_id = $1;
 
 -- name: InsertExternalBusy :exec
-INSERT INTO external_busy (user_id, uid, starts_at, ends_at, all_day)
+INSERT INTO external_busy (user_id, uid, starts_at, ends_at, all_day, summary, location, attendees, organizer, url)
 SELECT sqlc.arg('user_id')::uuid, unnest(sqlc.arg('uids')::text[]), unnest(sqlc.arg('starts')::timestamptz[]),
-    unnest(sqlc.arg('ends')::timestamptz[]), unnest(sqlc.arg('all_days')::boolean[]);
+    unnest(sqlc.arg('ends')::timestamptz[]), unnest(sqlc.arg('all_days')::boolean[]), unnest(sqlc.arg('summaries')::text[]),
+    unnest(sqlc.arg('locations')::text[]), unnest(sqlc.arg('attendees')::text[])::jsonb, unnest(sqlc.arg('organizers')::text[]),
+    unnest(sqlc.arg('urls')::text[]);
 
 -- name: GetCalDavAccount :one
 SELECT * FROM caldav_accounts WHERE user_id = $1;
@@ -57,6 +74,10 @@ RETURNING *;
 -- name: UpdateCalDavAccount :one
 UPDATE caldav_accounts SET calendar_href = $2, import = $3, push = $4, last_error = '', updated_at = now()
 WHERE user_id = $1
+RETURNING *;
+
+-- name: SetCalDavShareLevel :one
+UPDATE caldav_accounts SET share_level = $2, updated_at = now() WHERE user_id = $1
 RETURNING *;
 
 -- name: DeleteCalDavAccount :execrows

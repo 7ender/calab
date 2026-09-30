@@ -4,7 +4,8 @@ import { memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useStat
 import { useShallow } from 'zustand/react/shallow';
 import { Avatar } from '../../components/Avatar';
 import { Button, IconButton, Input, Modal, Segmented, Spinner, Toggle, cx } from '../../components/ui';
-import { t, useLocale } from '../../i18n';
+import { plural, t, useLocale } from '../../i18n';
+import { sharedLabel } from '../../lib/calendar/external';
 import { freeWindows, mergeIntervals, subtractIntervals, workIntervals, type Interval } from '../../lib/calendar/freebusy';
 import { freebusyApi, noCommonHours } from '../../lib/calendar/freebusyApi';
 import { addPeople, personColor } from '../../lib/calendar/people';
@@ -558,12 +559,17 @@ const BusyColumn = memo(function BusyColumn({ workspaceId, userId, day, color }:
   const sig = useFreeBusy((s) => busySignature(s.entries[entryKey(workspaceId, userId)], from, to));
   const hoursSig = useFreeBusy((s) => hoursSignature(s.entries[entryKey(workspaceId, userId)]));
   const name = useMemberName(workspaceId, userId);
-  // Overlapping meetings of one person are one block (the column says «busy», not what).
+  // Overlapping meetings of one person are one block (the column says «busy», not what); an
+  // external event they share the title of (ADR-0045 §4) stays itself, with its label.
   const busy = useMemo(() => {
     const list = parseBusySignature(sig);
-    const merge = (kind: 'meeting' | 'external'): Array<{ start: number; end: number; kind: typeof kind; allDay: false; eventId: string }> =>
-      mergeIntervals(list.filter((b) => b.kind === kind && !b.allDay)).map((i) => ({ ...i, kind, allDay: false, eventId: '' }));
-    return [...merge('external'), ...merge('meeting')];
+    const merge = (kind: 'meeting' | 'external'): Array<{ start: number; end: number; kind: typeof kind; label: string }> =>
+      mergeIntervals(list.filter((b) => b.kind === kind && !b.allDay && !(kind === 'external' && sharedLabel(b)))).map((i) => ({ ...i, kind, label: '' }));
+    const shared = list.flatMap((b) => {
+      const l = b.kind === 'external' && !b.allDay ? sharedLabel(b) : null;
+      return l ? [{ start: b.start, end: b.end, kind: 'external' as const, label: l.count ? plural('fb.sharedCount', l.count, { title: l.title }) : l.title }] : [];
+    });
+    return [...merge('external'), ...shared, ...merge('meeting')];
   }, [sig]);
   const off = useMemo(() => {
     const h = parseHoursSignature(hoursSig);
@@ -579,12 +585,17 @@ const BusyColumn = memo(function BusyColumn({ workspaceId, userId, day, color }:
         const external = b.kind === 'external';
         return (
           <div
-            key={`${b.start}-${b.end}-${b.kind}`}
+            key={`${b.start}-${b.end}-${b.kind}-${b.label}`}
             role="img"
-            aria-label={t(external ? 'fb.busyExternalAt' : 'fb.busyAt', { name, time: `${formatTime(b.start)} – ${formatTime(b.end)}` })}
+            aria-label={
+              b.label
+                ? t('fb.sharedAt', { name, label: b.label, time: `${formatTime(b.start)} – ${formatTime(b.end)}` })
+                : t(external ? 'fb.busyExternalAt' : 'fb.busyAt', { name, time: `${formatTime(b.start)} – ${formatTime(b.end)}` })
+            }
+            title={b.label || undefined}
             data-testid="busy-cell"
             data-kind={b.kind}
-            className="absolute inset-x-1 rounded-[6px] border-l-[3px]"
+            className="absolute inset-x-1 overflow-hidden rounded-[6px] border-l-[3px] px-1 text-micro font-medium leading-4 text-fg"
             style={{
               top: y(b.start) + 1,
               height: Math.max(8, y(b.end) - y(b.start) - 2),
@@ -593,7 +604,9 @@ const BusyColumn = memo(function BusyColumn({ workspaceId, userId, day, color }:
                 ? `repeating-linear-gradient(135deg, color-mix(in srgb, ${color} 18%, transparent) 0 6px, color-mix(in srgb, ${color} 42%, transparent) 6px 9px)`
                 : `color-mix(in srgb, ${color} 42%, var(--color-bg))`,
             }}
-          />
+          >
+            {b.label && y(b.end) - y(b.start) >= 18 ? <span className="block truncate pt-0.5">{b.label}</span> : null}
+          </div>
         );
       })}
     </div>

@@ -402,10 +402,15 @@ import {
   ACTIVE_BEFORE_MS,
   DEFAULT_WORK_HOURS,
   REMINDER_CHOICES,
+  davCalendars,
   davOut,
   meetingBusy,
   slotsOf,
+  externalEventsOut,
+  sharedBusy,
+  shareLevelIn,
   type CalDavRec,
+  type ExternalSpan,
   type Span,
   type WorkHoursRec,
   activeOccurrence,
@@ -642,7 +647,9 @@ export interface MockServer {
   /** ADR-0038 §6: an occurrence's recording (shown in lists / the card; no event is sent). */
   setEventRecording(eventId: string, occurrenceAtMs: number, recordingId: string): void;
   /** ADR-0041: `userId`'s busy time from an external calendar (free / busy kind EXTERNAL), replacing it. */
-  setBusy(userId: string, intervals: readonly Span[]): void;
+  setBusy(userId: string, intervals: readonly ExternalSpan[]): void;
+  /** ADR-0041 §4 / ADR-0045: a connected CalDAV account of `userId` (calendar «Работа», import on, synced at the clock). */
+  setCalDav(userId: string, patch?: Partial<CalDavRec>): void;
   /** ADR-0041: `userId`'s work hours (default 10:00–19:00 Mon–Fri in their zone; the mock's default zone is Moscow). */
   setWorkHours(userId: string, wh: WorkHoursRec): void;
   /** ADR-0041 §4: what the fake CalDAV server holds for `userId`: a sync with import on copies it to their external busy time (default: 11:00–12:00 MSK of the clock's day). */
@@ -727,6 +734,7 @@ export async function startMockServer(opts: MockServerOptions = {}): Promise<Moc
     emitReminder: (id, u, min, at) => impl.emitReminder(id, u, min, at),
     setEventActive: (id, active, at) => impl.setEventActive(id, active, at),
     setBusy: (u, list) => impl.calExternal.set(u, [...list]),
+    setCalDav: (u, patch) => impl.seedCalDav(u, patch),
     setWorkHours: (u, wh) => impl.calWorkHours.set(u, { ...wh, days: [...wh.days] }),
     setCalDavRemote: (u, list) => impl.calDavRemote.set(u, [...list]),
     setEventRecording: (id, at, rec) => impl.setEventRecording(id, at, rec),
@@ -1045,7 +1053,7 @@ class MockImpl {
   boards: BoardsMock;
   /** Free / busy (ADR-0041): work hours, external busy time, CalDAV accounts and the fake remote calendars, by user. */
   readonly calWorkHours = new Map<string, WorkHoursRec>();
-  readonly calExternal = new Map<string, Span[]>();
+  readonly calExternal = new Map<string, ExternalSpan[]>();
   readonly calDav = new Map<string, CalDavRec>();
   readonly calDavRemote = new Map<string, Span[]>();
 
@@ -6125,16 +6133,35 @@ class MockImpl {
     return this.state.users.get(userId)?.user.timezone || 'Europe/Moscow';
   }
 
-  /** One person's busy time for `viewer` (ADR-0041 §1): event_id only for meetings the viewer sees. */
-  private busyOf(wsId: string, userId: string, viewer: string, fromMs: number, toMs: number): Array<{ startsAt: string; endsAt: string; eventId?: string; kind: string; allDay: boolean }> {
+  /** A connected account of `userId` (visual fixtures): «Работа» picked, import on, synced now. */
+  seedCalDav(userId: string, patch: Partial<CalDavRec> = {}): void {
+    const url = 'https://caldav.example.com';
+    this.calDav.set(userId, { url, username: 'anna@example.com', calendarHref: davCalendars(url)[0]?.href ?? '', import: true, push: false, lastSyncAt: this.calNow(), lastError: '', shareLevel: 'busy', ...patch });
+  }
+
+  /** A member of `wsId` (a person, not a guest) with this address: their id, else ''. */
+  private memberByEmail(wsId: string, email: string): string {
+    for (const u of this.state.users.values()) {
+      if (u.email.toLowerCase() !== email || u.user.isBot || u.user.isGuest) continue;
+      const m = this.member(wsId, u.user.id);
+      if (m && m.role !== WorkspaceRole.GUEST) return u.user.id;
+    }
+    return '';
+  }
+
+  /** One person's busy time for `viewer` (ADR-0041 §1): event_id only for meetings the viewer sees; external titles by the owner's share level (ADR-0045 §4). */
+  private busyOf(wsId: string, userId: string, viewer: string, fromMs: number, toMs: number): Array<{ startsAt: string; endsAt: string; eventId?: string; kind: string; allDay: boolean; title?: string; attendeeUserIds?: string[] }> {
     const iso = (t: number): string => new Date(t).toISOString();
-    const out: Array<{ startsAt: string; endsAt: string; eventId?: string; kind: string; allDay: boolean }> = [];
+    const out: Array<{ startsAt: string; endsAt: string; eventId?: string; kind: string; allDay: boolean; title?: string; attendeeUserIds?: string[] }> = [];
+    const level = this.calDav.get(userId)?.shareLevel ?? 'busy';
     for (const o of meetingBusy(this.calEvents.values(), wsId, userId, fromMs, toMs)) {
       const seen = !!this.calView(o.rec, viewer);
       out.push({ startsAt: iso(o.startMs), endsAt: iso(o.endMs), ...(seen ? { eventId: o.rec.ev.id } : {}), kind: 'BUSY_KIND_MEETING', allDay: o.rec.ev.allDay });
     }
     for (const x of this.calExternal.get(userId) ?? []) {
-      if (x.endMs > fromMs && x.startMs < toMs) out.push({ startsAt: iso(x.startMs), endsAt: iso(x.endMs), kind: 'BUSY_KIND_EXTERNAL', allDay: false });
+      if (x.endMs > fromMs && x.startMs < toMs) {
+        out.push({ startsAt: iso(x.startMs), endsAt: iso(x.endMs), kind: 'BUSY_KIND_EXTERNAL', allDay: false, ...sharedBusy(x, level, (e) => this.memberByEmail(wsId, e)) });
+      }
     }
     return out.sort((a, b) => Date.parse(a.startsAt) - Date.parse(b.startsAt));
   }
@@ -6243,6 +6270,29 @@ class MockImpl {
       if (!a.import) this.calExternal.delete(me);
       else if (a.calendarHref) syncDav(me, a);
       send(c.res, 200, JSON.stringify(davOut(a)), 'application/json');
+    });
+    this.route('PATCH', '/api/me/caldav', (c) => {
+      const me = davUser(c);
+      const a = this.calDav.get(me);
+      if (!a) throw notFound('no CalDAV account');
+      const b = JSON.parse(c.raw.toString('utf8') || '{}') as { shareLevel?: unknown };
+      const level = shareLevelIn(b.shareLevel);
+      if (!level) throw invalid('shareLevel', 'one of busy, title, details');
+      a.shareLevel = level;
+      send(c.res, 200, JSON.stringify(davOut(a)), 'application/json');
+    });
+    this.route('GET', '/api/me/external-events', (c) => {
+      const me = davUser(c);
+      const from = Date.parse(c.url.searchParams.get('from') ?? '');
+      const to = Date.parse(c.url.searchParams.get('to') ?? '');
+      if (Number.isNaN(from) || Number.isNaN(to) || to <= from || to - from > 14 * 86_400_000) throw invalid('to', 'from / to: RFC 3339, to after from, at most 14 days');
+      const wsId = c.url.searchParams.get('workspace') ?? '';
+      if (wsId) {
+        const m = this.member(wsId, me);
+        if (!m || m.role === WorkspaceRole.GUEST) throw forbidden('not a member of this workspace');
+      }
+      const match = (e: string): string => (wsId ? this.memberByEmail(wsId, e) : '');
+      send(c.res, 200, JSON.stringify(externalEventsOut(this.calExternal.get(me) ?? [], from, to, match)), 'application/json');
     });
     this.route('POST', '/api/me/caldav/sync', (c) => {
       const me = davUser(c);

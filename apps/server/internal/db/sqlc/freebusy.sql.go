@@ -127,7 +127,7 @@ func (q *Queries) EnqueueCalDavPushes(ctx context.Context, arg EnqueueCalDavPush
 }
 
 const getCalDavAccount = `-- name: GetCalDavAccount :one
-SELECT user_id, url, username, secret_enc, calendars, calendar_href, import, push, last_sync_at, last_error, created_at, updated_at FROM caldav_accounts WHERE user_id = $1
+SELECT user_id, url, username, secret_enc, calendars, calendar_href, import, push, last_sync_at, last_error, created_at, updated_at, share_level FROM caldav_accounts WHERE user_id = $1
 `
 
 func (q *Queries) GetCalDavAccount(ctx context.Context, userID uuid.UUID) (CaldavAccount, error) {
@@ -146,22 +146,30 @@ func (q *Queries) GetCalDavAccount(ctx context.Context, userID uuid.UUID) (Calda
 		&i.LastError,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+		&i.ShareLevel,
 	)
 	return i, err
 }
 
 const insertExternalBusy = `-- name: InsertExternalBusy :exec
-INSERT INTO external_busy (user_id, uid, starts_at, ends_at, all_day)
+INSERT INTO external_busy (user_id, uid, starts_at, ends_at, all_day, summary, location, attendees, organizer, url)
 SELECT $1::uuid, unnest($2::text[]), unnest($3::timestamptz[]),
-    unnest($4::timestamptz[]), unnest($5::boolean[])
+    unnest($4::timestamptz[]), unnest($5::boolean[]), unnest($6::text[]),
+    unnest($7::text[]), unnest($8::text[])::jsonb, unnest($9::text[]),
+    unnest($10::text[])
 `
 
 type InsertExternalBusyParams struct {
-	UserID  uuid.UUID
-	Uids    []string
-	Starts  []time.Time
-	Ends    []time.Time
-	AllDays []bool
+	UserID     uuid.UUID
+	Uids       []string
+	Starts     []time.Time
+	Ends       []time.Time
+	AllDays    []bool
+	Summaries  []string
+	Locations  []string
+	Attendees  []string
+	Organizers []string
+	Urls       []string
 }
 
 func (q *Queries) InsertExternalBusy(ctx context.Context, arg InsertExternalBusyParams) error {
@@ -171,6 +179,11 @@ func (q *Queries) InsertExternalBusy(ctx context.Context, arg InsertExternalBusy
 		arg.Starts,
 		arg.Ends,
 		arg.AllDays,
+		arg.Summaries,
+		arg.Locations,
+		arg.Attendees,
+		arg.Organizers,
+		arg.Urls,
 	)
 	return err
 }
@@ -263,9 +276,10 @@ func (q *Queries) ListDueCalDavImports(ctx context.Context, arg ListDueCalDavImp
 }
 
 const listExternalBusy = `-- name: ListExternalBusy :many
-SELECT user_id, uid, starts_at, ends_at, all_day FROM external_busy
-WHERE user_id = ANY($1::uuid[]) AND starts_at < $2 AND ends_at > $3
-ORDER BY user_id, starts_at
+SELECT b.user_id, b.uid, b.starts_at, b.ends_at, b.all_day, b.summary, b.location, b.attendees, b.organizer, b.url, coalesce(a.share_level, 'busy')::text AS share_level FROM external_busy b
+LEFT JOIN caldav_accounts a ON a.user_id = b.user_id
+WHERE b.user_id = ANY($1::uuid[]) AND b.starts_at < $2 AND b.ends_at > $3
+ORDER BY b.user_id, b.starts_at
 `
 
 type ListExternalBusyParams struct {
@@ -274,21 +288,33 @@ type ListExternalBusyParams struct {
 	From time.Time
 }
 
-func (q *Queries) ListExternalBusy(ctx context.Context, arg ListExternalBusyParams) ([]ExternalBusy, error) {
+type ListExternalBusyRow struct {
+	ExternalBusy ExternalBusy
+	ShareLevel   string
+}
+
+// With the owner's share_level (ADR-0045 §4): what of the details others may see.
+func (q *Queries) ListExternalBusy(ctx context.Context, arg ListExternalBusyParams) ([]ListExternalBusyRow, error) {
 	rows, err := q.db.Query(ctx, listExternalBusy, arg.Ids, arg.To, arg.From)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
-	items := []ExternalBusy{}
+	items := []ListExternalBusyRow{}
 	for rows.Next() {
-		var i ExternalBusy
+		var i ListExternalBusyRow
 		if err := rows.Scan(
-			&i.UserID,
-			&i.Uid,
-			&i.StartsAt,
-			&i.EndsAt,
-			&i.AllDay,
+			&i.ExternalBusy.UserID,
+			&i.ExternalBusy.Uid,
+			&i.ExternalBusy.StartsAt,
+			&i.ExternalBusy.EndsAt,
+			&i.ExternalBusy.AllDay,
+			&i.ExternalBusy.Summary,
+			&i.ExternalBusy.Location,
+			&i.ExternalBusy.Attendees,
+			&i.ExternalBusy.Organizer,
+			&i.ExternalBusy.Url,
+			&i.ShareLevel,
 		); err != nil {
 			return nil, err
 		}
@@ -336,6 +362,49 @@ func (q *Queries) ListFreeBusyMembers(ctx context.Context, arg ListFreeBusyMembe
 			&i.WorkStartMin,
 			&i.WorkEndMin,
 			&i.WorkDays,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listMyExternalEvents = `-- name: ListMyExternalEvents :many
+SELECT user_id, uid, starts_at, ends_at, all_day, summary, location, attendees, organizer, url FROM external_busy
+WHERE user_id = $1 AND starts_at < $2 AND ends_at > $3
+ORDER BY starts_at, ends_at, uid
+`
+
+type ListMyExternalEventsParams struct {
+	UserID uuid.UUID
+	To     time.Time
+	From   time.Time
+}
+
+func (q *Queries) ListMyExternalEvents(ctx context.Context, arg ListMyExternalEventsParams) ([]ExternalBusy, error) {
+	rows, err := q.db.Query(ctx, listMyExternalEvents, arg.UserID, arg.To, arg.From)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []ExternalBusy{}
+	for rows.Next() {
+		var i ExternalBusy
+		if err := rows.Scan(
+			&i.UserID,
+			&i.Uid,
+			&i.StartsAt,
+			&i.EndsAt,
+			&i.AllDay,
+			&i.Summary,
+			&i.Location,
+			&i.Attendees,
+			&i.Organizer,
+			&i.Url,
 		); err != nil {
 			return nil, err
 		}
@@ -400,7 +469,7 @@ func (q *Queries) ListRoomBusyEvents(ctx context.Context, arg ListRoomBusyEvents
 }
 
 const lockCalDavAccount = `-- name: LockCalDavAccount :one
-SELECT user_id, url, username, secret_enc, calendars, calendar_href, import, push, last_sync_at, last_error, created_at, updated_at FROM caldav_accounts WHERE user_id = $1 FOR UPDATE
+SELECT user_id, url, username, secret_enc, calendars, calendar_href, import, push, last_sync_at, last_error, created_at, updated_at, share_level FROM caldav_accounts WHERE user_id = $1 FOR UPDATE
 `
 
 func (q *Queries) LockCalDavAccount(ctx context.Context, userID uuid.UUID) (CaldavAccount, error) {
@@ -419,8 +488,48 @@ func (q *Queries) LockCalDavAccount(ctx context.Context, userID uuid.UUID) (Cald
 		&i.LastError,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+		&i.ShareLevel,
 	)
 	return i, err
+}
+
+const matchMemberEmails = `-- name: MatchMemberEmails :many
+SELECT u.id, lower(u.email)::text AS email FROM workspace_members m
+JOIN users u ON u.id = m.user_id
+WHERE m.workspace_id = $1 AND m.role <> 'guest' AND NOT u.is_bot AND NOT u.is_guest AND u.disabled_at IS NULL
+  AND u.email_verified_at IS NOT NULL AND lower(u.email) = ANY($2::text[])
+`
+
+type MatchMemberEmailsParams struct {
+	WorkspaceID uuid.UUID
+	Emails      []string
+}
+
+type MatchMemberEmailsRow struct {
+	ID    uuid.UUID
+	Email string
+}
+
+// Members of the workspace (people, not guests; enabled) whose confirmed e-mail is one of emails
+// (lower case) — attendees of external events (ADR-0045 §3, §4).
+func (q *Queries) MatchMemberEmails(ctx context.Context, arg MatchMemberEmailsParams) ([]MatchMemberEmailsRow, error) {
+	rows, err := q.db.Query(ctx, matchMemberEmails, arg.WorkspaceID, arg.Emails)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []MatchMemberEmailsRow{}
+	for rows.Next() {
+		var i MatchMemberEmailsRow
+		if err := rows.Scan(&i.ID, &i.Email); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
 }
 
 const retryCalDavPush = `-- name: RetryCalDavPush :exec
@@ -461,9 +570,40 @@ func (q *Queries) SetCalDavError(ctx context.Context, arg SetCalDavErrorParams) 
 	return err
 }
 
+const setCalDavShareLevel = `-- name: SetCalDavShareLevel :one
+UPDATE caldav_accounts SET share_level = $2, updated_at = now() WHERE user_id = $1
+RETURNING user_id, url, username, secret_enc, calendars, calendar_href, import, push, last_sync_at, last_error, created_at, updated_at, share_level
+`
+
+type SetCalDavShareLevelParams struct {
+	UserID     uuid.UUID
+	ShareLevel string
+}
+
+func (q *Queries) SetCalDavShareLevel(ctx context.Context, arg SetCalDavShareLevelParams) (CaldavAccount, error) {
+	row := q.db.QueryRow(ctx, setCalDavShareLevel, arg.UserID, arg.ShareLevel)
+	var i CaldavAccount
+	err := row.Scan(
+		&i.UserID,
+		&i.Url,
+		&i.Username,
+		&i.SecretEnc,
+		&i.Calendars,
+		&i.CalendarHref,
+		&i.Import,
+		&i.Push,
+		&i.LastSyncAt,
+		&i.LastError,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+		&i.ShareLevel,
+	)
+	return i, err
+}
+
 const setCalDavSynced = `-- name: SetCalDavSynced :one
 UPDATE caldav_accounts SET last_sync_at = $2, last_error = $3 WHERE user_id = $1
-RETURNING user_id, url, username, secret_enc, calendars, calendar_href, import, push, last_sync_at, last_error, created_at, updated_at
+RETURNING user_id, url, username, secret_enc, calendars, calendar_href, import, push, last_sync_at, last_error, created_at, updated_at, share_level
 `
 
 type SetCalDavSyncedParams struct {
@@ -488,6 +628,7 @@ func (q *Queries) SetCalDavSynced(ctx context.Context, arg SetCalDavSyncedParams
 		&i.LastError,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+		&i.ShareLevel,
 	)
 	return i, err
 }
@@ -552,7 +693,7 @@ func (q *Queries) SetUserWorkHours(ctx context.Context, arg SetUserWorkHoursPara
 const updateCalDavAccount = `-- name: UpdateCalDavAccount :one
 UPDATE caldav_accounts SET calendar_href = $2, import = $3, push = $4, last_error = '', updated_at = now()
 WHERE user_id = $1
-RETURNING user_id, url, username, secret_enc, calendars, calendar_href, import, push, last_sync_at, last_error, created_at, updated_at
+RETURNING user_id, url, username, secret_enc, calendars, calendar_href, import, push, last_sync_at, last_error, created_at, updated_at, share_level
 `
 
 type UpdateCalDavAccountParams struct {
@@ -583,6 +724,7 @@ func (q *Queries) UpdateCalDavAccount(ctx context.Context, arg UpdateCalDavAccou
 		&i.LastError,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+		&i.ShareLevel,
 	)
 	return i, err
 }
@@ -593,7 +735,7 @@ VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
 ON CONFLICT (user_id) DO UPDATE SET url = EXCLUDED.url, username = EXCLUDED.username,
     secret_enc = EXCLUDED.secret_enc, calendars = EXCLUDED.calendars, calendar_href = EXCLUDED.calendar_href,
     import = EXCLUDED.import, push = EXCLUDED.push, last_sync_at = NULL, last_error = '', updated_at = now()
-RETURNING user_id, url, username, secret_enc, calendars, calendar_href, import, push, last_sync_at, last_error, created_at, updated_at
+RETURNING user_id, url, username, secret_enc, calendars, calendar_href, import, push, last_sync_at, last_error, created_at, updated_at, share_level
 `
 
 type UpsertCalDavAccountParams struct {
@@ -632,6 +774,7 @@ func (q *Queries) UpsertCalDavAccount(ctx context.Context, arg UpsertCalDavAccou
 		&i.LastError,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+		&i.ShareLevel,
 	)
 	return i, err
 }

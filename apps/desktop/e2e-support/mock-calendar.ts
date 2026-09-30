@@ -231,6 +231,73 @@ export interface CalDavRec {
   push: boolean;
   lastSyncAt: number | null;
   lastError: string;
+  /** What colleagues see of the imported events (ADR-0045 §2). */
+  shareLevel?: ShareLevelRec;
+}
+
+export type ShareLevelRec = 'busy' | 'title' | 'details';
+
+/** An imported external event (ADR-0045 §1): a busy span with its details (all optional). */
+export interface ExternalSpan extends Span {
+  uid?: string;
+  summary?: string;
+  location?: string;
+  attendees?: ReadonlyArray<{ email: string; name?: string }>;
+  organizer?: string;
+  url?: string;
+}
+
+const SHARE_WIRE: Record<ShareLevelRec, string> = { busy: 'CAL_DAV_SHARE_LEVEL_BUSY', title: 'CAL_DAV_SHARE_LEVEL_TITLE', details: 'CAL_DAV_SHARE_LEVEL_DETAILS' };
+
+/** PATCH /api/me/caldav's share_level (the JSON enum name or number) → the stored level; null = invalid. */
+export function shareLevelIn(v: unknown): ShareLevelRec | null {
+  switch (v) {
+    case 'CAL_DAV_SHARE_LEVEL_BUSY':
+    case 1:
+      return 'busy';
+    case 'CAL_DAV_SHARE_LEVEL_TITLE':
+    case 2:
+      return 'title';
+    case 'CAL_DAV_SHARE_LEVEL_DETAILS':
+    case 3:
+      return 'details';
+  }
+  return null;
+}
+
+/**
+ * What a colleague sees of an external span (ADR-0045 §4): the title at title / details, the
+ * attendees who are members (`member(email)` → user id or '') at details. Never the place,
+ * organizer or link.
+ */
+export function sharedBusy(x: ExternalSpan, level: ShareLevelRec, member: (email: string) => string): { title?: string; attendeeUserIds?: string[] } {
+  if (level === 'busy' || !x.summary) return {};
+  if (level === 'title') return { title: x.summary };
+  const ids = [...new Set((x.attendees ?? []).map((a) => member(a.email.toLowerCase())).filter(Boolean))];
+  return { title: x.summary, ...(ids.length ? { attendeeUserIds: ids } : {}) };
+}
+
+/** ExternalEventsResponse of the owner over [from, to): every detail; `member` gives attendees' ids ('' = none). */
+export function externalEventsOut(list: readonly ExternalSpan[], fromMs: number, toMs: number, member: (email: string) => string): Record<string, unknown> {
+  const iso = (t: number): string => new Date(t).toISOString();
+  const events = list
+    .filter((x) => x.endMs > fromMs && x.startMs < toMs)
+    .sort((a, b) => a.startMs - b.startMs)
+    .map((x, i) => ({
+      uid: x.uid ?? `ext${i}`,
+      startsAt: iso(x.startMs),
+      endsAt: iso(x.endMs),
+      summary: x.summary ?? '',
+      location: x.location ?? '',
+      attendees: (x.attendees ?? []).map((a) => {
+        const email = a.email.toLowerCase();
+        const userId = member(email);
+        return { email, name: a.name ?? '', ...(userId ? { userId } : {}) };
+      }),
+      organizer: x.organizer ?? '',
+      url: x.url ?? '',
+    }));
+  return { events };
 }
 
 /** The calendars the fake discovery finds under a server address. */
@@ -255,6 +322,7 @@ export function davOut(a: CalDavRec | undefined): Record<string, unknown> {
       ...(a.lastSyncAt ? { lastSyncAt: new Date(a.lastSyncAt).toISOString() } : {}),
       lastError: a.lastError,
       calendars: davCalendars(a.url),
+      shareLevel: SHARE_WIRE[a.shareLevel ?? 'busy'],
     },
   };
 }

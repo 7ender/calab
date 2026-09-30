@@ -142,6 +142,7 @@ type CaldavAccount struct {
 	LastError    string
 	CreatedAt    time.Time
 	UpdatedAt    time.Time
+	ShareLevel   string
 }
 
 type CaldavPush struct {
@@ -246,11 +247,16 @@ type EventRoomSignal struct {
 }
 
 type ExternalBusy struct {
-	UserID   uuid.UUID
-	Uid      string
-	StartsAt time.Time
-	EndsAt   time.Time
-	AllDay   bool
+	UserID    uuid.UUID
+	Uid       string
+	StartsAt  time.Time
+	EndsAt    time.Time
+	AllDay    bool
+	Summary   string
+	Location  string
+	Attendees []byte
+	Organizer string
+	Url       string
 }
 
 type File struct {

@@ -2,6 +2,7 @@ package calendar
 
 import (
 	"context"
+	"encoding/json"
 	"net/http"
 	"slices"
 	"strings"
@@ -30,6 +31,9 @@ type busyItem struct {
 	eventID string
 	kind    v1.BusyKind
 	allDay  bool
+	// External events by the owner's share level (ADR-0045 §4).
+	title     string
+	attendees []string
 }
 
 // busyPerson is a member asked about.
@@ -117,8 +121,9 @@ func (s *Service) people(ctx context.Context, wsID uuid.UUID, ids []uuid.UUID) (
 
 // collectBusy fills the busy intervals of people overlapping [from, to): their meetings (any
 // workspace; declined ones do not count, the organizer is always busy) and the imported
-// external busy time. v decides which meeting ids of wsID may be shown.
-func (s *Service) collectBusy(ctx context.Context, v *viewer, wsID uuid.UUID, people []*busyPerson, from, to time.Time) error {
+// external busy time. v decides which meeting ids of wsID may be shown; with details, external
+// intervals carry what their owner shares (ADR-0045 §4).
+func (s *Service) collectBusy(ctx context.Context, v *viewer, wsID uuid.UUID, people []*busyPerson, from, to time.Time, details bool) error {
 	ids := make([]uuid.UUID, len(people))
 	for i, p := range people {
 		ids[i] = p.id
@@ -163,10 +168,30 @@ func (s *Service) collectBusy(ctx context.Context, v *viewer, wsID uuid.UUID, pe
 	for _, p := range people {
 		byID[p.id] = p
 	}
-	for _, e := range ext {
-		if p := byID[e.UserID]; p != nil {
-			p.busy = append(p.busy, busyItem{occ: Occurrence{e.StartsAt, e.EndsAt}, kind: v1.BusyKind_BUSY_KIND_EXTERNAL, allDay: e.AllDay})
+	var members map[string]string
+	if details {
+		if members, err = s.externalMembers(ctx, wsID, ext); err != nil {
+			return err
 		}
+	}
+	for _, row := range ext {
+		e := row.ExternalBusy
+		p := byID[e.UserID]
+		if p == nil {
+			continue
+		}
+		it := busyItem{occ: Occurrence{e.StartsAt, e.EndsAt}, kind: v1.BusyKind_BUSY_KIND_EXTERNAL, allDay: e.AllDay}
+		if details && (row.ShareLevel == shareTitle || row.ShareLevel == shareDetails) {
+			it.title = e.Summary
+		}
+		if details && row.ShareLevel == shareDetails {
+			for _, a := range externalAttendees(e.Attendees) {
+				if id, ok := members[a]; ok && !slices.Contains(it.attendees, id) {
+					it.attendees = append(it.attendees, id)
+				}
+			}
+		}
+		p.busy = append(p.busy, it)
 	}
 	for _, p := range people {
 		slices.SortStableFunc(p.busy, func(a, b busyItem) int {
@@ -177,6 +202,55 @@ func (s *Service) collectBusy(ctx context.Context, v *viewer, wsID uuid.UUID, pe
 		})
 	}
 	return nil
+}
+
+// caldav_accounts.share_level values (ADR-0045 §2; internal/caldav writes them).
+const (
+	shareTitle   = "title"
+	shareDetails = "details"
+)
+
+// externalAttendees: the e-mails of an external_busy.attendees value.
+func externalAttendees(raw []byte) []string {
+	var list []struct {
+		Email string `json:"email"`
+	}
+	_ = json.Unmarshal(raw, &list) // written by the import only
+	out := make([]string, 0, len(list))
+	for _, a := range list {
+		if a.Email != "" {
+			out = append(out, a.Email)
+		}
+	}
+	return out
+}
+
+// externalMembers maps the attendee e-mails of the rows shared with details to the members of
+// the workspace with that confirmed address (one query).
+func (s *Service) externalMembers(ctx context.Context, wsID uuid.UUID, rows []sqlc.ListExternalBusyRow) (map[string]string, error) {
+	var emails []string
+	for _, row := range rows {
+		if row.ShareLevel != shareDetails {
+			continue
+		}
+		for _, e := range externalAttendees(row.ExternalBusy.Attendees) {
+			if !slices.Contains(emails, e) {
+				emails = append(emails, e)
+			}
+		}
+	}
+	out := map[string]string{}
+	if len(emails) == 0 {
+		return out, nil
+	}
+	matched, err := s.db.Q.MatchMemberEmails(ctx, sqlc.MatchMemberEmailsParams{WorkspaceID: wsID, Emails: emails})
+	if err != nil {
+		return nil, err
+	}
+	for _, m := range matched {
+		out[m.Email] = m.ID.String()
+	}
+	return out, nil
 }
 
 // busyIn: the user organizes the meeting, or attends it with an answer other than declined.
@@ -221,7 +295,7 @@ func (s *Service) freeBusy(w http.ResponseWriter, r *http.Request) error {
 	if err != nil {
 		return err
 	}
-	if err := s.collectBusy(ctx, v, wsID, people, from, to); err != nil {
+	if err := s.collectBusy(ctx, v, wsID, people, from, to, true); err != nil {
 		return err
 	}
 	out := &v1.FreeBusyResponse{Users: make([]*v1.FreeBusyUser, 0, len(people))}
@@ -230,7 +304,7 @@ func (s *Service) freeBusy(w http.ResponseWriter, r *http.Request) error {
 			WorkHours: WorkHoursProto(p.row.WorkStartMin, p.row.WorkEndMin, p.row.WorkDays), Busy: make([]*v1.BusyInterval, 0, len(p.busy))}
 		for _, b := range p.busy {
 			u.Busy = append(u.Busy, &v1.BusyInterval{StartsAt: timestamppb.New(b.occ.Start), EndsAt: timestamppb.New(b.occ.End),
-				EventId: b.eventID, Kind: b.kind, AllDay: b.allDay})
+				EventId: b.eventID, Kind: b.kind, AllDay: b.allDay, Title: b.title, AttendeeUserIds: b.attendees})
 		}
 		out.Users = append(out.Users, u)
 	}
@@ -302,7 +376,7 @@ func (s *Service) suggest(w http.ResponseWriter, r *http.Request) error {
 			return errNoCommonHours
 		}
 	}
-	if err := s.collectBusy(ctx, v, wsID, people, from, to); err != nil {
+	if err := s.collectBusy(ctx, v, wsID, people, from, to, false); err != nil {
 		return err
 	}
 	var busy []Occurrence
