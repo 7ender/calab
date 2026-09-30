@@ -1,4 +1,5 @@
 import { existsSync, readdirSync, readFileSync, writeFileSync } from 'node:fs';
+import { cpus } from 'node:os';
 import { join } from 'node:path';
 import {
   app,
@@ -55,6 +56,10 @@ interface Entry {
   home: string;
   failed: string;
   crashed: boolean;
+  /** In the window's view tree (only while shown: a hidden view is not composited). */
+  attached: boolean;
+  /** The one-shot CPU check of a hidden view (checkHidden). */
+  check: NodeJS.Timeout | undefined;
 }
 
 const entries = new Map<string, Entry>();
@@ -358,13 +363,68 @@ function sendState(e: Entry): void {
   win.webContents.send(IPC.webAppState, state);
 }
 
-/** Shows the view the renderer wants (if the window is on screen and the page is fine), hides the rest. */
+/** A hidden view whose page keeps using more than this share of one core is unloaded (ADR-0050 §5). */
+const HIDDEN_CPU_LIMIT = 2;
+/** When a hidden page is checked once (a one-shot timer per hide, nothing periodic). */
+const HIDDEN_CHECK_MS = 15_000;
+
+/** CPU of process `pid` in % of one core since the previous app.getAppMetrics() (null = gone). */
+function cpuOf(pid: number): number | null {
+  const m = app.getAppMetrics().find((x) => x.pid === pid);
+  // percentCPUUsage is normalised to all cores on macOS (see ipc.ts systemMetrics).
+  return m ? m.cpu.percentCPUUsage * (process.platform === 'darwin' ? cpus().length : 1) : null;
+}
+
+/**
+ * Electron cannot make a WebContentsView's page hidden: neither `setVisible(false)` nor taking
+ * it out of the window changes `document.visibilityState`, so a hidden page keeps its timers,
+ * animations and videos (measured 30.09: github.com's home 7–8 % of a core hidden, Wikipedia
+ * 0.01 %). A hidden view is therefore checked once, 15 s after it was hidden: still above 2 %
+ * of a core → it is unloaded (its session stays; the next open loads the page again).
+ */
+function checkHidden(e: Entry): void {
+  clearTimeout(e.check);
+  const pid = e.view.webContents.getOSProcessId();
+  cpuOf(pid); // starts the measuring window
+  e.check = setTimeout(() => {
+    e.check = undefined;
+    if (entries.get(e.appId) !== e || e.attached || e.view.webContents.isDestroyed()) return;
+    const cpu = cpuOf(pid);
+    if (cpu !== null && cpu > HIDDEN_CPU_LIMIT) {
+      log.info('[webapp] hidden page keeps the CPU busy: unloaded', { appId: e.appId, cpu: Math.round(cpu * 10) / 10 });
+      destroy(e.appId);
+    }
+  }, HIDDEN_CHECK_MS);
+}
+
+/**
+ * Shows the view the renderer wants (if the window is on screen and the page is fine); the rest
+ * are taken out of the window (not composited, no input) and checked for CPU (checkHidden).
+ */
 function applyVisibility(): void {
   const on = windowShown();
+  const win = getMainWindow();
   for (const e of entries.values()) {
-    const visible = on && e.appId === shown && !e.failed && !e.crashed && bounds.width > 0 && bounds.height > 0;
-    if (visible) e.view.setBounds(bounds);
-    e.view.setVisible(visible);
+    const visible = !!win && on && e.appId === shown && !e.failed && !e.crashed && bounds.width > 0 && bounds.height > 0;
+    if (visible) {
+      clearTimeout(e.check);
+      e.check = undefined;
+      if (!e.attached) {
+        win.contentView.addChildView(e.view);
+        e.attached = true;
+      }
+      e.view.setBounds(bounds);
+      e.view.setVisible(true);
+    } else if (e.attached) {
+      e.view.setVisible(false);
+      try {
+        win?.contentView.removeChildView(e.view);
+      } catch {
+        // the window is gone
+      }
+      e.attached = false;
+      if (!e.failed && !e.crashed) checkHidden(e);
+    }
   }
 }
 
@@ -394,9 +454,8 @@ function create(appId: string, url: string): Entry | null {
   const view = new WebContentsView({ webPreferences: viewPreferences(ses) });
   view.setVisible(false);
   view.setBackgroundColor('#ffffff');
-  const e: Entry = { appId, view, home: url, failed: '', crashed: false };
+  const e: Entry = { appId, view, home: url, failed: '', crashed: false, attached: false, check: undefined };
   entries.set(appId, e);
-  win.contentView.addChildView(view);
   const wc = view.webContents;
   const update = (): void => sendState(e);
   wc.on('did-start-loading', () => {
@@ -431,12 +490,14 @@ function destroy(appId: string): void {
   const e = entries.get(appId);
   if (!e) return;
   entries.delete(appId);
+  clearTimeout(e.check);
   lru = dropLru(lru, appId);
-  const win = getMainWindow();
-  try {
-    win?.contentView.removeChildView(e.view);
-  } catch {
-    // the window is gone
+  if (e.attached) {
+    try {
+      getMainWindow()?.contentView.removeChildView(e.view);
+    } catch {
+      // the window is gone
+    }
   }
   if (!e.view.webContents.isDestroyed()) e.view.webContents.close();
 }
