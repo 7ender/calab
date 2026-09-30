@@ -209,7 +209,7 @@ const SHARE_HINT: Record<ShareLevel, 'fb.dav.shareBusyHint' | 'fb.dav.shareTitle
 /** «Что видят коллеги» (ADR-0045 §2): a segmented control over the whole row, its one-line hint below. */
 function ShareRow({ level, disabled }: { level: ShareLevel; disabled: boolean }): ReactNode {
   return (
-    <div className={cx('flex flex-col gap-2 px-3 py-2.5', disabled && 'pointer-events-none opacity-50')} data-settings-row data-testid="caldav-share" aria-disabled={disabled || undefined}>
+    <div className={cx('flex flex-col items-start gap-2 px-3 py-2.5', disabled && 'pointer-events-none opacity-50')} data-settings-row data-testid="caldav-share" aria-disabled={disabled || undefined}>
       <span className="text-body" data-settings-label data-settings-hint={t('fb.dav.shareHint')}>
         {t('fb.dav.share')}
       </span>
