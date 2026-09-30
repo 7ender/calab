@@ -46,6 +46,9 @@
 | Аннотации на стриме | `SPEAK` (клиент; data-канал, docs/12) | — | `annot.canAnnotate` |
 | Статус звонка | в звонке + `CONNECT`, или `MANAGE_ROOM` room | `setVoiceStatus` | `useStatusLine` |
 | Запись встречи | не гость, `VIEW_ROOM` + `CONNECT`, `allow_recording` | `recording.participant` | `roomMenuGroups` (`record`) |
+| Позвонить на номер из комнаты (ADR-0046) | `PLACE_CALLS` + `VIEW_ROOM` + `CONNECT` room (по умолчанию ни у кого; можно выдать в комнате), не гость, в звонке этой комнаты, `Workspace.sip_enabled`; боты — так же | `sip.place` | — (клиент впереди: кнопка при `sip_enabled` и бите) |
+| Положить телефонную линию | звонивший или `MUTE_MEMBERS` room (не гость) | `sip.hangup` | — (клиент впереди) |
+| Телефония: настройки, проверка подключения, журнал звонков | `MANAGE_WORKSPACE` ws (не гость); бот-токен — 403 | `sip.manage` | — (клиент впереди) |
 | Календарь (ADR-0038): видеть встречу | не гость; организатор, участник встречи или `VIEW_ROOM` в её комнате; бот — только чтение, без адресов внешних | `calendar.viewer.sees` | — |
 | Создать встречу | не гость, не бот; комната — голосовая, видимая; внешние адреса — подтверждённая почта | `calendar.create`, `checkRoom` | — |
 | Изменить / отменить встречу (и вхождение) | организатор; иначе `MANAGE_ROOM` room встречи, без комнаты — `MANAGE_WORKSPACE` ws; бот — 403 | `calendar.viewer.canEdit` | `event.can_edit` |

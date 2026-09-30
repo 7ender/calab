@@ -56,6 +56,16 @@ apt install gettext-base rsync   # envsubst для deploy.sh, rsync для sync.
 mkdir -p /opt/calaba
 ```
 
+### Телефония SIP (ADR-0046)
+
+Выключена по умолчанию: без `SIP_ENABLED=1` контейнер `sip` не поднимается и порты не открыты.
+
+1. Файрвол — три правила из docs/03 «SIP» (5060 udp/tcp, 10000–10200/udp), сохранить `rules.v4`.
+2. `.env`: `SIP_ENABLED=1` → `infra/docker/deploy.sh` — рендерит `livekit/sip.yaml.tpl` в `SIP_CONFIG_BODY` (в нём пароль Valkey, на диск не пишется) и включает compose-профиль `sip` (`livekit/sip:v1.14.0`, совместим с `livekit-server v1.13.7`: тот же коммит `livekit/protocol`; обновлять парой).
+3. Проверка: `docker compose logs sip | grep 'service ready'`; `ss -lun | grep 5060`.
+4. Аккаунт провайдера — в приложении: Настройки пространства → «Телефония» (хост, транспорт, логин/пароль, Caller ID, разрешённые префиксы — для РФ `+7`), «Проверить подключение» звонит на Caller ID на 5 с (звонок платный, виден в журнале). Роли, которым можно звонить, получают `PLACE_CALLS`.
+5. Выключить: `SIP_ENABLED=0` + `deploy.sh` (контейнер удаляется), правила файрвола — убрать.
+
 ### Стенд: как он поднят (2026-09-25)
 
 - Код: `/opt/calaba` (копия рабочего дерева через `sync.sh`), секреты: `/opt/calaba/infra/docker/.env` (`chmod 600`, root; сгенерированы `openssl rand` по `.env.example`, `REGISTRATION_MODE=open`). `sync.sh` этот файл никогда не перезаписывает и не удаляет.

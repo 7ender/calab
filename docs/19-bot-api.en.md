@@ -127,6 +127,7 @@ with the decision for bots is `apps/server/internal/app/botroutes.go`.
 | `PATCH /api/voice/self` · `PATCH /api/rooms/{id}/voice-status` | own mute/deafen, call status | in the call |
 | `POST /api/rooms/{id}/voice/{userId}/mute · unmute · disconnect · move · stop-stream · stop-camera · allow-camera` | voice moderation | `MUTE_MEMBERS` / `MOVE_MEMBERS` |
 | `GET /api/rooms/{id}/admissions` | guests waiting for approval to enter (ADR-0040); admit/decline — 403 `BOT_NOT_ALLOWED` | `MANAGE_ROOM` |
+| `POST /api/rooms/{id}/calls {number}` · `DELETE /api/rooms/{id}/calls/{callId}` | telephony (ADR-0046): call a phone number from the room's call — the callee joins the room as participant `sip:<callId>`; hang up your own line (someone else's with `MUTE_MEMBERS`). Statuses come as the `sipCallUpdate` event. Limit: 20 calls per hour per workspace (`429 SIP_RATE_LIMITED`). SIP settings and the journal — 403 `BOT_NOT_ALLOWED` | `PLACE_CALLS`, the bot is in the room's call, telephony is on |
 | `GET /api/workspaces/{id}/events?from=&to=` · `GET /api/events/{id}` | calendar (ADR-0038): meetings in rooms the bot can see; read-only (create, change, answer — 403 `BOT_NOT_ALLOWED`); external attendees' addresses are not shown to bots; free/busy, finding a time and CalDAV (ADR-0041) — 403 `BOT_NOT_ALLOWED` | `VIEW_ROOM` |
 | task boards (ADR-0042): `GET /api/workspaces/{id}/boards`, `GET /api/boards/{id}`, `GET/POST /api/boards/{id}/tasks`, `GET/PATCH /api/tasks/{id}`, `PUT /api/tasks/{id}/assignees`, `GET /api/workspaces/{id}/tasks/search?q=`, `GET /api/t/{KEY-N}`, `GET /api/me/tasks`, statuses/labels/milestones/views, task archive | the bot works like a person, within the board bits of its roles and overrides (it can be an assignee and be let into a private board personally); a comment is a message in `task.roomId`. Board access (`PUT …/permissions`) and the final delete (`DELETE …?purge=1`) — 403 `BOT_NOT_ALLOWED`. SDK: `bot.boards.list/get`, `bot.tasks.list/search/get/create/update/setAssignees/comment` | `VIEW_BOARD` / `CREATE_TASKS` / `EDIT_TASKS` / `MANAGE_BOARD` |
 | `GET /api/workspaces/{id}/sounds` · `POST /api/rooms/{id}/sounds/play {soundId}` | soundboard (ADR-0036): the workspace's sounds; play one to everyone in the call (`builtin:<name>` or a sound id; 1 per 2 s per bot, 5 per 10 s per room) | the bot is in the room's call; managing sounds — 403 |
@@ -240,6 +241,7 @@ JSON frames (`?encoding=json`):
 | `stickerPackCreate/Update/Delete` | the workspace's sticker packs |
 | `soundCreate/Update/Delete` · `soundPlay` | the workspace's soundboard; `soundPlay` only while the bot is in the room's call |
 | `botCreate/Update/Delete` | the workspace's bots — only with `MANAGE_WORKSPACE` |
+| `sipCallUpdate` | a room's phone call was placed or changed status (ADR-0046) |
 
 A bot can also send `TYPING { roomId }` ("is typing", at most once per 3 s per room), `SUBSCRIBE { roomIds }`
 (≤ 100) and `PRESENCE_UPDATE`.

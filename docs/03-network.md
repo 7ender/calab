@@ -16,6 +16,8 @@
 | 5349 | TCP | LiveKit | TURN (TLS снят в Caddy, `external_tls`), за Caddy layer4. LiveKit не умеет привязать TURN к loopback — слушает `*:5349`, снаружи закрыт файрволом (порта нет в accept-списке) |
 | 3000 | TCP | API | только 127.0.0.1, за Caddy |
 | 5432 / 6379 | TCP | Postgres / Redis | только 127.0.0.1 |
+| 5060 | UDP + TCP | LiveKit SIP | **только при `SIP_ENABLED=1`** (ADR-0046): SIP-сигнализация с провайдерами телефонии |
+| 10000–10200 | UDP | LiveKit SIP | **только при `SIP_ENABLED=1`**: RTP телефонных звонков (ниже TURN relay 20000–29999 и эфемерных 32768–60999) |
 
 Порядок попыток клиента (libwebrtc + LiveKit SDK, `allow_tcp_fallback: true`):
 1. Прямой UDP host/srflx (STUN) → 7882
@@ -86,6 +88,20 @@ TLS для TURN терминирует Caddy (layer4-маршрут `tls` → `p
   ```
   (в `/etc/iptables/rules.v4`, комментарий `calaba-turn-relay`). После: пакет на `141.105.69.177:45998` не доходит, `100.64.0.1`/`1.1.1.1` дропаются (счётчики правил), relay-check TLS и UDP — PASS, медиа идёт.
 - Проверка: `iptables -L OUTPUT -n -v | grep calaba-turn` — счётчики растут только при попытках злоупотребления, не при обычных звонках.
+
+### SIP (телефония, ADR-0046) — только при `SIP_ENABLED=1`
+
+Контейнер `livekit/sip` в host network: сигнализация `5060` UDP+TCP, медиа `10000–10200/udp`. Звонки только исходящие, но провайдер шлёт в диалог запросы (BYE, re-INVITE) и RTP с других адресов/портов, так что conntrack «established» не хватает — порты открываются явно. Незнакомые INVITE сервис молча отбрасывает (`hide_inbound_port`). Перед DROP:
+
+```
+-A INPUT -p udp --dport 5060 -m comment --comment calaba-sip -j ACCEPT
+-A INPUT -p tcp --dport 5060 -m comment --comment calaba-sip -j ACCEPT
+-A INPUT -p udp --dport 10000:10200 -m comment --comment calaba-sip-rtp -j ACCEPT
+```
+
+- Пересечений нет: чужая GPU-задача — 8000–8400, 9100, 9400; её `ffmpeg` — UDP 9001/9002/33621/54241; TURN relay — 20000–29999; эфемерные — 32768–60999. Перед включением стенд-агент проверяет `ss -lunp | grep -E ':(5060|100[0-9]{2}|10[12][0-9]{2})\b'` и `ss -ltnp | grep :5060` — пусто.
+- Выключить телефонию: `SIP_ENABLED=0` + `deploy.sh` (контейнер удаляется) и убрать три правила (`iptables -D …`), сохранить `rules.v4`.
+- Провайдер, у которого белый список IP, — дать ему публичный IP хоста; `use_external_ip` узнаёт его через STUN.
 
 ### IPv6
 
