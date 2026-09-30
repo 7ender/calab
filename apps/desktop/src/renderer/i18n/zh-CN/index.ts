@@ -276,6 +276,7 @@ export const zhCN: Dict = {
   'perm.MANAGE_BOARD': '管理看板',
   'perm.INVITE_MEMBERS': '邀请成员',
   'perm.INVITE_GUESTS': '邀请访客',
+  'perm.CREATE_TEMP_ROOMS': '创建临时房间',
   'perm.hint.INVITE_MEMBERS': '空间的邀请链接和邮件邀请；在房间中为仅限空间成员的链接。',
   'perm.hint.INVITE_GUESTS': '房间的访客链接，以及决定放行哪些等待中的访客。',
   'perm.ADMINISTRATOR': '管理员',

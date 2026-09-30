@@ -276,6 +276,7 @@ export const en: Dict = {
   'perm.MANAGE_BOARD': 'Manage board',
   'perm.INVITE_MEMBERS': 'Invite members',
   'perm.INVITE_GUESTS': 'Invite guests',
+  'perm.CREATE_TEMP_ROOMS': 'Create temporary rooms',
   'perm.hint.INVITE_MEMBERS': 'Invite links and e-mail invitations to the workspace; in a room, a link for workspace members only.',
   'perm.hint.INVITE_GUESTS': 'Guest links of rooms and deciding which waiting guests to let in.',
   'perm.ADMINISTRATOR': 'Administrator',

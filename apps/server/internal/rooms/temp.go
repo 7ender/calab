@@ -28,19 +28,20 @@ import (
 // Temporary rooms (ADR-0044): voice rooms with rooms.expires_at, created with CREATE_TEMP_ROOMS
 // together with a room link, archived by the sweeper when they expire.
 
+// Limits of temporary rooms: lifetime at creation and extension (MinTempTTL, MaxTempTTL), live
+// rooms per workspace and per creator, people of a private one; TempSweep is how often
+// expired rooms are archived.
 const (
-	// MinTempTTL / MaxTempTTL bound a temporary room's lifetime at creation and extension.
-	MinTempTTL = 15 * time.Minute
-	MaxTempTTL = 7 * 24 * time.Hour
-	// MaxTempPerWorkspace / MaxTempPerUser cap the live temporary rooms.
+	MinTempTTL          = 15 * time.Minute
+	MaxTempTTL          = 7 * 24 * time.Hour
 	MaxTempPerWorkspace = 20
 	MaxTempPerUser      = 5
-	// MaxTempMembers caps member_ids of a private temporary room.
-	MaxTempMembers = 50
-	// TempSweep is how often expired temporary rooms are archived.
-	TempSweep = 30 * time.Second
-	// tempPurgeEvery: the retention purge of the archive.
-	tempPurgeEvery = time.Hour
+	MaxTempMembers      = 50
+	TempSweep           = 30 * time.Second
+)
+
+const (
+	tempPurgeEvery = time.Hour // the retention purge of the archive
 	tempBatch      = 200
 )
 
@@ -51,7 +52,7 @@ const TempAllow = perm.ViewRoom | perm.Connect | perm.Speak | perm.Video | perm.
 // ReasonPerUser (ApiError.reason of TEMP_ROOM_LIMIT): the creator's own cap, not the workspace's.
 const ReasonPerUser = "PER_USER"
 
-// ErrRoomArchived: the room is an archived temporary room — history only (ADR-0044).
+// ErrRoomArchived is 410 ROOM_ARCHIVED: an archived temporary room serves its history only (ADR-0044).
 var ErrRoomArchived = httpx.Coded(http.StatusGone, v1.ErrorCode_ERROR_CODE_ROOM_ARCHIVED, "the room is archived")
 
 // Meetings is what temporary rooms need from the calendar (ADR-0038); calendar.Service

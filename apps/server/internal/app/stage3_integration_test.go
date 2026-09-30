@@ -43,7 +43,7 @@ type recordingLiveKit struct {
 	muted    []string
 	moves    []string
 	removed  []string
-	deleted  []string // DeleteRoom calls (room names)
+	deleted  []string                  // DeleteRoom calls (room names)
 	fakeMove bool                      // pretend MoveParticipant succeeded (no real WebRTC participant in tests)
 	perms    map[string]rtc.Permission // last permission sent per identity
 	// afterCreateRoom, if set, runs once after a successful CreateRoom (e.g. to cancel the
