@@ -11,6 +11,7 @@ import { showsUnread, useRooms } from '../../stores/rooms';
 import { useSession } from '../../stores/session';
 import { useUi } from '../../stores/ui';
 import { useVoice } from '../../stores/voice';
+import { openWorkspaceVoice } from './railNav';
 import { RailContextMenu } from './RailContextMenu';
 import { useHomeDrop } from '../notes/HomeDrop';
 import { useWorkspaces } from '../../stores/workspaces';
@@ -65,7 +66,6 @@ export function WorkspaceRail(): ReactNode {
 function RailItem({ id }: { id: string }): ReactNode {
   const w = useWorkspaces((s) => s.byId[id]?.ws);
   const isActive = useUi((s) => s.activeWorkspaceId === id);
-  const setWs = useUi((s) => s.setWorkspace);
   const inVoice = useVoice((s) => s.workspaceId === id && s.roomId !== null);
   // One of its web apps is open (ADR-0050): the app's icon carries the full pill.
   const appOpen = useOpenApp(isActive ? id : null) !== null;
@@ -102,7 +102,7 @@ function RailItem({ id }: { id: string }): ReactNode {
       <RailContextMenu workspaceId={id} tip={w.name}>
         <button
           type="button"
-          onClick={() => setWs(id)}
+          onClick={() => openWorkspaceVoice(id)}
           aria-current={isActive ? 'page' : undefined}
           aria-label={label}
           className={cx(
