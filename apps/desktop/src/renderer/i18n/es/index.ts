@@ -5,6 +5,7 @@ import { esDm } from './dm';
 import { esNotes } from './notes';
 import { esCall } from './call';
 import { esEcho } from './echo';
+import { esMusic } from './music';
 import { esMedia } from './media';
 import { esMail } from './mail';
 import { esRecording } from './recording';
@@ -44,6 +45,7 @@ export const es: Dict = {
   ...esNotes,
   ...esCall,
   ...esEcho,
+  ...esMusic,
   ...esMedia,
   ...esPlan,
   ...esModeration,

@@ -64,6 +64,29 @@ export function audioCaptureConstraints(rnnoiseEnabled: boolean): MediaTrackCons
 }
 
 /**
+ * Capture constraints of musician mode (ADR-0052): no echo cancellation, noise suppression or
+ * gain control (each is tuned for speech and eats sustained notes, dynamics and quiet tails),
+ * no platform voice isolation, stereo when the device has it. The RNNoise worklet is off too
+ * (the caller). Chromium 152 has no legacy `goog*` constraints any more, so none are sent.
+ */
+export function musicianCaptureConstraints(): MediaTrackConstraints {
+  const c: MediaTrackConstraints & { voiceIsolation?: boolean } = {
+    echoCancellation: false,
+    noiseSuppression: false,
+    autoGainControl: false,
+    voiceIsolation: false,
+    channelCount: { ideal: 2 },
+    sampleRate: { ideal: 48000 },
+  };
+  return c;
+}
+
+/** Capture constraints for the mic: speech processing (default) or musician mode (ADR-0052). */
+export function micCaptureConstraints(o: { rnnoise: boolean; musician: boolean }): MediaTrackConstraints {
+  return o.musician ? musicianCaptureConstraints() : audioCaptureConstraints(o.rnnoise);
+}
+
+/**
  * `MediaStreamTrack.contentHint` of a screen share. Both hints publish AV1 simulcast with L1T3
  * layers (ADR-0012 superseded the per-hint SVC table of ADR-0005, which is gone).
  */

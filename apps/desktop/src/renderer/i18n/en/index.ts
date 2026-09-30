@@ -5,6 +5,7 @@ import { enDm } from './dm';
 import { enNotes } from './notes';
 import { enCall } from './call';
 import { enEcho } from './echo';
+import { enMusic } from './music';
 import { enMedia } from './media';
 import { enMail } from './mail';
 import { enRecording } from './recording';
@@ -44,6 +45,7 @@ export const en: Dict = {
   ...enNotes,
   ...enCall,
   ...enEcho,
+  ...enMusic,
   ...enMedia,
   ...enPlan,
   ...enModeration,

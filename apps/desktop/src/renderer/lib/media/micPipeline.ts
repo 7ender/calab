@@ -1,4 +1,4 @@
-import { audioCaptureConstraints } from '@calaba/protocol';
+import { micCaptureConstraints } from '@calaba/protocol';
 import workletUrl from './worklets/mic-processor.worklet.ts?worker&url';
 import { log } from '../log';
 import { DUCK_GAIN, ECHO } from './echo';
@@ -18,6 +18,9 @@ import type { DenoiseControl, DenoiseMode } from './denoiseSleep';
  * on the *input* path: it only lowers what we send, remote playback stays plain <audio>.
  * Without RNNoise and ducking the raw capture track is published as is (no WebAudio at all).
  *
+ * Musician mode (ADR-0052): getUserMedia without AEC / NS / AGC (stereo if the device has it),
+ * never RNNoise; the published track gets `contentHint = 'music'`. Only the input path changes.
+ *
  * The worklet reports level + VAD every 20 ms for the voice gate (every 100 ms while RNNoise
  * sleeps — the mic is off air then, lib/media/denoiseSleep.ts).
  * WebAudio is used strictly on the capture side; remote audio never goes
@@ -26,6 +29,8 @@ import type { DenoiseControl, DenoiseMode } from './denoiseSleep';
 export interface MicPipelineOptions {
   deviceId: string | null;
   rnnoise: boolean;
+  /** Musician mode (ADR-0052): raw capture, RNNoise forced off. */
+  musician?: boolean;
   /** Needs the duck (speakerphone modes): without RNNoise too, publish through a gain stage. */
   duckable?: boolean;
   onReport: (r: MicReport) => void;
@@ -42,6 +47,10 @@ export class MicPipeline {
     readonly track: MediaStreamTrack,
     readonly rnnoise: boolean,
     readonly deviceLabel: string,
+    /** Musician-mode capture (ADR-0052). */
+    readonly musician: boolean,
+    /** Channels of the published track: 2 only for a stereo device in musician mode. */
+    readonly channels: number,
     private readonly ctx: AudioContext,
     private readonly node: AudioWorkletNode,
     private readonly owned: MediaStreamTrack[],
@@ -106,9 +115,11 @@ export class MicPipeline {
     }
   }
 
-  private static async startWith(opts: MicPipelineOptions, sampleRate: number | undefined): Promise<MicPipeline> {
+  private static async startWith(options: MicPipelineOptions, sampleRate: number | undefined): Promise<MicPipeline> {
+    const musician = options.musician === true;
+    const opts = musician ? { ...options, rnnoise: false } : options;
     const constraints: MediaTrackConstraints = {
-      ...audioCaptureConstraints(opts.rnnoise),
+      ...micCaptureConstraints({ rnnoise: opts.rnnoise, musician }),
       ...(opts.deviceId ? { deviceId: { exact: opts.deviceId } } : {}),
     };
     const stream = await navigator.mediaDevices.getUserMedia({ audio: constraints, video: false });
@@ -118,7 +129,8 @@ export class MicPipeline {
     if (onEnded) raw.addEventListener('ended', () => onEnded());
     // What the browser actually applied (docs/02, «Эхо: колонки» — how to verify AEC is on).
     const st = raw.getSettings();
-    log.info('[mic] capture settings', { echoCancellation: st.echoCancellation, autoGainControl: st.autoGainControl, noiseSuppression: st.noiseSuppression, sampleRate: st.sampleRate, device: raw.label });
+    log.info('[mic] capture settings', { echoCancellation: st.echoCancellation, autoGainControl: st.autoGainControl, noiseSuppression: st.noiseSuppression, sampleRate: st.sampleRate, channelCount: st.channelCount, musician, device: raw.label });
+    const captured = musician && (st.channelCount ?? 1) >= 2 ? 2 : 1;
 
     // RNNoise is trained for 48 kHz; Chromium resamples the device if needed.
     const ctx = new AudioContext({ ...(sampleRate ? { sampleRate } : {}), latencyHint: 'interactive' });
@@ -164,20 +176,22 @@ export class MicPipeline {
         // Worklet (level/VAD) → gain: the gate and the meter see the level before the duck.
         gain = ctx.createGain();
         const dest = ctx.createMediaStreamDestination();
-        dest.channelCount = 1;
+        dest.channelCount = captured; // mono, except a stereo device in musician mode
         (opts.rnnoise ? node : source).connect(gain);
         gain.connect(dest);
         const t = dest.stream.getAudioTracks()[0];
         if (!t) throw new Error('MediaStreamDestination has no track');
         publishTrack = t;
       }
+      // A hint for the browser; the encoder's AUDIO application comes from `stereo=1` (opusTier.ts).
+      if (musician) publishTrack.contentHint = 'music';
       if (ctx.state !== 'running') await ctx.resume();
       // Only the RNNoise path needs WASM; analysis-only never blocks start-up.
       if (opts.rnnoise) await alive;
       else alive.catch(() => undefined);
 
       const owned = graph ? [raw, publishTrack] : [raw, analysisTrack];
-      return new MicPipeline(publishTrack, opts.rnnoise, raw.label, ctx, node, owned, gain);
+      return new MicPipeline(publishTrack, opts.rnnoise, raw.label, musician, captured, ctx, node, owned, gain);
     } catch (err) {
       raw.stop();
       void ctx.close();

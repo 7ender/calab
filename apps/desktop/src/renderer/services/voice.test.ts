@@ -102,7 +102,7 @@ class FakeRoom {
   localParticipant = {
     identity: 'u1:mine',
     permissions: undefined as undefined | { canPublish: boolean; canPublishSources: number[] },
-    publishTrack: vi.fn((t: FakeLocalAudioTrack) => {
+    publishTrack: vi.fn((t: FakeLocalAudioTrack, _opts?: unknown) => {
       this.published.push(t);
       return Promise.resolve();
     }),
@@ -160,7 +160,7 @@ vi.mock('livekit-client', () => ({
 // ---------------------------------------------------------------- app mocks
 
 const joinVoice = vi.fn((roomId: string) => Promise.resolve({ url: 'wss://lk', token: `t-${roomId}`, canSpeak: true, canStream: true, media: { audioBitrateKbps: 32 } }));
-const updateSelf = vi.fn((_b: { muted?: boolean; deafened?: boolean }) => Promise.resolve());
+const updateSelf = vi.fn((_b: { muted?: boolean; deafened?: boolean; musician?: boolean }) => Promise.resolve());
 const leaveVoice = vi.fn((_roomId: string) => Promise.resolve());
 const requestStream = vi.fn((_roomId: string, preset: number) => Promise.resolve({ preset, fps: 0 }));
 vi.mock('../lib/api/endpoints', () => ({
@@ -168,7 +168,7 @@ vi.mock('../lib/api/endpoints', () => ({
     voice: {
       join: (id: string) => joinVoice(id),
       leave: (id: string) => leaveVoice(id),
-      updateSelf: (b: { muted?: boolean; deafened?: boolean }) => updateSelf(b),
+      updateSelf: (b: { muted?: boolean; deafened?: boolean; musician?: boolean }) => updateSelf(b),
       requestStream: (id: string, preset: number) => requestStream(id, preset),
     },
     me: { update: () => Promise.resolve({}) },
@@ -181,6 +181,9 @@ interface FakePipeline {
   deviceId: string | null;
   deviceLabel: string;
   rnnoise: boolean;
+  /** Musician-mode capture (ADR-0052) and the published channels. */
+  musician: boolean;
+  channels: number;
   /** MicPipeline.duckable: a gain stage exists (RNNoise on or a speakerphone mode). */
   duckable: boolean;
   isDucked: boolean;
@@ -194,7 +197,7 @@ const pipelines: FakePipeline[] = [];
 let gate: Promise<void> | null = null; // when set, MicPipeline.start waits for it
 vi.mock('../lib/media/micPipeline', () => ({
   MicPipeline: {
-    start: vi.fn(async (opts: { deviceId: string | null; rnnoise: boolean; duckable?: boolean; onEnded?: () => void }) => {
+    start: vi.fn(async (opts: { deviceId: string | null; rnnoise: boolean; musician?: boolean; duckable?: boolean; onEnded?: () => void }) => {
       if (gate) await gate;
       if (opts.deviceId && gone.has(opts.deviceId)) throw Object.assign(new Error('gone'), { name: 'OverconstrainedError' });
       const track = new FakeTrack();
@@ -202,7 +205,9 @@ vi.mock('../lib/media/micPipeline', () => ({
         track,
         deviceId: opts.deviceId,
         deviceLabel: opts.deviceId ?? 'Default - Built-in Mic',
-        rnnoise: opts.rnnoise,
+        rnnoise: opts.rnnoise && opts.musician !== true,
+        musician: opts.musician === true,
+        channels: 1,
         duckable: opts.rnnoise || opts.duckable === true,
         isDucked: false,
         setDuck: vi.fn(),
@@ -227,10 +232,10 @@ vi.mock('../lib/media/screenShare', () => ({
 const pickPublishCodec = vi.fn((_kind: string, pref: string) => Promise.resolve({ codec: pref === 'auto' ? 'h264' : pref, hw: false }));
 vi.mock('../lib/media/codecSelect', () => ({ pickPublishCodec: (k: string, p: string) => pickPublishCodec(k, p) }));
 /** The voice tier re-applied to the published mic (lib/media/opusTierPublish.ts). */
-const applyMicTier = vi.fn((_room: unknown, _sender: unknown, _tier: { kbps: number }) => Promise.resolve());
+const applyMicTier = vi.fn((_room: unknown, _sender: unknown, _tier: { kbps: number; dtx?: boolean; stereo?: boolean }) => Promise.resolve());
 vi.mock('../lib/media/opusTierPublish', () => ({
   installOpusTierHook: () => () => undefined,
-  applyMicTier: (r: unknown, s: unknown, t: { kbps: number }) => applyMicTier(r, s, t),
+  applyMicTier: (r: unknown, s: unknown, t: { kbps: number; dtx?: boolean; stereo?: boolean }) => applyMicTier(r, s, t),
 }));
 const playSound = vi.fn((_name: string) => undefined);
 vi.mock('../lib/sounds', () => ({ playSound: (name: string) => playSound(name) }));
@@ -422,7 +427,7 @@ describe('VoiceEngine', () => {
       voice.checkSeat();
       await settle();
       expect(joinVoice.mock.calls.at(-1)).toEqual(['A']);
-      expect(updateSelf).toHaveBeenCalledWith({ muted: true, deafened: false });
+      expect(updateSelf).toHaveBeenCalledWith({ muted: true, deafened: false, musician: false });
       expect(useVoice.getState()).toMatchObject({ roomId: 'A', phase: 'connected' });
     });
 
@@ -477,7 +482,7 @@ describe('VoiceEngine', () => {
     await vi.advanceTimersByTimeAsync(50);
     await b;
     expect(updateSelf).toHaveBeenCalledTimes(2); // right after /join, and after the connect
-    expect(updateSelf).toHaveBeenNthCalledWith(1, { muted: true, deafened: false });
+    expect(updateSelf).toHaveBeenNthCalledWith(1, { muted: true, deafened: false, musician: false });
   });
 
   it('a newer join wins over one still waiting for /join', async () => {
@@ -743,7 +748,7 @@ describe('VoiceEngine', () => {
     await vi.advanceTimersByTimeAsync(500);
     expect(useVoice.getState()).toMatchObject({ muted, deafened: false });
     expect(FakeRoom.all[0]?.published[0]?.isMuted).toBe(muted);
-    expect(updateSelf).toHaveBeenLastCalledWith({ muted, deafened: false });
+    expect(updateSelf).toHaveBeenLastCalledWith({ muted, deafened: false, musician: false });
   });
 
   it('undeafen cannot lift a moderator mute applied while deafened', async () => {
@@ -754,7 +759,7 @@ describe('VoiceEngine', () => {
     await vi.advanceTimersByTimeAsync(100);
     expect(useVoice.getState()).toMatchObject({ muted: true, deafened: false, serverMuted: true });
     expect(FakeRoom.all[0]?.published[0]?.isMuted).toBe(true);
-    expect(updateSelf).toHaveBeenLastCalledWith({ muted: true, deafened: false });
+    expect(updateSelf).toHaveBeenLastCalledWith({ muted: true, deafened: false, musician: false });
   });
 
   it.each([true, false])('rejoin while deafened preserves the prior mic mute (%s)', async (muted) => {
@@ -772,7 +777,7 @@ describe('VoiceEngine', () => {
     await vi.advanceTimersByTimeAsync(100);
     expect(useVoice.getState()).toMatchObject({ muted, deafened: false });
     expect(FakeRoom.all[1]?.published[0]?.isMuted).toBe(muted);
-    expect(updateSelf).toHaveBeenLastCalledWith({ muted, deafened: false });
+    expect(updateSelf).toHaveBeenLastCalledWith({ muted, deafened: false, musician: false });
   });
 
   it('the chosen mic unplugged mid-call → default device, published in place (review M3)', async () => {
@@ -1016,7 +1021,7 @@ describe('per-user volume and local mute (docs/09 #20)', () => {
       await vi.advanceTimersByTimeAsync(100);
       expect(useVoice.getState()).toMatchObject({ muted: true, deafened: false });
       expect(FakeRoom.all[0]?.published[0]?.isMuted).toBe(true);
-      expect(updateSelf).toHaveBeenLastCalledWith({ muted: true, deafened: false });
+      expect(updateSelf).toHaveBeenLastCalledWith({ muted: true, deafened: false, musician: false });
       voice.toggleMute(); // mic on
       voice.toggleDeafen();
       await vi.advanceTimersByTimeAsync(100);
@@ -1025,20 +1030,20 @@ describe('per-user volume and local mute (docs/09 #20)', () => {
       await vi.advanceTimersByTimeAsync(100);
       expect(useVoice.getState()).toMatchObject({ muted: false, deafened: false });
       expect(FakeRoom.all[0]?.published[0]?.isMuted).toBe(false);
-      expect(updateSelf).toHaveBeenLastCalledWith({ muted: false, deafened: false });
+      expect(updateSelf).toHaveBeenLastCalledWith({ muted: false, deafened: false, musician: false });
       voice.toggleMute(); // remember a manual mute for this deafen cycle
       voice.toggleDeafen();
       voice.toggleMute(); // the mic button while deafened: both off (Discord)
       await vi.advanceTimersByTimeAsync(100);
       expect(useVoice.getState()).toMatchObject({ muted: false, deafened: false });
       expect(FakeRoom.all[0]?.published[0]?.isMuted).toBe(false);
-      expect(updateSelf).toHaveBeenLastCalledWith({ muted: false, deafened: false });
+      expect(updateSelf).toHaveBeenLastCalledWith({ muted: false, deafened: false, musician: false });
       voice.toggleDeafen();
       voice.toggleDeafen();
       await vi.advanceTimersByTimeAsync(100);
       expect(useVoice.getState()).toMatchObject({ muted: false, deafened: false });
       expect(FakeRoom.all[0]?.published[0]?.isMuted).toBe(false);
-      expect(updateSelf).toHaveBeenLastCalledWith({ muted: false, deafened: false });
+      expect(updateSelf).toHaveBeenLastCalledWith({ muted: false, deafened: false, musician: false });
     });
 
     it('PTT while deafened: nothing on air, no activation sound (#12)', async () => {
@@ -1184,7 +1189,7 @@ describe('VOICE_MOVED (ADR-0019)', () => {
     await settle();
     expect(useVoice.getState()).toMatchObject({ muted: true, deafened: false });
     expect(FakeRoom.all[1]?.published[0]?.isMuted).toBe(true);
-    expect(updateSelf).toHaveBeenLastCalledWith({ muted: true, deafened: false });
+    expect(updateSelf).toHaveBeenLastCalledWith({ muted: true, deafened: false, musician: false });
   });
 
   it('with a token, not streaming: short toast, the server mute survives the reconnect', async () => {
@@ -1419,6 +1424,57 @@ describe('voice tier (docs/02 «Битрейт»)', () => {
     voice.refreshRights();
     await vi.waitFor(() => expect(applyMicTier.mock.calls.at(-1)?.[2]).toMatchObject({ kbps: 64 }));
     expect(r?.localParticipant.publishTrack.mock.calls.length).toBe(publishes); // no republish
+    await voice.leave();
+  });
+});
+
+describe('musician mode (ADR-0052)', () => {
+  it('toggled in a call: raw capture swapped in place, music profile, open mic, flag to the server — and back', async () => {
+    await voice.join('A', 'ws');
+    const r = FakeRoom.all.at(-1);
+    await vi.waitFor(() => expect(r?.published.length).toBe(1));
+    const pub = r?.published[0];
+    const first = pipelines.at(-1);
+    expect(first?.musician).toBe(false);
+    expect(pub?.mediaStreamTrack.enabled).toBe(false); // the VAD gate is closed in silence
+    const publishes = r?.localParticipant.publishTrack.mock.calls.length;
+    applyMicTier.mockClear();
+    updateSelf.mockClear();
+
+    usePrefs.getState().setPrefs({ musicianMode: true });
+    await vi.waitFor(() => expect(pipelines.at(-1)?.musician).toBe(true));
+    const music = pipelines.at(-1);
+    await vi.waitFor(() => expect(pub?.mediaStreamTrack).toBe(music?.track)); // replaceTrack, same publication
+    expect(first?.stop).toHaveBeenCalled();
+    await vi.waitFor(() => expect(applyMicTier.mock.calls.at(-1)?.[2]).toMatchObject({ kbps: 128, dtx: false, stereo: true, fec: true, maxPlaybackRate: 48000 }));
+    expect(updateSelf).toHaveBeenLastCalledWith({ muted: false, deafened: false, musician: true });
+    expect(pub?.mediaStreamTrack.enabled).toBe(true); // no VAD gating: the mic stays open in silence
+    expect(useVoice.getState().transmitting).toBe(true);
+    expect(r?.localParticipant.publishTrack.mock.calls.length).toBe(publishes); // no republish
+
+    usePrefs.getState().setPrefs({ musicianMode: false });
+    await vi.waitFor(() => expect(pipelines.at(-1)?.musician).toBe(false));
+    await vi.waitFor(() => expect(pub?.mediaStreamTrack).toBe(pipelines.at(-1)?.track));
+    await vi.waitFor(() => expect(applyMicTier.mock.calls.at(-1)?.[2]).toMatchObject({ kbps: 32, dtx: true, stereo: false }));
+    expect(updateSelf).toHaveBeenLastCalledWith({ muted: false, deafened: false, musician: false });
+    expect(pub?.mediaStreamTrack.enabled).toBe(false); // gated again
+    await voice.leave();
+  });
+
+  it('joining in musician mode publishes without DTX; off = no new work (the speech path as before)', async () => {
+    usePrefs.getState().setPrefs({ musicianMode: true });
+    await voice.join('A', 'ws');
+    const r = FakeRoom.all.at(-1);
+    await vi.waitFor(() => expect(r?.published.length).toBe(1));
+    expect(pipelines.at(-1)?.musician).toBe(true);
+    expect(r?.localParticipant.publishTrack.mock.calls.at(-1)?.[1]).toMatchObject({ dtx: false, audioPreset: { maxBitrate: 128_000 } });
+    await voice.leave();
+    usePrefs.getState().setPrefs({ musicianMode: false });
+    await voice.join('B', 'ws');
+    const r2 = FakeRoom.all.at(-1);
+    await vi.waitFor(() => expect(r2?.published.length).toBe(1));
+    expect(pipelines.at(-1)?.musician).toBe(false);
+    expect(r2?.localParticipant.publishTrack.mock.calls.at(-1)?.[1]).toMatchObject({ dtx: true, audioPreset: { maxBitrate: 32_000 } });
     await voice.leave();
   });
 });

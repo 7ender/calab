@@ -83,7 +83,7 @@ import { joinedAtMs } from '../../lib/justJoined';
 import { moveMember } from '../people/actions';
 import { errorText } from '../../lib/api/errors';
 import { VoiceInviteRow, VoiceStatusLine, useStatusLine } from './VoiceRoomRows';
-import { VoiceStateIcons } from '../voice/VoiceStateIcons';
+import { MusicianIcon, VoiceStateIcons } from '../voice/VoiceStateIcons';
 import { isMobileNow, useMobile } from '../../lib/mobile';
 import { useChatDrop } from '../chat/useChatDrop';
 import { applyChatDrop } from '../notes/dropActions';
@@ -1592,6 +1592,7 @@ function VoiceMember({
         </Badge>
       ) : null}
       {state.camera ? <Video className="size-4 shrink-0 text-muted" aria-label={t('video.stateOn')} role="img" /> : null}
+      {state.musician ? <MusicianIcon /> : null}
       <VoiceStateIcons muted={state.muted} deafened={state.deafened} serverMuted={state.serverMuted || (isMe && serverMuted)} />
     </li>
   );

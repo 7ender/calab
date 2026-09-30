@@ -1,6 +1,7 @@
 import { useEffect, useState, type ReactNode } from 'react';
 import { codecHwLabel, codecPowerEfficient, toPublishCodec, type CodecDirection, type PublishKind } from '../../lib/media/codecSelect';
 import { audioTierLabel } from '../../lib/audioTierLabel';
+import { t } from '../../i18n';
 import { usePrefs } from '../../stores/prefs';
 import { useVoice } from '../../stores/voice';
 
@@ -80,7 +81,7 @@ function StatsPanel(): ReactNode {
       </div>
       <div>
         out↑ {rateText(st.totalOutKbps)} · in↓ {rateText(st.totalInKbps)} · mic {n(st.micKbps, 1)} kbps
-        {st.micTierKbps ? ` · ${audioTierLabel(st.micTierKbps)}` : ''}
+        {st.micTierKbps ? ` · ${st.micTierKbps > 64 ? `${t('music.stats')} ${st.micTierKbps}` : audioTierLabel(st.micTierKbps)}` : ''}
       </div>
       {st.echo ? (
         <div>

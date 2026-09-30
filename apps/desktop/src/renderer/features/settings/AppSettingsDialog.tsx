@@ -1,7 +1,7 @@
 import { AUDIO_TIERS_KBPS, audioTierKbps } from '@calaba/protocol';
 import { timestampDate } from '@bufbuild/protobuf/wkt';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { Bell, CalendarDays, CircleUser, Info, Keyboard, Mic, MonitorSmartphone, SlidersHorizontal, Trash2, Wifi } from 'lucide-react';
+import { Bell, CalendarDays, CircleUser, Headphones, Info, Keyboard, Mic, MonitorSmartphone, SlidersHorizontal, Trash2, Wifi } from 'lucide-react';
 import { useCallback, useEffect, useState, type ReactNode } from 'react';
 import type { AppInfo, AppSettings, PermissionStatus } from '../../../shared/ipc';
 import { Avatar } from '../../components/Avatar';
@@ -18,6 +18,8 @@ import { fmt } from '../../lib/format';
 import { CHECK_IDS, runConnectionCheck, voiceProbeLine, type CheckId, type CheckRow } from '../../lib/connCheck';
 import { log } from '../../lib/log';
 import { METER_MIN_DB } from '../../lib/media/vad';
+import { outputLabel } from '../../lib/media/outputKind';
+import { musicianWarning } from '../../services/musician';
 import { platform } from '../../platform';
 import { shortcutHelp } from '../../services/hotkeys';
 import { logout } from '../../services/session';
@@ -394,9 +396,10 @@ function VoiceTab(): ReactNode {
 
       <EchoCard />
 
-      <Card title={t('voice.processing')} footer={t('voice.aecNote')}>
-        <Row label={t('voice.rnnoise')} hint={t('voice.rnnoiseHint')}>
-          <Toggle label={t('voice.rnnoise')} checked={p.rnnoise} onChange={(v) => p.setPrefs({ rnnoise: v })} />
+      <Card title={t('voice.processing')} footer={p.musicianMode ? t('music.aecNote') : t('voice.aecNote')}>
+        <MusicianRow outputs={outputs} />
+        <Row label={t('voice.rnnoise')} hint={p.musicianMode ? t('music.rnnoiseOff') : t('voice.rnnoiseHint')}>
+          <Toggle label={t('voice.rnnoise')} checked={p.rnnoise && !p.musicianMode} disabled={p.musicianMode} onChange={(v) => p.setPrefs({ rnnoise: v })} />
         </Row>
         <Row label={t('voice.red')} hint={t('voice.redHint')}>
           <Toggle label={t('voice.red')} checked={p.red} onChange={(v) => p.setPrefs({ red: v })} />
@@ -422,6 +425,33 @@ function VoiceTab(): ReactNode {
 
       <PermissionsCard />
     </>
+  );
+}
+
+/**
+ * «Режим музыканта» (ADR-0052): the toggle and, while it is on, the echo warning under it — the
+ * stronger one when the output looks like loudspeakers (outputKind, by the device label).
+ */
+function MusicianRow({ outputs }: { outputs: MediaDeviceInfo[] }): ReactNode {
+  const on = usePrefs((s) => s.musicianMode);
+  const outputId = usePrefs((s) => s.outputDeviceId);
+  const setPrefs = usePrefs((s) => s.setPrefs);
+  const warning = on ? musicianWarning(outputLabel(outputs, outputId)) : null;
+  return (
+    <div data-testid="musician-row">
+      <Row label={t('music.mode')} hint={t('music.hint')}>
+        <Toggle label={t('music.mode')} checked={on} onChange={(v) => setPrefs({ musicianMode: v })} />
+      </Row>
+      {warning ? (
+        <div
+          role="status"
+          className={cx('mx-3 mb-3 flex items-start gap-2 rounded-[var(--radius-row)] bg-mention px-2 py-1.5 text-[12px]', warning.strong ? 'text-danger-text' : 'text-fg')}
+        >
+          <Headphones className={cx('mt-px size-4 shrink-0', warning.strong ? 'text-danger' : 'text-warn')} aria-hidden />
+          <span>{warning.text}</span>
+        </div>
+      ) : null}
+    </div>
   );
 }
 

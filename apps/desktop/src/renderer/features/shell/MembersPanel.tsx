@@ -15,7 +15,7 @@ import { BadgeOrRoleMark } from '../people/MemberBadge';
 import { MemberContextMenu } from '../people/MemberContextMenu';
 import { BirthdayMark } from '../people/Birthday';
 import { MutedByMe } from '../../components/SpeakerIdentity';
-import { VoiceStateIcons } from '../voice/VoiceStateIcons';
+import { MusicianIcon, VoiceStateIcons } from '../voice/VoiceStateIcons';
 import { JustJoinedDot } from '../voice/JustJoinedDot';
 import { joinedAtMs } from '../../lib/justJoined';
 import { groupMembers, nameOf } from '../people/members';
@@ -353,6 +353,7 @@ const MemberRow = memo(function MemberRow({
         <Volume2 className="size-3.5 shrink-0 text-ok" aria-hidden />
         <span className="truncate">{roomName ?? t('people.inVoice')}</span>
         {v.camera ? <Video className="size-3.5 shrink-0" aria-label={t('video.stateOn')} role="img" /> : null}
+        {v.musician ? <MusicianIcon className="size-3.5" /> : null}
         <VoiceStateIcons muted={v.muted} deafened={v.deafened} serverMuted={v.serverMuted} />
       </>
     );

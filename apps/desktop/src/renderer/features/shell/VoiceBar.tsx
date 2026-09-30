@@ -1,6 +1,6 @@
 import * as Dropdown from '@radix-ui/react-dropdown-menu';
 import * as Popover from '@radix-ui/react-popover';
-import { Check, ChevronDown, ChevronRight, Ellipsis, Eye, Loader2, Lock, MessageCircle, MicOff, MonitorUp, MonitorX, Phone, Settings, Video, VideoOff, Wifi, WifiOff } from 'lucide-react';
+import { Check, ChevronDown, ChevronRight, Ellipsis, Eye, Guitar, Loader2, Lock, MessageCircle, MicOff, MonitorUp, MonitorX, Phone, Settings, Video, VideoOff, Wifi, WifiOff } from 'lucide-react';
 import { useEffect, useRef, useState, type ReactNode } from 'react';
 import { DisplayedPhase, offerRetry } from '../../lib/voiceLink';
 import { cameraBlock, camerasFull } from '../../lib/media/cameraLogic';
@@ -33,6 +33,7 @@ import { PRESET_LABEL, viewersText } from '../voice/streamFormat';
 import { CAMERA_PRESETS, allowedCameraPreset, cameraPresetLock, type CameraPreset } from '../../lib/plan';
 import { planToast } from '../../services/plan';
 import { toast } from '../../stores/toasts';
+import { setMusicianMode } from '../../services/musician';
 
 const Q_COLOR: Record<LinkQuality, string> = { good: 'text-ok', fair: 'text-warn', poor: 'text-danger', unknown: 'text-muted' };
 /** Lit bars out of 4 per quality (reconnecting reads as «poor»: 1 bar). */
@@ -552,6 +553,7 @@ export function VoiceBar(): ReactNode {
   const peerName = useMemberName(null, call && roomId ? dmPeer(roomId) : '');
   const devStats = usePrefs((s) => s.devStats);
   const saveTraffic = usePrefs((s) => s.saveTraffic);
+  const musician = usePrefs((s) => s.musicianMode);
   const anyVideo = useVoice((s) => s.cameras.length > 0 || s.camera === 'on');
   const stage = useVoice((s) => s.stage);
   const videoPip = useVoice((s) => s.videoPip);
@@ -673,6 +675,13 @@ export function VoiceBar(): ReactNode {
                 </Dropdown.ItemIndicator>
                 {t('shell.stats')}
               </Dropdown.CheckboxItem>
+              {/* Musician mode (ADR-0052): on → the headphones warning as a toast. */}
+              <Dropdown.CheckboxItem className={cx(menuItem, 'relative pl-7')} checked={musician} onCheckedChange={setMusicianMode}>
+                <Dropdown.ItemIndicator className="absolute left-2">
+                  <Check className="size-3.5" />
+                </Dropdown.ItemIndicator>
+                {t('music.mode')}
+              </Dropdown.CheckboxItem>
               <Dropdown.Separator className={menuSeparator} />
               <Dropdown.Item className={menuItem} onSelect={goRoom}>
                 <MessageCircle className="size-4" /> {t('shell.openRoom')}
@@ -713,6 +722,16 @@ export function VoiceBar(): ReactNode {
             {myStream.audioError ? <span className="mt-0.5 block text-muted">{myStream.audioError}</span> : null}
             <MyStreamAnnot />
           </span>
+        </div>
+      ) : null}
+      {musician ? (
+        // My own reminder (ADR-0052): the mic goes out raw — others see the guitar by my name.
+        <div className="mt-1.5 flex items-center gap-1.5 text-[12px]" role="status" data-testid="musician-self">
+          <Guitar className="size-4 shrink-0 text-accent-text" aria-hidden />
+          <span className="min-w-0 flex-1 truncate text-fg">{t('music.mode')}</span>
+          <button type="button" className="shrink-0 rounded-[var(--radius-control)] font-medium text-accent-text hover:underline" onClick={() => setMusicianMode(false)}>
+            {t('music.off')}
+          </button>
         </div>
       ) : null}
       {serverMuted ? (

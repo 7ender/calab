@@ -59,6 +59,8 @@ export interface Prefs {
   red: boolean;
   /** «Как вы слушаете» (docs/02 «Эхо: колонки»): per device — a laptop on speakers, a desk with headphones. */
   echoMode: EchoMode;
+  /** «Режим музыканта» (ADR-0052): the mic without AEC / NS / AGC / RNNoise, music Opus profile, no VAD gating. Per device. */
+  musicianMode: boolean;
   streamPreset: ConcreteScreenSharePreset;
   contentHint: ScreenShareContentHint;
   /** «Кодек стрима» (ADR-0032): auto = by hardware (H.264 unless AV1/VP9 is the hardware encoder). */
@@ -132,6 +134,7 @@ const DEFAULTS: Prefs = {
   rnnoise: false, // off by default (owner, 27.09): Chromium's noiseSuppression is on instead, RNNoise costs CPU
   red: false,
   echoMode: 'headphones',
+  musicianMode: false,
   streamPreset: ScreenSharePreset.H1080,
   contentHint: 'detail',
   streamCodec: 'auto',

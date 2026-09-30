@@ -5,6 +5,7 @@ import { zhDm } from './dm';
 import { zhNotes } from './notes';
 import { zhCall } from './call';
 import { zhEcho } from './echo';
+import { zhMusic } from './music';
 import { zhMedia } from './media';
 import { zhMail } from './mail';
 import { zhRecording } from './recording';
@@ -44,6 +45,7 @@ export const zhCN: Dict = {
   ...zhNotes,
   ...zhCall,
   ...zhEcho,
+  ...zhMusic,
   ...zhMedia,
   ...zhPlan,
   ...zhModeration,
