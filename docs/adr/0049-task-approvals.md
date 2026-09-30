@@ -95,3 +95,53 @@
 ## Порядок работ
 1. Сервер + контракт (Opus): proto, миграция, API, правило во всех путях, уведомления, фильтры, журнал, тесты.
 2. Клиент (Opus): панель, карточка, D&D, фильтр, i18n, мок, docs/08 — после мержа контракта.
+
+## Контракт для клиента (сервер готов, 30.09)
+
+Типы — только из `@calaba/protocol` (`boards_pb.ts`), руками не писать.
+
+**Поля задачи** (`Task`, во всех ответах: список, `GET`, `PATCH`, поиск, «Мои задачи», `TASK_CREATE/UPDATE`):
+- `approvers: TaskApprover[]` — по `addedAt`; `{userId, state: ApproverState.PENDING|APPROVED|REJECTED, comment, decidedAt?, addedBy, addedAt}`.
+- `approvalRequired: number` — `0` = «Все», иначе N (≤ числа согласующих).
+- `approvalState: TaskApprovalState.NONE|PENDING|APPROVED|REJECTED` — **читать готовым**, не пересчитывать.
+  Кворум для подписи «1 из 2» клиент считает сам: `quorum = approvalRequired === 0 ? approvers.length : Math.min(approvalRequired, approvers.length)`,
+  одобрений — `approvers.filter(a => a.state === APPROVED).length`.
+
+**Маршруты** (ответ — `TaskResponse` с полной задачей; остальным приходит `TASK_UPDATE`):
+- `PUT /api/tasks/{id}/approvers` `SetTaskApproversRequest {userIds, required}` — полный список (порядок сохраняется) и кворум.
+  Право: как правка задачи — `EDIT_TASKS`, или `CREATE_TASKS` у своей/назначенной задачи (иначе `403`); архивная — `409`.
+  `422` (`field`): `userIds` / `userIds[i]` — больше 10, дубль, не видит доску, гость, бот; `required` — больше числа согласующих.
+  Оставшиеся сохраняют голос; убранные теряют; новые — `PENDING`.
+- `POST /api/tasks/{id}/approval` `TaskApprovalRequest {decision: APPROVE|REJECT|WITHDRAW, comment}` — только свой голос.
+  Не согласующий — `403`; не видит доску — `404`; бот — `403` reason `BOT_NOT_ALLOWED`; `REJECT` без комментария или комментарий > 500 — `422` (`field: comment`);
+  `decision` не задан — `422`. `WITHDRAW` очищает комментарий. Повтор того же голоса — `200` без изменений.
+- `POST /api/boards/{id}/tasks` — `approverIds`, `approvalRequired` (те же проверки, поля `approverIds` / `approvalRequired`).
+
+**Блокировка** (сервер — арбитр; клиенту `mayMoveTo(task, from, to)` только для подсветки колонок):
+`blocked = (approvalState === PENDING || approvalState === REJECTED) && from.id !== to.id && to.type !== CANCELLED && (to.type === COMPLETED || to.position > from.position)`.
+Отказ — `409` `code: CONFLICT`, `reason: "TASK_APPROVAL_REQUIRED"`, `used` = одобрений, `limit` = кворум
+(при вето — те же числа; кто отклонил и почему — из `task.approvers`, в теле ошибки этого нет). Тост: `used`/`limit` →
+«Нужно согласование: 1 из 2»; `approvalState === REJECTED` → «Отклонено: <имя>». Массовые действия — по запросу на задачу:
+часть задач может вернуть `409`. Перенос на другую доску не блокируется (кроме попадания не-согласованной задачи в `COMPLETED`).
+Удаление статуса с `move_to` «вперёд», где лежит не-согласованная задача, — тоже `409 TASK_APPROVAL_REQUIRED`.
+
+**Сброс:** `PATCH` с новым `title`/`description`/вложениями описания переводит все голоса в `PENDING`
+(если в том же `PATCH` есть переход вперёд — он проверяется уже после сброса, т. е. `409`).
+
+**Фильтры** (`TaskField`): `APPROVAL_STATE` — values `"none"|"pending"|"approved"|"rejected"`, ops `IS/ANY_OF/IS_NOT/NONE_OF`;
+`APPROVER_PENDING` — values user ids / `"me"`, ops `IS/ANY_OF/IS_NOT/NONE_OF/EMPTY/NOT_EMPTY`.
+«Ждут моего согласования» = `{field: APPROVER_PENDING, op: IS, values: ["me"]}`. Локальный фильтр клиента (`lib/boards/filter.ts`)
+должен понимать оба поля так же (состояние — из `approvalState`, pending — `approvers.some(a => a.userId === me && a.state === PENDING)`).
+
+**Журнал** (`TaskActivity.kind`): `approvers` — before/after `{user_ids: [], required}`; `approval` — before/after
+`{user_id, state: "pending"|"approved"|"rejected", comment}`; `approvals_reset` — before `{approved, rejected}`;
+в `created` при согласующих — `after.approvers`, `after.approval_required`.
+
+**Уведомления** (`TaskUpdate.notice.kind`, в `user:<id>`, задача помечается `unread`):
+`APPROVAL_REQUESTED` — стал согласующим / голоса сброшены / напоминание (у напоминания `actorId` пустой);
+`APPROVED` — кворум набран; `REJECTED` — вето (комментарий — в `task.approvers`).
+`APPROVAL_REQUESTED` всем и `APPROVED`/`REJECTED` создателю и ведущему исполнителю сервер шлёт **в обход** уровня задач,
+mute пространства и «Отписаться» — клиент обязан показать запись в центре уведомлений + бейдж и системное уведомление ОС
+(«Не беспокоить» — только без звука/баннера). Остальным `APPROVED`/`REJECTED` приходят по уровню (как `STATUS`).
+Общее правило — `taskNotifies` в `@calaba/protocol` (виды `approval_requested|approved|rejected`, флаг `mandatory`).
+Напоминание: голос `pending` 24 ч — раз в сутки, максимум 3; не шлётся по отклонённой, завершённой, архивной задаче.
