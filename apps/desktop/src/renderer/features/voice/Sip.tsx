@@ -1,7 +1,7 @@
 import * as Popover from '@radix-ui/react-popover';
 import { SipCallStatus } from '@calaba/protocol';
 import { Phone, PhoneOff } from 'lucide-react';
-import { memo, useId, useState, type ReactNode } from 'react';
+import { memo, useEffect, useId, useState, type ReactNode } from 'react';
 import { Button, IconButton, Input, Tip, cx } from '../../components/ui';
 import { t } from '../../i18n';
 import { can, roomPerms } from '../../lib/permissions';
@@ -10,6 +10,7 @@ import { hangUpSipCall, placeSipCall } from '../../services/sip';
 import { useRooms } from '../../stores/rooms';
 import { useSession } from '../../stores/session';
 import { useSipCalls } from '../../stores/sipCalls';
+import { useSipDial } from '../../stores/sipDial';
 import { useVoice } from '../../stores/voice';
 import { isGuest, useMemberRoles, useWorkspaces } from '../../stores/workspaces';
 import { formatDuration, useNow } from '../shell/voiceFormat';
@@ -21,8 +22,11 @@ import { formatDuration, useNow } from '../shell/voiceFormat';
  * its own 1 s clock, mounted only while the line is ACTIVE.
  */
 
-/** «Позвонить на номер» is offered here (lib/sip mayDial; the server checks the same). */
-export function useCanDial(workspaceId: string, roomId: string): boolean {
+/**
+ * «Позвонить на номер» is offered here (lib/sip mayDial; the server checks the same). `anyCall`:
+ * the room menu's item — the same rules without «I am in this room's call» (the item joins first).
+ */
+export function useCanDial(workspaceId: string, roomId: string, anyCall = false): boolean {
   const me = useSession((s) => s.me?.user?.id ?? '');
   const sipEnabled = useWorkspaces((s) => !!s.byId[workspaceId]?.ws.sipEnabled);
   const guest = useWorkspaces((s) => isGuest(s.byId[workspaceId]?.members[me]));
@@ -34,9 +38,9 @@ export function useCanDial(workspaceId: string, roomId: string): boolean {
     return !!c && isLiveStatus(c.status);
   });
   // Cheap until the gate's primitives pass: no permission math for rooms without telephony.
-  if (!sipEnabled || !inCall || liveCall || guest) return false;
+  if (!sipEnabled || !(inCall || anyCall) || liveCall || guest) return false;
   const perms = roomPerms(roles, me, room);
-  return mayDial({ sipEnabled, placeCalls: can(perms, 'PLACE_CALLS'), connect: can(perms, 'CONNECT'), guest, inCall, liveCall });
+  return mayDial({ sipEnabled, placeCalls: can(perms, 'PLACE_CALLS'), connect: can(perms, 'CONNECT'), guest, inCall: true, liveCall });
 }
 
 /**
@@ -47,6 +51,14 @@ export function useCanDial(workspaceId: string, roomId: string): boolean {
 export function SipDialButton({ workspaceId, roomId, variant }: { workspaceId: string; roomId: string; variant: 'header' | 'sheet' }): ReactNode {
   const allowed = useCanDial(workspaceId, roomId);
   const [open, setOpen] = useState(false);
+  // «Позвонить на номер» from the room menu (stores/sipDial): open once the gate passes (the
+  // join it started has connected); a primitive selector, the store never ticks.
+  const requested = useSipDial((s) => s.roomId === roomId);
+  const consume = requested && allowed;
+  if (consume && !open) setOpen(true);
+  useEffect(() => {
+    if (consume) useSipDial.getState().clear(roomId);
+  }, [consume, roomId]);
   if (!allowed) {
     // Left the call / the line went live meanwhile: the popover closes with the button.
     if (open) setOpen(false);

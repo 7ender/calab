@@ -4,6 +4,7 @@
  * permission / guest is unit-tested; Sidebar.tsx renders it.
  *
  *   [Открыть чат — phone, voice] · Пригласить в комнату · Запись встречи (voice, not guests)
+ *   · Позвонить на номер (voice, `dial`: the telephony gate without «I am in the call», ADR-0046)
  *   · Настройки комнаты | Прочитано · Уведомления › | Вверх · Вниз · В категорию ›
  *
  * A temporary room (ADR-0044) managed by me (MANAGE_ROOM or its creator) adds
@@ -14,6 +15,7 @@ export type RoomMenuItem =
   | 'openChat'
   | 'invite'
   | 'record'
+  | 'dial'
   | 'settings'
   | 'markRead'
   | 'notify'
@@ -36,6 +38,8 @@ export interface RoomMenuInput {
   admin: boolean;
   /** INVITE_GUESTS or INVITE_MEMBERS in the room (ADR-0043): the voice room's link dialog. */
   inviteRoom: boolean;
+  /** «Позвонить на номер» is allowed here (Sip useCanDial with anyCall): joins the call first. */
+  dial?: boolean;
   /** Room MANAGE_ROOM: settings and (voice) the room link. */
   canManage: boolean;
   /** Workspace MANAGE_ROOM: the reorder items. */
@@ -56,6 +60,7 @@ export function roomMenuGroups(i: RoomMenuInput): RoomMenuGroup[] {
   if (!i.guest && (i.admin || (i.voice && i.inviteRoom))) head.push('invite');
   // Meeting recording (docs/09 #30): any member but a guest; start, or stop the running one (ADR-0025).
   if (i.voice && !i.guest) head.push('record');
+  if (i.voice && i.dial && !i.guest) head.push('dial');
   if (i.canManage) head.push('settings');
   const groups: RoomMenuGroup[] = [head];
   const temp = !!i.temp && i.canManage;
