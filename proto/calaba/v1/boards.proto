@@ -138,6 +138,10 @@ message Board {
   repeated RoomPermissionOverride permission_overrides = 21;
   bool key_locked = 22;         // the key can no longer change: the board has had a task
   string default_view_id = 23;  // a shared view opened by default; empty = kanban without filter
+  // Private boards only (ADR-0048): closed even to administrators. ADMINISTRATOR and
+  // workspace-level bits give no access; VIEW_BOARD comes only from an allow override on the
+  // board (by role or personally); the workspace owner always sees it. Strangers get 404.
+  bool restricted = 24;
 }
 
 message TaskAssignee {
@@ -307,7 +311,7 @@ message ListBoardsResponse {
   repeated Board boards = 1;
 }
 
-// POST /api/workspaces/{id}/boards → 201 BoardResponse (MANAGE_WORKSPACE). The creator gets a
+// POST /api/workspaces/{id}/boards → 201 BoardResponse (CREATE_BOARDS, ADR-0048). The creator gets a
 // user override with every board bit. ≤ 50 boards per workspace and the plan's max_boards
 // (409 CONFLICT, reason "PLAN_LIMIT" / "BOARD_LIMIT").
 message CreateBoardRequest {
@@ -337,6 +341,10 @@ message UpdateBoardRequest {
   optional bool is_private = 6;
   optional uint32 auto_archive_days = 7; // 0..3650
   optional string default_view_id = 8;   // a shared view of the board; "" = none
+  // Private boards only (ADR-0048; 422 otherwise, and is_private false is refused while set).
+  // MANAGE_BOARD on the board; the owner may always lift it. Switching it on gives the caller
+  // (unless the owner) a personal allow VIEW_BOARD | MANAGE_BOARD so they keep access.
+  optional bool restricted = 9;
 }
 
 // PUT /api/boards/{id}/position (MANAGE_BOARD): the new index in the list; others shift

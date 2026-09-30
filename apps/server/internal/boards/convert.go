@@ -158,7 +158,7 @@ func loadParts(ctx context.Context, q *sqlc.Queries, ids []uuid.UUID, viewer uui
 func boardProto(b sqlc.Board, p boardParts, bits perm.Bits) *v1.Board {
 	out := &v1.Board{
 		Id: b.ID.String(), WorkspaceId: b.WorkspaceID.String(), Name: b.Name, Key: b.Key, Emoji: b.Emoji,
-		IconFileId: idp(b.IconFileID), Description: b.Description, IsPrivate: b.IsPrivate, Position: b.Position,
+		IconFileId: idp(b.IconFileID), Description: b.Description, IsPrivate: b.IsPrivate, Restricted: b.Restricted, Position: b.Position,
 		AutoArchiveDays: uint32(max(b.AutoArchiveDays, 0)), Permissions: uint64(bits), //nolint:gosec // CHECK 0..3650
 		OpenTasks: uint32(max(p.open[b.ID], 0)), MyOpenTasks: uint32(max(p.mine[b.ID], 0)), //nolint:gosec // counts
 		CreatedBy: idp(b.CreatedBy), CreatedAt: timestamppb.New(b.CreatedAt), ArchivedAt: tsp(b.ArchivedAt),
@@ -226,7 +226,7 @@ func Snapshot(ctx context.Context, q *sqlc.Queries, wsID uuid.UUID, m perm.Membe
 	bits := map[uuid.UUID]perm.Bits{}
 	ids := make([]uuid.UUID, 0, len(rows))
 	for _, b := range rows {
-		bb := perm.ComputeBoardIn(m, b.IsPrivate, OverrideTargets(byBoard[b.ID]))
+		bb := perm.ComputeBoardIn(m, b.IsPrivate, b.Restricted, OverrideTargets(byBoard[b.ID]))
 		if !bb.Has(perm.ViewBoard) {
 			continue
 		}

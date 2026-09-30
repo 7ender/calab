@@ -32,6 +32,15 @@ export const PERMISSION_BITS = {
   CREATE_TEMP_ROOMS: BigInt(Permission.CREATE_TEMP_ROOMS),
   // ADR-0046: outbound phone calls; room-level too, nobody by default, never guests (server).
   PLACE_CALLS: BigInt(Permission.PLACE_CALLS),
+  // ADR-0048: workspace-level bits split off MANAGE_WORKSPACE (overrides never carry them).
+  CREATE_BOARDS: BigInt(Permission.CREATE_BOARDS),
+  MANAGE_MEMBERS: BigInt(Permission.MANAGE_MEMBERS),
+  MANAGE_BOTS: BigInt(Permission.MANAGE_BOTS),
+  MANAGE_INTEGRATIONS: BigInt(Permission.MANAGE_INTEGRATIONS),
+  VIEW_JOURNALS: BigInt(Permission.VIEW_JOURNALS),
+  MANAGE_EVENTS: BigInt(Permission.MANAGE_EVENTS),
+  // Bit 31: the int32 proto enum holds it as a negative number; read it as unsigned.
+  MANAGE_RECORDINGS: BigInt.asUintN(32, BigInt(Permission.MANAGE_RECORDINGS)),
 } as const;
 
 export type PermissionName = keyof typeof PERMISSION_BITS;
@@ -60,24 +69,37 @@ const {
 export const BOARD_ONLY_PERMISSIONS: PermissionBits =
   VIEW_BOARD | CREATE_TASKS | PERMISSION_BITS.EDIT_TASKS | PERMISSION_BITS.MANAGE_BOARD;
 
+/** The seven bits of ADR-0048 (Go: perm.RolesV2); migration 00052 gave them to MANAGE_WORKSPACE roles. */
+export const ROLES_V2_PERMISSIONS: PermissionBits =
+  PERMISSION_BITS.CREATE_BOARDS |
+  PERMISSION_BITS.MANAGE_MEMBERS |
+  PERMISSION_BITS.MANAGE_BOTS |
+  PERMISSION_BITS.MANAGE_INTEGRATIONS |
+  PERMISSION_BITS.VIEW_JOURNALS |
+  PERMISSION_BITS.MANAGE_EVENTS |
+  PERMISSION_BITS.MANAGE_RECORDINGS;
+
+/**
+ * Workspace-level bits: neither room nor board overrides grant or take them (Go:
+ * perm.WorkspaceOnly). ADMINISTRATOR, MANAGE_WORKSPACE, MANAGE_NICKNAMES, MANAGE_ROLES,
+ * MANAGE_STICKERS, CREATE_TEMP_ROOMS (ADR-0044) and the ADR-0048 bits.
+ */
+export const WORKSPACE_ONLY_PERMISSIONS: PermissionBits =
+  ADMINISTRATOR |
+  PERMISSION_BITS.MANAGE_WORKSPACE |
+  PERMISSION_BITS.MANAGE_NICKNAMES |
+  PERMISSION_BITS.MANAGE_ROLES |
+  PERMISSION_BITS.MANAGE_STICKERS |
+  CREATE_TEMP_ROOMS |
+  ROLES_V2_PERMISSIONS;
+
 /**
  * Bits room overrides may touch (INVITE_MEMBERS and INVITE_GUESTS included, ADR-0043; PLACE_CALLS,
- * ADR-0046).
- * ADMINISTRATOR, MANAGE_WORKSPACE, MANAGE_NICKNAMES, MANAGE_ROLES, MANAGE_STICKERS and
- * CREATE_TEMP_ROOMS (ADR-0044) are workspace-level, the board bits apply to boards only:
- * computePermissions ignores them in room overrides (Go: perm.RoomOnly).
+ * ADR-0046): all but the workspace-level ones and the board bits, which apply to boards only;
+ * computePermissions ignores the rest in room overrides (Go: perm.RoomOnly).
  */
 export const ROOM_ONLY_PERMISSIONS: PermissionBits =
-  ALL_PERMISSIONS &
-  ~(
-    ADMINISTRATOR |
-    PERMISSION_BITS.MANAGE_WORKSPACE |
-    PERMISSION_BITS.MANAGE_NICKNAMES |
-    PERMISSION_BITS.MANAGE_ROLES |
-    PERMISSION_BITS.MANAGE_STICKERS |
-    CREATE_TEMP_ROOMS |
-    BOARD_ONLY_PERMISSIONS
-  );
+  ALL_PERMISSIONS & ~(WORKSPACE_ONLY_PERMISSIONS | BOARD_ONLY_PERMISSIONS);
 
 /** Initial permissions of the built-in roles (the member / guest roles are editable since ADR-0026). */
 export const ROLE_DEFAULTS: Record<WorkspaceRole, PermissionBits> = {
@@ -153,8 +175,9 @@ export interface ComputePermissionsInput {
   /** Set for a DM room (Room.type DM): the fixed DM set for a participant, role/overrides ignored. */
   dm?: { participant: boolean } | undefined;
   /**
-   * Room.restricted (ADR-0029): ADMINISTRATOR gives no bypass — admins count as plain members
-   * of the room (overrides decide), the workspace owner (`owner`) has everything.
+   * Room.restricted (ADR-0029, ADR-0048): ADMINISTRATOR gives no bypass — admins count as plain
+   * members of the room — and VIEW_ROOM comes only from an allow override on the room; the
+   * workspace owner (`owner`) has everything.
    */
   restricted?: boolean | undefined;
   /** The user is the workspace owner (Workspace.owner_id; holder of the built-in owner role). */
@@ -163,9 +186,18 @@ export interface ComputePermissionsInput {
    * Set for a task board (ADR-0042): the overrides are the board's and touch only
    * BOARD_ONLY_PERMISSIONS; a private board (Board.isPrivate) drops the roles' VIEW_BOARD
    * first; without VIEW_BOARD nothing; a guest (highest built-in role GUEST) gets nothing.
-   * `restricted` / `owner` do not apply. Go: perm.ComputeBoard.
+   * A restricted board (Board.restricted, ADR-0048; implies private) drops ADMINISTRATOR, the
+   * owner (`board.owner`) has everything. The room fields `restricted` / `owner` do not apply.
+   * Go: perm.ComputeBoard.
    */
-  board?: { private: boolean; guest?: boolean | undefined } | undefined;
+  board?:
+    | {
+        private: boolean;
+        guest?: boolean | undefined;
+        restricted?: boolean | undefined;
+        owner?: boolean | undefined;
+      }
+    | undefined;
 }
 
 /** The plain OR of the roles' permissions (ADMINISTRATOR not expanded). */
@@ -195,9 +227,10 @@ function overrideOf(ovs: ComputePermissionsInput['roleOverrides'], id: string): 
 }
 
 /**
- * The single function computing effective room permissions (docs/04, ADR-0026, ADR-0029):
+ * The single function computing effective room permissions (docs/04, ADR-0026, ADR-0029, ADR-0048):
  * workspace bits (OR of the roles; ADMINISTRATOR → everything, overrides ignored — except in a
- * restricted room, where the owner gets everything and ADMINISTRATOR is dropped), then each role's
+ * restricted room, where the owner gets everything and ADMINISTRATOR and the roles' VIEW_ROOM are
+ * dropped: only an allow override lets anyone in), then each role's
  * room override lowest position first (deny, then allow: the most senior role wins), then the
  * user's own override; without VIEW_ROOM nothing. Overrides only touch ROOM_ONLY_PERMISSIONS.
  * Used by the client for UI; mirrored in Go (apps/server/internal/perm). Pure.
@@ -224,13 +257,18 @@ export function computePermissions(input: ComputePermissionsInput): PermissionBi
   let perms = rawPermissions(roles);
   if (input.board) {
     if (input.board.guest) return 0n;
-    if (perms & ADMINISTRATOR) return ALL_PERMISSIONS;
+    if (input.board.restricted) {
+      if (input.board.owner) return ALL_PERMISSIONS;
+      perms &= ~(ADMINISTRATOR | VIEW_BOARD);
+    } else if (perms & ADMINISTRATOR) {
+      return ALL_PERMISSIONS;
+    }
     if (input.board.private) perms &= ~VIEW_BOARD;
     return applyOverrides(perms, roles, roleOverrides, input.userOverride, BOARD_ONLY_PERMISSIONS, VIEW_BOARD);
   }
   if (input.restricted) {
     if (input.owner) return ALL_PERMISSIONS;
-    perms &= ~ADMINISTRATOR;
+    perms &= ~(ADMINISTRATOR | VIEW_ROOM);
   } else if (perms & ADMINISTRATOR) {
     return ALL_PERMISSIONS;
   }
@@ -268,8 +306,9 @@ function applyOverrides(
 }
 
 /**
- * Effective permissions of a member with `roles` on a task board, given Board.permissionOverrides
- * and Board.isPrivate (ADR-0042). `guest`: the member's highest built-in role is GUEST.
+ * Effective permissions of a member with `roles` on a task board, given Board.permissionOverrides,
+ * Board.isPrivate (ADR-0042) and Board.restricted (ADR-0048). `guest`: the member's highest
+ * built-in role is GUEST; the owner is recognized by the built-in owner role unless `owner` is given.
  */
 export function computeMemberBoardPermissions(
   roles: readonly RoleBits[],
@@ -277,6 +316,8 @@ export function computeMemberBoardPermissions(
   overrides: readonly RoomPermissionOverride[],
   isPrivate: boolean,
   guest = false,
+  restricted = false,
+  owner: boolean = holdsOwnerRole(roles),
 ): PermissionBits {
   const roleOverrides = new Map<string, OverrideBits>();
   for (const o of overrides) {
@@ -286,7 +327,7 @@ export function computeMemberBoardPermissions(
     roles,
     roleOverrides,
     userOverride: overrides.find((o) => o.targetType === PermissionTargetType.USER && o.targetId === userId),
-    board: { private: isPrivate, guest },
+    board: { private: isPrivate || restricted, guest, restricted, owner },
   });
 }
 

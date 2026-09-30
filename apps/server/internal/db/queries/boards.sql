@@ -7,6 +7,7 @@
 -- override (0/0 = none) and the user's own override.
 SELECT b.workspace_id,
        b.is_private,
+       b.restricted,
        (b.archived_at IS NOT NULL)::boolean AS archived,
        m.role,
        coalesce(mr.ids, '{}')::uuid[] AS role_ids,
@@ -85,7 +86,8 @@ UPDATE boards SET
     description       = coalesce(sqlc.narg('description'), description),
     is_private        = coalesce(sqlc.narg('is_private'), is_private),
     auto_archive_days = coalesce(sqlc.narg('auto_archive_days'), auto_archive_days),
-    default_view_id   = CASE WHEN sqlc.arg('set_default_view')::boolean THEN sqlc.narg('default_view_id')::uuid ELSE default_view_id END
+    default_view_id   = CASE WHEN sqlc.arg('set_default_view')::boolean THEN sqlc.narg('default_view_id')::uuid ELSE default_view_id END,
+    restricted        = coalesce(sqlc.narg('restricted'), restricted)
 WHERE id = sqlc.arg('id')
 RETURNING *;
 
@@ -127,6 +129,14 @@ DELETE FROM board_permissions WHERE board_id = $1;
 INSERT INTO board_permissions (board_id, target_type, target_id, allow, deny)
 VALUES ($1, $2, $3, $4, $5)
 ON CONFLICT (board_id, target_type, target_id) DO UPDATE SET allow = EXCLUDED.allow, deny = EXCLUDED.deny;
+
+-- name: GrantBoardUserOverride :exec
+-- A personal allow on a board (the caller who restricts it, ADR-0048): added to an existing
+-- override, never lifting its denies.
+INSERT INTO board_permissions (board_id, target_type, target_id, allow, deny)
+VALUES (sqlc.arg('board_id'), 'user', sqlc.arg('user_id')::text, sqlc.arg('allow'), 0)
+ON CONFLICT (board_id, target_type, target_id) DO UPDATE
+    SET allow = board_permissions.allow | (EXCLUDED.allow & ~board_permissions.deny);
 
 -- name: DeleteBoardOverride :exec
 DELETE FROM board_permissions WHERE board_id = $1 AND target_type = $2 AND target_id = $3;

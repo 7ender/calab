@@ -918,8 +918,12 @@ type Board struct {
 	PermissionOverrides []*RoomPermissionOverride `protobuf:"bytes,21,rep,name=permission_overrides,json=permissionOverrides,proto3" json:"permission_overrides,omitempty"`
 	KeyLocked           bool                      `protobuf:"varint,22,opt,name=key_locked,json=keyLocked,proto3" json:"key_locked,omitempty"`              // the key can no longer change: the board has had a task
 	DefaultViewId       string                    `protobuf:"bytes,23,opt,name=default_view_id,json=defaultViewId,proto3" json:"default_view_id,omitempty"` // a shared view opened by default; empty = kanban without filter
-	unknownFields       protoimpl.UnknownFields
-	sizeCache           protoimpl.SizeCache
+	// Private boards only (ADR-0048): closed even to administrators. ADMINISTRATOR and
+	// workspace-level bits give no access; VIEW_BOARD comes only from an allow override on the
+	// board (by role or personally); the workspace owner always sees it. Strangers get 404.
+	Restricted    bool `protobuf:"varint,24,opt,name=restricted,proto3" json:"restricted,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
 }
 
 func (x *Board) Reset() {
@@ -1111,6 +1115,13 @@ func (x *Board) GetDefaultViewId() string {
 		return x.DefaultViewId
 	}
 	return ""
+}
+
+func (x *Board) GetRestricted() bool {
+	if x != nil {
+		return x.Restricted
+	}
+	return false
 }
 
 type TaskAssignee struct {
@@ -2004,7 +2015,7 @@ func (x *ListBoardsResponse) GetBoards() []*Board {
 	return nil
 }
 
-// POST /api/workspaces/{id}/boards → 201 BoardResponse (MANAGE_WORKSPACE). The creator gets a
+// POST /api/workspaces/{id}/boards → 201 BoardResponse (CREATE_BOARDS, ADR-0048). The creator gets a
 // user override with every board bit. ≤ 50 boards per workspace and the plan's max_boards
 // (409 CONFLICT, reason "PLAN_LIMIT" / "BOARD_LIMIT").
 type CreateBoardRequest struct {
@@ -2157,8 +2168,12 @@ type UpdateBoardRequest struct {
 	IsPrivate       *bool                  `protobuf:"varint,6,opt,name=is_private,json=isPrivate,proto3,oneof" json:"is_private,omitempty"`
 	AutoArchiveDays *uint32                `protobuf:"varint,7,opt,name=auto_archive_days,json=autoArchiveDays,proto3,oneof" json:"auto_archive_days,omitempty"` // 0..3650
 	DefaultViewId   *string                `protobuf:"bytes,8,opt,name=default_view_id,json=defaultViewId,proto3,oneof" json:"default_view_id,omitempty"`        // a shared view of the board; "" = none
-	unknownFields   protoimpl.UnknownFields
-	sizeCache       protoimpl.SizeCache
+	// Private boards only (ADR-0048; 422 otherwise, and is_private false is refused while set).
+	// MANAGE_BOARD on the board; the owner may always lift it. Switching it on gives the caller
+	// (unless the owner) a personal allow VIEW_BOARD | MANAGE_BOARD so they keep access.
+	Restricted    *bool `protobuf:"varint,9,opt,name=restricted,proto3,oneof" json:"restricted,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
 }
 
 func (x *UpdateBoardRequest) Reset() {
@@ -2245,6 +2260,13 @@ func (x *UpdateBoardRequest) GetDefaultViewId() string {
 		return *x.DefaultViewId
 	}
 	return ""
+}
+
+func (x *UpdateBoardRequest) GetRestricted() bool {
+	if x != nil && x.Restricted != nil {
+		return *x.Restricted
+	}
+	return false
 }
 
 // PUT /api/boards/{id}/position (MANAGE_BOARD): the new index in the list; others shift
@@ -4364,7 +4386,7 @@ const file_calaba_v1_boards_proto_rawDesc = "" +
 	"created_by\x18\b \x01(\tR\tcreatedBy\x12\x1a\n" +
 	"\bposition\x18\t \x01(\x05R\bposition\x12\x19\n" +
 	"\bboard_id\x18\n" +
-	" \x01(\tR\aboardId\"\x84\a\n" +
+	" \x01(\tR\aboardId\"\xa4\a\n" +
 	"\x05Board\x12\x0e\n" +
 	"\x02id\x18\x01 \x01(\tR\x02id\x12!\n" +
 	"\fworkspace_id\x18\x02 \x01(\tR\vworkspaceId\x12\x12\n" +
@@ -4398,7 +4420,10 @@ const file_calaba_v1_boards_proto_rawDesc = "" +
 	"\x14permission_overrides\x18\x15 \x03(\v2!.calaba.v1.RoomPermissionOverrideR\x13permissionOverrides\x12\x1d\n" +
 	"\n" +
 	"key_locked\x18\x16 \x01(\bR\tkeyLocked\x12&\n" +
-	"\x0fdefault_view_id\x18\x17 \x01(\tR\rdefaultViewId\"\xb2\x01\n" +
+	"\x0fdefault_view_id\x18\x17 \x01(\tR\rdefaultViewId\x12\x1e\n" +
+	"\n" +
+	"restricted\x18\x18 \x01(\bR\n" +
+	"restricted\"\xb2\x01\n" +
 	"\fTaskAssignee\x12\x17\n" +
 	"\auser_id\x18\x01 \x01(\tR\x06userId\x12\x17\n" +
 	"\ais_lead\x18\x02 \x01(\bR\x06isLead\x12\x12\n" +
@@ -4501,7 +4526,7 @@ const file_calaba_v1_boards_proto_rawDesc = "" +
 	"\ficon_file_id\x18\a \x01(\tR\n" +
 	"iconFileId\"7\n" +
 	"\rBoardResponse\x12&\n" +
-	"\x05board\x18\x01 \x01(\v2\x10.calaba.v1.BoardR\x05board\"\xa4\x03\n" +
+	"\x05board\x18\x01 \x01(\v2\x10.calaba.v1.BoardR\x05board\"\xd8\x03\n" +
 	"\x12UpdateBoardRequest\x12\x17\n" +
 	"\x04name\x18\x01 \x01(\tH\x00R\x04name\x88\x01\x01\x12\x15\n" +
 	"\x03key\x18\x02 \x01(\tH\x01R\x03key\x88\x01\x01\x12\x19\n" +
@@ -4512,7 +4537,10 @@ const file_calaba_v1_boards_proto_rawDesc = "" +
 	"\n" +
 	"is_private\x18\x06 \x01(\bH\x05R\tisPrivate\x88\x01\x01\x12/\n" +
 	"\x11auto_archive_days\x18\a \x01(\rH\x06R\x0fautoArchiveDays\x88\x01\x01\x12+\n" +
-	"\x0fdefault_view_id\x18\b \x01(\tH\aR\rdefaultViewId\x88\x01\x01B\a\n" +
+	"\x0fdefault_view_id\x18\b \x01(\tH\aR\rdefaultViewId\x88\x01\x01\x12#\n" +
+	"\n" +
+	"restricted\x18\t \x01(\bH\bR\n" +
+	"restricted\x88\x01\x01B\a\n" +
 	"\x05_nameB\x06\n" +
 	"\x04_keyB\b\n" +
 	"\x06_emojiB\x0f\n" +
@@ -4520,7 +4548,8 @@ const file_calaba_v1_boards_proto_rawDesc = "" +
 	"\f_descriptionB\r\n" +
 	"\v_is_privateB\x14\n" +
 	"\x12_auto_archive_daysB\x12\n" +
-	"\x10_default_view_id\"5\n" +
+	"\x10_default_view_idB\r\n" +
+	"\v_restricted\"5\n" +
 	"\x17SetBoardPositionRequest\x12\x1a\n" +
 	"\bposition\x18\x01 \x01(\x05R\bposition\"]\n" +
 	"\x1aSetBoardPermissionsRequest\x12?\n" +

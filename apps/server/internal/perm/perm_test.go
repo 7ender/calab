@@ -29,9 +29,12 @@ type vector struct {
 	Owner       bool `json:"owner"`
 	Participant bool `json:"participant"`
 	// ADR-0042: a board vector (ComputeBoard with the board's overrides).
+	// ADR-0048: restricted / owner on a board.
 	Board *struct {
-		Private bool `json:"private"`
-		Guest   bool `json:"guest"`
+		Private    bool `json:"private"`
+		Guest      bool `json:"guest"`
+		Restricted bool `json:"restricted"`
+		Owner      bool `json:"owner"`
 	} `json:"board"`
 	Expected Bits `json:"expected"`
 }
@@ -59,7 +62,7 @@ func TestComputeVectors(t *testing.T) {
 			for i, r := range v.Roles {
 				roles[i] = RoleBits(r)
 			}
-			sc := BoardScope{Private: v.Board.Private, Guest: v.Board.Guest}
+			sc := BoardScope{Private: v.Board.Private || v.Board.Restricted, Guest: v.Board.Guest, Restricted: v.Board.Restricted, Owner: v.Board.Owner}
 			if got := ComputeBoardRoles(roles, sc, v.RoleOverrides, v.UserOverride); got != v.Expected {
 				t.Errorf("%s: ComputeBoardRoles got %d want %d", v.Name, got, v.Expected)
 			}
@@ -72,10 +75,13 @@ func TestComputeVectors(t *testing.T) {
 				ovs = append(ovs, OverrideTarget{TargetType: "user", TargetID: uid, Override: *v.UserOverride})
 			}
 			role := RoleMember
-			if v.Board.Guest {
+			switch {
+			case v.Board.Guest:
 				role = RoleGuest
+			case v.Board.Owner:
+				role = RoleOwner
 			}
-			if got := ComputeBoardIn(NewMember(uid, role, roles), v.Board.Private, ovs); got != v.Expected {
+			if got := ComputeBoardIn(NewMember(uid, role, roles), v.Board.Private, v.Board.Restricted, ovs); got != v.Expected {
 				t.Errorf("%s: ComputeBoardIn got %d want %d", v.Name, got, v.Expected)
 			}
 		case v.RoomType == "dm":
@@ -130,7 +136,7 @@ func TestMemberTopAndRoomOnly(t *testing.T) {
 	if (Member{}).Top() != -1 {
 		t.Fatal("no roles: top -1")
 	}
-	if RoomOnly&(ManageRoles|ManageWorkspace|Administrator|ManageNicknames|ManageStickers) != 0 || All != 1<<25-1 || RoomOnly&PlaceCalls == 0 || GuestMax&PlaceCalls != 0 || RoleDefaults[RoleMember].Has(PlaceCalls) || RoomOnly&CreateTempRooms != 0 || GuestMax&CreateTempRooms != 0 || !RoleDefaults[RoleMember].Has(CreateTempRooms) || RoomOnly&BoardOnly != 0 || RoomOnly&(InviteMembers|InviteGuests) != InviteMembers|InviteGuests || GuestMax&(InviteMembers|InviteGuests) != 0 {
+	if RoomOnly&(ManageRoles|ManageWorkspace|Administrator|ManageNicknames|ManageStickers) != 0 || All != 1<<32-1 || RoomOnly&RolesV2 != 0 || BoardOnly&RolesV2 != 0 || GuestMax&RolesV2 != 0 || RoleDefaults[RoleMember]&RolesV2 != 0 || RolesV2 != 0xFE000000 || RoomOnly&PlaceCalls == 0 || GuestMax&PlaceCalls != 0 || RoleDefaults[RoleMember].Has(PlaceCalls) || RoomOnly&CreateTempRooms != 0 || GuestMax&CreateTempRooms != 0 || !RoleDefaults[RoleMember].Has(CreateTempRooms) || RoomOnly&BoardOnly != 0 || RoomOnly&(InviteMembers|InviteGuests) != InviteMembers|InviteGuests || GuestMax&(InviteMembers|InviteGuests) != 0 {
 		t.Fatal("workspace-level bits must not be settable per room")
 	}
 	if GuestMax&^RoleDefaults[RoleMember] != 0 || RoleDefaults[RoleGuest]&^GuestMax != 0 {

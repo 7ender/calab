@@ -35,6 +35,7 @@ type Board struct {
 	CreatedBy       *uuid.UUID
 	CreatedAt       time.Time
 	ArchivedAt      *time.Time
+	Restricted      bool
 }
 
 type BoardLabel struct {

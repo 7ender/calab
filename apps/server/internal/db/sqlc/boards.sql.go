@@ -208,7 +208,7 @@ VALUES ($1, $2, $3, $4, $5,
         $6, $7,
         (SELECT coalesce(max(position) + 1, 0) FROM boards WHERE workspace_id = $1),
         $8)
-RETURNING id, workspace_id, name, key, emoji, icon_file_id, description, is_private, position, next_number, auto_archive_days, default_view_id, created_by, created_at, archived_at
+RETURNING id, workspace_id, name, key, emoji, icon_file_id, description, is_private, position, next_number, auto_archive_days, default_view_id, created_by, created_at, archived_at, restricted
 `
 
 type CreateBoardParams struct {
@@ -250,6 +250,7 @@ func (q *Queries) CreateBoard(ctx context.Context, arg CreateBoardParams) (Board
 		&i.CreatedBy,
 		&i.CreatedAt,
 		&i.ArchivedAt,
+		&i.Restricted,
 	)
 	return i, err
 }
@@ -666,7 +667,7 @@ func (q *Queries) FilesAttachable(ctx context.Context, arg FilesAttachableParams
 }
 
 const getBoard = `-- name: GetBoard :one
-SELECT id, workspace_id, name, key, emoji, icon_file_id, description, is_private, position, next_number, auto_archive_days, default_view_id, created_by, created_at, archived_at FROM boards WHERE id = $1
+SELECT id, workspace_id, name, key, emoji, icon_file_id, description, is_private, position, next_number, auto_archive_days, default_view_id, created_by, created_at, archived_at, restricted FROM boards WHERE id = $1
 `
 
 func (q *Queries) GetBoard(ctx context.Context, id uuid.UUID) (Board, error) {
@@ -688,6 +689,7 @@ func (q *Queries) GetBoard(ctx context.Context, id uuid.UUID) (Board, error) {
 		&i.CreatedBy,
 		&i.CreatedAt,
 		&i.ArchivedAt,
+		&i.Restricted,
 	)
 	return i, err
 }
@@ -696,6 +698,7 @@ const getBoardAccess = `-- name: GetBoardAccess :one
 
 SELECT b.workspace_id,
        b.is_private,
+       b.restricted,
        (b.archived_at IS NOT NULL)::boolean AS archived,
        m.role,
        coalesce(mr.ids, '{}')::uuid[] AS role_ids,
@@ -731,6 +734,7 @@ type GetBoardAccessParams struct {
 type GetBoardAccessRow struct {
 	WorkspaceID     uuid.UUID
 	IsPrivate       bool
+	Restricted      bool
 	Archived        bool
 	Role            *string
 	RoleIds         []uuid.UUID
@@ -754,6 +758,7 @@ func (q *Queries) GetBoardAccess(ctx context.Context, arg GetBoardAccessParams) 
 	err := row.Scan(
 		&i.WorkspaceID,
 		&i.IsPrivate,
+		&i.Restricted,
 		&i.Archived,
 		&i.Role,
 		&i.RoleIds,
@@ -769,7 +774,7 @@ func (q *Queries) GetBoardAccess(ctx context.Context, arg GetBoardAccessParams) 
 }
 
 const getBoardForUpdate = `-- name: GetBoardForUpdate :one
-SELECT id, workspace_id, name, key, emoji, icon_file_id, description, is_private, position, next_number, auto_archive_days, default_view_id, created_by, created_at, archived_at FROM boards WHERE id = $1 FOR UPDATE
+SELECT id, workspace_id, name, key, emoji, icon_file_id, description, is_private, position, next_number, auto_archive_days, default_view_id, created_by, created_at, archived_at, restricted FROM boards WHERE id = $1 FOR UPDATE
 `
 
 func (q *Queries) GetBoardForUpdate(ctx context.Context, id uuid.UUID) (Board, error) {
@@ -791,6 +796,7 @@ func (q *Queries) GetBoardForUpdate(ctx context.Context, id uuid.UUID) (Board, e
 		&i.CreatedBy,
 		&i.CreatedAt,
 		&i.ArchivedAt,
+		&i.Restricted,
 	)
 	return i, err
 }
@@ -985,6 +991,26 @@ func (q *Queries) GetTaskRowForUpdate(ctx context.Context, id uuid.UUID) (Task, 
 		&i.ArchivedAt,
 	)
 	return i, err
+}
+
+const grantBoardUserOverride = `-- name: GrantBoardUserOverride :exec
+INSERT INTO board_permissions (board_id, target_type, target_id, allow, deny)
+VALUES ($1, 'user', $2::text, $3, 0)
+ON CONFLICT (board_id, target_type, target_id) DO UPDATE
+    SET allow = board_permissions.allow | (EXCLUDED.allow & ~board_permissions.deny)
+`
+
+type GrantBoardUserOverrideParams struct {
+	BoardID uuid.UUID
+	UserID  string
+	Allow   int64
+}
+
+// A personal allow on a board (the caller who restricts it, ADR-0048): added to an existing
+// override, never lifting its denies.
+func (q *Queries) GrantBoardUserOverride(ctx context.Context, arg GrantBoardUserOverrideParams) error {
+	_, err := q.db.Exec(ctx, grantBoardUserOverride, arg.BoardID, arg.UserID, arg.Allow)
+	return err
 }
 
 const insertBoardOverride = `-- name: InsertBoardOverride :exec
@@ -1435,7 +1461,7 @@ func (q *Queries) ListBoardViews(ctx context.Context, arg ListBoardViewsParams) 
 }
 
 const listBoards = `-- name: ListBoards :many
-SELECT id, workspace_id, name, key, emoji, icon_file_id, description, is_private, position, next_number, auto_archive_days, default_view_id, created_by, created_at, archived_at FROM boards WHERE workspace_id = $1 AND (archived_at IS NOT NULL) = $2::boolean
+SELECT id, workspace_id, name, key, emoji, icon_file_id, description, is_private, position, next_number, auto_archive_days, default_view_id, created_by, created_at, archived_at, restricted FROM boards WHERE workspace_id = $1 AND (archived_at IS NOT NULL) = $2::boolean
 ORDER BY position, id
 `
 
@@ -1469,6 +1495,7 @@ func (q *Queries) ListBoards(ctx context.Context, arg ListBoardsParams) ([]Board
 			&i.CreatedBy,
 			&i.CreatedAt,
 			&i.ArchivedAt,
+			&i.Restricted,
 		); err != nil {
 			return nil, err
 		}
@@ -1969,7 +1996,7 @@ func (q *Queries) NextTaskNumber(ctx context.Context, id uuid.UUID) (int32, erro
 const setBoardArchived = `-- name: SetBoardArchived :one
 UPDATE boards SET archived_at = CASE WHEN $1::boolean THEN now() ELSE NULL END
 WHERE id = $2
-RETURNING id, workspace_id, name, key, emoji, icon_file_id, description, is_private, position, next_number, auto_archive_days, default_view_id, created_by, created_at, archived_at
+RETURNING id, workspace_id, name, key, emoji, icon_file_id, description, is_private, position, next_number, auto_archive_days, default_view_id, created_by, created_at, archived_at, restricted
 `
 
 type SetBoardArchivedParams struct {
@@ -1996,6 +2023,7 @@ func (q *Queries) SetBoardArchived(ctx context.Context, arg SetBoardArchivedPara
 		&i.CreatedBy,
 		&i.CreatedAt,
 		&i.ArchivedAt,
+		&i.Restricted,
 	)
 	return i, err
 }
@@ -2299,9 +2327,10 @@ UPDATE boards SET
     description       = coalesce($6, description),
     is_private        = coalesce($7, is_private),
     auto_archive_days = coalesce($8, auto_archive_days),
-    default_view_id   = CASE WHEN $9::boolean THEN $10::uuid ELSE default_view_id END
-WHERE id = $11
-RETURNING id, workspace_id, name, key, emoji, icon_file_id, description, is_private, position, next_number, auto_archive_days, default_view_id, created_by, created_at, archived_at
+    default_view_id   = CASE WHEN $9::boolean THEN $10::uuid ELSE default_view_id END,
+    restricted        = coalesce($11, restricted)
+WHERE id = $12
+RETURNING id, workspace_id, name, key, emoji, icon_file_id, description, is_private, position, next_number, auto_archive_days, default_view_id, created_by, created_at, archived_at, restricted
 `
 
 type UpdateBoardParams struct {
@@ -2315,6 +2344,7 @@ type UpdateBoardParams struct {
 	AutoArchiveDays *int32
 	SetDefaultView  bool
 	DefaultViewID   *uuid.UUID
+	Restricted      *bool
 	ID              uuid.UUID
 }
 
@@ -2330,6 +2360,7 @@ func (q *Queries) UpdateBoard(ctx context.Context, arg UpdateBoardParams) (Board
 		arg.AutoArchiveDays,
 		arg.SetDefaultView,
 		arg.DefaultViewID,
+		arg.Restricted,
 		arg.ID,
 	)
 	var i Board
@@ -2349,6 +2380,7 @@ func (q *Queries) UpdateBoard(ctx context.Context, arg UpdateBoardParams) (Board
 		&i.CreatedBy,
 		&i.CreatedAt,
 		&i.ArchivedAt,
+		&i.Restricted,
 	)
 	return i, err
 }

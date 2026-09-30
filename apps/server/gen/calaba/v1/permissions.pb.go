@@ -76,65 +76,102 @@ const (
 	// Nobody by default, calls cost money: admins grant it to roles or people. Never for guests
 	// (the server refuses them whatever the bits say; the guest role cannot hold it).
 	Permission_PERMISSION_PLACE_CALLS Permission = 16777216
+	// Roles v2 (ADR-0048): permissions by function, split off MANAGE_WORKSPACE. All seven are
+	// workspace-level: room and board overrides neither grant nor take them. Not implied by
+	// MANAGE_WORKSPACE (migration 00052 granted them to the roles holding it); ADMINISTRATOR
+	// includes them; never for guests.
+	// 1 << 25: create task boards (the creator manages their board through a personal override).
+	Permission_PERMISSION_CREATE_BOARDS Permission = 33554432
+	// 1 << 26: remove and ban / unban members, badges, promote guests, assign roles below one's
+	// highest role (editing the roles themselves is MANAGE_ROLES).
+	Permission_PERMISSION_MANAGE_MEMBERS Permission = 67108864
+	// 1 << 27: create, change and delete the workspace's bots and their tokens (ADR-0031).
+	Permission_PERMISSION_MANAGE_BOTS Permission = 134217728
+	// 1 << 28: telephony settings (ADR-0046), GPTunneL pairing and future integrations.
+	Permission_PERMISSION_MANAGE_INTEGRATIONS Permission = 268435456
+	// 1 << 29: the call journal, board activity export and other workspace journals; entries of
+	// rooms and boards the holder cannot see stay hidden.
+	Permission_PERMISSION_VIEW_JOURNALS Permission = 536870912
+	// 1 << 30: change and cancel other people's meetings, workspace-wide meetings (ADR-0038).
+	Permission_PERMISSION_MANAGE_EVENTS Permission = 1073741824
+	// 1 << 31: delete recordings of any room the holder can see, the recording consent of rooms
+	// (Room.allow_recording). Proto enums are int32: the value is bit 31 as a signed number
+	// (0x80000000); read it as unsigned (TS: BigInt.asUintN(32, …)). Bits from 1 << 32 on cannot be
+	// enum values: they will be listed as constants in this comment block and in docs/04.
+	Permission_PERMISSION_MANAGE_RECORDINGS Permission = -2147483648
 )
 
 // Enum value maps for Permission.
 var (
 	Permission_name = map[int32]string{
-		0:        "PERMISSION_UNSPECIFIED",
-		1:        "PERMISSION_VIEW_ROOM",
-		2:        "PERMISSION_SEND_MESSAGES",
-		4:        "PERMISSION_ATTACH_FILES",
-		8:        "PERMISSION_MANAGE_MESSAGES",
-		16:       "PERMISSION_CONNECT",
-		32:       "PERMISSION_SPEAK",
-		64:       "PERMISSION_STREAM",
-		128:      "PERMISSION_MUTE_MEMBERS",
-		256:      "PERMISSION_MANAGE_ROOM",
-		512:      "PERMISSION_MANAGE_WORKSPACE",
-		1024:     "PERMISSION_ADMINISTRATOR",
-		2048:     "PERMISSION_MOVE_MEMBERS",
-		4096:     "PERMISSION_MANAGE_NICKNAMES",
-		8192:     "PERMISSION_MENTION_EVERYONE",
-		16384:    "PERMISSION_VIDEO",
-		32768:    "PERMISSION_MANAGE_ROLES",
-		65536:    "PERMISSION_MANAGE_STICKERS",
-		131072:   "PERMISSION_VIEW_BOARD",
-		262144:   "PERMISSION_CREATE_TASKS",
-		524288:   "PERMISSION_EDIT_TASKS",
-		1048576:  "PERMISSION_MANAGE_BOARD",
-		2097152:  "PERMISSION_INVITE_MEMBERS",
-		4194304:  "PERMISSION_INVITE_GUESTS",
-		8388608:  "PERMISSION_CREATE_TEMP_ROOMS",
-		16777216: "PERMISSION_PLACE_CALLS",
+		0:           "PERMISSION_UNSPECIFIED",
+		1:           "PERMISSION_VIEW_ROOM",
+		2:           "PERMISSION_SEND_MESSAGES",
+		4:           "PERMISSION_ATTACH_FILES",
+		8:           "PERMISSION_MANAGE_MESSAGES",
+		16:          "PERMISSION_CONNECT",
+		32:          "PERMISSION_SPEAK",
+		64:          "PERMISSION_STREAM",
+		128:         "PERMISSION_MUTE_MEMBERS",
+		256:         "PERMISSION_MANAGE_ROOM",
+		512:         "PERMISSION_MANAGE_WORKSPACE",
+		1024:        "PERMISSION_ADMINISTRATOR",
+		2048:        "PERMISSION_MOVE_MEMBERS",
+		4096:        "PERMISSION_MANAGE_NICKNAMES",
+		8192:        "PERMISSION_MENTION_EVERYONE",
+		16384:       "PERMISSION_VIDEO",
+		32768:       "PERMISSION_MANAGE_ROLES",
+		65536:       "PERMISSION_MANAGE_STICKERS",
+		131072:      "PERMISSION_VIEW_BOARD",
+		262144:      "PERMISSION_CREATE_TASKS",
+		524288:      "PERMISSION_EDIT_TASKS",
+		1048576:     "PERMISSION_MANAGE_BOARD",
+		2097152:     "PERMISSION_INVITE_MEMBERS",
+		4194304:     "PERMISSION_INVITE_GUESTS",
+		8388608:     "PERMISSION_CREATE_TEMP_ROOMS",
+		16777216:    "PERMISSION_PLACE_CALLS",
+		33554432:    "PERMISSION_CREATE_BOARDS",
+		67108864:    "PERMISSION_MANAGE_MEMBERS",
+		134217728:   "PERMISSION_MANAGE_BOTS",
+		268435456:   "PERMISSION_MANAGE_INTEGRATIONS",
+		536870912:   "PERMISSION_VIEW_JOURNALS",
+		1073741824:  "PERMISSION_MANAGE_EVENTS",
+		-2147483648: "PERMISSION_MANAGE_RECORDINGS",
 	}
 	Permission_value = map[string]int32{
-		"PERMISSION_UNSPECIFIED":       0,
-		"PERMISSION_VIEW_ROOM":         1,
-		"PERMISSION_SEND_MESSAGES":     2,
-		"PERMISSION_ATTACH_FILES":      4,
-		"PERMISSION_MANAGE_MESSAGES":   8,
-		"PERMISSION_CONNECT":           16,
-		"PERMISSION_SPEAK":             32,
-		"PERMISSION_STREAM":            64,
-		"PERMISSION_MUTE_MEMBERS":      128,
-		"PERMISSION_MANAGE_ROOM":       256,
-		"PERMISSION_MANAGE_WORKSPACE":  512,
-		"PERMISSION_ADMINISTRATOR":     1024,
-		"PERMISSION_MOVE_MEMBERS":      2048,
-		"PERMISSION_MANAGE_NICKNAMES":  4096,
-		"PERMISSION_MENTION_EVERYONE":  8192,
-		"PERMISSION_VIDEO":             16384,
-		"PERMISSION_MANAGE_ROLES":      32768,
-		"PERMISSION_MANAGE_STICKERS":   65536,
-		"PERMISSION_VIEW_BOARD":        131072,
-		"PERMISSION_CREATE_TASKS":      262144,
-		"PERMISSION_EDIT_TASKS":        524288,
-		"PERMISSION_MANAGE_BOARD":      1048576,
-		"PERMISSION_INVITE_MEMBERS":    2097152,
-		"PERMISSION_INVITE_GUESTS":     4194304,
-		"PERMISSION_CREATE_TEMP_ROOMS": 8388608,
-		"PERMISSION_PLACE_CALLS":       16777216,
+		"PERMISSION_UNSPECIFIED":         0,
+		"PERMISSION_VIEW_ROOM":           1,
+		"PERMISSION_SEND_MESSAGES":       2,
+		"PERMISSION_ATTACH_FILES":        4,
+		"PERMISSION_MANAGE_MESSAGES":     8,
+		"PERMISSION_CONNECT":             16,
+		"PERMISSION_SPEAK":               32,
+		"PERMISSION_STREAM":              64,
+		"PERMISSION_MUTE_MEMBERS":        128,
+		"PERMISSION_MANAGE_ROOM":         256,
+		"PERMISSION_MANAGE_WORKSPACE":    512,
+		"PERMISSION_ADMINISTRATOR":       1024,
+		"PERMISSION_MOVE_MEMBERS":        2048,
+		"PERMISSION_MANAGE_NICKNAMES":    4096,
+		"PERMISSION_MENTION_EVERYONE":    8192,
+		"PERMISSION_VIDEO":               16384,
+		"PERMISSION_MANAGE_ROLES":        32768,
+		"PERMISSION_MANAGE_STICKERS":     65536,
+		"PERMISSION_VIEW_BOARD":          131072,
+		"PERMISSION_CREATE_TASKS":        262144,
+		"PERMISSION_EDIT_TASKS":          524288,
+		"PERMISSION_MANAGE_BOARD":        1048576,
+		"PERMISSION_INVITE_MEMBERS":      2097152,
+		"PERMISSION_INVITE_GUESTS":       4194304,
+		"PERMISSION_CREATE_TEMP_ROOMS":   8388608,
+		"PERMISSION_PLACE_CALLS":         16777216,
+		"PERMISSION_CREATE_BOARDS":       33554432,
+		"PERMISSION_MANAGE_MEMBERS":      67108864,
+		"PERMISSION_MANAGE_BOTS":         134217728,
+		"PERMISSION_MANAGE_INTEGRATIONS": 268435456,
+		"PERMISSION_VIEW_JOURNALS":       536870912,
+		"PERMISSION_MANAGE_EVENTS":       1073741824,
+		"PERMISSION_MANAGE_RECORDINGS":   -2147483648,
 	}
 )
 
@@ -408,7 +445,7 @@ const file_calaba_v1_permissions_proto_rawDesc = "" +
 	"\abuiltin\x18\a \x01(\x0e2\x18.calaba.v1.WorkspaceRoleR\abuiltin\x12 \n" +
 	"\vmentionable\x18\b \x01(\bR\vmentionable\x129\n" +
 	"\n" +
-	"created_at\x18\t \x01(\v2\x1a.google.protobuf.TimestampR\tcreatedAt*\x98\x06\n" +
+	"created_at\x18\t \x01(\v2\x1a.google.protobuf.TimestampR\tcreatedAt*\x91\b\n" +
 	"\n" +
 	"Permission\x12\x1a\n" +
 	"\x16PERMISSION_UNSPECIFIED\x10\x00\x12\x18\n" +
@@ -436,7 +473,14 @@ const file_calaba_v1_permissions_proto_rawDesc = "" +
 	"\x19PERMISSION_INVITE_MEMBERS\x10\x80\x80\x80\x01\x12\x1f\n" +
 	"\x18PERMISSION_INVITE_GUESTS\x10\x80\x80\x80\x02\x12#\n" +
 	"\x1cPERMISSION_CREATE_TEMP_ROOMS\x10\x80\x80\x80\x04\x12\x1d\n" +
-	"\x16PERMISSION_PLACE_CALLS\x10\x80\x80\x80\b*\x98\x01\n" +
+	"\x16PERMISSION_PLACE_CALLS\x10\x80\x80\x80\b\x12\x1f\n" +
+	"\x18PERMISSION_CREATE_BOARDS\x10\x80\x80\x80\x10\x12 \n" +
+	"\x19PERMISSION_MANAGE_MEMBERS\x10\x80\x80\x80 \x12\x1d\n" +
+	"\x16PERMISSION_MANAGE_BOTS\x10\x80\x80\x80@\x12&\n" +
+	"\x1ePERMISSION_MANAGE_INTEGRATIONS\x10\x80\x80\x80\x80\x01\x12 \n" +
+	"\x18PERMISSION_VIEW_JOURNALS\x10\x80\x80\x80\x80\x02\x12 \n" +
+	"\x18PERMISSION_MANAGE_EVENTS\x10\x80\x80\x80\x80\x04\x12)\n" +
+	"\x1cPERMISSION_MANAGE_RECORDINGS\x10\x80\x80\x80\x80\xf8\xff\xff\xff\xff\x01*\x98\x01\n" +
 	"\rWorkspaceRole\x12\x1e\n" +
 	"\x1aWORKSPACE_ROLE_UNSPECIFIED\x10\x00\x12\x18\n" +
 	"\x14WORKSPACE_ROLE_OWNER\x10\x01\x12\x18\n" +
