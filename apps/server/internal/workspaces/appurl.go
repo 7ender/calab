@@ -29,7 +29,7 @@ func ValidateAppURL(raw string) (string, error) {
 		return "", errAppURL
 	}
 	for _, r := range s {
-		if r <= ' ' || r == 0x7f || r == '\\' || unicode.IsSpace(r) || unicode.IsControl(r) {
+		if r <= ' ' || r == 0x7f || r == '\\' || r == 0xfeff || unicode.IsSpace(r) || unicode.IsControl(r) {
 			return "", errAppURL
 		}
 	}

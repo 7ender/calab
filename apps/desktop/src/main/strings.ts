@@ -69,6 +69,21 @@ let strings: MainStrings = {
   menuShortcuts: 'Горячие клавиши',
   menuDocs: 'Документация',
   menuReportIssue: 'Сообщить о проблеме',
+  webAppAsk: 'Сайт {site} просит доступ: {what}',
+  webAppAskDetail: 'Ответ запомнится для этого приложения пространства.',
+  webAppAllow: 'Разрешить',
+  webAppDeny: 'Запретить',
+  webAppCamera: 'камера',
+  webAppMicrophone: 'микрофон',
+  webAppNotifications: 'уведомления',
+  webAppGeolocation: 'местоположение',
+  webAppClipboard: 'чтение буфера обмена',
+  webAppBack: 'Назад',
+  webAppForward: 'Вперёд',
+  webAppReload: 'Перезагрузить',
+  webAppOpenLink: 'Открыть ссылку в браузере',
+  webAppCopyLink: 'Копировать адрес ссылки',
+  webAppOpenPage: 'Открыть страницу в браузере',
 };
 
 const listeners = new Set<() => void>();

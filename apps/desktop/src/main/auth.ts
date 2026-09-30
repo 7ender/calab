@@ -67,6 +67,21 @@ function loadStored(): StoredSession | null {
   }
 }
 
+/** Main-side reactions to the end of the Calab session (workspace web apps clear their site data). */
+const sessionEndHooks = new Set<() => void>();
+export function onSessionEnd(cb: () => void): void {
+  sessionEndHooks.add(cb);
+}
+function sessionEnded(): void {
+  for (const h of sessionEndHooks) {
+    try {
+      h();
+    } catch (e) {
+      log.warn('session end hook failed', e);
+    }
+  }
+}
+
 function broadcast(channel: string, payload: unknown): void {
   for (const w of BrowserWindow.getAllWindows()) if (!w.isDestroyed()) w.webContents.send(channel, payload);
 }
@@ -80,7 +95,10 @@ const broker = new TokenBroker({
     return { status: res.status, code: err.code, ...(err.reason ? { reason: err.reason } : {}) };
   },
   persist,
-  onLoggedOut: (reason) => broadcast(IPC.authLoggedOut, reason),
+  onLoggedOut: (reason) => {
+    broadcast(IPC.authLoggedOut, reason);
+    sessionEnded();
+  },
   log,
 });
 
@@ -285,4 +303,5 @@ export async function logout(allSessions: boolean): Promise<void> {
 /** Called when the gateway reports the session revoked (4010). */
 export function revoked(): void {
   broker.clear('revoked', false);
+  sessionEnded();
 }

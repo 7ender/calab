@@ -3,6 +3,7 @@ import { join } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { app, BrowserWindow, nativeTheme, screen, shell, type Rectangle, type TitleBarOverlayOptions, type WebContents } from 'electron';
 import { API_SCHEME, IPC } from '../shared/ipc';
+import { isAppSession } from './appSessions';
 import { windowIconPath } from './icons';
 import { mainStrings } from './strings';
 
@@ -210,6 +211,9 @@ export function createMainWindow(): BrowserWindow {
  *   handler afterwards (the main window allows its stream pop-out).
  */
 export function guardWebContents(wc: WebContents): void {
+  // A workspace web app (ADR-0050 §4): its own, separate guard set (main/webApps.ts); it never
+  // shows our page, has no preload and no IPC.
+  if (isAppSession(wc.session)) return;
   wc.on('will-navigate', (e, url) => {
     if (!isOwnPage(url)) e.preventDefault();
   });

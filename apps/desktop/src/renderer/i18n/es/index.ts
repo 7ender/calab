@@ -24,6 +24,7 @@ import { esBots } from './bots';
 import { esGuests } from './guests';
 import { esTemp } from './temp';
 import { esSip } from './sip';
+import { esWebApps } from './webapps';
 
 /** Spanish UI strings (ADR-0022): same keys and placeholders as `ru`/`en`; glossary docs/i18n-glossary.md. */
 export const es: Dict = {
@@ -38,6 +39,7 @@ export const es: Dict = {
   ...esGuests,
   ...esTemp,
   ...esSip,
+  ...esWebApps,
   ...esDm,
   ...esNotes,
   ...esCall,
@@ -703,4 +705,19 @@ export const es: Dict = {
   'main.menuShortcuts': 'Atajos de teclado',
   'main.menuDocs': 'Documentación',
   'main.menuReportIssue': 'Informar de un problema',
+  'main.webAppAsk': '{site} pide acceso: {what}',
+  'main.webAppAskDetail': 'La respuesta se recordará para esta app del espacio.',
+  'main.webAppAllow': 'Permitir',
+  'main.webAppDeny': 'Denegar',
+  'main.webAppCamera': 'cámara',
+  'main.webAppMicrophone': 'micrófono',
+  'main.webAppNotifications': 'notificaciones',
+  'main.webAppGeolocation': 'ubicación',
+  'main.webAppClipboard': 'leer el portapapeles',
+  'main.webAppBack': 'Atrás',
+  'main.webAppForward': 'Adelante',
+  'main.webAppReload': 'Recargar',
+  'main.webAppOpenLink': 'Abrir enlace en el navegador',
+  'main.webAppCopyLink': 'Copiar dirección del enlace',
+  'main.webAppOpenPage': 'Abrir página en el navegador',
 };

@@ -24,6 +24,9 @@ import type {
   TrayAction,
   TrayState,
   UpdateStatus,
+  WebAppBounds,
+  WebAppNavAction,
+  WebAppNavState,
 } from '../shared/ipc';
 import type { ThumbRequest } from '../shared/captureThumb';
 import type { ResumeVoice, ResumeVoiceSeat } from '../shared/resumeVoice';
@@ -175,6 +178,24 @@ export interface CalabaApi {
      */
     isShown(): Promise<boolean>;
     onShownChange(cb: (shown: boolean) => void): Unsubscribe;
+  };
+  /**
+   * Workspace web apps (ADR-0050 §4): main shows each site in its own sandboxed view over the
+   * content area; the renderer only says which app, where, and ◀ ▶ ⟳. Electron only (the web
+   * client embeds an iframe instead).
+   */
+  webApps?: {
+    /** Show the app at `bounds` (CSS px of this window); loads `url` on first open or when it changed. */
+    open(appId: string, url: string, bounds: WebAppBounds): Promise<void>;
+    /** Hide the shown app (it stays alive, at most two do). */
+    hide(): Promise<void>;
+    setBounds(bounds: WebAppBounds): Promise<void>;
+    navigate(action: WebAppNavAction): Promise<void>;
+    /** The shown app's current page in the system browser. */
+    openExternal(): Promise<void>;
+    /** The app was deleted: its view and this device's site data of it go. */
+    forget(appId: string): Promise<void>;
+    onState(cb: (s: WebAppNavState) => void): Unsubscribe;
   };
 }
 

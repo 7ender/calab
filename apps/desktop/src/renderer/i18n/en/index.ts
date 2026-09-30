@@ -24,6 +24,7 @@ import { enBots } from './bots';
 import { enGuests } from './guests';
 import { enTemp } from './temp';
 import { enSip } from './sip';
+import { enWebApps } from './webapps';
 
 /** English UI strings (ADR-0022): same keys and placeholders as `ru`; glossary docs/i18n-glossary.md. */
 export const en: Dict = {
@@ -38,6 +39,7 @@ export const en: Dict = {
   ...enGuests,
   ...enTemp,
   ...enSip,
+  ...enWebApps,
   ...enDm,
   ...enNotes,
   ...enCall,
@@ -703,4 +705,19 @@ export const en: Dict = {
   'main.menuShortcuts': 'Keyboard shortcuts',
   'main.menuDocs': 'Documentation',
   'main.menuReportIssue': 'Report an issue',
+  'main.webAppAsk': '{site} asks for access: {what}',
+  'main.webAppAskDetail': 'The answer is remembered for this workspace app.',
+  'main.webAppAllow': 'Allow',
+  'main.webAppDeny': 'Deny',
+  'main.webAppCamera': 'camera',
+  'main.webAppMicrophone': 'microphone',
+  'main.webAppNotifications': 'notifications',
+  'main.webAppGeolocation': 'location',
+  'main.webAppClipboard': 'reading the clipboard',
+  'main.webAppBack': 'Back',
+  'main.webAppForward': 'Forward',
+  'main.webAppReload': 'Reload',
+  'main.webAppOpenLink': 'Open link in browser',
+  'main.webAppCopyLink': 'Copy link address',
+  'main.webAppOpenPage': 'Open page in browser',
 };

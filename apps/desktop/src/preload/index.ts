@@ -96,6 +96,15 @@ const api: CalabaApi = {
     isShown: () => ipcRenderer.invoke(IPC.windowIsShown),
     onShownChange: (cb) => on(IPC.windowShownChanged, cb),
   },
+  webApps: {
+    open: (appId, url, bounds) => ipcRenderer.invoke(IPC.webAppOpen, { appId, url, bounds }),
+    hide: () => ipcRenderer.invoke(IPC.webAppHide),
+    setBounds: (bounds) => ipcRenderer.invoke(IPC.webAppSetBounds, bounds),
+    navigate: (action) => ipcRenderer.invoke(IPC.webAppNavigate, action),
+    openExternal: () => ipcRenderer.invoke(IPC.webAppOpenExternal),
+    forget: (appId) => ipcRenderer.invoke(IPC.webAppForget, appId),
+    onState: (cb) => on(IPC.webAppState, cb),
+  },
 };
 
 contextBridge.exposeInMainWorld('calaba', api);

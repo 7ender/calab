@@ -129,7 +129,48 @@ export const IPC = {
   systemMetrics: 'system:metrics',
   /** Seconds since the last keyboard/mouse input anywhere in the OS (AFK presence). */
   systemIdleSeconds: 'system:idle-seconds',
+
+  // ---- workspace web apps (ADR-0050 §4): a WebContentsView per app, managed by main ----
+  /** Show app `appId` at `bounds` (CSS px of the main window), loading `url` on first open or when it changed. */
+  webAppOpen: 'webapp:open',
+  /** Hide the shown app (back to rooms, an overlay over it); it stays alive (LRU 2). */
+  webAppHide: 'webapp:hide',
+  /** The content area moved / resized. */
+  webAppSetBounds: 'webapp:set-bounds',
+  /** ◀ ▶ ⟳ of the shown app (WebAppNavAction). */
+  webAppNavigate: 'webapp:navigate',
+  /** «Открыть в браузере»: the shown app's current page in the system browser. */
+  webAppOpenExternal: 'webapp:open-external',
+  /** The app was deleted: destroy its view, clear its session data and remembered permissions. */
+  webAppForget: 'webapp:forget',
+  /** main → renderer: WebAppNavState of an app (navigation, title, loading, failure). */
+  webAppState: 'webapp:state',
 } as const;
+
+/** ◀ ▶ ⟳ of the navigation strip. */
+export type WebAppNavAction = 'back' | 'forward' | 'reload';
+
+export interface WebAppBounds {
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+}
+
+/** A view's state for the navigation strip (updated by events, no polling). */
+export interface WebAppNavState {
+  appId: string;
+  /** The current page (the strip shows its host). */
+  url: string;
+  title: string;
+  canGoBack: boolean;
+  canGoForward: boolean;
+  loading: boolean;
+  /** The page did not load (DNS, TLS, refused…): Chromium's error text; '' = fine. The view is hidden meanwhile. */
+  failed: string;
+  /** The page's process died: ⟳ creates it again. */
+  crashed: boolean;
+}
 
 /** Scheme through which the renderer talks to the API; main adds auth and forwards. */
 export const API_SCHEME = 'calaba-api';
@@ -313,6 +354,23 @@ export interface MainStrings {
   menuShortcuts: string;
   menuDocs: string;
   menuReportIssue: string;
+  /** Web app views (ADR-0050 §4): the permission dialog; `{site}`, `{what}` placeholders. */
+  webAppAsk: string;
+  webAppAskDetail: string;
+  webAppAllow: string;
+  webAppDeny: string;
+  webAppCamera: string;
+  webAppMicrophone: string;
+  webAppNotifications: string;
+  webAppGeolocation: string;
+  webAppClipboard: string;
+  /** The context menu inside a site. */
+  webAppBack: string;
+  webAppForward: string;
+  webAppReload: string;
+  webAppOpenLink: string;
+  webAppCopyLink: string;
+  webAppOpenPage: string;
 }
 
 export const MAIN_STRING_KEYS = [
@@ -379,6 +437,21 @@ export const MAIN_STRING_KEYS = [
   'menuShortcuts',
   'menuDocs',
   'menuReportIssue',
+  'webAppAsk',
+  'webAppAskDetail',
+  'webAppAllow',
+  'webAppDeny',
+  'webAppCamera',
+  'webAppMicrophone',
+  'webAppNotifications',
+  'webAppGeolocation',
+  'webAppClipboard',
+  'webAppBack',
+  'webAppForward',
+  'webAppReload',
+  'webAppOpenLink',
+  'webAppCopyLink',
+  'webAppOpenPage',
 ] as const satisfies ReadonlyArray<keyof MainStrings>;
 
 export type PowerEvent = 'suspend' | 'resume' | 'lock-screen' | 'unlock-screen';

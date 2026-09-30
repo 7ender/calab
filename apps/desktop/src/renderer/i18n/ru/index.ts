@@ -23,6 +23,7 @@ import { ruBots } from './bots';
 import { ruGuests } from './guests';
 import { ruTemp } from './temp';
 import { ruSip } from './sip';
+import { ruWebApps } from './webapps';
 
 /** Russian UI strings. Keys are flat, dotted; `{param}` placeholders. Area files are merged in. */
 export const ru = {
@@ -37,6 +38,7 @@ export const ru = {
   ...ruGuests,
   ...ruTemp,
   ...ruSip,
+  ...ruWebApps,
   ...ruDm,
   ...ruNotes,
   ...ruCall,
@@ -695,5 +697,20 @@ export const ru = {
   'main.menuShortcuts': 'Горячие клавиши',
   'main.menuDocs': 'Документация',
   'main.menuReportIssue': 'Сообщить о проблеме',
+  'main.webAppAsk': 'Сайт {site} просит доступ: {what}',
+  'main.webAppAskDetail': 'Ответ запомнится для этого приложения пространства.',
+  'main.webAppAllow': 'Разрешить',
+  'main.webAppDeny': 'Запретить',
+  'main.webAppCamera': 'камера',
+  'main.webAppMicrophone': 'микрофон',
+  'main.webAppNotifications': 'уведомления',
+  'main.webAppGeolocation': 'местоположение',
+  'main.webAppClipboard': 'чтение буфера обмена',
+  'main.webAppBack': 'Назад',
+  'main.webAppForward': 'Вперёд',
+  'main.webAppReload': 'Перезагрузить',
+  'main.webAppOpenLink': 'Открыть ссылку в браузере',
+  'main.webAppCopyLink': 'Копировать адрес ссылки',
+  'main.webAppOpenPage': 'Открыть страницу в браузере',
 } as const;
 

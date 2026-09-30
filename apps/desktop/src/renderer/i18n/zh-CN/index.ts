@@ -24,6 +24,7 @@ import { zhBots } from './bots';
 import { zhGuests } from './guests';
 import { zhTemp } from './temp';
 import { zhSip } from './sip';
+import { zhWebApps } from './webapps';
 
 /** Simplified Chinese UI strings (ADR-0022): same keys and placeholders as `ru`/`en`; glossary docs/i18n-glossary.md. */
 export const zhCN: Dict = {
@@ -38,6 +39,7 @@ export const zhCN: Dict = {
   ...zhGuests,
   ...zhTemp,
   ...zhSip,
+  ...zhWebApps,
   ...zhDm,
   ...zhNotes,
   ...zhCall,
@@ -702,4 +704,19 @@ export const zhCN: Dict = {
   'main.menuShortcuts': '键盘快捷键',
   'main.menuDocs': '文档',
   'main.menuReportIssue': '报告问题',
+  'main.webAppAsk': '{site} 请求访问：{what}',
+  'main.webAppAskDetail': '此回答将为该工作区应用记住。',
+  'main.webAppAllow': '允许',
+  'main.webAppDeny': '拒绝',
+  'main.webAppCamera': '摄像头',
+  'main.webAppMicrophone': '麦克风',
+  'main.webAppNotifications': '通知',
+  'main.webAppGeolocation': '位置',
+  'main.webAppClipboard': '读取剪贴板',
+  'main.webAppBack': '后退',
+  'main.webAppForward': '前进',
+  'main.webAppReload': '重新加载',
+  'main.webAppOpenLink': '在浏览器中打开链接',
+  'main.webAppCopyLink': '复制链接地址',
+  'main.webAppOpenPage': '在浏览器中打开页面',
 };
