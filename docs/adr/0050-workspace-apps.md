@@ -63,7 +63,7 @@ icon_file_id, icon_url, position, created_by, created_at, updated_at }`. REST: `
 allow-downloads">` с `referrerpolicy="no-referrer"`. Многие сайты запрещают встраивание
 (`X-Frame-Options`, `frame-ancestors`) — клиент не может это узнать надёжно, поэтому поверх фрейма
 через 4 с без `load` и всегда в полосе — «Открыть в новой вкладке»; на телефоне приложение сразу
-открывается в новой вкладке. CSP веб-клиента: `frame-src https: http:` только для этого фрейма
+открывается в новой вкладке. CSP веб-клиента: `frame-src https:` только для этого фрейма (без `http:` — на https-странице это mixed content; второе ревью)
 (Caddyfile/мета) — согласовать с текущей CSP.
 
 ## Последствия

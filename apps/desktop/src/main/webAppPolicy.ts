@@ -71,10 +71,22 @@ export function resolveWithRemembered(ask: readonly AskKind[], remembered: Remem
 /**
  * A top-level navigation inside a view (ADR-0050 §4): any https (sites go to SSO and back),
  * http only to a private host (the address rule, shared/appUrl.ts). Every other scheme — file:,
- * javascript:, data:, calab:, calaba-api:, custom app schemes — is refused.
+ * javascript:, data:, calab:, calaba-api:, custom app schemes — is refused. Unlike the saved
+ * address, a navigation has no length limit (SAML / OAuth redirects carry long queries) and its
+ * host is whatever Chromium resolved (underscores, punycode).
  */
 export function mayNavigate(url: string): boolean {
-  return validateAppUrl(url).ok;
+  const m = /^(https?):\/\/([^/?#\\]*)/i.exec(url);
+  const authority = (m?.[2] ?? '').slice((m?.[2] ?? '').lastIndexOf('@') + 1);
+  if (!m || !authority) return false;
+  if (m[1]?.toLowerCase() === 'https') return true;
+  return validateAppUrl(`http://${authority}/`).ok;
+}
+
+/** The permission key of a page: its origin («https://meet.example.com:8443»); '' if not http(s). */
+export function originOf(url: string): string {
+  const m = /^(https?):\/\/(?:[^@/?#]*@)?([^/?#]+)/i.exec(url);
+  return m ? `${(m[1] ?? '').toLowerCase()}://${(m[2] ?? '').toLowerCase()}` : '';
 }
 
 /**

@@ -3,6 +3,7 @@ import {
   dropLru,
   mayNavigate,
   mayNavigateFrame,
+  originOf,
   parseAppId,
   parseBounds,
   partitionOf,
@@ -76,6 +77,12 @@ describe('navigation', () => {
     expect(mayNavigate('https://accounts.example.com/sso?x=1')).toBe(true);
     expect(mayNavigate('http://10.0.0.5/app')).toBe(true);
     expect(mayNavigate('http://example.com/')).toBe(false);
+    // SSO redirects: long queries and hosts the saved-address rule would refuse are fine over https.
+    expect(mayNavigate(`https://idp.example.com/saml?SAMLRequest=${'a'.repeat(4000)}`)).toBe(true);
+    expect(mayNavigate('https://my_host.example.com/')).toBe(true);
+    expect(mayNavigate('http://user@10.0.0.5/')).toBe(true);
+    expect(mayNavigate('http://10.0.0.5@evil.com/')).toBe(false);
+    expect(mayNavigate('https:///x')).toBe(false);
     for (const u of ['file:///etc/passwd', 'javascript:alert(1)', 'data:text/html,x', 'calab://join/x', 'calaba-api://api/api/me', 'zoommtg://x', 'mailto:a@b.c']) {
       expect(mayNavigate(u), u).toBe(false);
     }
@@ -85,6 +92,16 @@ describe('navigation', () => {
       expect(mayNavigateFrame(u), u).toBe(true);
     }
     for (const u of ['file:///x', 'javascript:1', 'calab://x', 'about:config']) expect(mayNavigateFrame(u), u).toBe(false);
+  });
+});
+
+describe('originOf (permission memory key)', () => {
+  it('is the scheme and host of an http(s) page', () => {
+    expect(originOf('https://Meet.Example.com:8443/room?x=1')).toBe('https://meet.example.com:8443');
+    expect(originOf('https://user:pw@a.test/x')).toBe('https://a.test');
+    expect(originOf('http://10.0.0.5')).toBe('http://10.0.0.5');
+    expect(originOf('https://evil.test/')).not.toBe(originOf('https://meet.example.com/'));
+    for (const u of ['', 'about:blank', 'file:///x', 'data:text/html,x']) expect(originOf(u), u).toBe('');
   });
 });
 

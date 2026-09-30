@@ -26,6 +26,7 @@ import {
   dropLru,
   mayNavigate,
   mayNavigateFrame,
+  originOf,
   partitionOf,
   permissionCheck,
   permissionDecision,
@@ -74,7 +75,11 @@ const followed = new WeakSet<BrowserWindow>();
 
 // ---------------------------------------------------------------- remembered permissions
 
-type PermFile = Record<string, Remembered>;
+/**
+ * Remembered answers by app, then by the site's origin: a view may navigate to any https site
+ * (SSO, links), so a camera granted to the app's own site must not carry over to another one.
+ */
+type PermFile = Record<string, Record<string, Remembered>>;
 let perms: PermFile | null = null;
 const permPath = (): string => join(app.getPath('userData'), 'web-app-permissions.json');
 
@@ -96,15 +101,21 @@ function savePerms(): void {
   }
 }
 
-function remembered(appId: string): Remembered {
-  return loadPerms()[appId] ?? {};
+function remembered(appId: string, origin: string): Remembered {
+  if (!origin) return {};
+  const byOrigin = loadPerms()[appId];
+  const r = byOrigin && typeof byOrigin === 'object' ? byOrigin[origin] : undefined;
+  return r && typeof r === 'object' ? r : {};
 }
 
-function remember(appId: string, kinds: readonly AskKind[], granted: boolean): void {
+function remember(appId: string, origin: string, kinds: readonly AskKind[], granted: boolean): void {
+  if (!origin) return;
   const all = loadPerms();
-  const cur = { ...(all[appId] ?? {}) };
+  const byOrigin = { ...(all[appId] ?? {}) };
+  const cur = { ...(byOrigin[origin] ?? {}) };
   for (const k of kinds) cur[k] = granted;
-  all[appId] = cur;
+  byOrigin[origin] = cur;
+  all[appId] = byOrigin;
   savePerms();
 }
 
@@ -136,7 +147,7 @@ const KIND_STRING: Record<AskKind, keyof ReturnType<typeof mainStrings>> = {
   'clipboard-read': 'webAppClipboard',
 };
 
-async function askUser(appId: string, site: string, kinds: readonly AskKind[]): Promise<boolean> {
+async function askUser(appId: string, origin: string, site: string, kinds: readonly AskKind[]): Promise<boolean> {
   const s = mainStrings();
   const what = kinds.map((k) => s[KIND_STRING[k]]).join(', ');
   const parent = getMainWindow();
@@ -151,8 +162,8 @@ async function askUser(appId: string, site: string, kinds: readonly AskKind[]): 
   };
   const r = parent ? await dialog.showMessageBox(parent, opts) : await dialog.showMessageBox(opts);
   const granted = r.response === 0;
-  remember(appId, kinds, granted);
-  log.info('[webapp] permission', { appId, site, kinds, granted });
+  remember(appId, origin, kinds, granted);
+  log.info('[webapp] permission', { appId, origin, kinds, granted });
   return granted;
 }
 
@@ -173,13 +184,15 @@ function configureSession(ses: Session): void {
       callback(true);
       return;
     }
-    const r = resolveWithRemembered(d.ask, remembered(appId));
+    // Remembered per origin of the requesting page (a frame asks with its own origin).
+    const origin = originOf(details.requestingUrl || wc.getURL());
+    const r = resolveWithRemembered(d.ask, remembered(appId, origin));
     if ('grant' in r) {
       callback(r.grant);
       return;
     }
     // A background view or a hidden popup never raises a dialog.
-    if (!inForeground(wc, appId)) {
+    if (!origin || !inForeground(wc, appId)) {
       callback(false);
       return;
     }
@@ -188,8 +201,8 @@ function configureSession(ses: Session): void {
     const next = prev
       .then(() => {
         // Answered meanwhile (the same site asked twice)?
-        const again = resolveWithRemembered(r.ask, remembered(appId));
-        return 'grant' in again ? again.grant : askUser(appId, site, r.ask);
+        const again = resolveWithRemembered(r.ask, remembered(appId, origin));
+        return 'grant' in again ? again.grant : askUser(appId, origin, site, r.ask);
       })
       .then(callback, (e: unknown) => {
         log.warn('[webapp] permission dialog failed', e);
@@ -197,9 +210,10 @@ function configureSession(ses: Session): void {
       });
     askChain.set(appId, next);
   });
-  ses.setPermissionCheckHandler((_wc, permission, _origin, details) => {
+  ses.setPermissionCheckHandler((_wc, permission, requestingOrigin, details) => {
     const appId = appIdOf(ses);
-    return !!appId && permissionCheck(permission, details.mediaType === 'unknown' ? undefined : details.mediaType, remembered(appId));
+    const origin = originOf(requestingOrigin || details.requestingUrl || '');
+    return !!appId && permissionCheck(permission, details.mediaType === 'unknown' ? undefined : details.mediaType, remembered(appId, origin));
   });
   // Screen capture, HID / serial / USB / Bluetooth devices: never.
   ses.setDisplayMediaRequestHandler((_req, cb) => cb({}));
@@ -250,6 +264,11 @@ function guardAppContents(wc: WebContents): void {
     if (!e.isMainFrame && !mayNavigateFrame(e.url)) e.preventDefault();
   });
   wc.on('will-attach-webview', (e) => e.preventDefault());
+  // Web Bluetooth: without preventDefault Electron picks the first device found.
+  wc.on('select-bluetooth-device', (e, _devices, cb) => {
+    e.preventDefault();
+    cb('');
+  });
   wc.setWindowOpenHandler(({ url, disposition }) => {
     const d = windowOpenDecision(wc.getURL(), url, disposition);
     if (d === 'external') {
