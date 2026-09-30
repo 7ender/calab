@@ -179,6 +179,7 @@ func run(m *testing.M) int {
 		GPTunnelAPIURL:         gptFake.URL,
 		GPTunnelWebURL:         "https://gptunnel.ru",
 		RecordingKeepDays:      30,
+		TempRoomRetentionDays:  90,
 		RecordingMaxConcurrent: 2,
 		RecordingsPath:         recordDir,
 		RecordingEgressDir:     "/out",

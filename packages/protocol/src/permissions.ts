@@ -29,6 +29,7 @@ export const PERMISSION_BITS = {
   MANAGE_BOARD: BigInt(Permission.MANAGE_BOARD),
   INVITE_MEMBERS: BigInt(Permission.INVITE_MEMBERS),
   INVITE_GUESTS: BigInt(Permission.INVITE_GUESTS),
+  CREATE_TEMP_ROOMS: BigInt(Permission.CREATE_TEMP_ROOMS),
 } as const;
 
 export type PermissionName = keyof typeof PERMISSION_BITS;
@@ -47,6 +48,7 @@ const {
   ADMINISTRATOR,
   VIEW_BOARD,
   CREATE_TASKS,
+  CREATE_TEMP_ROOMS,
 } = PERMISSION_BITS;
 
 /**
@@ -58,8 +60,9 @@ export const BOARD_ONLY_PERMISSIONS: PermissionBits =
 
 /**
  * Bits room overrides may touch (INVITE_MEMBERS and INVITE_GUESTS included, ADR-0043).
- * ADMINISTRATOR, MANAGE_WORKSPACE, MANAGE_NICKNAMES, MANAGE_ROLES and MANAGE_STICKERS are workspace-level, the board bits apply to boards only: computePermissions
- * ignores them in room overrides (Go: perm.RoomOnly).
+ * ADMINISTRATOR, MANAGE_WORKSPACE, MANAGE_NICKNAMES, MANAGE_ROLES, MANAGE_STICKERS and
+ * CREATE_TEMP_ROOMS (ADR-0044) are workspace-level, the board bits apply to boards only:
+ * computePermissions ignores them in room overrides (Go: perm.RoomOnly).
  */
 export const ROOM_ONLY_PERMISSIONS: PermissionBits =
   ALL_PERMISSIONS &
@@ -69,6 +72,7 @@ export const ROOM_ONLY_PERMISSIONS: PermissionBits =
     PERMISSION_BITS.MANAGE_NICKNAMES |
     PERMISSION_BITS.MANAGE_ROLES |
     PERMISSION_BITS.MANAGE_STICKERS |
+    CREATE_TEMP_ROOMS |
     BOARD_ONLY_PERMISSIONS
   );
 
@@ -78,7 +82,16 @@ export const ROLE_DEFAULTS: Record<WorkspaceRole, PermissionBits> = {
   [WorkspaceRole.OWNER]: ADMINISTRATOR,
   [WorkspaceRole.ADMIN]: ADMINISTRATOR,
   [WorkspaceRole.MEMBER]:
-    VIEW_ROOM | SEND_MESSAGES | ATTACH_FILES | CONNECT | SPEAK | STREAM | VIDEO | VIEW_BOARD | CREATE_TASKS,
+    VIEW_ROOM |
+    SEND_MESSAGES |
+    ATTACH_FILES |
+    CONNECT |
+    SPEAK |
+    STREAM |
+    VIDEO |
+    VIEW_BOARD |
+    CREATE_TASKS |
+    CREATE_TEMP_ROOMS,
   // Guests see only rooms with an explicit VIEW_ROOM allow override.
   [WorkspaceRole.GUEST]: CONNECT | SPEAK,
 };

@@ -57,7 +57,7 @@ const createDMRoom = `-- name: CreateDMRoom :one
 INSERT INTO rooms (workspace_id, type, name, dm_key)
 VALUES (NULL, 'dm', 'dm', $1)
 ON CONFLICT (dm_key) WHERE dm_key IS NOT NULL DO NOTHING
-RETURNING id, workspace_id, type, name, topic, position, is_private, audio_bitrate_kbps, max_stream_preset, max_streams, created_at, archived_at, category_id, user_limit, voice_status, camera_limit, dm_key, allow_recording, restricted, emoji, guest_approval
+RETURNING id, workspace_id, type, name, topic, position, is_private, audio_bitrate_kbps, max_stream_preset, max_streams, created_at, archived_at, category_id, user_limit, voice_status, camera_limit, dm_key, allow_recording, restricted, emoji, guest_approval, expires_at, created_by
 `
 
 // No row = a concurrent request created the pair's DM first (read it with GetDMByKey).
@@ -86,13 +86,15 @@ func (q *Queries) CreateDMRoom(ctx context.Context, dmKey *string) (Room, error)
 		&i.Restricted,
 		&i.Emoji,
 		&i.GuestApproval,
+		&i.ExpiresAt,
+		&i.CreatedBy,
 	)
 	return i, err
 }
 
 const getDMByKey = `-- name: GetDMByKey :one
 
-SELECT id, workspace_id, type, name, topic, position, is_private, audio_bitrate_kbps, max_stream_preset, max_streams, created_at, archived_at, category_id, user_limit, voice_status, camera_limit, dm_key, allow_recording, restricted, emoji, guest_approval FROM rooms WHERE dm_key = $1 AND archived_at IS NULL
+SELECT id, workspace_id, type, name, topic, position, is_private, audio_bitrate_kbps, max_stream_preset, max_streams, created_at, archived_at, category_id, user_limit, voice_status, camera_limit, dm_key, allow_recording, restricted, emoji, guest_approval, expires_at, created_by FROM rooms WHERE dm_key = $1 AND archived_at IS NULL
 `
 
 // Direct messages (ADR-0020). A DM is a room with type 'dm', no workspace and two rows in
@@ -122,6 +124,8 @@ func (q *Queries) GetDMByKey(ctx context.Context, dmKey *string) (Room, error) {
 		&i.Restricted,
 		&i.Emoji,
 		&i.GuestApproval,
+		&i.ExpiresAt,
+		&i.CreatedBy,
 	)
 	return i, err
 }

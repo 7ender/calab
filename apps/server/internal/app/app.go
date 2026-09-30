@@ -101,7 +101,11 @@ type App struct {
 	CalDAV *caldav.Service
 	// Boards: task boards (ADR-0042) with the auto-archive sweeper.
 	Boards *boards.Service
-	redis  rueidis.Client
+	// Rooms: room handlers with the temporary rooms sweeper (ADR-0044).
+	Rooms *rooms.Handlers
+	redis rueidis.Client
+	// tempRetention: TEMP_ROOM_RETENTION_DAYS.
+	tempRetention time.Duration
 	// Routes: every registered route pattern (the bot route table test).
 	Routes []string
 }
@@ -126,6 +130,7 @@ func (a *App) Run(ctx context.Context) {
 	go a.Calendar.Run(ctx, calendar.Tick)
 	go a.CalDAV.Run(ctx)
 	go a.Boards.Run(ctx, a.redis, boards.SweepInterval)
+	go a.Rooms.RunTempRooms(ctx, a.redis, a.tempRetention)
 }
 
 // mailSender: the test override, else SMTP from config, else nil (mail disabled).
@@ -293,6 +298,7 @@ func New(d Deps) *App {
 		Send:   redisx.NewRateLimiter(d.Redis, "rl:invite-send:", 20, 0.5),  // 20 at once, 30 per hour
 	}).WithFiles(filesSvc).Routes(mux, private)
 	roomHandlers := rooms.NewHandlers(d.DB, pub).WithPlans(planSvc)
+	roomHandlers.PublicURL = d.Config.PublicAppURL
 	roomHandlers.Routes(mux, private)
 	roomHandlers.CategoryRoutes(mux, private)
 	msgHandlers := messages.NewHandlers(d.DB, pub, msgLimiter)
@@ -339,6 +345,7 @@ func New(d Deps) *App {
 	calSvc.FreeBusyLimit = redisx.NewRateLimiter(d.Redis, "rl:freebusy:", 60, 60) // ADR-0041 §5: 60 per minute
 	calSvc.SuggestLimit = redisx.NewRateLimiter(d.Redis, "rl:suggest:", 30, 30)   // 30 per minute
 	calSvc.Routes(mux, private)
+	roomHandlers.Meetings = calSvc // temporary rooms book and close meetings (ADR-0044)
 	cdOpts := d.CalDAV
 	if cdOpts.AllowAddr == nil {
 		cdOpts.AllowAddr = unfurlPolicy(d)
@@ -369,5 +376,6 @@ func New(d Deps) *App {
 		events.Middleware, // one post-commit publish budget per request
 	)
 	return &App{Handler: h, Auth: authSvc, Gateway: hub, Files: filesSvc, Guests: guestSvc, RTC: rtcSvc, Plans: planSvc, Mail: mailSvc,
-		Recording: recSvc, Bots: botSvc, Birthdays: bdSvc, Calls: callSvc, Calendar: calSvc, CalDAV: cdSvc, Boards: boardSvc, redis: d.Redis, Routes: mux.patterns}
+		Recording: recSvc, Bots: botSvc, Birthdays: bdSvc, Calls: callSvc, Calendar: calSvc, CalDAV: cdSvc, Boards: boardSvc, Rooms: roomHandlers, redis: d.Redis, Routes: mux.patterns,
+		tempRetention: time.Duration(d.Config.TempRoomRetentionDays) * 24 * time.Hour}
 }

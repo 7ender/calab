@@ -276,6 +276,7 @@ export const es: Dict = {
   'perm.MANAGE_BOARD': 'Gestionar el tablero',
   'perm.INVITE_MEMBERS': 'Invitar miembros',
   'perm.INVITE_GUESTS': 'Invitar invitados',
+  'perm.CREATE_TEMP_ROOMS': 'Crear salas temporales',
   'perm.hint.INVITE_MEMBERS': 'Enlaces de invitación e invitaciones por correo al espacio; en una sala, un enlace solo para miembros del espacio.',
   'perm.hint.INVITE_GUESTS': 'Enlaces de invitado de las salas y decidir a qué invitados en espera dejar pasar.',
   'perm.ADMINISTRATOR': 'Administrador',

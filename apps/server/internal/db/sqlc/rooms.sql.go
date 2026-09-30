@@ -7,9 +7,28 @@ package sqlc
 
 import (
 	"context"
+	"time"
 
 	"github.com/google/uuid"
 )
+
+const addRoleDeny = `-- name: AddRoleDeny :exec
+INSERT INTO room_permissions (room_id, target_type, target_id, allow, deny)
+VALUES ($1, 'role', $2::text, 0, $3)
+ON CONFLICT (room_id, target_type, target_id) DO UPDATE
+    SET deny = room_permissions.deny | EXCLUDED.deny, allow = room_permissions.allow & ~EXCLUDED.deny
+`
+
+type AddRoleDenyParams struct {
+	RoomID   uuid.UUID
+	TargetID string
+	Deny     int64
+}
+
+func (q *Queries) AddRoleDeny(ctx context.Context, arg AddRoleDenyParams) error {
+	_, err := q.db.Exec(ctx, addRoleDeny, arg.RoomID, arg.TargetID, arg.Deny)
+	return err
+}
 
 const archiveRoom = `-- name: ArchiveRoom :execrows
 UPDATE rooms SET archived_at = now() WHERE id = $1 AND archived_at IS NULL
@@ -23,6 +42,51 @@ func (q *Queries) ArchiveRoom(ctx context.Context, id uuid.UUID) (int64, error) 
 	return result.RowsAffected(), nil
 }
 
+const archiveTempRoom = `-- name: ArchiveTempRoom :one
+UPDATE rooms SET archived_at = now()
+WHERE id = $1 AND archived_at IS NULL AND expires_at IS NOT NULL
+  AND (NOT $2::boolean OR expires_at <= now())
+RETURNING id, workspace_id, type, name, topic, position, is_private, audio_bitrate_kbps, max_stream_preset, max_streams, created_at, archived_at, category_id, user_limit, voice_status, camera_limit, dm_key, allow_recording, restricted, emoji, guest_approval, expires_at, created_by
+`
+
+type ArchiveTempRoomParams struct {
+	ID          uuid.UUID
+	OnlyExpired bool
+}
+
+// Archives a live temporary room: now (DELETE), or only when it has expired (the sweeper; a
+// concurrent extension wins).
+func (q *Queries) ArchiveTempRoom(ctx context.Context, arg ArchiveTempRoomParams) (Room, error) {
+	row := q.db.QueryRow(ctx, archiveTempRoom, arg.ID, arg.OnlyExpired)
+	var i Room
+	err := row.Scan(
+		&i.ID,
+		&i.WorkspaceID,
+		&i.Type,
+		&i.Name,
+		&i.Topic,
+		&i.Position,
+		&i.IsPrivate,
+		&i.AudioBitrateKbps,
+		&i.MaxStreamPreset,
+		&i.MaxStreams,
+		&i.CreatedAt,
+		&i.ArchivedAt,
+		&i.CategoryID,
+		&i.UserLimit,
+		&i.VoiceStatus,
+		&i.CameraLimit,
+		&i.DmKey,
+		&i.AllowRecording,
+		&i.Restricted,
+		&i.Emoji,
+		&i.GuestApproval,
+		&i.ExpiresAt,
+		&i.CreatedBy,
+	)
+	return i, err
+}
+
 const clearVoiceStatus = `-- name: ClearVoiceStatus :execrows
 UPDATE rooms SET voice_status = NULL WHERE id = $1 AND voice_status IS NOT NULL
 `
@@ -34,6 +98,30 @@ func (q *Queries) ClearVoiceStatus(ctx context.Context, id uuid.UUID) (int64, er
 		return 0, err
 	}
 	return result.RowsAffected(), nil
+}
+
+const countLiveTempRooms = `-- name: CountLiveTempRooms :one
+SELECT count(*)::integer AS total,
+       (count(*) FILTER (WHERE created_by = $1::uuid))::integer AS mine
+FROM rooms
+WHERE workspace_id = $2::uuid AND expires_at IS NOT NULL AND archived_at IS NULL
+`
+
+type CountLiveTempRoomsParams struct {
+	UserID      uuid.UUID
+	WorkspaceID uuid.UUID
+}
+
+type CountLiveTempRoomsRow struct {
+	Total int32
+	Mine  int32
+}
+
+func (q *Queries) CountLiveTempRooms(ctx context.Context, arg CountLiveTempRoomsParams) (CountLiveTempRoomsRow, error) {
+	row := q.db.QueryRow(ctx, countLiveTempRooms, arg.UserID, arg.WorkspaceID)
+	var i CountLiveTempRoomsRow
+	err := row.Scan(&i.Total, &i.Mine)
+	return i, err
 }
 
 const createCategory = `-- name: CreateCategory :one
@@ -65,14 +153,16 @@ func (q *Queries) CreateCategory(ctx context.Context, arg CreateCategoryParams) 
 
 const createRoom = `-- name: CreateRoom :one
 INSERT INTO rooms (workspace_id, type, name, topic, position, is_private,
-                   audio_bitrate_kbps, max_stream_preset, max_streams, category_id, user_limit, camera_limit)
+                   audio_bitrate_kbps, max_stream_preset, max_streams, category_id, user_limit, camera_limit,
+                   expires_at, created_by)
 VALUES ($1::uuid, $2, $3, $4,
         coalesce($5::integer,
                  (SELECT coalesce(max(position) + 1, 0) FROM rooms
                   WHERE workspace_id = $1::uuid AND archived_at IS NULL AND type <> 'task')),
         $6, $7, $8,
-        $9, $10, $11, $12)
-RETURNING id, workspace_id, type, name, topic, position, is_private, audio_bitrate_kbps, max_stream_preset, max_streams, created_at, archived_at, category_id, user_limit, voice_status, camera_limit, dm_key, allow_recording, restricted, emoji, guest_approval
+        $9, $10, $11, $12,
+        $13, $14)
+RETURNING id, workspace_id, type, name, topic, position, is_private, audio_bitrate_kbps, max_stream_preset, max_streams, created_at, archived_at, category_id, user_limit, voice_status, camera_limit, dm_key, allow_recording, restricted, emoji, guest_approval, expires_at, created_by
 `
 
 type CreateRoomParams struct {
@@ -88,8 +178,11 @@ type CreateRoomParams struct {
 	CategoryID       *uuid.UUID
 	UserLimit        int32
 	CameraLimit      *int32
+	ExpiresAt        *time.Time
+	CreatedBy        *uuid.UUID
 }
 
+// expires_at set = a temporary room (ADR-0044); created_by: the creator (NULL: not recorded).
 func (q *Queries) CreateRoom(ctx context.Context, arg CreateRoomParams) (Room, error) {
 	row := q.db.QueryRow(ctx, createRoom,
 		arg.WorkspaceID,
@@ -104,6 +197,8 @@ func (q *Queries) CreateRoom(ctx context.Context, arg CreateRoomParams) (Room, e
 		arg.CategoryID,
 		arg.UserLimit,
 		arg.CameraLimit,
+		arg.ExpiresAt,
+		arg.CreatedBy,
 	)
 	var i Room
 	err := row.Scan(
@@ -128,8 +223,24 @@ func (q *Queries) CreateRoom(ctx context.Context, arg CreateRoomParams) (Room, e
 		&i.Restricted,
 		&i.Emoji,
 		&i.GuestApproval,
+		&i.ExpiresAt,
+		&i.CreatedBy,
 	)
 	return i, err
+}
+
+const deleteArchivedTempRoom = `-- name: DeleteArchivedTempRoom :execrows
+DELETE FROM rooms WHERE id = $1 AND expires_at IS NOT NULL AND archived_at IS NOT NULL
+`
+
+// Messages, reactions, pins, read state, overrides and links go by cascade (as a deleted notes
+// shelf); the room's uploads become orphans for the file cleanup; meetings keep no room.
+func (q *Queries) DeleteArchivedTempRoom(ctx context.Context, id uuid.UUID) (int64, error) {
+	result, err := q.db.Exec(ctx, deleteArchivedTempRoom, id)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
 }
 
 const deleteCategory = `-- name: DeleteCategory :many
@@ -182,6 +293,67 @@ func (q *Queries) DeleteRoomOverrides(ctx context.Context, roomID uuid.UUID) err
 	return err
 }
 
+const dropEmptyRoleOverride = `-- name: DropEmptyRoleOverride :exec
+DELETE FROM room_permissions
+WHERE room_id = $1 AND target_type = 'role' AND target_id = $2::text
+  AND allow = 0 AND deny = 0
+`
+
+type DropEmptyRoleOverrideParams struct {
+	RoomID   uuid.UUID
+	TargetID string
+}
+
+func (q *Queries) DropEmptyRoleOverride(ctx context.Context, arg DropEmptyRoleOverrideParams) error {
+	_, err := q.db.Exec(ctx, dropEmptyRoleOverride, arg.RoomID, arg.TargetID)
+	return err
+}
+
+const dueTempRooms = `-- name: DueTempRooms :many
+SELECT id FROM rooms
+WHERE expires_at <= now() AND archived_at IS NULL
+ORDER BY expires_at
+LIMIT $1
+`
+
+func (q *Queries) DueTempRooms(ctx context.Context, limit int32) ([]uuid.UUID, error) {
+	rows, err := q.db.Query(ctx, dueTempRooms, limit)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []uuid.UUID{}
+	for rows.Next() {
+		var id uuid.UUID
+		if err := rows.Scan(&id); err != nil {
+			return nil, err
+		}
+		items = append(items, id)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const followRoomExpiry = `-- name: FollowRoomExpiry :exec
+UPDATE room_invites SET expires_at = $1
+WHERE room_id = $2 AND revoked_at IS NULL AND event_id IS NULL
+  AND expires_at = $3
+`
+
+type FollowRoomExpiryParams struct {
+	ExpiresAt    *time.Time
+	RoomID       uuid.UUID
+	OldExpiresAt *time.Time
+}
+
+// The room's own links that ended with the room follow its new end (not meeting guest links).
+func (q *Queries) FollowRoomExpiry(ctx context.Context, arg FollowRoomExpiryParams) error {
+	_, err := q.db.Exec(ctx, followRoomExpiry, arg.ExpiresAt, arg.RoomID, arg.OldExpiresAt)
+	return err
+}
+
 const getCategory = `-- name: GetCategory :one
 SELECT id, workspace_id, name, position, created_at FROM room_categories WHERE id = $1
 `
@@ -200,7 +372,7 @@ func (q *Queries) GetCategory(ctx context.Context, id uuid.UUID) (RoomCategory, 
 }
 
 const getRoom = `-- name: GetRoom :one
-SELECT id, workspace_id, type, name, topic, position, is_private, audio_bitrate_kbps, max_stream_preset, max_streams, created_at, archived_at, category_id, user_limit, voice_status, camera_limit, dm_key, allow_recording, restricted, emoji, guest_approval FROM rooms WHERE id = $1 AND archived_at IS NULL
+SELECT id, workspace_id, type, name, topic, position, is_private, audio_bitrate_kbps, max_stream_preset, max_streams, created_at, archived_at, category_id, user_limit, voice_status, camera_limit, dm_key, allow_recording, restricted, emoji, guest_approval, expires_at, created_by FROM rooms WHERE id = $1 AND archived_at IS NULL
 `
 
 func (q *Queries) GetRoom(ctx context.Context, id uuid.UUID) (Room, error) {
@@ -228,6 +400,8 @@ func (q *Queries) GetRoom(ctx context.Context, id uuid.UUID) (Room, error) {
 		&i.Restricted,
 		&i.Emoji,
 		&i.GuestApproval,
+		&i.ExpiresAt,
+		&i.CreatedBy,
 	)
 	return i, err
 }
@@ -245,7 +419,10 @@ SELECT r.workspace_id,
        uo.allow AS user_allow, uo.deny AS user_deny,
        (CASE WHEN r.type IN ('dm', 'notes') THEN ARRAY(SELECT d.user_id FROM dm_members d WHERE d.room_id = r.id ORDER BY d.user_id)
              ELSE '{}'::uuid[] END)::uuid[] AS dm_members,
-       (w.suspended_at IS NOT NULL)::boolean AS suspended
+       (w.suspended_at IS NOT NULL)::boolean AS suspended,
+       (r.archived_at IS NOT NULL)::boolean AS archived,
+       (r.expires_at IS NOT NULL)::boolean AS temp,
+       r.created_by
 FROM rooms r
 LEFT JOIN workspaces w ON w.id = r.workspace_id
 LEFT JOIN workspace_members m ON m.workspace_id = r.workspace_id AND m.user_id = $1
@@ -261,7 +438,7 @@ LEFT JOIN LATERAL (
     WHERE x.workspace_id = m.workspace_id AND x.user_id = m.user_id
 ) mr ON true
 LEFT JOIN room_permissions uo ON uo.room_id = r.id AND uo.target_type = 'user' AND uo.target_id = $1::text
-WHERE r.id = $2 AND r.archived_at IS NULL
+WHERE r.id = $2 AND (r.archived_at IS NULL OR r.expires_at IS NOT NULL)
 `
 
 type GetRoomAccessParams struct {
@@ -283,11 +460,16 @@ type GetRoomAccessRow struct {
 	UserDeny        *int64
 	DmMembers       []uuid.UUID
 	Suspended       bool
+	Archived        bool
+	Temp            bool
+	CreatedBy       *uuid.UUID
 }
 
 // Everything needed to compute a user's permissions in a room, in one round trip. Workspace
 // rooms: the membership (role NULL = not a member), the member's roles lowest position first
-// (ADR-0026) with each role's override in this room (0/0 = none) and the user override. DMs
+// (ADR-0026) with each role's override in this room (0/0 = none) and the user override. An
+// archived room is found only when it is temporary (ADR-0044: its history stays readable);
+// archived / temp / created_by say so. DMs
 // and notes shelves (workspace_id NULL): the participants (a shelf: its owner). suspended: the workspace is suspended (item 32).
 // restricted: ADMINISTRATOR gives no bypass in the room (ADR-0029).
 func (q *Queries) GetRoomAccess(ctx context.Context, arg GetRoomAccessParams) (GetRoomAccessRow, error) {
@@ -307,12 +489,15 @@ func (q *Queries) GetRoomAccess(ctx context.Context, arg GetRoomAccessParams) (G
 		&i.UserDeny,
 		&i.DmMembers,
 		&i.Suspended,
+		&i.Archived,
+		&i.Temp,
+		&i.CreatedBy,
 	)
 	return i, err
 }
 
 const getRoomForUpdate = `-- name: GetRoomForUpdate :one
-SELECT id, workspace_id, type, name, topic, position, is_private, audio_bitrate_kbps, max_stream_preset, max_streams, created_at, archived_at, category_id, user_limit, voice_status, camera_limit, dm_key, allow_recording, restricted, emoji, guest_approval FROM rooms WHERE id = $1 AND archived_at IS NULL FOR UPDATE
+SELECT id, workspace_id, type, name, topic, position, is_private, audio_bitrate_kbps, max_stream_preset, max_streams, created_at, archived_at, category_id, user_limit, voice_status, camera_limit, dm_key, allow_recording, restricted, emoji, guest_approval, expires_at, created_by FROM rooms WHERE id = $1 AND archived_at IS NULL FOR UPDATE
 `
 
 // The live room, locked for the rest of the transaction (PATCH restricted, ADR-0029).
@@ -341,8 +526,30 @@ func (q *Queries) GetRoomForUpdate(ctx context.Context, id uuid.UUID) (Room, err
 		&i.Restricted,
 		&i.Emoji,
 		&i.GuestApproval,
+		&i.ExpiresAt,
+		&i.CreatedBy,
 	)
 	return i, err
+}
+
+const grantUserOverride = `-- name: GrantUserOverride :exec
+INSERT INTO room_permissions (room_id, target_type, target_id, allow, deny)
+VALUES ($1, 'user', $2::text, $3, 0)
+ON CONFLICT (room_id, target_type, target_id) DO UPDATE
+    SET allow = room_permissions.allow | (EXCLUDED.allow & ~room_permissions.deny)
+`
+
+type GrantUserOverrideParams struct {
+	RoomID uuid.UUID
+	UserID string
+	Allow  int64
+}
+
+// A personal allow for a private temporary room (creator, chosen people): added to an
+// existing override, never lifting its denies.
+func (q *Queries) GrantUserOverride(ctx context.Context, arg GrantUserOverrideParams) error {
+	_, err := q.db.Exec(ctx, grantUserOverride, arg.RoomID, arg.UserID, arg.Allow)
+	return err
 }
 
 const insertRoomOverride = `-- name: InsertRoomOverride :exec
@@ -367,6 +574,66 @@ func (q *Queries) InsertRoomOverride(ctx context.Context, arg InsertRoomOverride
 		arg.Deny,
 	)
 	return err
+}
+
+const listArchivedTempRooms = `-- name: ListArchivedTempRooms :many
+SELECT r.id, r.workspace_id, r.type, r.name, r.topic, r.position, r.is_private, r.audio_bitrate_kbps, r.max_stream_preset, r.max_streams, r.created_at, r.archived_at, r.category_id, r.user_limit, r.voice_status, r.camera_limit, r.dm_key, r.allow_recording, r.restricted, r.emoji, r.guest_approval, r.expires_at, r.created_by,
+       (SELECT count(*) FROM messages m WHERE m.room_id = r.id AND m.deleted_at IS NULL)::integer AS message_count
+FROM rooms r
+WHERE r.workspace_id = $1::uuid AND r.expires_at IS NOT NULL AND r.archived_at IS NOT NULL
+ORDER BY r.archived_at DESC, r.id
+LIMIT 500
+`
+
+type ListArchivedTempRoomsRow struct {
+	Room         Room
+	MessageCount int32
+}
+
+// The archive of temporary rooms, newest first, with their live message count.
+func (q *Queries) ListArchivedTempRooms(ctx context.Context, workspaceID uuid.UUID) ([]ListArchivedTempRoomsRow, error) {
+	rows, err := q.db.Query(ctx, listArchivedTempRooms, workspaceID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []ListArchivedTempRoomsRow{}
+	for rows.Next() {
+		var i ListArchivedTempRoomsRow
+		if err := rows.Scan(
+			&i.Room.ID,
+			&i.Room.WorkspaceID,
+			&i.Room.Type,
+			&i.Room.Name,
+			&i.Room.Topic,
+			&i.Room.Position,
+			&i.Room.IsPrivate,
+			&i.Room.AudioBitrateKbps,
+			&i.Room.MaxStreamPreset,
+			&i.Room.MaxStreams,
+			&i.Room.CreatedAt,
+			&i.Room.ArchivedAt,
+			&i.Room.CategoryID,
+			&i.Room.UserLimit,
+			&i.Room.VoiceStatus,
+			&i.Room.CameraLimit,
+			&i.Room.DmKey,
+			&i.Room.AllowRecording,
+			&i.Room.Restricted,
+			&i.Room.Emoji,
+			&i.Room.GuestApproval,
+			&i.Room.ExpiresAt,
+			&i.Room.CreatedBy,
+			&i.MessageCount,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
 }
 
 const listCategories = `-- name: ListCategories :many
@@ -429,8 +696,39 @@ func (q *Queries) ListRoomOverrides(ctx context.Context, roomID uuid.UUID) ([]Ro
 	return items, nil
 }
 
+const listRoomOverridesIn = `-- name: ListRoomOverridesIn :many
+SELECT room_id, target_type, target_id, allow, deny FROM room_permissions WHERE room_id = ANY($1::uuid[])
+ORDER BY room_id, target_type, target_id
+`
+
+func (q *Queries) ListRoomOverridesIn(ctx context.Context, roomIds []uuid.UUID) ([]RoomPermission, error) {
+	rows, err := q.db.Query(ctx, listRoomOverridesIn, roomIds)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []RoomPermission{}
+	for rows.Next() {
+		var i RoomPermission
+		if err := rows.Scan(
+			&i.RoomID,
+			&i.TargetType,
+			&i.TargetID,
+			&i.Allow,
+			&i.Deny,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const listRooms = `-- name: ListRooms :many
-SELECT id, workspace_id, type, name, topic, position, is_private, audio_bitrate_kbps, max_stream_preset, max_streams, created_at, archived_at, category_id, user_limit, voice_status, camera_limit, dm_key, allow_recording, restricted, emoji, guest_approval FROM rooms
+SELECT id, workspace_id, type, name, topic, position, is_private, audio_bitrate_kbps, max_stream_preset, max_streams, created_at, archived_at, category_id, user_limit, voice_status, camera_limit, dm_key, allow_recording, restricted, emoji, guest_approval, expires_at, created_by FROM rooms
 WHERE workspace_id = $1::uuid AND archived_at IS NULL AND type <> 'task'
 ORDER BY position, id
 `
@@ -466,6 +764,8 @@ func (q *Queries) ListRooms(ctx context.Context, workspaceID uuid.UUID) ([]Room,
 			&i.Restricted,
 			&i.Emoji,
 			&i.GuestApproval,
+			&i.ExpiresAt,
+			&i.CreatedBy,
 		); err != nil {
 			return nil, err
 		}
@@ -510,6 +810,77 @@ func (q *Queries) ListWorkspaceRoomOverrides(ctx context.Context, workspaceID uu
 	return items, nil
 }
 
+const lockTempRooms = `-- name: LockTempRooms :exec
+
+SELECT pg_advisory_xact_lock(hashtextextended('temp-rooms:' || $1::uuid::text, 0))
+`
+
+// ---- temporary rooms (ADR-0044) ----
+// Serializes temporary room creation in a workspace (the live caps) for the transaction.
+func (q *Queries) LockTempRooms(ctx context.Context, workspaceID uuid.UUID) error {
+	_, err := q.db.Exec(ctx, lockTempRooms, workspaceID)
+	return err
+}
+
+const purgeableTempRooms = `-- name: PurgeableTempRooms :many
+SELECT id FROM rooms
+WHERE expires_at IS NOT NULL AND archived_at IS NOT NULL AND archived_at < $1
+ORDER BY archived_at
+LIMIT $2
+`
+
+type PurgeableTempRoomsParams struct {
+	Before *time.Time
+	Lim    int32
+}
+
+// Archived temporary rooms past the retention (TEMP_ROOM_RETENTION_DAYS).
+func (q *Queries) PurgeableTempRooms(ctx context.Context, arg PurgeableTempRoomsParams) ([]uuid.UUID, error) {
+	rows, err := q.db.Query(ctx, purgeableTempRooms, arg.Before, arg.Lim)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []uuid.UUID{}
+	for rows.Next() {
+		var id uuid.UUID
+		if err := rows.Scan(&id); err != nil {
+			return nil, err
+		}
+		items = append(items, id)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const removeRoleDeny = `-- name: RemoveRoleDeny :exec
+UPDATE room_permissions SET deny = deny & ~$1::bigint
+WHERE room_id = $2 AND target_type = 'role' AND target_id = $3::text
+`
+
+type RemoveRoleDenyParams struct {
+	Bits     int64
+	RoomID   uuid.UUID
+	TargetID string
+}
+
+// Removes deny bits from one role override; an override left empty is dropped.
+func (q *Queries) RemoveRoleDeny(ctx context.Context, arg RemoveRoleDenyParams) error {
+	_, err := q.db.Exec(ctx, removeRoleDeny, arg.Bits, arg.RoomID, arg.TargetID)
+	return err
+}
+
+const revokeAllRoomInvites = `-- name: RevokeAllRoomInvites :exec
+UPDATE room_invites SET revoked_at = now() WHERE room_id = $1 AND revoked_at IS NULL
+`
+
+func (q *Queries) RevokeAllRoomInvites(ctx context.Context, roomID uuid.UUID) error {
+	_, err := q.db.Exec(ctx, revokeAllRoomInvites, roomID)
+	return err
+}
+
 const setCategoryPosition = `-- name: SetCategoryPosition :one
 UPDATE room_categories SET position = $1
 WHERE id = $2 AND workspace_id = $3
@@ -535,10 +906,53 @@ func (q *Queries) SetCategoryPosition(ctx context.Context, arg SetCategoryPositi
 	return i, err
 }
 
+const setRoomExpiry = `-- name: SetRoomExpiry :one
+UPDATE rooms SET expires_at = $1
+WHERE id = $2 AND archived_at IS NULL AND expires_at IS NOT NULL
+RETURNING id, workspace_id, type, name, topic, position, is_private, audio_bitrate_kbps, max_stream_preset, max_streams, created_at, archived_at, category_id, user_limit, voice_status, camera_limit, dm_key, allow_recording, restricted, emoji, guest_approval, expires_at, created_by
+`
+
+type SetRoomExpiryParams struct {
+	ExpiresAt *time.Time
+	ID        uuid.UUID
+}
+
+// A temporary room's new end, or NULL = permanent (make_permanent). Live temporary rooms only.
+func (q *Queries) SetRoomExpiry(ctx context.Context, arg SetRoomExpiryParams) (Room, error) {
+	row := q.db.QueryRow(ctx, setRoomExpiry, arg.ExpiresAt, arg.ID)
+	var i Room
+	err := row.Scan(
+		&i.ID,
+		&i.WorkspaceID,
+		&i.Type,
+		&i.Name,
+		&i.Topic,
+		&i.Position,
+		&i.IsPrivate,
+		&i.AudioBitrateKbps,
+		&i.MaxStreamPreset,
+		&i.MaxStreams,
+		&i.CreatedAt,
+		&i.ArchivedAt,
+		&i.CategoryID,
+		&i.UserLimit,
+		&i.VoiceStatus,
+		&i.CameraLimit,
+		&i.DmKey,
+		&i.AllowRecording,
+		&i.Restricted,
+		&i.Emoji,
+		&i.GuestApproval,
+		&i.ExpiresAt,
+		&i.CreatedBy,
+	)
+	return i, err
+}
+
 const setRoomPlacement = `-- name: SetRoomPlacement :one
 UPDATE rooms SET position = $1, category_id = $2
 WHERE id = $3 AND workspace_id = $4::uuid AND archived_at IS NULL
-RETURNING id, workspace_id, type, name, topic, position, is_private, audio_bitrate_kbps, max_stream_preset, max_streams, created_at, archived_at, category_id, user_limit, voice_status, camera_limit, dm_key, allow_recording, restricted, emoji, guest_approval
+RETURNING id, workspace_id, type, name, topic, position, is_private, audio_bitrate_kbps, max_stream_preset, max_streams, created_at, archived_at, category_id, user_limit, voice_status, camera_limit, dm_key, allow_recording, restricted, emoji, guest_approval, expires_at, created_by
 `
 
 type SetRoomPlacementParams struct {
@@ -578,13 +992,57 @@ func (q *Queries) SetRoomPlacement(ctx context.Context, arg SetRoomPlacementPara
 		&i.Restricted,
 		&i.Emoji,
 		&i.GuestApproval,
+		&i.ExpiresAt,
+		&i.CreatedBy,
+	)
+	return i, err
+}
+
+const setRoomPrivate = `-- name: SetRoomPrivate :one
+UPDATE rooms SET is_private = $1
+WHERE id = $2 AND archived_at IS NULL
+RETURNING id, workspace_id, type, name, topic, position, is_private, audio_bitrate_kbps, max_stream_preset, max_streams, created_at, archived_at, category_id, user_limit, voice_status, camera_limit, dm_key, allow_recording, restricted, emoji, guest_approval, expires_at, created_by
+`
+
+type SetRoomPrivateParams struct {
+	IsPrivate bool
+	ID        uuid.UUID
+}
+
+func (q *Queries) SetRoomPrivate(ctx context.Context, arg SetRoomPrivateParams) (Room, error) {
+	row := q.db.QueryRow(ctx, setRoomPrivate, arg.IsPrivate, arg.ID)
+	var i Room
+	err := row.Scan(
+		&i.ID,
+		&i.WorkspaceID,
+		&i.Type,
+		&i.Name,
+		&i.Topic,
+		&i.Position,
+		&i.IsPrivate,
+		&i.AudioBitrateKbps,
+		&i.MaxStreamPreset,
+		&i.MaxStreams,
+		&i.CreatedAt,
+		&i.ArchivedAt,
+		&i.CategoryID,
+		&i.UserLimit,
+		&i.VoiceStatus,
+		&i.CameraLimit,
+		&i.DmKey,
+		&i.AllowRecording,
+		&i.Restricted,
+		&i.Emoji,
+		&i.GuestApproval,
+		&i.ExpiresAt,
+		&i.CreatedBy,
 	)
 	return i, err
 }
 
 const setVoiceStatus = `-- name: SetVoiceStatus :one
 UPDATE rooms SET voice_status = $1 WHERE id = $2 AND archived_at IS NULL
-RETURNING id, workspace_id, type, name, topic, position, is_private, audio_bitrate_kbps, max_stream_preset, max_streams, created_at, archived_at, category_id, user_limit, voice_status, camera_limit, dm_key, allow_recording, restricted, emoji, guest_approval
+RETURNING id, workspace_id, type, name, topic, position, is_private, audio_bitrate_kbps, max_stream_preset, max_streams, created_at, archived_at, category_id, user_limit, voice_status, camera_limit, dm_key, allow_recording, restricted, emoji, guest_approval, expires_at, created_by
 `
 
 type SetVoiceStatusParams struct {
@@ -617,6 +1075,8 @@ func (q *Queries) SetVoiceStatus(ctx context.Context, arg SetVoiceStatusParams) 
 		&i.Restricted,
 		&i.Emoji,
 		&i.GuestApproval,
+		&i.ExpiresAt,
+		&i.CreatedBy,
 	)
 	return i, err
 }
@@ -663,7 +1123,7 @@ UPDATE rooms SET
     camera_limit       = CASE WHEN $8::boolean THEN $12::integer ELSE camera_limit END,
     category_id        = CASE WHEN $13::boolean THEN $14::uuid ELSE category_id END
 WHERE id = $15 AND archived_at IS NULL
-RETURNING id, workspace_id, type, name, topic, position, is_private, audio_bitrate_kbps, max_stream_preset, max_streams, created_at, archived_at, category_id, user_limit, voice_status, camera_limit, dm_key, allow_recording, restricted, emoji, guest_approval
+RETURNING id, workspace_id, type, name, topic, position, is_private, audio_bitrate_kbps, max_stream_preset, max_streams, created_at, archived_at, category_id, user_limit, voice_status, camera_limit, dm_key, allow_recording, restricted, emoji, guest_approval, expires_at, created_by
 `
 
 type UpdateRoomParams struct {
@@ -725,6 +1185,8 @@ func (q *Queries) UpdateRoom(ctx context.Context, arg UpdateRoomParams) (Room, e
 		&i.Restricted,
 		&i.Emoji,
 		&i.GuestApproval,
+		&i.ExpiresAt,
+		&i.CreatedBy,
 	)
 	return i, err
 }

@@ -163,3 +163,17 @@ UPDATE room_invites SET not_before = $2, expires_at = $3 WHERE id = $1 AND revok
 UPDATE room_invites SET revoked_at = now()
 WHERE event_id = $1 AND revoked_at IS NULL
   AND (sqlc.narg('ids')::uuid[] IS NULL OR id = ANY(sqlc.narg('ids')::uuid[]));
+
+-- name: ListRoomLiveEvents :many
+-- One-off meetings of a room that have not ended at `now` (ADR-0044: a temporary room closes
+-- them).
+SELECT * FROM events
+WHERE room_id = sqlc.arg('room_id') AND cancelled_at IS NULL AND rrule IS NULL AND ends_at > sqlc.arg('now')
+ORDER BY starts_at
+FOR UPDATE;
+
+-- name: EndEventAt :one
+-- A running one-off meeting ends at `at` (its room closed).
+UPDATE events SET ends_at = sqlc.arg('at'), sequence = sequence + 1, updated_at = now()
+WHERE id = sqlc.arg('id') AND cancelled_at IS NULL AND starts_at < sqlc.arg('at') AND ends_at > sqlc.arg('at')
+RETURNING *;

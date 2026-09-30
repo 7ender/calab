@@ -16,6 +16,7 @@ import (
 	"mime/multipart"
 	"net"
 	"net/http"
+	"slices"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -42,6 +43,7 @@ type recordingLiveKit struct {
 	muted    []string
 	moves    []string
 	removed  []string
+	deleted  []string                  // DeleteRoom calls (room names)
 	fakeMove bool                      // pretend MoveParticipant succeeded (no real WebRTC participant in tests)
 	perms    map[string]rtc.Permission // last permission sent per identity
 	// afterCreateRoom, if set, runs once after a successful CreateRoom (e.g. to cancel the
@@ -59,6 +61,19 @@ func (r *recordingLiveKit) CreateRoom(ctx context.Context, name string, emptyTim
 		hook()
 	}
 	return err
+}
+
+func (r *recordingLiveKit) DeleteRoom(ctx context.Context, name string) error {
+	r.mu.Lock()
+	r.deleted = append(r.deleted, name)
+	r.mu.Unlock()
+	return r.LiveKit.DeleteRoom(ctx, name)
+}
+
+func (r *recordingLiveKit) wasDeleted(name string) bool {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	return slices.Contains(r.deleted, name)
 }
 
 func (r *recordingLiveKit) lastPerm(identity string) (rtc.Permission, bool) {
@@ -333,7 +348,7 @@ func TestGatewayFlow(t *testing.T) {
 		}
 	}
 	if snap == nil || len(snap.GetRooms()) != 1 || snap.GetRole() != v1.WorkspaceRole_WORKSPACE_ROLE_MEMBER ||
-		snap.GetPermissions()[room.GetId()] != 409719 /* member defaults with the board bits (ADR-0042) */ || len(snap.GetMembers()) != 2 || snap.GetRooms()[0].GetMedia().GetMaxStreams() != 3 {
+		snap.GetPermissions()[room.GetId()] != 8798327 /* member defaults with the board bits (ADR-0042) and CREATE_TEMP_ROOMS (ADR-0044) */ || len(snap.GetMembers()) != 2 || snap.GetRooms()[0].GetMedia().GetMaxStreams() != 3 {
 		t.Fatalf("snapshot: %v", snap)
 	}
 	online := false

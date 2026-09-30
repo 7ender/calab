@@ -5,10 +5,8 @@ package guests
 
 import (
 	"context"
-	"crypto/rand"
 	"errors"
 	"log/slog"
-	"math/big"
 	"net/http"
 	"time"
 
@@ -32,8 +30,6 @@ import (
 )
 
 const (
-	codeAlphabet     = "23456789abcdefghjkmnpqrstuvwxyzABCDEFGHJKLMNPQRSTUVWXYZ"
-	codeLen          = 12 // ≈ 70 bits: the code is the capability
 	defaultExpiry    = 7 * 24 * time.Hour
 	maxExpiry        = 365 * 24 * time.Hour
 	maxUses          = 10000
@@ -77,19 +73,6 @@ func (s *Service) Routes(mux httpx.Router, wrap func(http.Handler) http.Handler)
 	mux.Handle("DELETE /api/rooms/{id}/admissions/me", wrap(httpx.HandlerFunc(s.cancelAdmission)))
 	mux.Handle("GET /api/room-invites/{code}", httpx.HandlerFunc(s.preview))
 	mux.Handle("POST /api/room-invites/{code}/join", httpx.HandlerFunc(s.join))
-}
-
-func newCode() (string, error) {
-	b := make([]byte, codeLen)
-	n := big.NewInt(int64(len(codeAlphabet)))
-	for i := range b {
-		k, err := rand.Int(rand.Reader, n)
-		if err != nil {
-			return "", err
-		}
-		b[i] = codeAlphabet[k.Int64()]
-	}
-	return string(b), nil
 }
 
 // AllowBits computes what joiners may do: VIEW_ROOM + CONNECT always, plus the flags.
@@ -155,6 +138,9 @@ func linkAccess(r *http.Request) (uuid.UUID, perm.RoomAccess, linkRights, error)
 	var l linkRights
 	if acc.Role != perm.RoleGuest {
 		l = linkRights{guests: acc.Bits.Has(perm.InviteGuests), members: acc.Bits.Has(perm.InviteMembers)}
+		// The creator of a temporary room manages its members-only links (ADR-0044); guest
+		// links still need INVITE_GUESTS.
+		l.members = l.members || acc.Creator(auth.MustFromContext(r.Context()).UserID)
 	}
 	if !l.guests && !l.members {
 		return roomID, acc, l, httpx.Forbidden("INVITE_GUESTS or INVITE_MEMBERS required")
@@ -211,7 +197,7 @@ func (s *Service) create(w http.ResponseWriter, r *http.Request) error {
 	}
 	uid := auth.MustFromContext(r.Context()).UserID
 	for range 3 {
-		code, err := newCode()
+		code, err := rooms.NewLinkCode()
 		if err != nil {
 			return err
 		}
