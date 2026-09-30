@@ -579,9 +579,11 @@ func (h *Handlers) update(w http.ResponseWriter, r *http.Request) error {
 				return err
 			}
 			if restricted && !cur.Restricted && acc.Role != perm.RoleOwner {
-				// Whoever closes the room keeps it: a personal VIEW_ROOM | MANAGE_ROOM (ADR-0048).
+				// Whoever closes the room keeps it (ADR-0048): a personal VIEW_ROOM, plus MANAGE_ROOM
+				// when they had it — the creator of a temporary room manages it as its creator, and
+				// closing must not hand them MANAGE_ROOM (make_permanent, wider overrides).
 				if err := q.GrantUserOverride(r.Context(), sqlc.GrantUserOverrideParams{
-					RoomID: roomID, UserID: auth.MustFromContext(r.Context()).UserID.String(), Allow: int64(perm.ViewRoom | perm.ManageRoom),
+					RoomID: roomID, UserID: auth.MustFromContext(r.Context()).UserID.String(), Allow: int64(perm.ViewRoom | acc.Bits&perm.ManageRoom), //nolint:gosec // bit mask
 				}); err != nil {
 					return err
 				}

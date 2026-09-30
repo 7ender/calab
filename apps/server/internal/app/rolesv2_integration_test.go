@@ -270,6 +270,20 @@ func TestRolesV2ClosedRoom(t *testing.T) {
 	if bits, st := roomPerms(t, o, rid); st != 200 || perm.Bits(bits) != perm.All {
 		t.Errorf("owner: %d bits %d", st, bits)
 	}
+
+	// The creator of a private temporary room closes it: keeps it (VIEW_ROOM by override) and
+	// still manages it as its creator, without being handed MANAGE_ROOM; opens it again.
+	tr := tempRoom(t, mem, wid, &v1.CreateTempRoomRequest{Name: "client", TtlSeconds: 3600, Private: true, Guests: noGuests()})
+	tid := tr.GetRoom().GetId()
+	mem.must(200, "PATCH", "/api/rooms/"+tid, &v1.UpdateRoomRequest{Restricted: &on}, nil)
+	if bits, st := roomPerms(t, mem, tid); st != 200 || perm.Bits(bits).Has(perm.ManageRoom) {
+		t.Errorf("temp creator after closing: %d bits %d, want 200 without MANAGE_ROOM", st, bits)
+	}
+	if _, st := roomPerms(t, boss, tid); st != 404 {
+		t.Errorf("boss sees the closed temporary room: %d", st)
+	}
+	off := false
+	mem.must(200, "PATCH", "/api/rooms/"+tid, &v1.UpdateRoomRequest{Restricted: &off}, nil)
 }
 
 // cloneBoardOverrides returns the board's current overrides (to extend them).
