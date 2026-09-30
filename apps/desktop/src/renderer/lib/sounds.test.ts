@@ -51,8 +51,23 @@ describe('sound rate limit', () => {
   });
 });
 
-describe('bundled message sound', () => {
-  it('«message» plays the generated WAV (scripts/gen-sounds.mjs)', () => {
-    expect(FILE_SOUNDS.message).toMatch(/message\.wav/);
+describe('bundled event sounds', () => {
+  it('every event plays its own MP3 from tools/gen-event-sounds.py', () => {
+    const urls = SOUND_EVENTS.map((name) => FILE_SOUNDS[name]);
+    for (const url of urls) expect(url).toMatch(/\.mp3/);
+    expect(new Set(urls).size).toBe(SOUND_EVENTS.length);
+    expect(FILE_SOUNDS.message).toMatch(/message\.mp3/);
+    expect(FILE_SOUNDS.streamEnd).toMatch(/stream-end\.mp3/);
+  });
+});
+
+describe('stream viewer sounds', () => {
+  it('a viewer coming and going in bursts sounds at most once per second each', () => {
+    const gate = createGate();
+    expect(gate.allow('watchStart', 0)).toBe(true);
+    expect(gate.allow('watchStop', 100)).toBe(true);
+    expect(gate.allow('watchStart', 500)).toBe(false);
+    expect(gate.allow('watchStop', 900)).toBe(false);
+    expect(gate.allow('watchStart', 1000)).toBe(true);
   });
 });

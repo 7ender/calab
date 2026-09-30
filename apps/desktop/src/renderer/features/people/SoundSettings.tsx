@@ -19,6 +19,9 @@ const LABEL: Record<SoundName, MessageKey> = {
   mention: 'sounds.mention',
   message: 'sounds.message',
   streamStart: 'sounds.streamStart',
+  streamEnd: 'sounds.streamEnd',
+  watchStart: 'sounds.watchStart',
+  watchStop: 'sounds.watchStop',
   moved: 'sounds.moved',
   disconnect: 'sounds.disconnect',
   reconnect: 'sounds.reconnect',
@@ -28,7 +31,7 @@ const LABEL: Record<SoundName, MessageKey> = {
 
 /** Every event of SOUND_EVENTS, grouped for scanning (a test keeps the two in sync). */
 export const GROUPS: Array<{ title: MessageKey; names: SoundName[] }> = [
-  { title: 'sounds.groupVoice', names: ['join', 'leave', 'streamStart', 'moved', 'disconnect', 'reconnect', 'recStart', 'recStop'] },
+  { title: 'sounds.groupVoice', names: ['join', 'leave', 'streamStart', 'streamEnd', 'watchStart', 'watchStop', 'moved', 'disconnect', 'reconnect', 'recStart', 'recStop'] },
   { title: 'sounds.groupMic', names: ['mute', 'unmute', 'deafen', 'undeafen', 'pttOn', 'pttOff'] },
   { title: 'sounds.groupChat', names: ['mention', 'message'] },
 ];
