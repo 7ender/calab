@@ -34,7 +34,7 @@ export const esPlan: DictShape<typeof ruPlan> = {
   'plan.unlimited': 'Sin límite',
   'plan.limitsFooter': 'Los límites se aplican a todos, incluido el propietario. «Ahora» para las salas es la más llena.',
   'plan.card.buy': 'Obtener más',
-  'plan.teamPitch': 'Team: hasta 15 personas por sala, hasta 100 miembros, 300 GB para archivos, 5 bots, 30 tableros, CalDAV, calidad de llamada y vídeo sin límite, soporte. Business: hasta 100 personas por sala, hasta 500 miembros, 1 TB para archivos, 20 bots, 50 tableros, todo lo demás sin límite, soporte prioritario. Enterprise: en su propio servidor, sin límites. Precio a consultar.',
+  'plan.teamPitch': 'Team: hasta 15 personas por sala, hasta 100 miembros, 300 GB para archivos, 5 bots, 30 tableros, CalDAV, calidad de llamada y vídeo sin límite, soporte. Business: hasta 50 personas por sala, hasta 500 miembros, 1 TB para archivos, 20 bots, 50 tableros, todo lo demás sin límite, soporte prioritario. Enterprise: en su propio servidor, sin límites. Precio a consultar.',
   'plan.paidPitch': 'Para renovar el plan o cambiar sus límites, escríbenos.',
   'plan.contact': 'Contactar para comprar',
   'plan.contactShort': 'Contactar',

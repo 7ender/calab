@@ -55,12 +55,12 @@ var (
 	}
 	// DefaultTeam (owner, 30.09): 15 in a room, 100 workspace members, 300 GiB of files, 5 bots, 30 boards;
 	// voice and video not limited by the plan.
-	DefaultTeam = Limits{RoomMembers: 15, Members: 100, Bots: 5, Boards: 30, StorageMB: 300 << 10, StreamsPerRoom: 5, CamerasPerRoom: 10,
+	DefaultTeam = Limits{RoomMembers: 15, Members: 100, Bots: 5, Boards: 30, StorageMB: 300 << 10, StreamsPerRoom: 2, CamerasPerRoom: 10,
 		TelephonyDisabled: true, WebAppsDisabled: true, ApprovalsDisabled: true}
-	// DefaultBusiness (owner, 30.09) is the cloud tier stored as PLAN_ENTERPRISE: 100 in a room,
-	// 500 members, 20 bots, 50 boards (the hard cap), 10 streams and 30 cameras per room, 1 TiB of files, telephony, web apps and
+	// DefaultBusiness (owner, 30.09) is the cloud tier stored as PLAN_ENTERPRISE: 50 in a room,
+	// 500 members, 20 bots, 50 boards (the hard cap), 5 streams and 25 cameras per room, 1 TiB of files, telephony, web apps and
 	// approvals; voice and video quality unlimited.
-	DefaultBusiness = Limits{RoomMembers: 100, Members: 500, Bots: 20, Boards: 50, StorageMB: 1 << 20, StreamsPerRoom: 10, CamerasPerRoom: 30}
+	DefaultBusiness = Limits{RoomMembers: 50, Members: 500, Bots: 20, Boards: 50, StorageMB: 1 << 20, StreamsPerRoom: 5, CamerasPerRoom: 25}
 )
 
 // Upper bounds of every limit (validation of env and admin input).

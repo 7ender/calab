@@ -62,13 +62,13 @@ func TestCameras(t *testing.T) {
 	limit := func(n uint32) {
 		o.must(200, "PATCH", "/api/rooms/"+rid, &v1.UpdateRoomRequest{MediaOverride: &v1.RoomMediaOverride{CameraLimit: &n}}, nil)
 	}
-	// Workspace default (6 unless changed), validated 0..30; a room without override follows it.
+	// Workspace default (6 unless changed), validated 0..25; a room without override follows it.
 	var got v1.GetRoomResponse
 	o.must(200, "GET", "/api/rooms/"+rid, nil, &got)
 	if got.GetRoom().GetMedia().GetCameraLimit() != 6 {
 		t.Fatalf("default camera_limit %d, want 6", got.GetRoom().GetMedia().GetCameraLimit())
 	}
-	bad, four := uint32(31), uint32(4)
+	bad, four := uint32(30), uint32(4)
 	o.must(422, "PATCH", "/api/workspaces/"+ws.GetId(), &v1.UpdateWorkspaceRequest{DefaultCameraLimit: &bad}, nil)
 	o.must(200, "PATCH", "/api/workspaces/"+ws.GetId(), &v1.UpdateWorkspaceRequest{DefaultCameraLimit: &four}, nil)
 	o.must(200, "GET", "/api/rooms/"+rid, nil, &got)

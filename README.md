@@ -150,12 +150,12 @@ Checks: `make test` (Go + TS), `make test-integration`, visual tests per screen 
 
 | | Free | Team | Business | Enterprise (your own server) |
 |---|---|---|---|---|
-| Voice room | up to 5 people | up to 15 people | up to 100 people | unlimited |
+| Voice room | up to 5 people | up to 15 people | up to 50 people | unlimited |
 | Workspace members | up to 50 | up to 100 | up to 500 | unlimited |
 | Audio quality | up to “Normal” | any, up to “Excellent” | any | any |
 | Screen sharing and camera quality | up to 720p / 15 fps | no quality limits | no quality limits | no quality limits |
-| Screen shares at once in a room | 1 | 5 | 10 | unlimited |
-| Cameras at once in a room | 3 | 10 | 30 | unlimited |
+| Screen shares at once in a room | 1 | 2 | 5 | unlimited |
+| Cameras at once in a room | 3 | 10 | 25 | unlimited |
 | Files | 5 GB per workspace | 300 GB per workspace | 1 TB per workspace | unlimited |
 | Bots | 1 | 5 | 20 | unlimited |
 | Sticker packs | 1 | unlimited | unlimited | unlimited |

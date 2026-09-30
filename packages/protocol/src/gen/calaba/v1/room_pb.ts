@@ -81,7 +81,7 @@ export type RoomMediaOverride = Message<"calaba.v1.RoomMediaOverride"> & {
   maxStreams?: number | undefined;
 
   /**
-   * 0..30 (0 = cameras off)
+   * 0..25 (0 = cameras off)
    *
    * @generated from field: optional uint32 camera_limit = 4;
    */

@@ -29,8 +29,8 @@ func TestParseLimitsEnv(t *testing.T) {
 		t.Fatalf("defaults: %+v %+v %+v %v", free, team, biz, err)
 	}
 	if team != (Limits{RoomMembers: 15, Members: 100, Bots: 5, Boards: 30, StorageMB: 300 * 1024,
-		StreamsPerRoom: 5, CamerasPerRoom: 10, TelephonyDisabled: true, WebAppsDisabled: true, ApprovalsDisabled: true}) ||
-		biz != (Limits{RoomMembers: 100, Members: 500, Bots: 20, Boards: 50, StorageMB: 1 << 20, StreamsPerRoom: 10, CamerasPerRoom: 30}) {
+		StreamsPerRoom: 2, CamerasPerRoom: 10, TelephonyDisabled: true, WebAppsDisabled: true, ApprovalsDisabled: true}) ||
+		biz != (Limits{RoomMembers: 50, Members: 500, Bots: 20, Boards: 50, StorageMB: 1 << 20, StreamsPerRoom: 5, CamerasPerRoom: 25}) {
 		t.Fatalf("team / business defaults: %+v %+v", team, biz)
 	}
 
@@ -123,10 +123,10 @@ func TestMediaCaps(t *testing.T) {
 	if m.GetMaxStreamPreset() != h720 || m.GetMaxStreams() != 1 || m.GetAudioBitrateKbps() != 16 || m.GetCameraLimit() != 3 {
 		t.Fatalf("capped media: %v", m)
 	}
-	if m := DefaultTeam.CapMedia(&v1.RoomMediaSettings{MaxStreams: 8, CameraLimit: 25}); m.GetMaxStreams() != 5 || m.GetCameraLimit() != 10 {
+	if m := DefaultTeam.CapMedia(&v1.RoomMediaSettings{MaxStreams: 8, CameraLimit: 25}); m.GetMaxStreams() != 2 || m.GetCameraLimit() != 10 {
 		t.Fatalf("team caps: %v", m)
 	}
-	if m := DefaultBusiness.CapMedia(&v1.RoomMediaSettings{MaxStreams: 8, CameraLimit: 30}); m.GetMaxStreams() != 8 || m.GetCameraLimit() != 30 {
+	if m := DefaultBusiness.CapMedia(&v1.RoomMediaSettings{MaxStreams: 9, CameraLimit: 25}); m.GetMaxStreams() != 5 || m.GetCameraLimit() != 25 {
 		t.Fatalf("business caps: %v", m)
 	}
 	if m := (Limits{}).CapMedia(&v1.RoomMediaSettings{AudioBitrateKbps: 64, MaxStreamPreset: orig, MaxStreams: 3}); m.GetMaxStreamPreset() != orig || m.GetMaxStreams() != 3 || m.GetAudioBitrateKbps() != 64 {

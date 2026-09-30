@@ -558,7 +558,7 @@ export type UpdateWorkspaceRequest = Message<"calaba.v1.UpdateWorkspaceRequest">
   allowSelfNickname?: boolean | undefined;
 
   /**
-   * 0..30 (0 = cameras off)
+   * 0..25 (0 = cameras off)
    *
    * @generated from field: optional uint32 default_camera_limit = 9;
    */

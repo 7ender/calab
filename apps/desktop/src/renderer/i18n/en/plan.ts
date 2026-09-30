@@ -34,7 +34,7 @@ export const enPlan: DictShape<typeof ruPlan> = {
   'plan.unlimited': 'Unlimited',
   'plan.limitsFooter': 'Limits apply to everyone, the owner included. “Now” for rooms is the fullest one.',
   'plan.card.buy': 'Get more',
-  'plan.teamPitch': 'Team: up to 15 people in a room, up to 100 members, 300 GB of files, 5 bots, 30 boards, CalDAV, call and video quality without limits, support. Business: up to 100 people in a room, up to 500 members, 1 TB of files, 20 bots, 50 boards, everything else unlimited, priority support. Enterprise: on your own server, no limits. Price on request.',
+  'plan.teamPitch': 'Team: up to 15 people in a room, up to 100 members, 300 GB of files, 5 bots, 30 boards, CalDAV, call and video quality without limits, support. Business: up to 50 people in a room, up to 500 members, 1 TB of files, 20 bots, 50 boards, everything else unlimited, priority support. Enterprise: on your own server, no limits. Price on request.',
   'plan.paidPitch': 'To extend the plan or change its limits, contact us.',
   'plan.contact': 'Contact sales',
   'plan.contactShort': 'Contact',

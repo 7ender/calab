@@ -34,7 +34,7 @@ export const zhPlan: DictShape<typeof ruPlan> = {
   'plan.unlimited': '不限',
   'plan.limitsFooter': '限制对所有人生效，包括所有者。房间的“当前”值取人数最多的房间。',
   'plan.card.buy': '获取更多',
-  'plan.teamPitch': 'Team：每个房间最多 15 人，最多 100 名成员，300 GB 文件空间，5 个机器人，30 个看板，CalDAV，通话和视频质量不限，技术支持。Business：每个房间最多 100 人，最多 500 名成员，1 TB 文件空间，20 个机器人，50 个看板，其余不限，优先支持。Enterprise：部署在您自己的服务器上，完全不限。价格请咨询。',
+  'plan.teamPitch': 'Team：每个房间最多 15 人，最多 100 名成员，300 GB 文件空间，5 个机器人，30 个看板，CalDAV，通话和视频质量不限，技术支持。Business：每个房间最多 50 人，最多 500 名成员，1 TB 文件空间，20 个机器人，50 个看板，其余不限，优先支持。Enterprise：部署在您自己的服务器上，完全不限。价格请咨询。',
   'plan.paidPitch': '如需续期或调整限制，请联系我们。',
   'plan.contact': '联系购买',
   'plan.contactShort': '联系',

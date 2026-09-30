@@ -145,7 +145,7 @@ func TestPlanRoomMembersLimit(t *testing.T) {
 	if st != 409 || e.GetCode() != v1.ErrorCode_ERROR_CODE_ROOM_FULL || e.GetReason() != "PLAN_LIMIT" || e.GetUsed() != 15 || e.GetLimit() != 15 {
 		t.Fatalf("16th user on team: %d %v", st, e)
 	}
-	// Business (PLAN_ENTERPRISE): 100 in a room.
+	// Business (PLAN_ENTERPRISE): 50 in a room.
 	admin.must(200, "PUT", "/api/admin/workspaces/"+ws.GetId()+"/plan", &v1.AdminSetPlanRequest{Plan: v1.Plan_PLAN_ENTERPRISE, Note: "business"}, nil)
 	register(t, invite(t, o, ws.GetId())).must(200, "POST", "/api/rooms/"+rid+"/join", nil, nil)
 }

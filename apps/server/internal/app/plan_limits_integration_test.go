@@ -198,7 +198,7 @@ func TestPlanFreeCounts(t *testing.T) {
 	createPack(t, o, wsID, "Two")
 }
 
-// BUSINESS = PLAN_ENTERPRISE (owner, 30.09): 100 in a room, 500 members, 20 bots, 50 boards, 1 TiB;
+// BUSINESS = PLAN_ENTERPRISE (owner, 30.09): 50 in a room, 500 members, 20 bots, 50 boards, 1 TiB;
 // voice tier, sticker packs and video are not limited.
 func TestPlanBusinessLimits(t *testing.T) {
 	withFreeLimits(t)
@@ -213,7 +213,7 @@ func TestPlanBusinessLimits(t *testing.T) {
 	setPlan(t, wsID, &v1.AdminSetPlanRequest{Plan: v1.Plan_PLAN_ENTERPRISE, Note: "business"})
 	var gw v1.GetWorkspaceResponse
 	o.must(200, "GET", "/api/workspaces/"+wsID, nil, &gw)
-	if p := gw.GetWorkspace().GetPlan(); p.GetPlan() != v1.Plan_PLAN_ENTERPRISE || p.GetLimits().GetRoomMembers() != 100 ||
+	if p := gw.GetWorkspace().GetPlan(); p.GetPlan() != v1.Plan_PLAN_ENTERPRISE || p.GetLimits().GetRoomMembers() != 50 ||
 		p.GetLimits().GetMembers() != 500 || p.GetLimits().GetBots() != 20 || p.GetLimits().GetBoards() != 50 ||
 		p.GetLimits().GetStorageMb() != 1<<20 || p.GetLimits().GetAudioTierMaxKbps() != 0 ||
 		p.GetLimits().GetStreamMaxPreset() != v1.ScreenSharePreset_SCREEN_SHARE_PRESET_UNSPECIFIED {
