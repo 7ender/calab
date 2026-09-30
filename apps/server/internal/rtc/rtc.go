@@ -66,6 +66,8 @@ type Service struct {
 	// Calls gates the voice session of a DM (one-to-one calls, ADR-0034, dm.go); nil = no
 	// calls: a DM cannot be joined.
 	Calls CallGate
+	// SIP receives the events of phone lines in rooms (telephony, ADR-0046); nil = none.
+	SIP SIPHook
 	// sessionsOf lists a user's device sessions (tests; nil = the sessions table, devices.go).
 	sessionsOf func(ctx context.Context, uid uuid.UUID) ([]uuid.UUID, error)
 }

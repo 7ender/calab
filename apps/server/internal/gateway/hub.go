@@ -412,6 +412,10 @@ func (h *Hub) routeLocked(st *wsState, wid, id uuid.UUID, ev *v1.DispatchEvent) 
 		h.toViewers(sessions, view, parseID(e.VoiceCameraStop.GetRoomId()), id, shared)
 	case *v1.DispatchEvent_RoomRecording:
 		h.toViewers(sessions, view, parseID(e.RoomRecording.GetRoomId()), id, shared)
+	case *v1.DispatchEvent_SipCallUpdate:
+		// Telephony (ADR-0046): to the room's viewers; a call without a room (a connection
+		// test) is never published.
+		h.toViewers(sessions, view, parseID(e.SipCallUpdate.GetCall().GetRoomId()), id, shared)
 	case *v1.DispatchEvent_ReadReceipt:
 		// Read receipts (docs/09 #92): to the room's viewers except the member whose own marker
 		// it is (except_user_id, stripped before delivery) and bots.

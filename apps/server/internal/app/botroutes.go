@@ -292,6 +292,14 @@ var botRoutes = map[string]botAccess{
 	"GET /api/t/{key}":                         botAllow,
 	"GET /api/me/tasks":                        botAllow,
 	"GET /api/workspaces/{id}/tasks/search":    botAllow,
+	// telephony (ADR-0046): settings, the connection test and the journal are for people; bots
+	// with PLACE_CALLS place and end calls from a room whose call they are in
+	"GET /api/workspaces/{id}/sip":       botDeny,
+	"PUT /api/workspaces/{id}/sip":       botDeny,
+	"POST /api/workspaces/{id}/sip/test": botDeny,
+	"GET /api/workspaces/{id}/calls":     botDeny,
+	"POST /api/rooms/{id}/calls":         botAllow,
+	"DELETE /api/rooms/{id}/calls/{cid}": botAllow,
 }
 
 // botGate lets bot identities through only on botAllow routes (by the matched pattern).

@@ -82,11 +82,20 @@ func (s *Service) HandleEvent(ctx context.Context, ev *WebhookEvent) error {
 		return nil // not a Calaba room
 	}
 	if ev.Event == EventRoomFinished {
+		if s.SIP != nil && !voice.IsDM(wid, rid) {
+			s.SIP.SIPRoomFinished(ctx, rid)
+		}
 		return s.roomFinished(ctx, wid, rid)
 	}
 	p := ev.Participant
 	if p == nil {
 		return nil
+	}
+	if strings.HasPrefix(p.Identity, SIPIdentityPrefix) {
+		if s.SIP == nil || voice.IsDM(wid, rid) {
+			return nil
+		}
+		return s.SIP.SIPParticipant(ctx, ev.Event, wid, rid, p)
 	}
 	uid, sid, ok := voice.ParseIdentity(p.Identity)
 	if !ok {
@@ -114,12 +123,18 @@ func (s *Service) HandleEvent(ctx context.Context, ev *WebhookEvent) error {
 		if superseded {
 			return nil
 		}
-		return s.update(ctx, wid, uid, sid, func(cur *voice.SessionState) *voice.SessionState {
+		if err := s.update(ctx, wid, uid, sid, func(cur *voice.SessionState) *voice.SessionState {
 			if cur == nil || cur.RoomID != rid {
 				return cur // the device already moved to another room
 			}
 			return nil
-		})
+		}); err != nil {
+			return err
+		}
+		if s.SIP != nil && !voice.IsDM(wid, rid) {
+			s.SIP.PersonLeft(ctx, wid, rid) // the last person out hangs up a phone call (ADR-0046)
+		}
+		return nil
 	case EventTrackPublished:
 		switch t.Source {
 		case SourceMicrophone:
