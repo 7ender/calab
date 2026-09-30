@@ -10,7 +10,7 @@ import {
   type WorkspaceMember,
 } from '@calaba/protocol';
 import { getLocale } from '../../i18n';
-import { can, mayModerateVoice, mayMoveVoice, roomPerms, workspacePerms } from '../../lib/permissions';
+import { can, mayManageMembers, mayModerateVoice, mayMoveVoice, roomPerms, workspacePerms } from '../../lib/permissions';
 import { canAssignRole, legacyRoles, roleActor, rolesOfMember, topRole } from '../../lib/roles';
 
 /*
@@ -157,12 +157,12 @@ export function canRenameMember(myRoles: readonly RoleBits[] | undefined, self: 
 
 /**
  * Kick / ban / change the built-in role of a member (server workspaces.outranks + removeMember):
- * MANAGE_WORKSPACE, never the owner, an admin only by the owner, and — ADR-0026 hierarchy — only
+ * MANAGE_MEMBERS (ADR-0048; guests never), never the owner, an admin only by the owner, and — ADR-0026 hierarchy — only
  * members whose most senior role is below mine (the owner: anyone). Not oneself.
  */
 export function canRemoveMember(myRoles: readonly Role[], targetRoles: readonly Role[], target: Pick<WorkspaceMember, 'role'>, self: boolean): boolean {
   const actor = roleActor(myRoles);
-  if (self || !can(actor.perms, 'MANAGE_WORKSPACE') || target.role === WorkspaceRole.OWNER) return false;
+  if (self || !mayManageMembers(myRoles) || target.role === WorkspaceRole.OWNER) return false;
   if (target.role === WorkspaceRole.ADMIN && !actor.owner) return false;
   return actor.owner || (topRole(targetRoles)?.position ?? -1) < actor.top;
 }
@@ -221,7 +221,8 @@ export function memberActions(c: MenuContext): MenuActions {
           can(roomPerms(targetRoles, userId, r), 'CONNECT'),
       )
     : [];
-  const manage = can(ws, 'MANAGE_WORKSPACE');
+  // «Сделать участником» (guest → member): MANAGE_MEMBERS (ADR-0048).
+  const manage = mayManageMembers(myRoles);
   const guest = c.target.role === WorkspaceRole.GUEST;
   const removable = canRemoveMember(myRoles, targetRoles, c.target, self);
   return {

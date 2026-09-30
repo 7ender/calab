@@ -6,7 +6,7 @@ import { confirmAction } from '../../components/Confirm';
 import { Tip, cx } from '../../components/ui';
 import { t } from '../../i18n';
 import { api } from '../../lib/api/endpoints';
-import { mayInviteMembers, mayManageWorkspace } from '../../lib/permissions';
+import { mayInviteMembers, mayOpenWorkspaceSettings } from '../../lib/permissions';
 import { markRead } from '../../services/chat';
 import { isUnread, useRooms } from '../../stores/rooms';
 import { useSession } from '../../stores/session';
@@ -28,8 +28,8 @@ export function RailContextMenu({ workspaceId, tip, children }: { workspaceId: s
   const me = useSession((s) => s.me?.user?.id ?? '');
   const myRoles = useMemberRoles(workspaceId, me);
   if (!ws) return <Tip label={tip} side="right">{children}</Tip>;
-  // Invites and settings: MANAGE_WORKSPACE (the server's check), a custom role's included.
-  const admin = mayManageWorkspace(myRoles);
+  // Settings: any tab beyond «Участники» (ADR-0048); invites: INVITE_MEMBERS (ADR-0043).
+  const admin = mayOpenWorkspaceSettings(myRoles);
   const inviter = mayInviteMembers(myRoles); // ADR-0043
   const owner = role === WorkspaceRole.OWNER;
 

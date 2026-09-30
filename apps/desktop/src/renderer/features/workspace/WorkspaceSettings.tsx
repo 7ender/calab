@@ -19,7 +19,7 @@ import { api, thumbnailPath, uploadFile, uploadPath } from '../../lib/api/endpoi
 import { fmt, type TimeFormatPref } from '../../lib/format';
 import { ICON_SIDE, IMAGE_ACCEPT, avatarFile } from '../../lib/image';
 import { workspaceInitials } from '../../lib/initials';
-import { can, mayArrangeRooms, mayInviteMembers, mayManageWorkspace, workspacePerms } from '../../lib/permissions';
+import { can, mayArrangeRooms, settingsAccess, workspacePerms } from '../../lib/permissions';
 import { TempRoomsCards } from './TempRoomsCards';
 import { inviteUrl } from '../../services/links';
 import { useSession } from '../../stores/session';
@@ -75,16 +75,16 @@ export function WorkspaceSettingsDialog({
   const me = useSession((s) => s.me?.user?.id ?? '');
   const myRoles = useMemberRoles(workspaceId, me);
   if (!entry) return null;
-  // Settings, media defaults, invites, bans, GPTunneL: MANAGE_WORKSPACE (the server's check) —
-  // admins, or a custom role with it. Deleting the workspace: the owner only.
-  const admin = mayManageWorkspace(myRoles);
+  // Tabs by right, as the server checks (ADR-0048, lib/permissions settingsAccess): «Общие»,
+  // «Звук», «Фоны» — MANAGE_WORKSPACE; «Роли» — MANAGE_ROLES; «Стикеры» — MANAGE_STICKERS; «Бейджи»,
+  // «Забаненные» — MANAGE_MEMBERS; «Боты» — MANAGE_BOTS; GPTunneL pairing — MANAGE_INTEGRATIONS;
+  // «Приглашения» — INVITE_MEMBERS (ADR-0043). Deleting the workspace: the owner only.
+  const access = settingsAccess(myRoles);
+  const admin = access.workspace;
   const owner = entry.role === WorkspaceRole.OWNER;
-  // «Роли» (ADR-0026): whoever may manage roles — admins, or a custom role with MANAGE_ROLES.
-  const manageRoles = can(workspacePerms(myRoles), 'MANAGE_ROLES');
-  // «Стикеры» (ADR-0030): MANAGE_STICKERS — admins, or a custom role with it.
-  const manageStickers = can(workspacePerms(myRoles), 'MANAGE_STICKERS');
-  // «Приглашения»: INVITE_MEMBERS (ADR-0043), like the server's invite endpoints.
-  const inviter = mayInviteMembers(myRoles);
+  const manageRoles = access.roles;
+  const manageStickers = access.stickers;
+  const inviter = access.invites;
   const sections: SettingsSection[] = [
     ...(admin
       ? [
@@ -99,24 +99,24 @@ export function WorkspaceSettingsDialog({
       : []),
     { id: 'members', label: t('ws.members'), icon: Users, content: <MembersTab workspaceId={workspaceId} /> },
     ...(manageRoles ? [{ id: 'roles', label: t('roles.tab'), icon: Shield, content: <RolesTab workspaceId={workspaceId} /> }] : []),
-    // «Бейджи» (docs/09 #82): the library needs MANAGE_WORKSPACE, like the server.
-    ...(admin ? [{ id: 'badges', label: t('badges.tab'), icon: Award, content: <BadgesTab workspaceId={workspaceId} /> }] : []),
+    // «Бейджи» (docs/09 #82): the library needs MANAGE_MEMBERS (ADR-0048), like the server.
+    ...(access.members ? [{ id: 'badges', label: t('badges.tab'), icon: Award, content: <BadgesTab workspaceId={workspaceId} /> }] : []),
     // «Фоны камеры» (ADR-0035 addendum): MANAGE_WORKSPACE, like the server.
     ...(admin ? [{ id: 'backgrounds', label: t('wsbg.tab'), icon: Wallpaper, content: <BackgroundsTab workspaceId={workspaceId} /> }] : []),
     ...(manageStickers ? [{ id: 'stickers', label: t('stk.tab'), icon: Sticker, content: <StickersTab workspaceId={workspaceId} /> }] : []),
     // Soundboard (ADR-0036): the same right as stickers («Стикеры и звуки»).
     ...(manageStickers ? [{ id: 'sounds', label: t('snd.tab'), icon: Music, content: <SoundsTab workspaceId={workspaceId} /> }] : []),
-    // «Боты» (ADR-0031): MANAGE_WORKSPACE, like the server's bot management.
-    ...(admin ? [{ id: 'bots', label: t('bots.tab'), icon: BotIcon, content: <BotsTab workspaceId={workspaceId} /> }] : []),
+    // «Боты» (ADR-0031): MANAGE_BOTS (ADR-0048), like the server's bot management.
+    ...(access.bots ? [{ id: 'bots', label: t('bots.tab'), icon: BotIcon, content: <BotsTab workspaceId={workspaceId} /> }] : []),
     // «Тариф» (ADR-0024): every member sees it; an older server sends no plan — no tab.
     ...(entry.ws.plan ? [{ id: 'plan', label: t('plan.tab'), icon: Gem, content: <PlanTab workspaceId={workspaceId} /> }] : []),
     // «GPTunneL» (ADR-0025): the meeting recording connection; guests don't see it (the API is 403).
     ...(entry.role !== WorkspaceRole.GUEST
-      ? [{ id: 'gptunnel', label: t('gpt.tab'), icon: CircleDot, content: <GptunnelTab workspaceId={workspaceId} canManage={admin} /> }]
+      ? [{ id: 'gptunnel', label: t('gpt.tab'), icon: CircleDot, content: <GptunnelTab workspaceId={workspaceId} canManage={access.integrations} /> }]
       : []),
     ...(inviter ? [{ id: 'invites', label: t('ws.tabInvites'), icon: UserPlus, content: <InvitesTab workspaceId={workspaceId} roomId={roomId} /> }] : []),
-    // «Забаненные» (docs/09 #32): the same right as kicking (MANAGE_WORKSPACE).
-    ...(admin ? [{ id: 'bans', label: t('bans.tab'), icon: Ban, content: <BansTab workspaceId={workspaceId} /> }] : []),
+    // «Забаненные» (docs/09 #32): the same right as kicking (MANAGE_MEMBERS, ADR-0048).
+    ...(access.members ? [{ id: 'bans', label: t('bans.tab'), icon: Ban, content: <BansTab workspaceId={workspaceId} /> }] : []),
     ...(owner
       ? [{ id: 'danger', label: t('ws.tabDanger'), icon: TriangleAlert, destructive: true, content: <DangerTab workspaceId={workspaceId} onDone={onClose} /> }]
       : []),

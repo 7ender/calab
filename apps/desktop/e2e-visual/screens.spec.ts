@@ -1621,6 +1621,23 @@ test('settings-role-edit', async ({ open, win, mock, shot }) => {
   await checkpoint(shot, 'settings-role-edit');
 });
 
+/** ADR-0048: «Создать роль» → the draft with «Шаблон» «Менеджер отдела» applied and the preview. */
+test('settings-role-new', async ({ open, win, mock, shot }) => {
+  await open();
+  await mainWindow(win, mock);
+  await win.getByTestId('titlebar-title').click();
+  await win.getByRole('menuitem', { name: 'Настройки пространства' }).click();
+  const dialog = win.getByRole('dialog');
+  await dialog.getByRole('tab', { name: 'Роли' }).click();
+  await dialog.getByTestId('role-create').click();
+  await dialog.getByTestId('role-template').getByRole('radio', { name: 'Менеджер отдела' }).click();
+  await expect(dialog.getByTestId('role-perm-CREATE_BOARDS')).toBeChecked();
+  await expect(dialog.getByTestId('role-perm-MANAGE_WORKSPACE')).not.toBeChecked();
+  await expect(dialog.getByTestId('role-preview-createBoards')).toHaveAttribute('data-on', '1');
+  expect([...(mock.state.roles.get(IDS.workspaces.main) ?? [])].some((r) => r.name === 'Новая роль')).toBe(false);
+  await checkpoint(shot, 'settings-role-new');
+});
+
 /** Workspace settings → «Тариф» (ADR-0024) on the Free plan: limits against the usage, the contact. */
 test('settings-plan', async ({ open, win, mock, shot }) => {
   await open();
@@ -1769,15 +1786,16 @@ for (let i = 1; i <= TABS['room-settings']; i++) {
   });
 }
 
-// ADR-0029: the owner (Anna) turns on «Только по списку» in a private room; «Кто видит» lists Vera.
+// ADR-0029, ADR-0048: the owner (Anna) picks «По списку, без администраторов» in a private room;
+// «Кто видит» lists Vera.
 test('room-settings-restricted', async ({ open, win, mock, shot }) => {
   await open();
   await mainWindow(win, mock);
   await win.locator('aside').getByRole('button', { name: /очень-длинное-название/ }).first().click();
   await openSettingsTab(win, () => win.getByRole('button', { name: 'Настройки комнаты' }).click(), 1);
-  const toggle = win.getByRole('dialog').getByRole('switch', { name: 'Только по списку' });
-  await toggle.click();
-  await expect(toggle).toHaveAttribute('aria-checked', 'true');
+  const level = win.getByRole('dialog').getByRole('radio', { name: /По списку, без администраторов/ });
+  await level.click();
+  await expect(level).toHaveAttribute('aria-checked', 'true');
   expect(mock.state.rooms.get(IDS.rooms.longPrivate)?.restricted).toBe(true);
   await expect(win.getByTestId('room-who-sees-row')).toHaveCount(1);
   await win.getByTestId('room-who-sees').scrollIntoViewIfNeeded();

@@ -4,7 +4,7 @@ import { useCallback, useEffect, useMemo, type MouseEvent, type ReactNode } from
 import { useShallow } from 'zustand/react/shallow';
 import { Button, Segmented, Spinner, cx } from '../../components/ui';
 import { t } from '../../i18n';
-import { mayManageWorkspace } from '../../lib/permissions';
+import { mayCreateBoards } from '../../lib/permissions';
 import { ensureBoardTasks, loadBoard, loadMyTasks, useTaskDetails } from '../../services/boards';
 import type { TaskScope } from '../../services/boardsApi';
 import { useBoards, workspaceBoards } from '../../stores/boards';
@@ -107,7 +107,7 @@ function MyTasks({ workspaceId }: { workspaceId: string }): ReactNode {
   const entry = useTaskDetails((s) => s.mine[key]);
   const boards = useBoards(useShallow((s) => workspaceBoards(s.boards, workspaceId).filter((b) => hasBit(b.permissions, CREATE_TASKS)).map((b) => `${b.id}\u0000${b.emoji} ${b.name}`)));
   const me = useSession((s) => s.me?.user?.id ?? '');
-  const admin = mayManageWorkspace(useMemberRoles(workspaceId, me));
+  const creator = mayCreateBoards(useMemberRoles(workspaceId, me));
   const anyBoard = useBoards((s) => workspaceBoards(s.boards, workspaceId).length > 0);
   const mobile = useMobile();
   useEffect(() => {
@@ -183,8 +183,8 @@ function MyTasks({ workspaceId }: { workspaceId: string }): ReactNode {
           ) : (
             <div className="flex flex-col items-center gap-3 p-10 text-center text-body text-muted">
               <SquareKanban className="size-10" strokeWidth={1.25} aria-hidden />
-              <p>{admin ? t('boards.noBoardsAdmin') : t('boards.noBoards')}</p>
-              {admin ? (
+              <p>{creator ? t('boards.noBoardsAdmin') : t('boards.noBoards')}</p>
+              {creator ? (
                 <Button onClick={() => useBoardsUi.getState().openSettings({ boardId: '', workspaceId })}>
                   <Plus className="size-4" aria-hidden /> {t('boards.newBoard')}
                 </Button>

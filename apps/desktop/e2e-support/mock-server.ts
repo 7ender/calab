@@ -319,6 +319,7 @@ import {
   computePermissions,
   has,
   workspacePermissions,
+  type PermissionName,
   CreateRoleRequestSchema,
   CreateRoleResponseSchema,
   ListRolesResponseSchema,
@@ -1388,6 +1389,11 @@ class MockImpl {
 
   private requireAdmin(m: MemberRec): void {
     if (!isAdminRole(m.role)) throw forbidden('MANAGE_WORKSPACE required');
+  }
+
+  /** ADR-0048: a workspace-level bit of the member's roles (ADMINISTRATOR = all); guests never. */
+  private requireWsBit(m: MemberRec, bit: PermissionName): void {
+    if (m.role === WorkspaceRole.GUEST || !has(workspacePermissions(this.memberRoles(m)), PERMISSION_BITS[bit])) throw forbidden(`${bit} required`);
   }
 
   // ------------------------------------------------ roles (ADR-0026)
@@ -3080,7 +3086,7 @@ class MockImpl {
       const b = parseBody(c, UpdateMemberRequestSchema);
       const before = target.role;
       if (b.role !== undefined && b.role !== target.role) {
-        this.requireAdmin(caller);
+        this.requireWsBit(caller, 'MANAGE_MEMBERS');
         if (b.role === WorkspaceRole.OWNER || b.role === WorkspaceRole.UNSPECIFIED) throw invalid('role', 'role cannot be granted');
         if (target.role === WorkspaceRole.OWNER) throw forbidden('cannot change the owner role');
         if ((b.role === WorkspaceRole.ADMIN || target.role === WorkspaceRole.ADMIN) && caller.role !== WorkspaceRole.OWNER) {
@@ -3118,7 +3124,7 @@ class MockImpl {
       if (!target) throw notFound('member not found');
       if (target.role === WorkspaceRole.OWNER) throw conflict('the owner cannot leave; transfer or delete the workspace');
       if (targetId !== me) {
-        this.requireAdmin(caller);
+        this.requireWsBit(caller, 'MANAGE_MEMBERS');
         if (target.role === WorkspaceRole.ADMIN && caller.role !== WorkspaceRole.OWNER) throw forbidden('only the owner removes admins');
       }
       if (s().voiceStates.get(targetId)?.workspaceId === ws.id) this.setVoice(targetId, '', {});
@@ -3128,16 +3134,16 @@ class MockImpl {
       noContent(c.res);
     });
 
-    // ---------------- bans (docs/09 #32): MANAGE_WORKSPACE, the rules of a kick
+    // ---------------- bans (docs/09 #32): MANAGE_MEMBERS (ADR-0048), the rules of a kick
     this.route('GET', '/api/workspaces/:id/bans', (c) => {
       const { ws, m: caller } = this.workspaceFor(c.params[0] ?? '', this.uid(c));
-      this.requireAdmin(caller);
+      this.requireWsBit(caller, 'MANAGE_MEMBERS');
       sendMsg(c.res, 200, ListBansResponseSchema, { bans: s().bans.get(ws.id) ?? [] });
     });
     this.route('POST', '/api/workspaces/:id/bans', (c) => {
       const me = this.uid(c);
       const { ws, m: caller } = this.workspaceFor(c.params[0] ?? '', me);
-      this.requireAdmin(caller);
+      this.requireWsBit(caller, 'MANAGE_MEMBERS');
       const b = parseBody(c, CreateBanRequestSchema);
       const u = s().users.get(b.userId);
       if (!u) throw notFound('user not found');
@@ -3165,7 +3171,7 @@ class MockImpl {
     });
     this.route('DELETE', '/api/workspaces/:id/bans/:userId', (c) => {
       const { ws, m: caller } = this.workspaceFor(c.params[0] ?? '', this.uid(c));
-      this.requireAdmin(caller);
+      this.requireWsBit(caller, 'MANAGE_MEMBERS');
       const list = s().bans.get(ws.id) ?? [];
       const userId = c.params[1] ?? '';
       if (!list.some((x) => x.user?.id === userId)) throw notFound('ban not found');
@@ -3176,7 +3182,7 @@ class MockImpl {
 
     this.route('POST', '/api/workspaces/:id/members/:userId/promote', (c) => {
       const { ws, m: caller } = this.workspaceFor(c.params[0] ?? '', this.uid(c));
-      this.requireAdmin(caller);
+      this.requireWsBit(caller, 'MANAGE_MEMBERS');
       const target = this.member(ws.id, c.params[1] ?? '');
       if (target?.role !== WorkspaceRole.GUEST) throw notFound('guest not found');
       target.role = WorkspaceRole.MEMBER;
@@ -3336,7 +3342,7 @@ class MockImpl {
     };
     const badgeManager = (c: Ctx): Workspace => {
       const { ws, m } = this.workspaceFor(c.params[0] ?? '', this.uid(c));
-      if (!isAdminRole(m.role)) throw forbidden('MANAGE_WORKSPACE required');
+      this.requireWsBit(m, 'MANAGE_MEMBERS'); // ADR-0048
       return ws;
     };
     this.route('POST', '/api/workspaces/:id/badges', (c) => {
@@ -3795,6 +3801,7 @@ class MockImpl {
       }
       if (b.isPrivate !== undefined) {
         if (!room.expiresAt) throw invalid('isPrivate', 'only temporary rooms');
+        if (!b.isPrivate && room.restricted && b.restricted !== false) throw invalid('isPrivate', 'lift restricted first');
         room.isPrivate = b.isPrivate;
         const rest = room.permissionOverrides.filter((o) => !(o.targetType === PermissionTargetType.ROLE && o.targetId === 'member'));
         room.permissionOverrides = b.isPrivate
@@ -3819,15 +3826,20 @@ class MockImpl {
         if (b.categoryId && s().categories.get(b.categoryId)?.workspaceId !== room.workspaceId) throw invalid('categoryId', 'unknown category');
         room.categoryId = b.categoryId;
       }
-      // ADR-0025: MANAGE_WORKSPACE besides MANAGE_ROOM; switching it off stops a running recording.
+      // ADR-0025, ADR-0048: MANAGE_RECORDINGS besides MANAGE_ROOM; switching it off stops a running recording.
       if (b.allowRecording !== undefined) {
-        this.requireAdmin(this.workspaceFor(room.workspaceId, me).m);
+        this.requireWsBit(this.workspaceFor(room.workspaceId, me).m, 'MANAGE_RECORDINGS');
         room.allowRecording = b.allowRecording;
       }
-      // ADR-0029: the workspace owner only (owner_id, not a bit); private rooms only.
+      // ADR-0048: MANAGE_ROOM in the room (requireManage above; the owner always); private rooms only.
+      // Switching it on gives the caller (unless the owner) a personal allow VIEW_ROOM | MANAGE_ROOM.
       if (b.restricted !== undefined) {
-        if (s().workspaces.get(room.workspaceId)?.ownerId !== me) throw forbidden('only the workspace owner may change restricted');
         if (b.restricted && !room.isPrivate) throw invalid('restricted', 'only private rooms can be restricted');
+        if (b.restricted && !room.restricted && s().workspaces.get(room.workspaceId)?.ownerId !== me) {
+          const mine = room.permissionOverrides.find((o) => o.targetType === PermissionTargetType.USER && o.targetId === me);
+          if (mine) mine.allow |= VIEW_ROOM | MANAGE_ROOM;
+          else room.permissionOverrides.push(create(RoomPermissionOverrideSchema, { targetType: PermissionTargetType.USER, targetId: me, allow: VIEW_ROOM | MANAGE_ROOM, deny: 0n }));
+        }
         room.restricted = b.restricted;
       }
       if (b.guestApproval !== undefined) room.guestApproval = b.guestApproval; // ADR-0040
@@ -4388,7 +4400,7 @@ class MockImpl {
       const me = this.uid(c);
       const wsId = c.params[0] ?? '';
       const { m } = this.workspaceFor(wsId, me);
-      this.requireAdmin(m);
+      this.requireWsBit(m, 'MANAGE_BOTS'); // ADR-0048
       return { wsId, me };
     };
     const botIn = (wsId: string, botId: string): BotRec => {
@@ -5648,7 +5660,7 @@ class MockImpl {
     this.route('POST', '/api/workspaces/:id/integrations/gptunnel', (c) => {
       const me = this.uid(c);
       const { ws, m } = this.workspaceFor(c.params[0] ?? '', me);
-      this.requireAdmin(m);
+      this.requireWsBit(m, 'MANAGE_INTEGRATIONS'); // ADR-0048
       const code = parseBody(c, PairGptunnelRequestSchema).code.trim().toUpperCase().replace(/[-\s]/g, '');
       if (!/^[A-Z0-9]{8}$/.test(code)) throw invalid('code', 'the code has 8 letters and digits, e.g. ABCD-EFGH');
       const norm = (x: string): string => x.replace(/-/g, '');
@@ -5661,7 +5673,7 @@ class MockImpl {
 
     this.route('DELETE', '/api/workspaces/:id/integrations/gptunnel', (c) => {
       const { ws, m } = this.workspaceFor(c.params[0] ?? '', this.uid(c));
-      this.requireAdmin(m);
+      this.requireWsBit(m, 'MANAGE_INTEGRATIONS'); // ADR-0048
       this.setGptunnel(ws.id, null);
       noContent(c.res);
     });
@@ -6336,7 +6348,9 @@ class MockImpl {
     const room = ev.roomId ? this.state.rooms.get(ev.roomId) : undefined;
     const inv = !bot && involves(ev, userId);
     if (!inv && !(room && this.canView(room, userId))) return null;
-    const canEdit = !bot && (ev.organizerId === userId || (room ? has(this.perms(room, userId), MANAGE_ROOM) : isAdminRole(m.role)));
+    // ADR-0048: MANAGE_EVENTS — a meeting without a room, or in a room the caller sees.
+    const manageEvents = has(workspacePermissions(this.memberRoles(m)), PERMISSION_BITS.MANAGE_EVENTS);
+    const canEdit = !bot && (ev.organizerId === userId || (room ? has(this.perms(room, userId), MANAGE_ROOM) || (manageEvents && this.canView(room, userId)) : manageEvents));
     return { view: bot ? 'none' : inv || canEdit ? 'full' : 'masked', canEdit };
   }
 

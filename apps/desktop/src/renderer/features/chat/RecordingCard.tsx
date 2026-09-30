@@ -9,7 +9,7 @@ import { formatTime } from '../../lib/chatMedia';
 import { fmt, toDate } from '../../lib/format';
 import { Markdown } from '../../lib/markdown/Markdown';
 import { mayDeleteRecording, recordingAudio, summaryBlocks, summaryPlainText } from '../../lib/meetingResult';
-import { can } from '../../lib/permissions';
+import { can, mayManageRecordings } from '../../lib/permissions';
 import { cardStatus, durationText, retryActions, type RetryAction } from '../../lib/recording';
 import { openForward } from '../../services/forward';
 import { deleteRecording, retryRecording } from '../../services/recording';
@@ -17,7 +17,7 @@ import { usePlayer, type Track } from '../../stores/player';
 import { toast } from '../../stores/toasts';
 import { useSession } from '../../stores/session';
 import { useUi } from '../../stores/ui';
-import { useMemberName, useWorkspaces } from '../../stores/workspaces';
+import { rolesOf, useMemberName, useWorkspaces } from '../../stores/workspaces';
 import type { ChatMessage } from '../../stores/messages';
 import { menuBox, menuItem } from '../shell/menu';
 import { useReportInView } from './MediaPlayer';
@@ -32,7 +32,7 @@ const RecordingTranscript = lazy(() => import('./RecordingTranscript'));
  * «Полный транскрипт» (no «Открыть в GPTunneL»: owner, 28.09, #80). With audio the REC circle is
  * the play / pause control (the chat's player, #88; no inline player in the card). A failed
  * card offers a retry (#40, not to guests); «…» → «Переслать» (ADR-0033), «Копировать самари»
- * (#80) and «Удалить запись» (who started it, the owner, MANAGE_MESSAGES). A forwarded copy
+ * (#80) and «Удалить запись» (who started it, the owner, MANAGE_MESSAGES, MANAGE_RECORDINGS). A forwarded copy
  * (Message.forward) is the same card without the retry and delete actions: they belong to the
  * recording's own room.
  * MESSAGE_UPDATE replaces the message: the card follows.
@@ -44,6 +44,8 @@ export function RecordingCardView({ c, card, workspaceId, perms }: { c: ChatMess
   const role = useWorkspaces((s) => s.byId[workspaceId]?.role);
   const suspended = useWorkspaces((s) => !!s.byId[workspaceId]?.ws.suspension);
   const me = useSession((s) => s.me?.user?.id ?? '');
+  // ADR-0048: MANAGE_RECORDINGS of the workspace deletes any recording of a room I see (a boolean selector).
+  const manageRecordings = useWorkspaces((s) => mayManageRecordings(rolesOf(s.byId[workspaceId], me)));
   const [busy, setBusy] = useState<RetryAction | null>(null);
   const [transcript, setTranscript] = useState(false);
   const title = `${t('rec.card.title')} · ${durationText(card.durationSec)}`;
@@ -69,7 +71,7 @@ export function RecordingCardView({ c, card, workspaceId, perms }: { c: ChatMess
   const copy = !!c.msg.forward;
   const retries = guest || copy ? [] : retryActions(card);
   const audio = recordingAudio(card, c.msg.attachments);
-  const mayDelete = !copy && mayDeleteRecording(card, me, { owner: role === WorkspaceRole.OWNER, manageMessages: can(perms, 'MANAGE_MESSAGES') });
+  const mayDelete = !copy && mayDeleteRecording(card, me, { owner: role === WorkspaceRole.OWNER, manageMessages: can(perms, 'MANAGE_MESSAGES'), manageRecordings });
   const mayReply = c.status === 'sent' && can(perms, 'SEND_MESSAGES') && !suspended;
   const when = fmt.dateTime(started, 'short');
   const retry = (action: RetryAction): void => {

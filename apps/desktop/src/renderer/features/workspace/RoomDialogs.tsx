@@ -19,7 +19,7 @@ import { t, type MessageKey } from '../../i18n';
 import { errorText } from '../../lib/api/errors';
 import { audioTierLabel } from '../../lib/audioTierLabel';
 import { api } from '../../lib/api/endpoints';
-import { isAdminRole, mayInviteGuestsIn, mayManageRoom, mayManageWorkspace, ROOM_EDITABLE, compactDrafts, toDrafts, triOf, withTri, type OverrideDraft, type Tri } from '../../lib/permissions';
+import { isAdminRole, mayAllowRecording, mayInviteGuestsIn, mayManageRoom, ROOM_EDITABLE, compactDrafts, toDrafts, triOf, withTri, type OverrideDraft, type Tri } from '../../lib/permissions';
 import { useRooms } from '../../stores/rooms';
 import { toast } from '../../stores/toasts';
 import { useUi } from '../../stores/ui';
@@ -186,8 +186,6 @@ async function patchRoom(roomId: string, init: Parameters<typeof api.rooms.updat
 
 function GeneralTab({ roomId, onDeleted }: { roomId: string; onDeleted: () => void }): ReactNode {
   const room = useRooms((s) => s.byId[roomId]);
-  const me = useSession((s) => s.me?.user?.id ?? '');
-  const ownerId = useWorkspaces((s) => (room ? s.byId[room.workspaceId]?.ws.ownerId : undefined));
   const del = useMutation({
     mutationFn: () => api.rooms.remove(roomId),
     onSuccess: () => {
@@ -206,8 +204,9 @@ function GeneralTab({ roomId, onDeleted }: { roomId: string; onDeleted: () => vo
           <CommitInput label={t('room.topic')} value={room.topic} maxLength={1024} onCommit={(v) => patchRoom(roomId, { topic: v })} />
         </Row>
       </Card>
-      {/* ADR-0029: the owner manages «Только по списку»; others see it only once it is on. */}
-      {room.isPrivate && (room.restricted || (ownerId !== undefined && ownerId === me)) ? <RoomAccessCard room={room} /> : null}
+      {/* ADR-0048: the access level — a private room, or a temporary one (its privacy can change);
+          this tab is only for whoever manages the room. */}
+      {room.isPrivate || room.expiresAt ? <RoomAccessCard room={room} manage /> : null}
       <Card title={t('card.danger')} footer={del.error ? err(del.error) : undefined}>
         <Row label={t('room.delete')}>
           <Button
@@ -306,13 +305,13 @@ function MediaTab({ roomId }: { roomId: string }): ReactNode {
 
 /**
  * «Запись встреч» (ADR-0025): whether members may record meetings in this voice room. The server
- * wants MANAGE_WORKSPACE for it (not just MANAGE_ROOM): a room manager sees it switched off.
+ * wants MANAGE_RECORDINGS of the workspace besides MANAGE_ROOM (ADR-0048): a room manager without
+ * it sees the switch disabled.
  */
 function RecordingCard({ roomId }: { roomId: string }): ReactNode {
   const room = useRooms((s) => s.byId[roomId]);
   const me = useSession((s) => s.me?.user?.id ?? '');
-  // MANAGE_WORKSPACE of my roles (a custom role's included), as the server checks.
-  const admin = mayManageWorkspace(useMemberRoles(room?.workspaceId, me));
+  const admin = mayAllowRecording(useMemberRoles(room?.workspaceId, me), me, room);
   const [busy, setBusy] = useState(false);
   if (!room) return null;
   const set = (v: boolean): void => {
@@ -365,11 +364,42 @@ export const PERM_LABEL: Record<PermissionName, MessageKey> = {
   MANAGE_RECORDINGS: 'perm.MANAGE_RECORDINGS',
 };
 
-/** What a permission covers, where the label alone does not say it (ADR-0043). */
+/**
+ * What a permission gives, one line (ADR-0043, ADR-0048 §3: the role editor adds «кому по
+ * умолчанию» from lib/roles permDefault). ADMINISTRATOR is never listed.
+ */
 export const PERM_HINT: Partial<Record<PermissionName, MessageKey>> = {
+  VIEW_ROOM: 'perm.hint.VIEW_ROOM',
+  SEND_MESSAGES: 'perm.hint.SEND_MESSAGES',
+  ATTACH_FILES: 'perm.hint.ATTACH_FILES',
+  MANAGE_MESSAGES: 'perm.hint.MANAGE_MESSAGES',
+  CONNECT: 'perm.hint.CONNECT',
+  SPEAK: 'perm.hint.SPEAK',
+  STREAM: 'perm.hint.STREAM',
+  VIDEO: 'perm.hint.VIDEO',
+  MUTE_MEMBERS: 'perm.hint.MUTE_MEMBERS',
+  MOVE_MEMBERS: 'perm.hint.MOVE_MEMBERS',
+  MANAGE_NICKNAMES: 'perm.hint.MANAGE_NICKNAMES',
+  MENTION_EVERYONE: 'perm.hint.MENTION_EVERYONE',
+  MANAGE_ROOM: 'perm.hint.MANAGE_ROOM',
+  MANAGE_WORKSPACE: 'perm.hint.MANAGE_WORKSPACE',
+  MANAGE_ROLES: 'perm.hint.MANAGE_ROLES',
+  MANAGE_STICKERS: 'perm.hint.MANAGE_STICKERS',
+  VIEW_BOARD: 'perm.hint.VIEW_BOARD',
+  CREATE_TASKS: 'perm.hint.CREATE_TASKS',
+  EDIT_TASKS: 'perm.hint.EDIT_TASKS',
+  MANAGE_BOARD: 'perm.hint.MANAGE_BOARD',
   INVITE_MEMBERS: 'perm.hint.INVITE_MEMBERS',
   INVITE_GUESTS: 'perm.hint.INVITE_GUESTS',
   CREATE_TEMP_ROOMS: 'perm.hint.CREATE_TEMP_ROOMS',
+  PLACE_CALLS: 'perm.hint.PLACE_CALLS',
+  CREATE_BOARDS: 'perm.hint.CREATE_BOARDS',
+  MANAGE_MEMBERS: 'perm.hint.MANAGE_MEMBERS',
+  MANAGE_BOTS: 'perm.hint.MANAGE_BOTS',
+  MANAGE_INTEGRATIONS: 'perm.hint.MANAGE_INTEGRATIONS',
+  VIEW_JOURNALS: 'perm.hint.VIEW_JOURNALS',
+  MANAGE_EVENTS: 'perm.hint.MANAGE_EVENTS',
+  MANAGE_RECORDINGS: 'perm.hint.MANAGE_RECORDINGS',
 };
 
 function targetKey(o: Pick<OverrideDraft, 'targetType' | 'targetId'>): string {

@@ -27,7 +27,7 @@ const queryKey = (workspaceId: string): readonly unknown[] => ['gptunnel', works
  * Workspace settings → «GPTunneL» (ADR-0025, docs/08 «Запись встреч»): the connection that meeting
  * recordings are uploaded with. Not connected: the pairing code field (ABCD-EFGH mask) and where to
  * get the code; connected: device, account, who / when, «Открыть в GPTunneL», «Отключить». Only
- * MANAGE_WORKSPACE changes it (`canManage`); the other members see the status (guests: no tab).
+ * MANAGE_INTEGRATIONS (ADR-0048) changes it (`canManage`); the other members see the status (guests: no tab).
  */
 export function GptunnelTab({ workspaceId, canManage }: { workspaceId: string; canManage: boolean }): ReactNode {
   const q = useQuery({ queryKey: queryKey(workspaceId), queryFn: () => api.recording.integration(workspaceId) });
