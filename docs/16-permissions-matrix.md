@@ -12,6 +12,9 @@
 | Ссылка-приглашение в комнату (гости): создать / список / отозвать (ADR-0043) | `INVITE_GUESTS` room (не гость); не-админ — не шире своих | `guests.linkAccess` | `mayInviteGuestsIn`, `roomMenuGroups` (voice + inviteRoom) |
 | Ссылка комнаты «только для участников» (ADR-0043) | `INVITE_MEMBERS` или `INVITE_GUESTS` room; вход — только участник (не гость), иначе 403 `INVITE_MEMBERS_ONLY` | `guests.linkAccess`, `guests.grant` | `mayInviteToRoom`, `InviteToRoomDialog` |
 | Подтверждение входа гостей: настройка комнаты / ссылки (ADR-0040) | комната — `MANAGE_ROOM` room; ссылка — `INVITE_GUESTS` room | `rooms.update`, `guests.update` | `RoomLinkTab` |
+| Временная комната: создать (ADR-0044) | `CREATE_TEMP_ROOMS` ws (не гость); `guests=true` — ещё `INVITE_GUESTS` ws; лимиты 20 / 5 | `rooms.createTemp` | — (клиент впереди) |
+| Временная комната: переименовать, продлить, доступ, права, ссылки «только для участников», удалить (в архив) | `MANAGE_ROOM` room **или** создатель (не гость); `make_permanent` — только `MANAGE_ROOM` | `rooms.MayManage`, `guests.linkAccess`, `rooms.tempPatch` | `mayManageRoom` (впереди) |
+| Архив временных комнат: список / история | список — `MANAGE_ROOM` ws + `VIEW_ROOM`; история — `VIEW_ROOM`; прочее — 410 `ROOM_ARCHIVED` | `rooms.listArchived`, `rooms.ReadAccess` | — |
 | Пустить / отклонить гостя, имя и бейдж при допуске (ADR-0040) | `INVITE_GUESTS` room (не гость) или автор ссылки (не гость); бот — только `GET` | `guests.loadDecider`, `decider.may`, шлюз `RoomAdmission*` | — (только решающим приходят «стуки») |
 | Инвайты и email-инвайты в пространство (ADR-0043) | `INVITE_MEMBERS` ws, подтверждённый не-гостевой аккаунт | `requireInvite`, `inviter` | `mayInviteMembers` |
 | Настройки, медиа, баны, GPTunneL | `MANAGE_WORKSPACE` ws; тариф: `members` (инвайты, вход), `audio_tier_max_kbps` (медиа) | `requireManage`, `recording`, `plans.Check` | `mayManageWorkspace`, `useMembersCap` |
