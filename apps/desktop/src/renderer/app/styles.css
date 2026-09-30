@@ -620,6 +620,27 @@ body:has(.mat-sheet) [data-radix-popper-content-wrapper]:not(:has(> .tip)) {
   }
 }
 
+/* Web app load line (ADR-0050 «Уточнение»): one finite run to 85 % while the page loads; with
+   reduced motion a static half line. Mounted only while loading. */
+@keyframes calaba-wapp-load {
+  from {
+    width: 0;
+  }
+  to {
+    width: 85%;
+  }
+}
+.wapp-load {
+  width: 85%;
+  animation: calaba-wapp-load 8s cubic-bezier(0.1, 0.6, 0.3, 1) 1 both;
+}
+@media (prefers-reduced-motion: reduce) {
+  .wapp-load {
+    animation: none;
+    width: 50%;
+  }
+}
+
 /* «Вызов…» (ADR-0034): three dots light up in turn while the call rings — finite (32 × 1.4 s ≈
    the 45 s ring timeout), then still; none with reduced motion. */
 @keyframes calaba-call-dot {

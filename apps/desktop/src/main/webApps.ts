@@ -22,6 +22,7 @@ import { IPC, type WebAppNavAction, type WebAppNavState } from '../shared/ipc';
 import { isAppSession, markAppSession } from './appSessions';
 import { markFromInternet } from './downloads';
 import { mainStrings } from './strings';
+import { navShortcut } from './webAppKeys';
 import {
   dropLru,
   mayNavigate,
@@ -483,6 +484,13 @@ function create(appId: string, url: string): Entry | null {
       applyVisibility();
     }
     update();
+  });
+  // No toolbar (ADR-0050 «Уточнение»): ⌘/Ctrl+[ ] and ⌘/Ctrl+R drive the focused view.
+  wc.on('before-input-event', (ev, input) => {
+    const action = navShortcut(input, process.platform === 'darwin');
+    if (!action) return;
+    ev.preventDefault();
+    navigateApp(action);
   });
   wc.on('did-stop-loading', update);
   wc.on('did-navigate', update);

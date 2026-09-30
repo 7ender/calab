@@ -17,6 +17,8 @@ import { idAfter, isVoice, useRooms } from '../../stores/rooms';
 import { selectUpdatePending, useSession } from '../../stores/session';
 import { useUi } from '../../stores/ui';
 import { useMemberName, useWorkspaces } from '../../stores/workspaces';
+import { titleSlot } from '../../lib/webApps';
+import { useOpenApp, useWebApps } from '../../stores/webApps';
 import { useChatView } from '../chat/chatView';
 import { usePreviewText } from '../chat/mentionText';
 import { bindingLabel } from '../settings/PttBinder';
@@ -92,6 +94,17 @@ export function TitleBar(): ReactNode {
 function TitleBarWorkspace(): ReactNode {
   const wsId = useUi((s) => s.activeWorkspaceId);
   const known = useWorkspaces((s) => !!wsId && wsId !== HOME && !!s.byId[wsId]);
+  // A web app fills the screen (ADR-0050 «Уточнение»): its name, plain text, no menu.
+  const openId = useOpenApp(wsId && wsId !== HOME ? wsId : null);
+  const appName = useWebApps((s) => (openId ? s.byId[openId]?.name : undefined));
+  const slot = titleSlot(appName);
+  if (slot.kind === 'app') {
+    return (
+      <div className="max-w-[220px] truncate px-2 text-body font-semibold text-fg" title={slot.text} data-testid="titlebar-title" data-app="">
+        {slot.text}
+      </div>
+    );
+  }
   if (!known || !wsId) {
     return (
       <div className="px-2 text-body font-semibold text-fg" data-testid="titlebar-title">
