@@ -29,6 +29,7 @@ type vector struct {
 		Subscribed     bool   `json:"subscribed"`
 		Muted          bool   `json:"muted"`
 		WorkspaceMuted bool   `json:"workspaceMuted"`
+		Mandatory      bool   `json:"mandatory"`
 	} `json:"task"`
 }
 
@@ -51,7 +52,7 @@ func TestVectors(t *testing.T) {
 	for _, v := range vs {
 		if tv := v.Task; tv != nil {
 			tasks++
-			f := TaskFacts{Kind: TaskKind(tv.Kind), Level: lvl(tv.Level), Subscribed: tv.Subscribed, Muted: tv.Muted, Workspace: tv.WorkspaceMuted}
+			f := TaskFacts{Kind: TaskKind(tv.Kind), Level: lvl(tv.Level), Subscribed: tv.Subscribed, Muted: tv.Muted, Workspace: tv.WorkspaceMuted, Mandatory: tv.Mandatory}
 			if got := TaskNotifies(f); got != v.Notifies {
 				t.Errorf("%s: task notifies %v, want %v", v.Name, got, v.Notifies)
 			}
