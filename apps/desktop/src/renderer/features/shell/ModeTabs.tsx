@@ -126,7 +126,8 @@ function ModeTab({
       role="tab"
       aria-selected={selected}
       aria-label={name}
-      tabIndex={selected ? 0 : -1}
+      // Every tab stays in the Tab order: iOS WebKit does not turn a tap on a tabindex=-1 button
+      // into a click (the roving-tabindex pattern broke the tabs on phones). ←/→ still move.
       data-mode={mode}
       data-testid={testId}
       onClick={() => showMode(mode)}
