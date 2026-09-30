@@ -101,4 +101,24 @@ describe('deciders', () => {
     useRooms.getState().remove('voice');
     expect(useAdmissions.getState().byRoom).toEqual({});
   });
+
+  it('«Пустить» / «Отклонить» only call the API: the decider keeps the view (no room opened)', async () => {
+    useRooms.getState().upsert(room);
+    useUi.setState({ activeWorkspaceId: 'other-ws', lastRoom: { 'other-ws': 'other-room' } });
+    const opened = vi.spyOn(useUi.getState(), 'openRoom');
+    const decide = vi.spyOn(svc.admissionApi, 'decide').mockResolvedValue({} as never);
+    svc.onAdmissionEvent(requestEv('g1'));
+    svc.onAdmissionEvent(requestEv('g2'));
+    await svc.decide('voice', 'g1', { admit: true });
+    await svc.decide('voice', 'g2', { admit: false });
+    // the server's echo of both decisions reaches the decider too
+    svc.onAdmissionEvent(decidedEv(RoomAdmissionStatus.ADMITTED, 'g1'));
+    svc.onAdmissionEvent(decidedEv(RoomAdmissionStatus.DECLINED, 'g2'));
+    expect(decide).toHaveBeenCalledTimes(2);
+    expect(opened).not.toHaveBeenCalled();
+    expect(useUi.getState().activeWorkspaceId).toBe('other-ws');
+    expect(useUi.getState().lastRoom).toEqual({ 'other-ws': 'other-room' });
+    expect(useAdmissions.getState().toasts).toEqual([]);
+    expect(useAdmissions.getState().mine).toEqual({});
+  });
 });
