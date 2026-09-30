@@ -46,7 +46,9 @@ rooms               id, workspace_id? (NULL только у DM), type ('voice'|'
                     audio_bitrate_kbps?  (8|16|32|64; 24, 48 legacy),
                     max_stream_preset?   ('economy'|'h720'|'h1080'|'original'),
                     max_streams?         (0..10),
-                    created_at, archived_at
+                    created_at, archived_at,
+                    expires_at?  (временная комната, ADR-0044: архивируется свипером в этот момент),
+                    created_by?  (создатель; у временной — неявный MANAGE_ROOM на неё)
 room_permissions    room_id, target_type ('role'|'user'), target_id (id роли | id пользователя),
                     allow bigint, deny bigint            -- overrides, как в Discord
                     PK (room_id, target_type, target_id)
@@ -169,7 +171,7 @@ voice_states        (не в Postgres — в Redis, источник LiveKit web
 | `owner` | 1001 | `ADMINISTRATOR` | только цвет/`mentionable`; снять/выдать нельзя; единственный, кто удаляет workspace |
 | `admin` | 1000 | `ADMINISTRATOR` | цвет/`mentionable`; выдаёт и снимает только владелец |
 | свои роли | 2 … | заданные | имя, цвет, права, порядок; удаляются |
-| `member` | 1 | `VIEW_ROOM, SEND_MESSAGES, ATTACH_FILES, CONNECT, SPEAK, STREAM, VIDEO, VIEW_BOARD, CREATE_TASKS` (биты досок — миграция 00046, ADR-0042) | права; есть у каждого не-гостя |
+| `member` | 1 | `VIEW_ROOM, SEND_MESSAGES, ATTACH_FILES, CONNECT, SPEAK, STREAM, VIDEO, VIEW_BOARD, CREATE_TASKS, CREATE_TEMP_ROOMS` (биты досок — миграция 00046, ADR-0042; временные комнаты — 00048, ADR-0044) | права; есть у каждого не-гостя |
 | `guest` | 0 | `CONNECT, SPEAK` (комнаты — только с явным `allow VIEW_ROOM`) | права в пределах `VIEW_ROOM, SEND_MESSAGES, ATTACH_FILES, CONNECT, SPEAK, STREAM, VIDEO` |
 
 - Встроенные роли участника следуют `workspace_members.role` (триггер): `owner` → owner + member, `admin` → admin + member, `member` → member, `guest` → guest. Поле `role` остаётся «старшей встроенной ролью» для клиентов до 0.6.0 (`WorkspaceMember.role`); свои роли назначаются отдельно (`member_roles`) и переживают смену встроенной. Имена встроенных ролей — ключи (`owner` …), клиент показывает локализованные.
@@ -214,6 +216,7 @@ export const Permission = {
   // Приглашения (ADR-0043): и на роли, и в переопределениях комнаты; MANAGE_* их не дают; гостям — никогда
   INVITE_MEMBERS:   1n << 21n,  // инвайты в пространство (ссылки, email, добавить); в комнате — ссылка «только для участников»
   INVITE_GUESTS:    1n << 22n,  // гостевые ссылки комнаты, их подтверждение, решение по ожидающим гостям, гостевые ссылки встреч
+  CREATE_TEMP_ROOMS: 1n << 23n, // временные комнаты (ADR-0044); только уровень workspace, у member по умолчанию, гостям — никогда
 } as const;
 ```
 
@@ -235,7 +238,7 @@ perms &= ~userOverride.deny;  perms |= userOverride.allow   (персональ�
 if !(perms & VIEW_ROOM) → 0
 ```
 
-`ADMINISTRATOR`, `MANAGE_WORKSPACE`, `MANAGE_NICKNAMES`, `MANAGE_ROLES`, `MANAGE_STICKERS` — только уровень пространства, в переопределениях комнаты запрещены (API отвечает `422`), а `computePermissions` их в переопределениях игнорирует (`allow`/`deny` маскируются `RoomOnly` / `ROOM_ONLY_PERMISSIONS`). `INVITE_MEMBERS` / `INVITE_GUESTS` (ADR-0043) — и на ролях, и в переопределениях комнаты. Цель `role` в `room_permissions` — id роли (миграция 00021 перевела `member`/`guest` на id встроенных; API по-прежнему принимает имена встроенных ролей и сохраняет их id).
+`ADMINISTRATOR`, `MANAGE_WORKSPACE`, `MANAGE_NICKNAMES`, `MANAGE_ROLES`, `MANAGE_STICKERS`, `CREATE_TEMP_ROOMS` — только уровень пространства, в переопределениях комнаты запрещены (API отвечает `422`), а `computePermissions` их в переопределениях игнорирует (`allow`/`deny` маскируются `RoomOnly` / `ROOM_ONLY_PERMISSIONS`). `INVITE_MEMBERS` / `INVITE_GUESTS` (ADR-0043) — и на ролях, и в переопределениях комнаты. Цель `role` в `room_permissions` — id роли (миграция 00021 перевела `member`/`guest` на id встроенных; API по-прежнему принимает имена встроенных ролей и сохраняет их id).
 
 Приватная комната = override для роли `member` с `deny: VIEW_ROOM` + allow для своих ролей или конкретных пользователей (гостям `VIEW_ROOM` и так не положен).
 
@@ -355,6 +358,12 @@ roomAdmin           = MUTE_MEMBERS (позволяет серверные mute/r
 - `task_assignees` (≤ 10, ровно один `is_lead`, если есть; `note` ≤ 120, `assigned_by/at`), `task_labels`, `task_relations` (`blocks` хранится один раз, `relates`/`duplicates` читаются в обе стороны), `task_attachments` (файлы описания; сироты-очистка их не трогает, `FileRooms` даёт комнату задачи).
 - `task_activity` — неизменяемый журнал: `kind created|status|assignees|priority|labels|dates|estimate|parent|milestone|relation|title|description|attachments|archived|restored|moved_board`, `before`/`after` jsonb, `actor_id` (человек или бот; `NULL` — метёлка автоархива), удаляется только с доской.
 - `task_subscribers (task_id, user_id, muted, notified_at, seen_at)`: автор, исполнители, комментаторы и упомянутые подписываются сами; «Отписаться» = `muted`; непрочитано = `notified_at > seen_at`. Уровень уведомлений «Задачи» — `workspace_notification_settings.task_level` (`all` по умолчанию | `mentions` | `none`), правило `notifications.TaskNotifies` / `taskNotifies` (векторы `task` в `proto/testdata/notifications.json`): назначение и упоминание — при `all`/`mentions`, даже без подписки; комментарий и смена статуса — при `all` подписчикам без `muted`; mute пространства глушит всё.
+
+## Временные комнаты (ADR-0044, миграция 00048)
+- Временная комната — обычная `voice` с `rooms.expires_at` (`Room.expires_at`, отдельного `is_temp` нет) и `created_by`. Создание — `POST /api/workspaces/{id}/rooms/temp` (`CREATE_TEMP_ROOMS`), лимиты: 20 живых на пространство, 5 на создателя (`409 TEMP_ROOM_LIMIT`).
+- Права: создатель (не гость) управляет своей временной комнатой как с `MANAGE_ROOM` — одна проверка `rooms.MayManage` (сервер) / `mayManageRoom` (клиент); `computePermissions` не меняется. На постоянных комнатах `created_by` прав не даёт. `make_permanent` — только настоящий `MANAGE_ROOM`.
+- Приватная временная = deny `VIEW_ROOM` роли `member` + личные allow (`VIEW_ROOM | CONNECT | SPEAK | VIDEO | STREAM | SEND_MESSAGES | ATTACH_FILES` в пределах прав создателя) создателю, выбранным людям и всем, кто вошёл по ссылке.
+- Архив: `archived_at` (удаление или истечение), ссылки отозваны, LiveKit-комната закрыта. История читается с `VIEW_ROOM` (сообщения, закрепы, вложения), остальное — `410 ROOM_ARCHIVED`; постоянные архивные комнаты по-прежнему скрыты (`404`). Через `TEMP_ROOM_RETENTION_DAYS` (90) архивная временная комната удаляется с историей.
 
 ## Auth (MVP)
 
