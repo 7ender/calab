@@ -19,7 +19,7 @@ import { t, type MessageKey } from '../../i18n';
 import { errorText } from '../../lib/api/errors';
 import { audioTierLabel } from '../../lib/audioTierLabel';
 import { api } from '../../lib/api/endpoints';
-import { isAdminRole, mayManageWorkspace, ROOM_EDITABLE, compactDrafts, toDrafts, triOf, withTri, type OverrideDraft, type Tri } from '../../lib/permissions';
+import { can, isAdminRole, mayInviteGuestsIn, mayManageWorkspace, roomPerms, ROOM_EDITABLE, compactDrafts, toDrafts, triOf, withTri, type OverrideDraft, type Tri } from '../../lib/permissions';
 import { useRooms } from '../../stores/rooms';
 import { toast } from '../../stores/toasts';
 import { useUi } from '../../stores/ui';
@@ -147,21 +147,32 @@ function RoomTypePicker({ value, onChange }: { value: RoomType; onChange: (v: Ro
 
 export function RoomSettingsDialog({ roomId, tab, onClose }: { roomId: string; tab: string | undefined; onClose: () => void }): ReactNode {
   const room = useRooms((s) => s.byId[roomId]);
+  const me = useSession((s) => s.me?.user?.id ?? '');
+  const roles = useMemberRoles(room?.workspaceId, me);
   if (!room) return null;
   const voice = room.type === RoomType.VOICE;
+  // By right, as the server checks (ADR-0043): the room's settings — MANAGE_ROOM; its guest
+  // links — INVITE_GUESTS (a room's inviter may hold only that).
+  const manage = can(roomPerms(roles, me, room), 'MANAGE_ROOM');
+  const guests = mayInviteGuestsIn(roles, me, room);
   const sections: SettingsSection[] = [
-    { id: 'general', label: t('ws.tabGeneral'), icon: Settings2, content: <GeneralTab roomId={roomId} onDeleted={onClose} /> },
-    ...(voice ? [{ id: 'media', label: t('ws.tabMedia'), icon: AudioLines, content: <MediaTab roomId={roomId} /> }] : []),
-    { id: 'perms', label: t('room.tabPerms'), icon: ShieldCheck, content: <PermissionsTab roomId={roomId} /> },
-    { id: 'guests', label: t('people.link.tab'), icon: Link2, content: <RoomLinkTab roomId={roomId} /> },
+    ...(manage
+      ? [
+          { id: 'general', label: t('ws.tabGeneral'), icon: Settings2, content: <GeneralTab roomId={roomId} onDeleted={onClose} /> },
+          ...(voice ? [{ id: 'media', label: t('ws.tabMedia'), icon: AudioLines, content: <MediaTab roomId={roomId} /> }] : []),
+          { id: 'perms', label: t('room.tabPerms'), icon: ShieldCheck, content: <PermissionsTab roomId={roomId} /> },
+        ]
+      : []),
+    ...(guests ? [{ id: 'guests', label: t('people.link.tab'), icon: Link2, content: <RoomLinkTab roomId={roomId} manage={manage} /> }] : []),
   ];
+  if (sections.length === 0) return null;
   const Glyph = voice ? Volume2 : Hash;
   return (
     <SettingsWindow
       title={room.name}
       titleIcon={<Glyph className="size-4 shrink-0 text-muted" aria-hidden />}
       sections={sections}
-      initial={tab ?? 'general'}
+      initial={tab ?? sections[0]?.id ?? 'general'}
       onClose={onClose}
     />
   );
@@ -340,6 +351,14 @@ export const PERM_LABEL: Record<PermissionName, MessageKey> = {
   CREATE_TASKS: 'perm.CREATE_TASKS',
   EDIT_TASKS: 'perm.EDIT_TASKS',
   MANAGE_BOARD: 'perm.MANAGE_BOARD',
+  INVITE_MEMBERS: 'perm.INVITE_MEMBERS',
+  INVITE_GUESTS: 'perm.INVITE_GUESTS',
+};
+
+/** What a permission covers, where the label alone does not say it (ADR-0043). */
+export const PERM_HINT: Partial<Record<PermissionName, MessageKey>> = {
+  INVITE_MEMBERS: 'perm.hint.INVITE_MEMBERS',
+  INVITE_GUESTS: 'perm.hint.INVITE_GUESTS',
 };
 
 function targetKey(o: Pick<OverrideDraft, 'targetType' | 'targetId'>): string {
@@ -543,7 +562,9 @@ function PermissionsTab({ roomId }: { roomId: string }): ReactNode {
               return (
                 <tr key={name} className="border-b border-[var(--color-card-line)] last:border-b-0" data-settings-row>
                   <th scope="row" className="px-3 py-2 text-left font-normal">
-                    <span data-settings-label>{t(PERM_LABEL[name])}</span>
+                    <span data-settings-label title={PERM_HINT[name] ? t(PERM_HINT[name]) : undefined}>
+                      {t(PERM_LABEL[name])}
+                    </span>
                   </th>
                   <td className="w-32 px-3 py-2 text-right">
                     <TriToggle label={t(PERM_LABEL[name])} value={triOf(draft, bit)} onChange={(v) => setTri(bit, v)} />

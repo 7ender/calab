@@ -5,7 +5,7 @@ import type { ReactNode } from 'react';
 import { Button, Card, Input, Spinner } from '../../components/ui';
 import { t } from '../../i18n';
 import { api } from '../../lib/api/endpoints';
-import { can, roomPerms } from '../../lib/permissions';
+import { mayInviteGuestsIn } from '../../lib/permissions';
 import { useRooms } from '../../stores/rooms';
 import { useSession } from '../../stores/session';
 import { toast } from '../../stores/toasts';
@@ -20,14 +20,14 @@ import { guestInviteMode, guestLink, guestLinkDefaults } from './roomGuestInvite
  * «Пригласить гостя без регистрации» (docs/09 #55, ADR-0016): the first block of the invite modal
  * opened from a room. The room's usable guest link with «Копировать», or one «Создать ссылку»
  * (7 days, speak + write, no use limit); «Настроить срок и права…» opens the room settings'
- * «Ссылка для гостей». Only with MANAGE_ROOM (as the room settings tab; the server checks it).
+ * «Ссылка для гостей». Only with INVITE_GUESTS in the room (ADR-0043; the server checks it).
  */
-/** Whether the card shows for this room: not a DM, and MANAGE_ROOM (the server's check for room links). */
+/** Whether the card shows for this room: not a DM, and INVITE_GUESTS there (the server's check for guest links). */
 export function useGuestInviteShown(roomId: string): boolean {
   const room = useRooms((s) => s.byId[roomId]);
   const me = useSession((s) => s.me?.user?.id ?? '');
   const roles = useMemberRoles(room?.workspaceId, me);
-  return !!room && room.type !== RoomType.DM && can(roomPerms(roles, me, room), 'MANAGE_ROOM');
+  return mayInviteGuestsIn(roles, me, room);
 }
 
 export function RoomGuestInviteCard({ roomId }: { roomId: string }): ReactNode {

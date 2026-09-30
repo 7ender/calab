@@ -150,6 +150,7 @@ export const ruPeople = {
   'people.link.guestsOff': 'только с аккаунтом',
   'people.link.open': 'Войти в комнату',
   'people.link.invalid': 'Ссылка недействительна или истекла',
+  'people.link.membersOnly': 'Эта ссылка только для участников пространства.',
   'people.link.needAccount': 'По этой ссылке можно войти только с аккаунтом',
   'people.link.unreachable': 'Сервер недоступен — попробуйте позже',
   'guestInvite.title': 'Пригласить гостя без регистрации',

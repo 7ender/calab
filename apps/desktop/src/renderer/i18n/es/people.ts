@@ -152,6 +152,7 @@ export const esPeople: DictShape<typeof enPeople> = {
   'people.link.guestsOff': 'requiere cuenta',
   'people.link.open': 'Entrar a la sala',
   'people.link.invalid': 'El enlace no es válido o ha caducado',
+  'people.link.membersOnly': 'Este enlace es solo para miembros del espacio.',
   'people.link.needAccount': 'Este enlace requiere una cuenta',
   'people.link.unreachable': 'El servidor no está disponible — inténtalo más tarde',
   'guestInvite.title': 'Invitar a un invitado sin cuenta',

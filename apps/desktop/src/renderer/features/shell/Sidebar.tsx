@@ -54,7 +54,7 @@ import { confirmAction } from '../../components/Confirm';
 import { Badge, Button, Empty, Field, Input, Modal, Tip, cx } from '../../components/ui';
 import { plural, t, useLocale } from '../../i18n';
 import { api } from '../../lib/api/endpoints';
-import { can, mayArrangeRooms, mayManageWorkspace, mayMoveMembersIn, mayMoveVoice, roomPerms } from '../../lib/permissions';
+import { can, mayArrangeRooms, mayInviteMembers, mayManageWorkspace, mayMoveMembersIn, mayMoveVoice, mayRoomInvite, roomPerms } from '../../lib/permissions';
 import { voice } from '../../services/voice';
 import { groupRooms, isUnread, isVoice, roomNotify, roomsOfWorkspace, showsUnread, useRooms, workspaceNotify, workspaceTaskLevel } from '../../stores/rooms';
 import { setRoomNotifications, setWorkspaceNotifications, setWorkspaceTaskLevel } from '../../services/mentions';
@@ -153,8 +153,8 @@ export function Sidebar({ workspaceId }: { workspaceId: string }): ReactNode {
   const guest = useWorkspaces((s) => s.byId[workspaceId]?.role === WorkspaceRole.GUEST);
   // Boards mode (ADR-0042 §5): the column lists the boards instead of the rooms.
   const boards = useBoardsUi((s) => s.active) && !guest;
-  // Workspace invites (rows' «Пригласить»): MANAGE_WORKSPACE, a custom role's included.
-  const admin = mayManageWorkspace(myRoles);
+  // Workspace invites (rows' «Пригласить»): INVITE_MEMBERS (ADR-0043), a custom role's included.
+  const admin = mayInviteMembers(myRoles);
   const manageRooms = mayArrangeRooms(myRoles);
   // Pointer reordering on the desktop layout only: on a phone a drag would fight the scroll
   // (the room menu's «Переместить вверх/вниз» works everywhere).
@@ -253,7 +253,7 @@ function SidebarMenu({ workspaceId, onCreateCategory, children }: { workspaceId:
   const setHideMuted = useUi((s) => s.setHideMuted);
   const me = useSession((s) => s.me?.user?.id ?? '');
   const myRoles = useMemberRoles(workspaceId, me);
-  const admin = mayManageWorkspace(myRoles);
+  const admin = mayInviteMembers(myRoles);
   const manageRooms = mayArrangeRooms(myRoles);
   return (
     <ContextMenu.Root modal={false}>
@@ -305,6 +305,7 @@ function WorkspaceHeader({ workspaceId, onCreateCategory }: { workspaceId: strin
   if (!ws) return null;
   // Invites and settings: MANAGE_WORKSPACE (the server's check), a custom role's included.
   const admin = mayManageWorkspace(myRoles);
+  const inviter = mayInviteMembers(myRoles); // ADR-0043
   const manageRooms = mayArrangeRooms(myRoles);
 
   const leave = async (): Promise<void> => {
@@ -334,7 +335,7 @@ function WorkspaceHeader({ workspaceId, onCreateCategory }: { workspaceId: strin
         </Dropdown.Trigger>
         <Dropdown.Portal>
           <Dropdown.Content className={cx(menuBox, 'w-60')} sideOffset={4} align="start">
-            {admin ? (
+            {inviter ? (
               <Dropdown.Item className={menuItem} onSelect={() => open({ kind: 'workspace-settings', workspaceId, tab: 'invites' })}>
                 <UserPlus className="size-4" /> {t('ws.invite')}
               </Dropdown.Item>
@@ -380,8 +381,8 @@ function WorkspaceHeader({ workspaceId, onCreateCategory }: { workspaceId: strin
       </Dropdown.Root>
       <CalendarButton workspaceId={workspaceId} />
       <BoardsButton workspaceId={workspaceId} />
-      {manageRooms || admin || role !== WorkspaceRole.GUEST ? (
-        <CreateMenu workspaceId={workspaceId} onCreateCategory={onCreateCategory} rooms={manageRooms} invite={admin} meeting={role !== WorkspaceRole.GUEST} />
+      {manageRooms || inviter || role !== WorkspaceRole.GUEST ? (
+        <CreateMenu workspaceId={workspaceId} onCreateCategory={onCreateCategory} rooms={manageRooms} invite={inviter} meeting={role !== WorkspaceRole.GUEST} />
       ) : null}
     </div>
   );
@@ -805,6 +806,7 @@ function RoomMenu({
   canManage,
   canOrder,
   admin,
+  inviteRoom,
   guest,
 }: {
   room: Room;
@@ -812,6 +814,8 @@ function RoomMenu({
   canManage: boolean;
   canOrder: boolean;
   admin: boolean;
+  /** INVITE_GUESTS or INVITE_MEMBERS in the room (ADR-0043): the room link dialog. */
+  inviteRoom: boolean;
   guest: boolean;
 }): ReactNode {
   const open = useUi((s) => s.openDialog);
@@ -827,6 +831,7 @@ function RoomMenu({
     mobile,
     guest,
     admin,
+    inviteRoom,
     canManage,
     canOrder,
     hasCategories: canOrder && workspaceCategories(room.workspaceId).length > 0,
@@ -841,12 +846,12 @@ function RoomMenu({
           </ContextMenu.Item>
         );
       case 'invite':
-        // Voice + MANAGE_ROOM: the room link (ADR-0016, like the invite row); otherwise the workspace invite.
+        // Voice + a room invite right (ADR-0043): the room link (like the invite row); otherwise the workspace invite.
         return (
           <ContextMenu.Item
             key={id}
             className={menuItem}
-            onSelect={() => (voiceRoom && canManage ? open({ kind: 'room-invite', roomId: room.id }) : open({ kind: 'workspace-settings', workspaceId: room.workspaceId, tab: 'invites', roomId: room.id }))}
+            onSelect={() => (voiceRoom && inviteRoom ? open({ kind: 'room-invite', roomId: room.id }) : open({ kind: 'workspace-settings', workspaceId: room.workspaceId, tab: 'invites', roomId: room.id }))}
           >
             <UserPlus className="size-4" /> {voiceRoom ? t('roomMenu.invite') : t('shell.invite')}
           </ContextMenu.Item>
@@ -1101,7 +1106,7 @@ const TextRoomRow = memo(function TextRoomRow({
   const [msgOver, msgDrop] = useMessageDrop(room, can(perms, 'SEND_MESSAGES'));
   return (
     <div ref={setNodeRef} {...(canDrag ? listeners : {})} {...msgDrop} data-room-slot={room.id} data-slot-category={container} className={cx(isDragging && 'opacity-40')}>
-      <RoomMenu room={room} canManage={can(perms, 'MANAGE_ROOM')} canOrder={canOrder} admin={admin} guest={role.some((r) => r.builtin === WorkspaceRole.GUEST)}>
+      <RoomMenu room={room} canManage={can(perms, 'MANAGE_ROOM')} canOrder={canOrder} admin={admin} inviteRoom={mayRoomInvite(perms)} guest={role.some((r) => r.builtin === WorkspaceRole.GUEST)}>
         <div className={cx(rowBox, msgOver ? MSG_DROP : active ? 'bg-active' : 'hover:bg-hover')} data-over={msgOver || undefined}>
           <UnreadPill show={unread && !active} />
           <button
@@ -1219,7 +1224,7 @@ function VoiceRoomRow({
               },
             })}
       >
-        <RoomMenu room={room} canManage={can(perms, 'MANAGE_ROOM')} canOrder={canOrder} admin={admin} guest={role.some((r) => r.builtin === WorkspaceRole.GUEST)}>
+        <RoomMenu room={room} canManage={can(perms, 'MANAGE_ROOM')} canOrder={canOrder} admin={admin} inviteRoom={mayRoomInvite(perms)} guest={role.some((r) => r.builtin === WorkspaceRole.GUEST)}>
           {/* With a status line the room is one raised two-line card (Discord): name + status. */}
           <div
             className={cx(
@@ -1303,7 +1308,7 @@ function VoiceRoomRow({
           ))}
         </ul>
       ) : null}
-      {inRoom && can(perms, 'MANAGE_ROOM') ? <VoiceInviteRow roomId={room.id} full={atCapacity} /> : null}
+      {inRoom && mayRoomInvite(perms) ? <VoiceInviteRow roomId={room.id} full={atCapacity} /> : null}
     </div>
   );
 }

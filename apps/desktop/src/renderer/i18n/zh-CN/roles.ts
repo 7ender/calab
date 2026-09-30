@@ -26,6 +26,7 @@ export const zhRoles: DictShape<typeof ruRoles> = {
   'roles.group.rooms': '房间',
   'roles.group.voice': '语音',
   'roles.group.moderation': '管理',
+  'roles.group.invites': '邀请',
   'roles.members': '拥有该角色的成员',
   'roles.everyMember': '每位成员（访客除外）都有该角色。',
   'roles.everyGuest': '每位访客都有该角色。',
