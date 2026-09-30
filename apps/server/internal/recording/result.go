@@ -398,7 +398,9 @@ func ms(sec float64) uint32 { return uint32(math.Round(finite(sec) * 1000)) } //
 
 var errStillRecording = httpx.Conflict("the meeting is still being recorded: stop the recording first")
 
-// remove: DELETE /api/rooms/{id}/recordings/{rid} (docs/09 #50).
+// remove: DELETE /api/rooms/{id}/recordings/{rid} (docs/09 #50): who started it, the owner,
+// MANAGE_MESSAGES in the room, or MANAGE_RECORDINGS (ADR-0048) — always in a room the caller
+// sees (roomRecording: a closed room is 404 without an override).
 func (s *Service) remove(w http.ResponseWriter, r *http.Request) error {
 	rec, acc, err := s.roomRecording(r)
 	if err != nil {
@@ -406,8 +408,9 @@ func (s *Service) remove(w http.ResponseWriter, r *http.Request) error {
 	}
 	me := uid(r)
 	starter := rec.StartedBy != nil && *rec.StartedBy == me
-	if !starter && acc.Role != perm.RoleOwner && !acc.Bits.Has(perm.ManageMessages) {
-		return httpx.Forbidden("only who started the recording, the owner or MANAGE_MESSAGES")
+	if !starter && acc.Role != perm.RoleOwner && !acc.Bits.Has(perm.ManageMessages) &&
+		(acc.Role == perm.RoleGuest || !acc.Member.Workspace().Has(perm.ManageRecordings)) {
+		return httpx.Forbidden("only who started the recording, the owner, MANAGE_MESSAGES or MANAGE_RECORDINGS")
 	}
 	if rec.Status == "pending" || rec.Status == "recording" {
 		return errStillRecording

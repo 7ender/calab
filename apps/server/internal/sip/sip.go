@@ -131,8 +131,14 @@ func (s *Service) Routes(mux httpx.Router, wrap func(http.Handler) http.Handler)
 
 func uid(r *http.Request) uuid.UUID { return auth.MustFromContext(r.Context()).UserID }
 
-// manage resolves the workspace of the path for a MANAGE_WORKSPACE member (404 for others).
+// manage resolves the workspace of the path for a MANAGE_INTEGRATIONS member (ADR-0048; 404 for
+// non-members): telephony settings and the connection test.
 func manage(r *http.Request) (uuid.UUID, error) {
+	return workspaceWith(r, perm.ManageIntegrations, "MANAGE_INTEGRATIONS")
+}
+
+// workspaceWith resolves the workspace of the path for a member holding bit (never a guest).
+func workspaceWith(r *http.Request, bit perm.Bits, name string) (uuid.UUID, error) {
 	wsID, err := httpx.PathUUID(r, "id", "workspace")
 	if err != nil {
 		return uuid.Nil, err
@@ -144,8 +150,8 @@ func manage(r *http.Request) (uuid.UUID, error) {
 	if err != nil {
 		return uuid.Nil, err
 	}
-	if role == perm.RoleGuest || !bits.Has(perm.ManageWorkspace) {
-		return uuid.Nil, httpx.Forbidden("MANAGE_WORKSPACE required")
+	if role == perm.RoleGuest || !bits.Has(bit) {
+		return uuid.Nil, httpx.Forbidden(name + " required")
 	}
 	return wsID, nil
 }

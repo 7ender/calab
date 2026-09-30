@@ -68,7 +68,7 @@ func above(actor perm.Member, pos int32) bool {
 
 // outranks checks that the caller may moderate member target (remove, ban, change the
 // built-in role): the owner always; anyone else only members whose highest role is below
-// their own (ADR-0026 hierarchy: MANAGE_WORKSPACE on a custom role does not reach up).
+// their own (ADR-0026 hierarchy: MANAGE_MEMBERS on a custom role does not reach up).
 // A target that is not a member passes (nothing to protect).
 func outranks(r *http.Request, wsID, target uuid.UUID) error {
 	res := perm.FromContext(r.Context())
@@ -453,10 +453,15 @@ func legacyRole(has func(perm.Role) bool, base perm.Role) perm.Role {
 	return base
 }
 
+// setMemberRoles: PUT …/members/{userId}/roles — MANAGE_MEMBERS (ADR-0048) or MANAGE_ROLES
+// (ADR-0026: role managers kept assigning), only roles below the caller's highest.
 func (h *Handlers) setMemberRoles(w http.ResponseWriter, r *http.Request) error {
-	wsID, actor, err := roleManager(r)
+	wsID, actor, err := roleActor(r)
 	if err != nil {
 		return err
+	}
+	if own := actor.Workspace(); actor.Role == perm.RoleGuest || (!own.Has(perm.ManageMembers) && !own.Has(perm.ManageRoles)) {
+		return httpx.Forbidden("MANAGE_MEMBERS or MANAGE_ROLES required")
 	}
 	target, err := targetUser(r)
 	if err != nil {
@@ -655,6 +660,41 @@ func restrictedViews(ctx context.Context, q *sqlc.Queries, wsID uuid.UUID) (map[
 		}
 		out[room.ID] = seen
 	}
+	// Closed boards (ADR-0048) the same way: role overrides decide who sees them.
+	bs, err := q.ListBoards(ctx, sqlc.ListBoardsParams{WorkspaceID: wsID, Archived: false})
+	if err != nil {
+		return nil, err
+	}
+	var bovs []sqlc.BoardPermission
+	for _, b := range bs {
+		if !b.Restricted {
+			continue
+		}
+		if members == nil {
+			if members, err = perm.LoadMembers(ctx, q, wsID); err != nil {
+				return nil, err
+			}
+		}
+		if bovs == nil {
+			if bovs, err = q.ListWorkspaceBoardOverrides(ctx, wsID); err != nil {
+				return nil, err
+			}
+		}
+		var ovs []perm.OverrideTarget
+		for _, o := range bovs {
+			if o.BoardID == b.ID {
+				ovs = append(ovs, perm.OverrideTarget{TargetType: o.TargetType, TargetID: o.TargetID,
+					Override: perm.Override{Allow: perm.Bits(uint64(o.Allow)), Deny: perm.Bits(uint64(o.Deny))}}) //nolint:gosec // bit mask round-trip
+			}
+		}
+		seen := map[uuid.UUID]bool{}
+		for id, m := range members {
+			if perm.ComputeBoardIn(m, true, true, ovs).Has(perm.ViewBoard) {
+				seen[id] = true
+			}
+		}
+		out[b.ID] = seen
+	}
 	return out, nil
 }
 
@@ -692,7 +732,7 @@ func (g restrictedGuard) check(ctx context.Context, q *sqlc.Queries, wsID uuid.U
 		}
 		for id := range seen {
 			if !was[id] {
-				return httpx.Forbidden("the change would open a restricted room you cannot see").WithDetails(rooms.ReasonOwnerOnly, 0, 0)
+				return httpx.Forbidden("the change would open a closed room or board you cannot see").WithDetails(rooms.ReasonOwnerOnly, 0, 0)
 			}
 		}
 	}

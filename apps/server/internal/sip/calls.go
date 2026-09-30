@@ -323,8 +323,10 @@ func (s *Service) hangupWorkspace(ctx context.Context, wsID uuid.UUID) {
 	}
 }
 
+// journal: GET /api/workspaces/{id}/calls (VIEW_JOURNALS, ADR-0048). Calls of rooms the caller
+// cannot see (a closed room without an override) are left out; the cursor is the scan position.
 func (s *Service) journal(w http.ResponseWriter, r *http.Request) error {
-	wsID, err := manage(r)
+	wsID, err := workspaceWith(r, perm.ViewJournals, "VIEW_JOURNALS")
 	if err != nil {
 		return err
 	}
@@ -354,10 +356,20 @@ func (s *Service) journal(w http.ResponseWriter, r *http.Request) error {
 		return err
 	}
 	out := &v1.ListSipCallsResponse{Calls: make([]*v1.SipCall, 0, min(len(rows), journalPage))}
+	res, me := perm.FromContext(r.Context()), uid(r)
 	for i, c := range rows {
 		if i == journalPage {
 			out.NextCursor = rows[i-1].ID.String()
 			break
+		}
+		if c.RoomID != nil {
+			acc, err := res.ReadRoom(r.Context(), *c.RoomID, me)
+			if errors.Is(err, perm.ErrNoRoom) || (err == nil && !acc.Bits.Has(perm.ViewRoom)) {
+				continue
+			}
+			if err != nil {
+				return err
+			}
 		}
 		out.Calls = append(out.Calls, pbconv.SipCall(c))
 	}

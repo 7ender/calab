@@ -215,12 +215,12 @@ func (s *Service) getIntegration(w http.ResponseWriter, r *http.Request) error {
 var pairCode = regexp.MustCompile(`^[A-Z0-9]{8}$`)
 
 func (s *Service) pairIntegration(w http.ResponseWriter, r *http.Request) error {
-	wsID, bits, _, err := workspaceAccess(r)
+	wsID, bits, role, err := workspaceAccess(r)
 	if err != nil {
 		return err
 	}
-	if !bits.Has(perm.ManageWorkspace) {
-		return httpx.Forbidden("MANAGE_WORKSPACE required")
+	if !bits.Has(perm.ManageIntegrations) || role == perm.RoleGuest { // ADR-0048
+		return httpx.Forbidden("MANAGE_INTEGRATIONS required")
 	}
 	var req v1.PairGptunnelRequest
 	if err := httpx.Decode(w, r, &req); err != nil {
@@ -300,12 +300,12 @@ func (s *Service) revokeRemote(ctx context.Context, token string) {
 }
 
 func (s *Service) unpairIntegration(w http.ResponseWriter, r *http.Request) error {
-	wsID, bits, _, err := workspaceAccess(r)
+	wsID, bits, role, err := workspaceAccess(r)
 	if err != nil {
 		return err
 	}
-	if !bits.Has(perm.ManageWorkspace) {
-		return httpx.Forbidden("MANAGE_WORKSPACE required")
+	if !bits.Has(perm.ManageIntegrations) || role == perm.RoleGuest { // ADR-0048
+		return httpx.Forbidden("MANAGE_INTEGRATIONS required")
 	}
 	token, _, err := s.deviceToken(r.Context(), wsID)
 	if err != nil {

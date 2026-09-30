@@ -112,7 +112,7 @@ func TestBoardPermissions(t *testing.T) {
 	wid := ws.GetId()
 	carol := register(t, invite(t, o, wid))
 
-	// Only MANAGE_WORKSPACE creates boards; the key is derived and unique.
+	// Only CREATE_BOARDS (ADR-0048) creates boards; the key is derived and unique.
 	createBoard(t, bob, wid, &v1.CreateBoardRequest{Name: "Нельзя"}, 403)
 	b := createBoard(t, o, wid, &v1.CreateBoardRequest{Name: "Fintech Next Gen", Template: v1.BoardTemplate_BOARD_TEMPLATE_DEVELOPMENT}, 201)
 	if b.GetKey() != "FNG" || len(b.GetStatuses()) != 6 || b.GetPermissions()&uint64(perm.ManageBoard) == 0 {

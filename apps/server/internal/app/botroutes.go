@@ -93,18 +93,18 @@ var botRoutes = map[string]botAccess{
 	"POST /api/workspaces/{id}/sounds":                     botDeny,  // the library is managed by people
 	"PATCH /api/workspaces/{id}/sounds/{soundId}":          botDeny,
 	"DELETE /api/workspaces/{id}/sounds/{soundId}":         botDeny,
-	"PATCH /api/workspaces/{id}/members/{userId}":          botAllow,
-	"DELETE /api/workspaces/{id}/members/{userId}":         botAllow,
-	"POST /api/workspaces/{id}/members/{userId}/promote":   botAllow,
-	"PUT /api/workspaces/{id}/members/{userId}/roles":      botAllow,
+	"PATCH /api/workspaces/{id}/members/{userId}":          botAllow, // role: MANAGE_MEMBERS (ADR-0048)
+	"DELETE /api/workspaces/{id}/members/{userId}":         botAllow, // MANAGE_MEMBERS
+	"POST /api/workspaces/{id}/members/{userId}/promote":   botAllow, // MANAGE_MEMBERS
+	"PUT /api/workspaces/{id}/members/{userId}/roles":      botAllow, // MANAGE_MEMBERS or MANAGE_ROLES
 	"GET /api/workspaces/{id}/roles":                       botAllow,
 	"POST /api/workspaces/{id}/roles":                      botAllow,
 	"PATCH /api/workspaces/{id}/roles/{roleId}":            botAllow,
 	"DELETE /api/workspaces/{id}/roles/{roleId}":           botAllow,
 	"PUT /api/workspaces/{id}/roles/order":                 botAllow,
-	"GET /api/workspaces/{id}/bans":                        botAllow,
-	"POST /api/workspaces/{id}/bans":                       botAllow,
-	"DELETE /api/workspaces/{id}/bans/{userId}":            botAllow,
+	"GET /api/workspaces/{id}/bans":                        botAllow, // MANAGE_MEMBERS (ADR-0048)
+	"POST /api/workspaces/{id}/bans":                       botAllow, // MANAGE_MEMBERS
+	"DELETE /api/workspaces/{id}/bans/{userId}":            botAllow, // MANAGE_MEMBERS
 	"POST /api/workspaces/{id}/rooms":                      botAllow,
 	"GET /api/workspaces/{id}/rooms":                       botAllow,
 	"POST /api/workspaces/{id}/rooms/temp":                 botAllow, // ADR-0044: CREATE_TEMP_ROOMS; members-only link, no meeting
@@ -215,7 +215,8 @@ var botRoutes = map[string]botAccess{
 	"POST /api/rooms/{id}/voice/{userId}/stop-stream":  botAllow,
 	"POST /api/rooms/{id}/voice/{userId}/move":         botAllow,
 	"POST /api/rooms/{id}/sounds/play":                 botAllow, // ADR-0036, a bot in the call
-	// bots: management is for people; /api/bots/me is for bots (the handlers check that)
+	// bots: management is for people, MANAGE_BOTS on a bot's role changes nothing (ADR-0031,
+	// ADR-0048); /api/bots/me is for bots (the handlers check that)
 	"POST /api/workspaces/{id}/bots":                  botDeny,
 	"GET /api/workspaces/{id}/bots":                   botDeny,
 	"POST /api/workspaces/{id}/bots/add":              botDeny,
@@ -251,8 +252,10 @@ var botRoutes = map[string]botAccess{
 	"POST /api/me/caldav/sync":                   botDeny,
 	"GET /api/event-rsvp":                        botPublic, // signed answer links of external attendees; refuses bot tokens
 	"POST /api/event-rsvp":                       botPublic,
-	// task boards (ADR-0042 §3): bots work like people within their board bits; access and the
-	// final delete (DELETE ?purge=1, refused by the handler) are for people
+	// task boards (ADR-0042 §3): bots work like people within their board bits (creating a board
+	// needs CREATE_BOARDS, the activity export MANAGE_BOARD / EDIT_TASKS / VIEW_JOURNALS, ADR-0048;
+	// a closed board only with an override); access and the final delete (DELETE ?purge=1,
+	// refused by the handler) are for people
 	"GET /api/workspaces/{id}/boards":          botAllow,
 	"POST /api/workspaces/{id}/boards":         botAllow,
 	"GET /api/boards/{id}":                     botAllow,
@@ -292,7 +295,8 @@ var botRoutes = map[string]botAccess{
 	"GET /api/t/{key}":                         botAllow,
 	"GET /api/me/tasks":                        botAllow,
 	"GET /api/workspaces/{id}/tasks/search":    botAllow,
-	// telephony (ADR-0046): settings, the connection test and the journal are for people; bots
+	// telephony (ADR-0046): settings, the connection test (MANAGE_INTEGRATIONS) and the journal
+	// (VIEW_JOURNALS, ADR-0048) are for people; bots
 	// with PLACE_CALLS place and end calls from a room whose call they are in
 	"GET /api/workspaces/{id}/sip":       botDeny,
 	"PUT /api/workspaces/{id}/sip":       botDeny,

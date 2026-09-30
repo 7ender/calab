@@ -25,7 +25,7 @@ func TestRolesReviewHierarchy(t *testing.T) {
 
 	// New roles go to the bottom: senior > mgr > rolesOnly > wsRole.
 	senior := newRole(t, o, wid, "senior", 0)
-	mgr := newRole(t, o, wid, "mgr", perm.ManageWorkspace|perm.ManageRoles)
+	mgr := newRole(t, o, wid, "mgr", perm.ManageWorkspace|perm.ManageMembers|perm.ManageRoles)
 	rolesOnly := newRole(t, o, wid, "roles", perm.ManageRoles|perm.MuteMembers)
 	wsRole := newRole(t, o, wid, "ws", perm.ManageWorkspace)
 	for u, id := range map[*user]string{bob: mgr.GetId(), carol: senior.GetId(), eve: rolesOnly.GetId()} {
@@ -34,7 +34,7 @@ func TestRolesReviewHierarchy(t *testing.T) {
 		}
 	}
 
-	// MANAGE_WORKSPACE on a custom role does not reach members above it.
+	// MANAGE_MEMBERS (ADR-0048) on a custom role does not reach members above it.
 	guest := v1.WorkspaceRole_WORKSPACE_ROLE_GUEST
 	bob.must(403, "PATCH", base+"/members/"+carol.id, &v1.UpdateMemberRequest{Role: &guest}, nil)
 	bob.must(403, "DELETE", base+"/members/"+carol.id, nil, nil)

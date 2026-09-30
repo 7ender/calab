@@ -247,8 +247,9 @@ func (v *viewer) sees(b *bundle) bool {
 	return b.ev.RoomID != nil && v.rooms[*b.ev.RoomID].Has(perm.ViewRoom)
 }
 
-// canEdit: the organizer; else MANAGE_ROOM in the meeting's room, or MANAGE_WORKSPACE for a
-// meeting without one (ADR-0038 §2). Never a bot.
+// canEdit: the organizer; else MANAGE_ROOM in the meeting's room, or MANAGE_EVENTS (ADR-0048)
+// for a meeting without a room or in a room the viewer sees (ADR-0038 §2; a closed room stays
+// closed). Never a bot.
 func (v *viewer) canEdit(b *bundle) bool {
 	switch {
 	case v.bot:
@@ -256,9 +257,10 @@ func (v *viewer) canEdit(b *bundle) bool {
 	case b.ev.OrganizerID == v.user:
 		return true
 	case b.ev.RoomID != nil:
-		return v.rooms[*b.ev.RoomID].Has(perm.ManageRoom)
+		rb := v.rooms[*b.ev.RoomID]
+		return rb.Has(perm.ManageRoom) || (rb.Has(perm.ViewRoom) && v.ws.Has(perm.ManageEvents))
 	}
-	return v.ws.Has(perm.ManageWorkspace)
+	return v.ws.Has(perm.ManageEvents)
 }
 
 func (v *viewer) emails(b *bundle) pbconv.EmailView {

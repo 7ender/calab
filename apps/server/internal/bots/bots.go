@@ -173,7 +173,7 @@ func (s *Service) pb(ctx context.Context, id uuid.UUID, webhook bool) (*v1.Bot, 
 }
 
 // publish sends BOT_CREATE / BOT_UPDATE / BOT_DELETE to the workspace (the gateway gives it
-// to MANAGE_WORKSPACE members and the bot's owner) and BOT_UPDATE to the owner's devices
+// to MANAGE_BOTS members and the bot's owner) and BOT_UPDATE to the owner's devices
 // when the owner may not be a member there.
 func (s *Service) publish(ctx context.Context, wsID uuid.UUID, ev *v1.DispatchEvent) {
 	s.events.Workspace(ctx, wsID, ev)
@@ -202,24 +202,24 @@ func (s *Service) announce(ctx context.Context, id uuid.UUID) {
 
 // ---- workspace management (people) ----
 
-// manager returns the caller's workspace access; MANAGE_WORKSPACE is required unless the
+// manager returns the caller's workspace access; MANAGE_BOTS (ADR-0048) is required unless the
 // caller owns bot (ownerOf non-nil).
 func manager(r *http.Request, ownerOf *sqlc.Bot) (uuid.UUID, error) {
 	wsID, err := httpx.PathUUID(r, "id", "workspace")
 	if err != nil {
 		return uuid.Nil, err
 	}
-	bits, _, err := perm.FromContext(r.Context()).Workspace(r.Context(), wsID, identity(r).UserID)
+	bits, role, err := perm.FromContext(r.Context()).Workspace(r.Context(), wsID, identity(r).UserID)
 	if errors.Is(err, perm.ErrNotMember) {
 		return uuid.Nil, httpx.NotFound("workspace")
 	}
 	if err != nil {
 		return uuid.Nil, err
 	}
-	if bits.Has(perm.ManageWorkspace) || (ownerOf != nil && ownerOf.OwnerUserID == identity(r).UserID) {
+	if (bits.Has(perm.ManageBots) && role != perm.RoleGuest) || (ownerOf != nil && ownerOf.OwnerUserID == identity(r).UserID) {
 		return wsID, nil
 	}
-	return uuid.Nil, httpx.Forbidden("MANAGE_WORKSPACE required")
+	return uuid.Nil, httpx.Forbidden("MANAGE_BOTS required")
 }
 
 // checkPlan refuses one more bot above the plan limits (ADR-0024): the bots limit and, as a
@@ -383,7 +383,7 @@ func (s *Service) botInPath(r *http.Request) (sqlc.Bot, error) {
 }
 
 // homeBot is botInPath for token and deletion routes of the bot's home workspace: the bot's
-// owner or MANAGE_WORKSPACE there.
+// owner or MANAGE_BOTS there.
 func (s *Service) homeBot(r *http.Request) (sqlc.Bot, error) {
 	b, err := s.botInPath(r)
 	if err != nil {
@@ -497,7 +497,7 @@ func (s *Service) avatarChanged(w http.ResponseWriter, r *http.Request, id uuid.
 
 // remove: in the bot's home workspace the bot is deleted (token dead, removed from every
 // workspace and call, account disabled; its messages stay); elsewhere it only leaves that
-// workspace (MANAGE_WORKSPACE there).
+// workspace (MANAGE_BOTS there).
 func (s *Service) remove(w http.ResponseWriter, r *http.Request) error {
 	b, err := s.botInPath(r)
 	if err != nil {

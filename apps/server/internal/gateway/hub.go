@@ -516,21 +516,21 @@ func (h *Hub) routeLocked(st *wsState, wid, id uuid.UUID, ev *v1.DispatchEvent) 
 			s.dispatchEnc(id, hidden)
 		}
 	case *v1.DispatchEvent_BotCreate, *v1.DispatchEvent_BotUpdate, *v1.DispatchEvent_BotDelete:
-		// Bots (ADR-0031) are managed by MANAGE_WORKSPACE members; the owner of a bot sees its
+		// Bots (ADR-0031) are managed by MANAGE_BOTS members (ADR-0048); the owner of a bot sees its
 		// events too (the owner's own devices also get BOT_UPDATE on the user channel).
 		owner := parseID(ev.GetBotCreate().GetBot().GetOwnerUserId())
 		if b := ev.GetBotUpdate().GetBot(); b != nil {
 			owner = parseID(b.GetOwnerUserId())
 		}
 		for _, s := range sessions {
-			if st.members[s.user].Workspace().Has(perm.ManageWorkspace) || (owner != uuid.Nil && s.user == owner) {
+			if st.members[s.user].Workspace().Has(perm.ManageBots) || (owner != uuid.Nil && s.user == owner) {
 				s.dispatchEnc(id, shared)
 			}
 		}
 	case *v1.DispatchEvent_WorkspaceBanAdd, *v1.DispatchEvent_WorkspaceBanRemove:
-		// Bans are shown to those who manage members (item 32).
+		// Bans are shown to those who manage members (item 32; MANAGE_MEMBERS, ADR-0048).
 		for _, s := range sessions {
-			if st.members[s.user].Workspace().Has(perm.ManageWorkspace) {
+			if st.members[s.user].Workspace().Has(perm.ManageMembers) {
 				s.dispatchEnc(id, shared)
 			}
 		}

@@ -77,14 +77,15 @@ func (s *Service) taskActivity(w http.ResponseWriter, r *http.Request) error {
 }
 
 // boardActivity: GET /api/boards/{id}/activity?since=&until=&actor=&kind=&cursor=&format=csv —
-// the journal of a board, oldest first (MANAGE_BOARD or EDIT_TASKS).
+// the journal of a board, oldest first (MANAGE_BOARD or EDIT_TASKS on the board, or
+// VIEW_JOURNALS of the workspace, ADR-0048 — always on a board the caller sees).
 func (s *Service) boardActivity(w http.ResponseWriter, r *http.Request) error {
 	id, acc, err := pathBoard(r, false)
 	if err != nil {
 		return err
 	}
-	if !acc.Bits.Has(perm.ManageBoard) && !acc.Bits.Has(perm.EditTasks) {
-		return httpx.Forbidden("MANAGE_BOARD or EDIT_TASKS required")
+	if !acc.Bits.Has(perm.ManageBoard) && !acc.Bits.Has(perm.EditTasks) && !acc.Member.Workspace().Has(perm.ViewJournals) {
+		return httpx.Forbidden("MANAGE_BOARD, EDIT_TASKS or VIEW_JOURNALS required")
 	}
 	qs := r.URL.Query()
 	p := sqlc.ListBoardActivityParams{BoardID: id, Lim: exportPage}

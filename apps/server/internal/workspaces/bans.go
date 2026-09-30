@@ -25,11 +25,11 @@ func (h *Handlers) banRoutes(handle func(string, httpx.HandlerFunc)) {
 }
 
 // createBan: POST /api/workspaces/{id}/bans {user_id, reason} (backlog item 32). Same rights
-// as removing a member: MANAGE_WORKSPACE; the owner cannot be banned, an admin only by the
+// as removing a member: MANAGE_MEMBERS (ADR-0048); the owner cannot be banned, an admin only by the
 // owner; nobody bans themself. The member is removed in the same transaction; pending email
 // invitations of their address are revoked.
 func (h *Handlers) createBan(w http.ResponseWriter, r *http.Request) error {
-	wsID, actorRole, err := requireManage(r)
+	wsID, actorRole, err := requireMembers(r)
 	if err != nil {
 		return err
 	}
@@ -116,7 +116,7 @@ func (h *Handlers) createBan(w http.ResponseWriter, r *http.Request) error {
 }
 
 func (h *Handlers) listBans(w http.ResponseWriter, r *http.Request) error {
-	wsID, _, err := requireManage(r)
+	wsID, _, err := requireMembers(r)
 	if err != nil {
 		return err
 	}
@@ -135,7 +135,7 @@ func (h *Handlers) listBans(w http.ResponseWriter, r *http.Request) error {
 // deleteBan: DELETE /api/workspaces/{id}/bans/{userId}. Lifting a ban does not restore the
 // membership: the user can be invited again.
 func (h *Handlers) deleteBan(w http.ResponseWriter, r *http.Request) error {
-	wsID, _, err := requireManage(r)
+	wsID, _, err := requireMembers(r)
 	if err != nil {
 		return err
 	}
