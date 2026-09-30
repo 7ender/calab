@@ -2,7 +2,7 @@ name: ci
 
 on:
   push:
-    branches: [main, worktree-agent-a7d4291a826a9657b]   # TEMP: measurement, removed before merge
+    branches: [main]
     tags: ['v*']        # a release tag also runs the PostgreSQL 17 integration shards (ADR-0037)
     # docs-only pushes run no CI (a workflow skipped by paths blocks nothing on a direct push); pull
     # requests always run everything: on a docs-only PR the required checks would wait forever
