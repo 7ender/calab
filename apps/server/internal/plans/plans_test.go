@@ -87,7 +87,7 @@ func TestLimitsJSONRoundTrip(t *testing.T) {
 	}
 	// Unlimited limits serialize every key (a stored custom plan is complete).
 	b, _ = json.Marshal(Limits{})
-	if string(b) != `{"room_members":0,"stream_max_preset":"","stream_max_fps":0,"camera_max_preset":"","camera_max_fps":0,"streams_per_room":0,"cameras_per_room":0,"storage_mb":0,"members":0,"sticker_packs":0,"stickers":0,"bots":0,"audio_tier_max_kbps":0,"boards":0,"caldav_disabled":false}` {
+	if string(b) != `{"room_members":0,"stream_max_preset":"","stream_max_fps":0,"camera_max_preset":"","camera_max_fps":0,"streams_per_room":0,"cameras_per_room":0,"storage_mb":0,"members":0,"sticker_packs":0,"stickers":0,"bots":0,"audio_tier_max_kbps":0,"boards":0,"caldav_disabled":false,"musician_disabled":false}` {
 		t.Fatalf("zero limits: %s", b)
 	}
 }
@@ -325,5 +325,42 @@ func TestCalDAVFlag(t *testing.T) {
 	}
 	if FromProto(DefaultFree.Proto()) != DefaultFree {
 		t.Fatal("proto round trip")
+	}
+}
+
+// Musician mode (ADR-0052): off on Free by default, on for Team / Business; a DM call (no
+// workspace) takes any of the user's workspaces, like CalDAV.
+func TestAllowsMusician(t *testing.T) {
+	ctx := context.Background()
+	now := time.Date(2026, 10, 1, 12, 0, 0, 0, time.UTC)
+	f := &fakeRows{rows: map[uuid.UUID]*sqlc.WorkspacePlan{}}
+	s := testService(f, &now)
+	freeWS, teamWS, bizWS, dm, user := uuid.New(), uuid.New(), uuid.New(), uuid.New(), uuid.New()
+	f.rows[teamWS] = &sqlc.WorkspacePlan{WorkspaceID: teamWS, Plan: "team"}
+	f.rows[bizWS] = &sqlc.WorkspacePlan{WorkspaceID: bizWS, Plan: "enterprise"}
+	if !DefaultFree.MusicianDisabled || DefaultTeam.MusicianDisabled || DefaultBusiness.MusicianDisabled {
+		t.Fatal("musician mode is only off on Free by default")
+	}
+	for ws, want := range map[uuid.UUID]bool{freeWS: false, teamWS: true, bizWS: true} {
+		if ok, err := s.AllowsMusician(ctx, ws, false, user); err != nil || ok != want {
+			t.Fatalf("workspace %v: %v %v, want %v", ws, ok, err, want)
+		}
+	}
+	mine := []uuid.UUID{freeWS}
+	s.userWorkspaces = func(context.Context, uuid.UUID) ([]uuid.UUID, error) { return mine, nil }
+	if ok, err := s.AllowsMusician(ctx, dm, true, user); err != nil || ok {
+		t.Fatalf("DM, free only: %v %v", ok, err)
+	}
+	mine = []uuid.UUID{freeWS, teamWS}
+	if ok, err := s.AllowsMusician(ctx, dm, true, user); err != nil || !ok {
+		t.Fatalf("DM, free + team: %v %v", ok, err)
+	}
+	if ok, _ := (*Service)(nil).AllowsMusician(ctx, freeWS, false, user); !ok {
+		t.Fatal("nil service allows")
+	}
+	// Self-hosted: the operator turns it on for Free through PLAN_FREE_LIMITS.
+	l, err := ParseLimits(`{"musician_disabled":false}`, DefaultFree)
+	if err != nil || l.MusicianDisabled {
+		t.Fatalf("override: %+v %v", l, err)
 	}
 }

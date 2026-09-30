@@ -95,6 +95,7 @@ type PlanLimits struct {
 	Boards           uint32                 `protobuf:"varint,22,opt,name=boards,proto3" json:"boards,omitempty"`                                                                            // live task boards of the workspace (ADR-0042); 0 = no plan limit (≤ 50 always)
 	CamerasPerRoom   uint32                 `protobuf:"varint,27,opt,name=cameras_per_room,json=camerasPerRoom,proto3" json:"cameras_per_room,omitempty"`                                    // webcams at once in one voice room (caps camera_limit of the room / workspace); 0 = no plan limit
 	CaldavDisabled   bool                   `protobuf:"varint,23,opt,name=caldav_disabled,json=caldavDisabled,proto3" json:"caldav_disabled,omitempty"`                                      // CalDAV sync is not part of the plan (Free); per user it works if any of their workspaces allows it
+	MusicianDisabled bool                   `protobuf:"varint,28,opt,name=musician_disabled,json=musicianDisabled,proto3" json:"musician_disabled,omitempty"`                                // musician mode (ADR-0052) is not part of the plan (Free): VoiceState.musician refused
 	unknownFields    protoimpl.UnknownFields
 	sizeCache        protoimpl.SizeCache
 }
@@ -234,6 +235,13 @@ func (x *PlanLimits) GetCaldavDisabled() bool {
 	return false
 }
 
+func (x *PlanLimits) GetMusicianDisabled() bool {
+	if x != nil {
+		return x.MusicianDisabled
+	}
+	return false
+}
+
 // The plan of a workspace as members see it (Workspace.plan).
 type WorkspacePlan struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
@@ -307,7 +315,7 @@ var File_calaba_v1_plan_proto protoreflect.FileDescriptor
 
 const file_calaba_v1_plan_proto_rawDesc = "" +
 	"\n" +
-	"\x14calaba/v1/plan.proto\x12\tcalaba.v1\x1a\x1fgoogle/protobuf/timestamp.proto\x1a\x15calaba/v1/media.proto\"\xe1\x04\n" +
+	"\x14calaba/v1/plan.proto\x12\tcalaba.v1\x1a\x1fgoogle/protobuf/timestamp.proto\x1a\x15calaba/v1/media.proto\"\x8e\x05\n" +
 	"\n" +
 	"PlanLimits\x12!\n" +
 	"\froom_members\x18\x01 \x01(\rR\vroomMembers\x12H\n" +
@@ -326,7 +334,8 @@ const file_calaba_v1_plan_proto_rawDesc = "" +
 	"\x13audio_tier_max_kbps\x18\x15 \x01(\rR\x10audioTierMaxKbps\x12\x16\n" +
 	"\x06boards\x18\x16 \x01(\rR\x06boards\x12(\n" +
 	"\x10cameras_per_room\x18\x1b \x01(\rR\x0ecamerasPerRoom\x12'\n" +
-	"\x0fcaldav_disabled\x18\x17 \x01(\bR\x0ecaldavDisabled\"\xba\x01\n" +
+	"\x0fcaldav_disabled\x18\x17 \x01(\bR\x0ecaldavDisabled\x12+\n" +
+	"\x11musician_disabled\x18\x1c \x01(\bR\x10musicianDisabled\"\xba\x01\n" +
 	"\rWorkspacePlan\x12#\n" +
 	"\x04plan\x18\x01 \x01(\x0e2\x0f.calaba.v1.PlanR\x04plan\x12-\n" +
 	"\x06limits\x18\x02 \x01(\v2\x15.calaba.v1.PlanLimitsR\x06limits\x12;\n" +

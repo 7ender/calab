@@ -311,3 +311,22 @@ func TestPlanFreeHasAppsApprovalsTelephony(t *testing.T) {
 	o.must(200, "PUT", "/api/workspaces/"+wsID+"/sip", &v1.PutSipSettingsRequest{Enabled: true, Provider: "Zadarma", Host: "203.0.113.10:5060",
 		Transport: v1.SipTransport_SIP_TRANSPORT_TCP, Username: "u100", Password: &pw, CallerId: "8 (495) 123-45-67"}, nil)
 }
+
+// Musician mode (ADR-0052) is Team and above: PATCH /api/voice/self {musician: true} in a Free
+// workspace's room is 409 PLAN_LIMIT (used = limit = 0, like CalDAV), turning it off always
+// works, and the same device is accepted once the workspace is on Team.
+func TestPlanMusicianMode(t *testing.T) {
+	liveKitUp(t)
+	withFreeLimits(t)
+	o := owner(t)
+	ws := createWorkspace(t, o, v1.WorkspaceVisibility_WORKSPACE_VISIBILITY_PRIVATE)
+	rid := voiceRoom(t, o, ws.GetId(), "jam", 0)
+	m := register(t, invite(t, o, ws.GetId()))
+	joinPending(t, m, rid)
+	on, off := true, false
+	st, e := m.apiErrBody("PATCH", "/api/voice/self", &v1.UpdateVoiceSelfRequest{Musician: &on})
+	wantPlanLimit(t, "musician on Free", st, e, 0, 0)
+	m.must(204, "PATCH", "/api/voice/self", &v1.UpdateVoiceSelfRequest{Musician: &off}, nil)
+	setPlan(t, ws.GetId(), &v1.AdminSetPlanRequest{Plan: v1.Plan_PLAN_TEAM, Note: "paid"})
+	m.must(204, "PATCH", "/api/voice/self", &v1.UpdateVoiceSelfRequest{Musician: &on}, nil)
+}

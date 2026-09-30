@@ -140,6 +140,33 @@ func (s *Service) AllowsCalDAV(ctx context.Context, user uuid.UUID) (bool, error
 	return !s.PlanLimits(v1.Plan_PLAN_FREE).CalDAVDisabled, nil
 }
 
+// AllowsMusician reports whether musician mode (ADR-0052) is part of the plan of a voice scope:
+// a workspace — its own plan; a DM call (no workspace, wid == rid) — like CalDAV, any of the
+// user's workspaces allowing it is enough. A nil service allows everything.
+func (s *Service) AllowsMusician(ctx context.Context, wsID uuid.UUID, dm bool, user uuid.UUID) (bool, error) {
+	if s == nil {
+		return true, nil
+	}
+	if !dm {
+		l, err := s.Effective(ctx, wsID)
+		return !l.MusicianDisabled, err
+	}
+	ids, err := s.userWorkspaces(ctx, user)
+	if err != nil {
+		return false, err
+	}
+	for _, id := range ids {
+		l, err := s.Effective(ctx, id)
+		if err != nil {
+			return false, err
+		}
+		if !l.MusicianDisabled {
+			return true, nil
+		}
+	}
+	return !s.PlanLimits(v1.Plan_PLAN_FREE).MusicianDisabled, nil
+}
+
 // Effective returns the effective limits of a workspace.
 func (s *Service) Effective(ctx context.Context, wsID uuid.UUID) (Limits, error) {
 	i, err := s.Info(ctx, wsID)

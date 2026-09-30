@@ -483,12 +483,22 @@ func (s *Service) voiceSelf(w http.ResponseWriter, r *http.Request) error {
 		return err
 	}
 	id := auth.MustFromContext(r.Context())
-	wsID, _, ok, err := s.voice.Location(r.Context(), id.SessionID)
+	wsID, roomID, ok, err := s.voice.Location(r.Context(), id.SessionID)
 	if err != nil {
 		return err
 	}
 	if !ok {
 		return httpx.Conflict("not connected to a voice room")
+	}
+	// Musician mode (ADR-0052) is a plan feature: Team and above (409 PLAN_LIMIT on Free).
+	if req.GetMusician() {
+		allowed, err := s.Plans.AllowsMusician(r.Context(), wsID, voice.IsDM(wsID, roomID), id.UserID)
+		if err != nil {
+			return err
+		}
+		if !allowed {
+			return plans.FeatureError("musician mode")
+		}
 	}
 	// The server-mute check runs inside the update, under the workspace voice lock that
 	// SetServerMuted also takes: a concurrent mute cannot slip between check and write (L2).
