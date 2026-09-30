@@ -44,11 +44,11 @@ export const PLAN_LABEL: Record<Plan, MessageKey> = {
   [Plan.ENTERPRISE]: 'plan.name.enterprise',
 };
 
-/** Plan features that are not part of every plan (CalDAV: Team and above). */
-export type PlanFeature = 'caldav';
+/** Plan features that are not part of every plan (CalDAV, musician mode — ADR-0052: Team and above). */
+export type PlanFeature = 'caldav' | 'musician';
 
 /** The «disabled» flag of PlanLimits behind each feature. */
-const DISABLED_FLAG = { caldav: 'caldavDisabled' } as const satisfies Record<PlanFeature, keyof PlanLimits>;
+const DISABLED_FLAG = { caldav: 'caldavDisabled', musician: 'musicianDisabled' } as const satisfies Record<PlanFeature, keyof PlanLimits>;
 
 /**
  * Is the feature part of the plan? PlanLimits carries «disabled» flags, so an absent plan (an older

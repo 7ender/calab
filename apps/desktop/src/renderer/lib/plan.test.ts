@@ -144,6 +144,8 @@ describe('30.09 lineup: Business naming, features by plan', () => {
     expect(planHas(undefined, 'caldav')).toBe(true);
     expect(planHas(p({}), 'caldav')).toBe(true);
     expect(planHas(p({ caldavDisabled: true }), 'caldav')).toBe(false);
+    expect(planHas(p({ caldavDisabled: true }), 'musician')).toBe(true);
+    expect(planHas(p({ musicianDisabled: true }), 'musician')).toBe(false);
   });
 });
 

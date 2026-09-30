@@ -239,7 +239,8 @@ vi.mock('../lib/media/opusTierPublish', () => ({
 }));
 const playSound = vi.fn((_name: string) => undefined);
 vi.mock('../lib/sounds', () => ({ playSound: (name: string) => playSound(name) }));
-vi.mock('../stores/toasts', () => ({ toast: { info: vi.fn(), error: vi.fn() } }));
+const pushToast = vi.hoisted(() => vi.fn());
+vi.mock('../stores/toasts', () => ({ toast: { info: vi.fn(), error: vi.fn() }, useToasts: { getState: () => ({ push: pushToast }) } }));
 const announce = vi.fn();
 vi.mock('./deviceToast', () => ({ announceDeviceSwitch: (...a: unknown[]) => void announce(...a) }));
 const reportMediaError = vi.fn(() => ({ text: 'err', action: null }));
@@ -1458,6 +1459,35 @@ describe('musician mode (ADR-0052)', () => {
     await vi.waitFor(() => expect(applyMicTier.mock.calls.at(-1)?.[2]).toMatchObject({ kbps: 32, dtx: true, stereo: false }));
     expect(updateSelf).toHaveBeenLastCalledWith({ muted: false, deafened: false, musician: false });
     expect(pub?.mediaStreamTrack.enabled).toBe(false); // gated again
+    await voice.leave();
+  });
+
+  it('plan gate: locked on Free (plan toast), off when the call ends or lands in a Free room', async () => {
+    const { create } = await import('@bufbuild/protobuf');
+    const { Plan, PlanLimitsSchema, WorkspacePlanSchema } = await import('@calaba/protocol');
+    const { useWorkspaces } = await import('../stores/workspaces');
+    const { setMusicianMode } = await import('./musician');
+    const plan = (free: boolean) => create(WorkspacePlanSchema, { plan: free ? Plan.FREE : Plan.TEAM, limits: create(PlanLimitsSchema, { musicianDisabled: free }) });
+    useWorkspaces.setState({ byId: { free: { ws: { plan: plan(true) } }, team: { ws: { plan: plan(false) } } } as never });
+    const locked = 'Доступно на тарифе Team и выше';
+    await voice.join('A', 'free');
+    pushToast.mockClear();
+    setMusicianMode(true);
+    expect(usePrefs.getState().musicianMode).toBe(false);
+    expect(pushToast).toHaveBeenCalledWith('info', locked, undefined);
+    // A Team room: on; leaving voice turns it off.
+    await voice.join('B', 'team');
+    setMusicianMode(true);
+    expect(usePrefs.getState().musicianMode).toBe(true);
+    await voice.leave();
+    expect(usePrefs.getState().musicianMode).toBe(false);
+    // On in a Team room, then into a Free workspace's room: off, with the plan toast.
+    await voice.join('B', 'team');
+    setMusicianMode(true);
+    pushToast.mockClear();
+    await voice.join('A', 'free'); // a switch passes «no room» while joining: not a leave
+    expect(usePrefs.getState().musicianMode).toBe(false);
+    expect(pushToast).toHaveBeenCalledWith('info', locked, undefined);
     await voice.leave();
   });
 

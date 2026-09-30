@@ -59,7 +59,10 @@ export interface Prefs {
   red: boolean;
   /** «Как вы слушаете» (docs/02 «Эхо: колонки»): per device — a laptop on speakers, a desk with headphones. */
   echoMode: EchoMode;
-  /** «Режим музыканта» (ADR-0052): the mic without AEC / NS / AGC / RNNoise, music Opus profile, no VAD gating. Per device. */
+  /**
+   * «Режим музыканта» (ADR-0052): the mic without AEC / NS / AGC / RNNoise, music Opus profile, no
+   * VAD gating. Not persisted: it lasts until I leave voice (or land in a room whose plan lacks it).
+   */
   musicianMode: boolean;
   streamPreset: ConcreteScreenSharePreset;
   contentHint: ScreenShareContentHint;
@@ -181,7 +184,8 @@ export const usePrefs = create<PrefsState>()(
       if (version < 3) s = { ...s, rnnoise: false };
       return s;
     },
-    partialize: ({ setPrefs: _s, ...rest }) => rest,
+    // Musician mode is never stored on (ADR-0052: it lasts until I leave voice).
+    partialize: ({ setPrefs: _s, ...rest }) => ({ ...rest, musicianMode: false }),
   }),
 );
 

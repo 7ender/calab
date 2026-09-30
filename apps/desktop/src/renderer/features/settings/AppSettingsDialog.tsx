@@ -19,7 +19,8 @@ import { CHECK_IDS, runConnectionCheck, voiceProbeLine, type CheckId, type Check
 import { log } from '../../lib/log';
 import { METER_MIN_DB } from '../../lib/media/vad';
 import { outputLabel } from '../../lib/media/outputKind';
-import { musicianWarning } from '../../services/musician';
+import { musicianWarning, useMusicianAllowed } from '../../services/musician';
+import { PlanLock } from '../../components/PlanLock';
 import { platform } from '../../platform';
 import { shortcutHelp } from '../../services/hotkeys';
 import { logout } from '../../services/session';
@@ -436,12 +437,23 @@ function MusicianRow({ outputs }: { outputs: MediaDeviceInfo[] }): ReactNode {
   const on = usePrefs((s) => s.musicianMode);
   const outputId = usePrefs((s) => s.outputDeviceId);
   const setPrefs = usePrefs((s) => s.setPrefs);
+  const allowed = useMusicianAllowed();
   const warning = on ? musicianWarning(outputLabel(outputs, outputId)) : null;
+  const row = (
+    <Row label={t('music.mode')} hint={t('music.hint')}>
+      <Toggle label={t('music.mode')} checked={on && allowed} disabled={!allowed} onChange={(v) => setPrefs({ musicianMode: v })} />
+    </Row>
+  );
+  // Free (ADR-0052): the switch stays in place under the plan lock (docs/08 «Функции не по тарифу»).
+  if (!allowed)
+    return (
+      <PlanLock plan="team" testId="musician-lock">
+        {row}
+      </PlanLock>
+    );
   return (
     <div data-testid="musician-row">
-      <Row label={t('music.mode')} hint={t('music.hint')}>
-        <Toggle label={t('music.mode')} checked={on} onChange={(v) => setPrefs({ musicianMode: v })} />
-      </Row>
+      {row}
       {warning ? (
         <div
           role="status"

@@ -67,6 +67,7 @@ import { annot } from './annot';
 import { ANNOT_TOPIC } from '../lib/annot/codec';
 import { CameraController, cameraGrantMissing } from './camera';
 import { announceDeviceSwitch } from './deviceToast';
+import { musicianAllowed, musicianLockedToast } from './musician';
 import { humanMediaError, reportMediaError } from './mediaErrors';
 import { reportPlanError } from './plan';
 import { capAudioKbps, capFps } from '../lib/plan';
@@ -297,6 +298,15 @@ class VoiceEngine {
     document.addEventListener('securitypolicyviolation', (ev) => this.onCspViolation(ev));
     this.gate.configure({ thresholdDb: prefs().thresholdDb });
     usePrefs.subscribe((s, p) => this.onPrefs(s, p));
+    // Musician mode (ADR-0052) ends with the call and cannot stay on in a room whose plan lacks it.
+    // A room switch passes «no room» with `joining` set: only no room and no join is a leave.
+    useVoice.subscribe((s, p) => {
+      if (s.roomId === p.roomId && s.workspaceId === p.workspaceId && s.joining === p.joining) return;
+      this.guardMusician(s.roomId === null && s.joining === null);
+    });
+    useWorkspaces.subscribe((s, p) => {
+      if (s.byId !== p.byId) this.guardMusician(false);
+    });
     void this.syncPttBinding();
   }
 
@@ -1900,6 +1910,21 @@ class VoiceEngine {
   }
 
   /**
+   * Musician mode off when the call ends (`left`) or the voice room's plan does not include it
+   * (joined / moved into a Free workspace's room, the plan changed). Free when the mode is off.
+   */
+  private guardMusician(left: boolean): void {
+    if (!prefs().musicianMode) return;
+    if (left) {
+      usePrefs.getState().setPrefs({ musicianMode: false });
+      return;
+    }
+    if (!useVoice.getState().roomId || musicianAllowed()) return;
+    usePrefs.getState().setPrefs({ musicianMode: false });
+    musicianLockedToast();
+  }
+
+  /**
    * Musician mode flipped (ADR-0052), live: the capture is rebuilt without / with speech
    * processing and swapped in place (restartMic → replaceTrack), then the Opus profile follows
    * (applyMicTier: bitrate, and DTX / stereo / bandwidth through a renegotiation) — both queued in
@@ -2283,7 +2308,16 @@ class VoiceEngine {
   private pushSelfState(): void {
     if (!this.room) return;
     const v = useVoice.getState();
-    void api.voice.updateSelf({ muted: v.muted, deafened: v.deafened, musician: prefs().musicianMode }).catch((e: unknown) => log.warn('voice/self failed', e));
+    const musician = prefs().musicianMode;
+    void api.voice.updateSelf({ muted: v.muted, deafened: v.deafened, musician }).catch((e: unknown) => {
+      // The plan does not include musician mode (ADR-0052, 409 PLAN_LIMIT): back to the processed mic.
+      if (musician && e instanceof ApiError && e.reason === 'PLAN_LIMIT' && prefs().musicianMode) {
+        usePrefs.getState().setPrefs({ musicianMode: false });
+        musicianLockedToast();
+        return;
+      }
+      log.warn('voice/self failed', e);
+    });
   }
 
   /** Server view of our voice state differs from local (e.g. PATCH raced the join) → push again. */
