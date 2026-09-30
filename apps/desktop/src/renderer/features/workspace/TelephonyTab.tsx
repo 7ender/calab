@@ -493,26 +493,26 @@ function Journal({ workspaceId }: { workspaceId: string }): ReactNode {
         </p>
       ) : (
         <div className="overflow-x-auto rounded-[var(--radius-card)] bg-[var(--color-card)]">
-          <table className="w-full text-body" data-testid="sip-journal">
+          <table className="w-full min-w-[560px] text-body" data-testid="sip-journal">
             <caption className="sr-only">{t('sip.journal')}</caption>
             <thead>
               <tr className="border-b border-[var(--color-card-line)] text-left text-caption text-muted">
-                <th scope="col" className="px-3 py-2 font-medium">
+                <th scope="col" className="px-2 py-2 font-medium">
                   {t('sip.journal.when')}
                 </th>
-                <th scope="col" className="px-3 py-2 font-medium">
+                <th scope="col" className="px-2 py-2 font-medium">
                   {t('sip.journal.room')}
                 </th>
-                <th scope="col" className="px-3 py-2 font-medium">
+                <th scope="col" className="px-2 py-2 font-medium">
                   {t('sip.journal.number')}
                 </th>
-                <th scope="col" className="px-3 py-2 font-medium">
+                <th scope="col" className="px-2 py-2 font-medium">
                   {t('sip.journal.who')}
                 </th>
-                <th scope="col" className="px-3 py-2 font-medium">
+                <th scope="col" className="min-w-36 px-2 py-2 font-medium">
                   {t('sip.journal.status')}
                 </th>
-                <th scope="col" className="px-3 py-2 text-right font-medium">
+                <th scope="col" className="px-2 py-2 text-right font-medium">
                   {t('sip.journal.duration')}
                 </th>
               </tr>
@@ -546,18 +546,24 @@ function JournalRow({ workspaceId, call }: { workspaceId: string; call: SipCall 
   const status = journalStatus(call);
   return (
     <tr className="border-b border-[var(--color-card-line)] last:border-b-0" data-testid="sip-journal-row">
-      <td className="whitespace-nowrap px-3 py-2 tabular-nums text-muted">{started ? fmt.dateTime(started, 'short') : '—'}</td>
-      <td className="max-w-40 truncate px-3 py-2" title={roomName || undefined}>
-        {call.roomId ? roomName || '—' : <span className="text-muted">{t('sip.journal.test')}</span>}
+      <td className="px-2 py-2 min-w-[5.5rem] max-sm:whitespace-nowrap tabular-nums text-muted">{started ? fmt.dateTime(started, 'short') : '—'}</td>
+      <td className="px-2 py-2">
+        <span className="block max-w-20 truncate" title={roomName || undefined}>
+          {call.roomId ? roomName || '—' : <span className="text-muted">{t('sip.journal.test')}</span>}
+        </span>
       </td>
-      <td className="whitespace-nowrap px-3 py-2 tabular-nums">{formatPhone(call.number)}</td>
-      <td className="max-w-36 truncate px-3 py-2" title={who}>
-        {who}
+      <td className="whitespace-nowrap px-2 py-2 tabular-nums">{formatPhone(call.number)}</td>
+      <td className="px-2 py-2">
+        <span className="block max-w-20 truncate" title={who}>
+          {who}
+        </span>
       </td>
-      <td className="px-3 py-2">
-        <span className="inline-block first-letter:uppercase">{status}</span>
+      <td className="min-w-36 px-2 py-2">
+        <span className="line-clamp-2 max-w-72 first-letter:uppercase" title={status}>
+          {status}
+        </span>
       </td>
-      <td className="whitespace-nowrap px-3 py-2 text-right tabular-nums text-muted">{duration ? formatDuration(duration) : '—'}</td>
+      <td className="whitespace-nowrap px-2 py-2 text-right tabular-nums text-muted">{duration ? formatDuration(duration) : '—'}</td>
     </tr>
   );
 }

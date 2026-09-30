@@ -1,7 +1,7 @@
 import { CalendarDays, SquareKanban, Volume2, type LucideIcon } from 'lucide-react';
 import { memo, useCallback, useLayoutEffect, useRef, type KeyboardEvent, type ReactNode } from 'react';
 import { Tip, cx } from '../../components/ui';
-import { plural, t } from '../../i18n';
+import { plural, t, useLocale } from '../../i18n';
 import { dayKey } from '../../lib/calendar/time';
 import { unreadCount, useBoards } from '../../stores/boards';
 import { useBoardsUi } from '../../stores/boardsUi';
@@ -52,6 +52,8 @@ const useMode = (): Mode => {
  * not the room list.
  */
 export const ModeTabs = memo(function ModeTabs({ workspaceId }: { workspaceId: string }): ReactNode {
+  // memo + props without the language: subscribe, or a live language switch leaves the old labels.
+  useLocale();
   const mode = useMode();
   const today = useCalendar((s) => s.todayCount);
   const unread = useBoards((s) => unreadCount(s, workspaceId));
