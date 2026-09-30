@@ -2,6 +2,39 @@ import { randomUUID } from 'node:crypto';
 import WebSocket from 'ws';
 import { create, toJson, type MessageInitShape } from '@bufbuild/protobuf';
 import {
+  CalendarEventResponseSchema,
+  CreateBadgeRequestSchema,
+  CreateBadgeResponseSchema,
+  CreateCalendarEventRequestSchema,
+  CreateEmailInviteRequestSchema,
+  CreateEmailInviteResponseSchema,
+  CreateInviteRequestSchema,
+  CreateInviteResponseSchema,
+  FreeBusyResponseSchema,
+  GetMemberResponseSchema,
+  ListBadgesResponseSchema,
+  ListCalendarEventsResponseSchema,
+  ListEmailInvitesResponseSchema,
+  ListInvitesResponseSchema,
+  SetMemberBadgeRequestSchema,
+  SetMemberBadgeResponseSchema,
+  StartRecordingResponseSchema,
+  StopRecordingResponseSchema,
+  SuggestSlotsRequestSchema,
+  SuggestSlotsResponseSchema,
+  UpdateBadgeRequestSchema,
+  UpdateBadgeResponseSchema,
+  UpdateCalendarEventRequestSchema,
+  UpdateMemberRequestSchema,
+  UpdateMemberResponseSchema,
+  type Badge,
+  type CalendarEvent,
+  type EmailInvite,
+  type FreeBusyUser,
+  type GetMemberResponse,
+  type Invite,
+  type RoomRecording,
+  type Slot,
   BoardResponseSchema,
   BotWebhookResponseSchema,
   InlineKeyboardSchema,
@@ -436,14 +469,29 @@ export class Bot extends Emitter<BotEvents> {
   }
 
   /**
-   * Members of the room's workspace (who of them sees the room is decided by roles and room overrides:
-   * VIEW_ROOM). A DM has no workspace: use `dm.peer`.
+   * `members(roomId)`: members of the room's workspace (who of them sees the room is decided by roles
+   * and room overrides: VIEW_ROOM; a DM has no workspace: use `dm.peer`). `members.get` /
+   * `members.setNickname`: one member's profile and nickname (ADR-0051).
    */
-  async members(roomId: string): Promise<WorkspaceMember[]> {
-    const info = await this.roomInfo(roomId);
-    if (!info.workspaceId) throw new Error('members: a DM has no workspace members');
-    return (await this.rest.call(ListMembersResponseSchema, 'GET', `/api/workspaces/${enc(info.workspaceId)}/members`)).members;
-  }
+  readonly members = Object.assign(
+    async (roomId: string): Promise<WorkspaceMember[]> => {
+      const info = await this.roomInfo(roomId);
+      if (!info.workspaceId) throw new Error('members: a DM has no workspace members');
+      return (await this.rest.call(ListMembersResponseSchema, 'GET', `/api/workspaces/${enc(info.workspaceId)}/members`)).members;
+    },
+    {
+      /** A member's profile with their open tasks on the boards the bot sees ('@me' = the bot). */
+      get: (workspaceId: string, userId: string): Promise<GetMemberResponse> =>
+        this.rest.call(GetMemberResponseSchema, 'GET', `/api/workspaces/${enc(workspaceId)}/members/${enc(userId)}`),
+      /** A member's nickname in the workspace (MANAGE_NICKNAMES); '' clears it. */
+      setNickname: async (workspaceId: string, userId: string, nickname: string): Promise<WorkspaceMember> =>
+        (
+          await this.rest.call(UpdateMemberResponseSchema, 'PATCH', `/api/workspaces/${enc(workspaceId)}/members/${enc(userId)}`, {
+            json: Rest.body(UpdateMemberRequestSchema, { nickname }),
+          })
+        ).member ?? fail('member'),
+    },
+  );
 
   /** Whether a room is a DM of the bot (known from READY / DM_CREATE / `dm()`). */
   isDm(roomId: string): boolean {
@@ -590,6 +638,140 @@ export class Bot extends Emitter<BotEvents> {
       return this.send(roomId, content);
     },
   };
+
+  // ---- calendar (ADR-0038, ADR-0051): the bot organizes meetings but never attends them ----
+
+  readonly calendar = {
+    /** Occurrences overlapping [from, to) (≤ 62 days) the bot sees: its own meetings and those of rooms it views. */
+    list: async (workspaceId: string, from: Date, to: Date): Promise<CalendarEvent[]> =>
+      (
+        await this.rest.call(ListCalendarEventsResponseSchema, 'GET', `/api/workspaces/${enc(workspaceId)}/events`, {
+          query: { from: from.toISOString(), to: to.toISOString() },
+        })
+      ).events,
+    get: async (eventId: string): Promise<CalendarEvent> =>
+      (await this.rest.call(CalendarEventResponseSchema, 'GET', `/api/events/${enc(eventId)}`)).event ?? fail('event'),
+    /**
+     * Creates a meeting organized by the bot (times: `timestampFromDate` of `@bufbuild/protobuf/wkt`).
+     * The bot is not an attendee; invitations to outside addresses go out on its behalf.
+     */
+    create: async (workspaceId: string, e: MessageInitShape<typeof CreateCalendarEventRequestSchema>): Promise<CalendarEvent> =>
+      (
+        await this.rest.call(CalendarEventResponseSchema, 'POST', `/api/workspaces/${enc(workspaceId)}/events`, {
+          json: Rest.body(CreateCalendarEventRequestSchema, e),
+        })
+      ).event ?? fail('event'),
+    /** Changes a meeting: its own, or others' with MANAGE_ROOM in the room / MANAGE_EVENTS. */
+    update: async (eventId: string, p: MessageInitShape<typeof UpdateCalendarEventRequestSchema>): Promise<CalendarEvent> =>
+      (
+        await this.rest.call(CalendarEventResponseSchema, 'PATCH', `/api/events/${enc(eventId)}`, {
+          json: Rest.body(UpdateCalendarEventRequestSchema, p),
+        })
+      ).event ?? fail('event'),
+    /** Cancels the meeting, or one occurrence of a series. */
+    delete: async (eventId: string, occurrence?: Date): Promise<void> => {
+      await this.rest.request('DELETE', `/api/events/${enc(eventId)}`, { query: { occurrence: occurrence?.toISOString() } });
+    },
+    /** Busy time of ≤ 20 members in [from, to) (≤ 14 days): the fact of being busy only. */
+    freebusy: async (workspaceId: string, users: string[], from: Date, to: Date): Promise<FreeBusyUser[]> =>
+      (
+        await this.rest.call(FreeBusyResponseSchema, 'GET', `/api/workspaces/${enc(workspaceId)}/freebusy`, {
+          query: { users: users.join(','), from: from.toISOString(), to: to.toISOString() },
+        })
+      ).users,
+    /** Up to 10 earliest common free windows (optionally within working hours and a free room). */
+    suggest: async (workspaceId: string, q: MessageInitShape<typeof SuggestSlotsRequestSchema>): Promise<Slot[]> =>
+      (
+        await this.rest.call(SuggestSlotsResponseSchema, 'POST', `/api/workspaces/${enc(workspaceId)}/freebusy/suggest`, {
+          json: Rest.body(SuggestSlotsRequestSchema, q),
+        })
+      ).slots,
+  };
+
+  // ---- invitations (INVITE_MEMBERS, ADR-0043 / ADR-0051) ----
+
+  readonly invites = {
+    list: async (workspaceId: string): Promise<Invite[]> =>
+      (await this.rest.call(ListInvitesResponseSchema, 'GET', `/api/workspaces/${enc(workspaceId)}/invites`)).invites,
+    /** An invite link: `maxUses` 0 = unlimited, `expiresInSeconds` 0 = never. */
+    create: async (workspaceId: string, o: { maxUses?: number; expiresInSeconds?: number } = {}): Promise<Invite> =>
+      (
+        await this.rest.call(CreateInviteResponseSchema, 'POST', `/api/workspaces/${enc(workspaceId)}/invites`, {
+          json: Rest.body(CreateInviteRequestSchema, o),
+        })
+      ).invite ?? fail('invite'),
+    delete: async (workspaceId: string, inviteId: string): Promise<void> => {
+      await this.rest.request('DELETE', `/api/workspaces/${enc(workspaceId)}/invites/${enc(inviteId)}`);
+    },
+    /** An invitation by mail («… on behalf of bot X»); the same address again only after 24 h. */
+    email: async (workspaceId: string, email: string): Promise<EmailInvite> =>
+      (
+        await this.rest.call(CreateEmailInviteResponseSchema, 'POST', `/api/workspaces/${enc(workspaceId)}/invites/email`, {
+          json: Rest.body(CreateEmailInviteRequestSchema, { email }),
+        })
+      ).invite ?? fail('invite'),
+    listEmail: async (workspaceId: string): Promise<EmailInvite[]> =>
+      (await this.rest.call(ListEmailInvitesResponseSchema, 'GET', `/api/workspaces/${enc(workspaceId)}/invites/email`)).invites,
+    deleteEmail: async (workspaceId: string, inviteId: string): Promise<void> => {
+      await this.rest.request('DELETE', `/api/workspaces/${enc(workspaceId)}/invites/email/${enc(inviteId)}`);
+    },
+  };
+
+  // ---- badges (library: MANAGE_MEMBERS; a member's badge: MANAGE_NICKNAMES) ----
+
+  readonly badges = {
+    list: async (workspaceId: string): Promise<Badge[]> =>
+      (await this.rest.call(ListBadgesResponseSchema, 'GET', `/api/workspaces/${enc(workspaceId)}/badges`)).badges,
+    /** A badge from a picture (PNG / WebP / JPEG ≤ 128 KB, ≤ 256×256): a file or the id of the bot's upload. */
+    create: async (workspaceId: string, name: string, picture: FileInput | string): Promise<Badge> => {
+      const fileId = typeof picture === 'string' ? picture : (await this.uploadTo(workspaceId, picture)).id;
+      return (
+        (
+          await this.rest.call(CreateBadgeResponseSchema, 'POST', `/api/workspaces/${enc(workspaceId)}/badges`, {
+            json: Rest.body(CreateBadgeRequestSchema, { name, fileId }),
+          })
+        ).badge ?? fail('badge')
+      );
+    },
+    update: async (workspaceId: string, badgeId: string, p: { name?: string; fileId?: string }): Promise<Badge> =>
+      (
+        await this.rest.call(UpdateBadgeResponseSchema, 'PATCH', `/api/workspaces/${enc(workspaceId)}/badges/${enc(badgeId)}`, {
+          json: Rest.body(UpdateBadgeRequestSchema, p),
+        })
+      ).badge ?? fail('badge'),
+    delete: async (workspaceId: string, badgeId: string): Promise<void> => {
+      await this.rest.request('DELETE', `/api/workspaces/${enc(workspaceId)}/badges/${enc(badgeId)}`);
+    },
+    /** Gives a member (not a bot) a badge; '' takes it. */
+    set: async (workspaceId: string, userId: string, badgeId: string): Promise<WorkspaceMember> =>
+      (
+        await this.rest.call(SetMemberBadgeResponseSchema, 'PUT', `/api/workspaces/${enc(workspaceId)}/members/${enc(userId)}/badge`, {
+          json: Rest.body(SetMemberBadgeRequestSchema, { badgeId }),
+        })
+      ).member ?? fail('member'),
+  };
+
+  // ---- meeting recording (a bot needs MANAGE_RECORDINGS, ADR-0051) ----
+
+  readonly recording = {
+    /** Starts recording a voice room with a call going (allow_recording, a paired workspace). */
+    start: async (roomId: string): Promise<RoomRecording> =>
+      (await this.rest.call(StartRecordingResponseSchema, 'POST', `/api/rooms/${enc(roomId)}/recording/start`)).recording ?? fail('recording'),
+    stop: async (roomId: string): Promise<RoomRecording> =>
+      (await this.rest.call(StopRecordingResponseSchema, 'POST', `/api/rooms/${enc(roomId)}/recording/stop`)).recording ?? fail('recording'),
+  };
+
+  /** Uploads a file into a workspace (badges, stickers …). */
+  private async uploadTo(workspaceId: string, file: FileInput): Promise<FileMeta> {
+    const r = await this.rest.call(UploadFileResponseSchema, 'POST', `/api/workspaces/${enc(workspaceId)}/files`, {
+      form: () => {
+        const f = new FormData();
+        f.append('file', toBlob(file.data, file.type), file.name);
+        return f;
+      },
+    });
+    return r.file ?? fail('file');
+  }
 
   // ---- events ----
 
