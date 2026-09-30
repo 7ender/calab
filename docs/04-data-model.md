@@ -31,6 +31,7 @@ workspace_members   workspace_id, user_id, role ('owner'|'admin'|'member'|'guest
 workspace_badges    id, workspace_id, name (1..32), file_id → files, position, created_at   (docs/09 #82, ≤ 20 в пространстве)
 workspace_backgrounds id, workspace_id, name (1..40), file_id → files, position, created_at (ADR-0035, ≤ 20 в пространстве)
 workspace_sounds    id, workspace_id, name (1..32), emoji (≤ 64 байт, '' = нет), file_id → files, duration_ms (1..5000), position, created_at (ADR-0036, ≤ 50 в пространстве)
+workspace_apps      id, workspace_id, name (1..40), url (≤ 2048), icon_file_id? → files (SET NULL), position (double), created_by?, created_at, updated_at (ADR-0050, ≤ 20 в пространстве)
 workspace_roles     id, workspace_id, name (1..32), color (0xRRGGBB, 0 = нет), position (UNIQUE в пространстве),
                     permissions bigint, builtin ('owner'|'admin'|'member'|'guest'|NULL), mentionable, created_at
 member_roles        workspace_id, user_id, role_id      PK (workspace_id, user_id, role_id)   (ADR-0026)
@@ -383,6 +384,13 @@ roomAdmin           = MUTE_MEMBERS (позволяет серверные mute/r
 - `sip_calls` — журнал: `number` (E.164), `direction out|in` (`in` — задел под входящие), `room_id` (`SET NULL` при удалении комнаты; `NULL` с самого начала — проверка подключения), `started_by`, `participant_identity` (`sip:<id>` — участник LiveKit), `sip_call_id`, `status dialing|ringing|active|ended|failed`, `reason`, `ended_by`, `started_at/answered_at/ended_at`. Не больше одного живого звонка (`dialing|ringing|active`) на комнату — частичный уникальный индекс. Удаляется только с пространством.
 - Права (ADR-0048): настройки и проверка подключения — `MANAGE_INTEGRATIONS`, журнал — `VIEW_JOURNALS` (звонки комнат, которых читающий не видит, пропускаются).
 - Звонить: `PLACE_CALLS` + `VIEW_ROOM` + `CONNECT` в голосовой комнате (не гость, не архивная), звонящий сейчас в звонке этой комнаты; 20 звонков в час на пространство (Redis), номер в `allowed_prefixes`. Завершить: звонивший или `MUTE_MEMBERS`. Когда из звонка комнаты ушёл последний человек (или бот) — телефонная линия кладётся (`reason = empty`); выключение телефонии кладёт все линии пространства (`disabled`). Звонок длится не больше 2 ч, гудки — до 45 с.
+
+## Веб-приложения пространства (ADR-0050, миграция 00054)
+- `workspace_apps` — ярлыки сайтов в рейле под иконкой пространства: название 1..40, адрес ≤ 2048, иконка (своя загрузка в это пространство, картинка, не стикер — правило бейджей; нет — первая буква на цветной плашке), `position` дробная (перенос — между соседями, при исчерпании зазора сервер перенумеровывает 1..n). ≤ 20 на пространство (advisory-lock на создание и перенос).
+- Адрес: `https://` куда угодно; `http://` — только на частный хост (localhost / *.localhost, 127/8, [::1], 10/8, 172.16/12, 192.168/16, *.local, одиночное имя без точки); без `user:pass@`, пробелов, управляющих символов и `\`; хост и порт синтаксически верны. Разбор ручной, одинаковый в Go (`workspaces.ValidateAppURL`) и TS (`apps/desktop/src/shared/appUrl.ts`), общие векторы — `proto/testdata/app_urls.json`. Сервер по адресу **не ходит** (SSRF нет).
+- Права: видят все участники, кроме гостей и ботов (маршруты — `botDeny`, из READY ботам и гостям не отдаются); создать / изменить / удалить / переставить — `MANAGE_INTEGRATIONS` (ADR-0048). Чужое пространство и гостю — 404 на `…/workspace-apps/{id}`, гостю на список — 403. Иконку (`files.CanRead`) читают участники пространства, кроме гостей; в чистку сирот не попадает.
+- REST: `GET|POST /api/workspaces/{id}/apps`, `PATCH|DELETE /api/workspace-apps/{id}`, `PUT /api/workspace-apps/{id}/position {after_app_id, before_app_id}` → все приложения по порядку. События — `WORKSPACE_APP_UPSERT` / `WORKSPACE_APP_DELETE` (docs/05).
+- Десктоп: сайт — `WebContentsView` main-процесса с сессией `persist:app-<id>` (логины на сайте живут между запусками, изолированы от Calab и друг от друга); удаление приложения и конец сессии Calab (выход, отзыв) чистят данные сайта на устройстве. Ответы на запросы разрешений хранятся локально (`userData/web-app-permissions.json`) по приложению.
 
 ## Auth (MVP)
 
