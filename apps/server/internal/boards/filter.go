@@ -178,6 +178,14 @@ func condition(c *v1.TaskCondition, env FilterEnv, a *Args) (string, error) {
 		return flag("EXISTS (SELECT 1 FROM messages x WHERE x.room_id = t.room_id AND x.deleted_at IS NULL)", c)
 	case v1.TaskField_TASK_FIELD_ARCHIVED:
 		return flag("t.archived_at IS NOT NULL", c)
+	case v1.TaskField_TASK_FIELD_APPROVAL_STATE:
+		states, err := approvalStates(c.GetValues())
+		if err != nil {
+			return "", err
+		}
+		return inList(ApprovalStateSQL, a.Add(states)+"::text[]", op, false)
+	case v1.TaskField_TASK_FIELD_APPROVER_PENDING:
+		return exists("SELECT 1 FROM task_approvers x WHERE x.task_id = t.id AND x.state = 'pending'", "x.user_id", c, env, a)
 	case v1.TaskField_TASK_FIELD_TEXT:
 		if op != v1.TaskOp_TASK_OP_CONTAINS || len(c.GetValues()) == 0 {
 			return "", errOp
@@ -312,6 +320,35 @@ func statusTypes(vals []string) ([]string, error) {
 			return nil, fmt.Errorf("invalid status type %q", v)
 		}
 		out = append(out, t)
+	}
+	if len(out) == 0 {
+		return nil, fmt.Errorf("values required")
+	}
+	return out, nil
+}
+
+// ApprovalStateSQL is a task's derived approval state (ADR-0049; Tally.State in SQL): 'none' |
+// 'rejected' | 'approved' | 'pending'.
+const ApprovalStateSQL = `(SELECT CASE WHEN count(*) = 0 THEN 'none'
+	WHEN count(*) FILTER (WHERE x.state = 'rejected') > 0 THEN 'rejected'
+	WHEN count(*) FILTER (WHERE x.state = 'approved') >=
+		CASE WHEN t.approval_required = 0 OR t.approval_required > count(*) THEN count(*) ELSE t.approval_required END THEN 'approved'
+	ELSE 'pending' END FROM task_approvers x WHERE x.task_id = t.id)`
+
+var approvalStateNames = map[string]string{"none": "none", "pending": "pending", "approved": "approved", "rejected": "rejected"}
+
+func approvalStates(vals []string) ([]string, error) {
+	out := make([]string, 0, len(vals))
+	for _, v := range vals {
+		s := strings.ToLower(strings.TrimPrefix(strings.ToUpper(strings.TrimSpace(v)), "TASK_APPROVAL_STATE_"))
+		if n, err := strconv.Atoi(s); err == nil {
+			s = strings.ToLower(strings.TrimPrefix(v1.TaskApprovalState(n).String(), "TASK_APPROVAL_STATE_")) //nolint:gosec // validated below
+		}
+		st, ok := approvalStateNames[s]
+		if !ok {
+			return nil, fmt.Errorf("invalid approval state %q", v)
+		}
+		out = append(out, st)
 	}
 	if len(out) == 0 {
 		return nil, fmt.Errorf("values required")

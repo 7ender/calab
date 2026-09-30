@@ -906,6 +906,23 @@ func (s *Service) deleteStatus(w http.ResponseWriter, r *http.Request) error {
 		if from.IsDefault {
 			return httpx.Conflict("the default status cannot be deleted; make another one the default first")
 		}
+		// Moving the tasks forward is a status change like any other (ADR-0049 §2): refused
+		// while one of them waits for approval — pick another move_to.
+		if Forward(*from, *dst) {
+			rows, err := queryTasks(r.Context(), tx, "WHERE t.status_id = $1", sid)
+			if err != nil {
+				return err
+			}
+			tls, err := tallies(r.Context(), q, rows)
+			if err != nil {
+				return err
+			}
+			for _, x := range rows {
+				if err := checkApprovalGate(tls[x.ID], *from, *dst); err != nil {
+					return err
+				}
+			}
+		}
 		if moved, err = q.MoveStatusTasks(r.Context(), sqlc.MoveStatusTasksParams{FromID: sid, ToID: to}); err != nil {
 			return err
 		}

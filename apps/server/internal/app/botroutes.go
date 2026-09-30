@@ -287,6 +287,8 @@ var botRoutes = map[string]botAccess{
 	"POST /api/tasks/{id}/archive":             botAllow,
 	"POST /api/tasks/{id}/restore":             botAllow,
 	"PUT /api/tasks/{id}/assignees":            botAllow,
+	"PUT /api/tasks/{id}/approvers":            botAllow, // ADR-0049: bots set approvers like people, never approve
+	"POST /api/tasks/{id}/approval":            botDeny,
 	"PUT /api/tasks/{id}/relations":            botAllow,
 	"DELETE /api/tasks/{id}/relations":         botAllow,
 	"PUT /api/tasks/{id}/subscription":         botAllow,

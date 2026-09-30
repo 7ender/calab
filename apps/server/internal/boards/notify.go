@@ -29,6 +29,10 @@ var noticeKinds = map[notifications.TaskKind]v1.TaskNoticeKind{
 	notifications.TaskMentioned: v1.TaskNoticeKind_TASK_NOTICE_KIND_MENTIONED,
 	notifications.TaskComment:   v1.TaskNoticeKind_TASK_NOTICE_KIND_COMMENT,
 	notifications.TaskStatus:    v1.TaskNoticeKind_TASK_NOTICE_KIND_STATUS,
+
+	notifications.TaskApprovalRequested: v1.TaskNoticeKind_TASK_NOTICE_KIND_APPROVAL_REQUESTED,
+	notifications.TaskApproved:          v1.TaskNoticeKind_TASK_NOTICE_KIND_APPROVED,
+	notifications.TaskRejected:          v1.TaskNoticeKind_TASK_NOTICE_KIND_REJECTED,
 }
 
 func actsOf(acts []sqlc.TaskActivity, taskID uuid.UUID) []sqlc.TaskActivity {
@@ -59,7 +63,7 @@ func sees(ctx context.Context, q *sqlc.Queries, boardID uuid.UUID, users []uuid.
 }
 
 // decide applies the users' task levels to candidates of one kind and marks the notified ones.
-func decide(ctx context.Context, q *sqlc.Queries, t taskRow, actor uuid.UUID, kind notifications.TaskKind, users []uuid.UUID, msg uuid.UUID, c *change) error {
+func decide(ctx context.Context, q *sqlc.Queries, t taskRow, actor uuid.UUID, kind notifications.TaskKind, users []uuid.UUID, msg uuid.UUID, mandatory map[uuid.UUID]bool, c *change) error {
 	users = slices.DeleteFunc(slices.Clone(users), func(u uuid.UUID) bool { return u == actor })
 	if len(users) == 0 {
 		return nil
@@ -80,7 +84,7 @@ func decide(ctx context.Context, q *sqlc.Queries, t taskRow, actor uuid.UUID, ki
 	for _, l := range levels {
 		s, subscribed := sub[l.UserID]
 		f := notifications.TaskFacts{Kind: kind, Level: notifications.LevelFromDB(l.TaskLevel, v1.NotificationLevel_NOTIFICATION_LEVEL_ALL),
-			Subscribed: subscribed, Muted: s.Muted, Workspace: l.Muted}
+			Subscribed: subscribed, Muted: s.Muted, Workspace: l.Muted, Mandatory: mandatory[l.UserID]}
 		if !notifications.TaskNotifies(f) {
 			continue
 		}
@@ -115,7 +119,7 @@ func (s *Service) notifyDirect(ctx context.Context, q *sqlc.Queries, t taskRow, 
 		if err := q.Subscribe(ctx, sqlc.SubscribeParams{TaskID: t.ID, UserIds: users}); err != nil {
 			return err
 		}
-		if err := decide(ctx, q, t, actor, g.kind, users, msg, c); err != nil {
+		if err := decide(ctx, q, t, actor, g.kind, users, msg, nil, c); err != nil {
 			return err
 		}
 	}
@@ -135,7 +139,7 @@ func (s *Service) notifySubscribers(ctx context.Context, q *sqlc.Queries, t task
 	if users, err = sees(ctx, q, t.BoardID, users); err != nil {
 		return err
 	}
-	return decide(ctx, q, t, actor, kind, users, msg, c)
+	return decide(ctx, q, t, actor, kind, users, msg, nil, c)
 }
 
 // sendNotices sends every notified user the task as they see it, with the notice.
@@ -152,7 +156,10 @@ func (s *Service) sendNotices(ctx context.Context, taskID uuid.UUID, ns []notice
 		if err != nil {
 			return
 		}
-		tn := &v1.TaskNotice{Kind: noticeKinds[n.kind], ActorId: n.actor.String()}
+		tn := &v1.TaskNotice{Kind: noticeKinds[n.kind]}
+		if n.actor != uuid.Nil { // the approval reminder has no actor
+			tn.ActorId = n.actor.String()
+		}
 		if n.message != uuid.Nil {
 			tn.MessageId = n.message.String()
 		}

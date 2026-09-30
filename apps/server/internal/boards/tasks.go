@@ -692,6 +692,10 @@ func (s *Service) createTask(w http.ResponseWriter, r *http.Request) error {
 		if err != nil {
 			return err
 		}
+		approvers, required, err := approversIn(r.Context(), q, boardID, req.GetApproverIds(), req.GetApprovalRequired(), "approverIds", "approvalRequired")
+		if err != nil {
+			return err
+		}
 		number, err := q.NextTaskNumber(r.Context(), boardID)
 		if err != nil {
 			return err
@@ -706,17 +710,22 @@ func (s *Service) createTask(w http.ResponseWriter, r *http.Request) error {
 		}
 		t := taskRow{BoardID: boardID, Number: number, Title: title, Description: desc, StatusID: st.ID, Priority: prio,
 			CreatedBy: &me, Estimate: est, StartOn: start, DueOn: due, ParentID: parent, MilestoneID: ms, Position: pos,
-			RoomID: roomID, BoardKey: b.Key, WorkspaceID: b.WorkspaceID}
+			RoomID: roomID, BoardKey: b.Key, WorkspaceID: b.WorkspaceID, ApprovalRequired: required}
 		finishFields(&t, st.Type, me, now)
 		if taskID, err = q.InsertTask(r.Context(), sqlc.InsertTaskParams{
 			BoardID: t.BoardID, Number: t.Number, Title: t.Title, Description: t.Description, StatusID: t.StatusID,
 			Priority: t.Priority, CreatedBy: t.CreatedBy, Estimate: t.Estimate, StartOn: t.StartOn, DueOn: t.DueOn,
 			ParentID: t.ParentID, MilestoneID: t.MilestoneID, Position: t.Position, RoomID: t.RoomID,
-			StartedAt: t.StartedAt, CompletedAt: t.CompletedAt, CompletedBy: t.CompletedBy,
+			StartedAt: t.StartedAt, CompletedAt: t.CompletedAt, CompletedBy: t.CompletedBy, ApprovalRequired: required,
 		}); err != nil {
 			return err
 		}
 		t.ID = taskID
+		for _, u := range approvers {
+			if err := q.InsertTaskApprover(r.Context(), sqlc.InsertTaskApproverParams{TaskID: taskID, UserID: u, AddedBy: &me}); err != nil {
+				return err
+			}
+		}
 		if len(labels) > 0 {
 			if err := q.InsertTaskLabels(r.Context(), sqlc.InsertTaskLabelsParams{TaskID: taskID, LabelIds: labels}); err != nil {
 				return err
@@ -734,6 +743,9 @@ func (s *Service) createTask(w http.ResponseWriter, r *http.Request) error {
 		if fromMsg != nil {
 			after["from_message_id"] = fromMsg.String()
 		}
+		if len(approvers) > 0 {
+			after["approvers"], after["approval_required"] = idsJSON(approvers), int(required)
+		}
 		if parent != nil {
 			after["parent_id"] = parent.String()
 			c.tasks = append(c.tasks, *parent)
@@ -741,9 +753,12 @@ func (s *Service) createTask(w http.ResponseWriter, r *http.Request) error {
 		if err := c.record(r.Context(), q, t, me, "created", nil, after); err != nil {
 			return err
 		}
-		// The author subscribes; the assignees are subscribed and notified; so are the users
-		// @mentioned in the description.
+		// The author subscribes; the approvers (first: their notice is mandatory), the assignees
+		// and the users @mentioned in the description are subscribed and notified.
 		if err := q.Subscribe(r.Context(), sqlc.SubscribeParams{TaskID: taskID, UserIds: []uuid.UUID{me}}); err != nil {
+			return err
+		}
+		if err := s.notifyApprovers(r.Context(), q, t, me, approvers, &c); err != nil {
 			return err
 		}
 		mentioned, _ := messages.ParseMentions(desc)
@@ -1062,6 +1077,19 @@ func (s *Service) updateTask(w http.ResponseWriter, r *http.Request) error {
 				}
 			}
 		}
+		var attIDs, attWas []uuid.UUID
+		attChanged := false
+		if req.GetSetAttachments() {
+			if attIDs, err = fileIDs(req.GetAttachmentIds()); err != nil {
+				return err
+			}
+			if attWas, err = q.TaskAttachmentIDs(r.Context(), t.ID); err != nil {
+				return err
+			}
+			attChanged = !slices.Equal(attWas, attIDs)
+		}
+		// A new title, description or description attachments reset the votes (ADR-0049 §3).
+		resets := t.Title != old.Title || t.Description != old.Description || attChanged
 		from := it.statuses[t.StatusID]
 		to := from
 		if req.StatusId != nil {
@@ -1074,6 +1102,18 @@ func (s *Service) updateTask(w http.ResponseWriter, r *http.Request) error {
 				return httpx.Validation("statusId", "a status of this board is required")
 			}
 			to, t.StatusID = x, sid
+		}
+		if t.StatusID != old.StatusID {
+			tl, err := taskTally(r.Context(), q, old)
+			if err != nil {
+				return err
+			}
+			if resets {
+				tl = tl.reset() // the same request resets the votes: they do not count
+			}
+			if err := checkApprovalGate(tl, from, to); err != nil {
+				return err
+			}
 		}
 		after, err := parseOptID("afterTaskId", req.GetAfterTaskId())
 		if err != nil {
@@ -1124,22 +1164,17 @@ func (s *Service) updateTask(w http.ResponseWriter, r *http.Request) error {
 				}
 			}
 		}
-		if req.GetSetAttachments() {
-			ids, err := fileIDs(req.GetAttachmentIds())
-			if err != nil {
+		if attChanged {
+			if err := attach(r.Context(), q, t, attIDs, me); err != nil {
 				return err
 			}
-			was, err := q.TaskAttachmentIDs(r.Context(), t.ID)
-			if err != nil {
+			if err := c.record(r.Context(), q, t, me, "attachments", map[string]any{"file_ids": idsJSON(attWas)}, map[string]any{"file_ids": idsJSON(attIDs)}); err != nil {
 				return err
 			}
-			if !slices.Equal(was, ids) {
-				if err := attach(r.Context(), q, t, ids, me); err != nil {
-					return err
-				}
-				if err := c.record(r.Context(), q, t, me, "attachments", map[string]any{"file_ids": idsJSON(was)}, map[string]any{"file_ids": idsJSON(ids)}); err != nil {
-					return err
-				}
+		}
+		if resets {
+			if err := s.resetApprovals(r.Context(), q, t, me, &c); err != nil {
+				return err
 			}
 		}
 		for _, p := range []*uuid.UUID{old.ParentID, t.ParentID} {
@@ -1296,6 +1331,14 @@ func (s *Service) moveBoard(r *http.Request, q *sqlc.Queries, tx pgx.Tx, t *task
 	}
 	if to == nil {
 		return httpx.Conflict("the target board has no status")
+	}
+	// Approvers and votes move along; a task not approved may not land in COMPLETED (ADR-0049 §2).
+	tl, err := taskTally(r.Context(), q, *t)
+	if err != nil {
+		return err
+	}
+	if err := checkApprovalGate(tl, from, *to); err != nil {
+		return err
 	}
 	cur, err := q.ListTaskLabelIDs(r.Context(), []uuid.UUID{t.ID})
 	if err != nil {

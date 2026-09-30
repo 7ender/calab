@@ -262,7 +262,7 @@ func Snapshot(ctx context.Context, q *sqlc.Queries, wsID uuid.UUID, m perm.Membe
 // taskCols are the columns of taskRow, over tasks t JOIN boards b.
 const taskCols = `t.id, t.board_id, t.number, t.title, t.description, t.status_id, t.priority, t.created_by,
 	t.estimate, t.start_on, t.due_on, t.parent_id, t.milestone_id, t.position, t.room_id, t.created_at,
-	t.updated_at, t.started_at, t.completed_at, t.completed_by, t.archived_at, b.key, b.workspace_id`
+	t.updated_at, t.started_at, t.completed_at, t.completed_by, t.archived_at, b.key, b.workspace_id, t.approval_required`
 
 // taskRow is a task with its board's key and workspace.
 type taskRow struct {
@@ -289,6 +289,8 @@ type taskRow struct {
 	ArchivedAt  *time.Time
 	BoardKey    string
 	WorkspaceID uuid.UUID
+	// ApprovalRequired: approvals needed, 0 = all (ADR-0049).
+	ApprovalRequired int16
 }
 
 func scanTasks(rows interface {
@@ -303,7 +305,7 @@ func scanTasks(rows interface {
 		var t taskRow
 		if err := rows.Scan(&t.ID, &t.BoardID, &t.Number, &t.Title, &t.Description, &t.StatusID, &t.Priority, &t.CreatedBy,
 			&t.Estimate, &t.StartOn, &t.DueOn, &t.ParentID, &t.MilestoneID, &t.Position, &t.RoomID, &t.CreatedAt,
-			&t.UpdatedAt, &t.StartedAt, &t.CompletedAt, &t.CompletedBy, &t.ArchivedAt, &t.BoardKey, &t.WorkspaceID); err != nil {
+			&t.UpdatedAt, &t.StartedAt, &t.CompletedAt, &t.CompletedBy, &t.ArchivedAt, &t.BoardKey, &t.WorkspaceID, &t.ApprovalRequired); err != nil {
 			return nil, err
 		}
 		out = append(out, t)
@@ -385,6 +387,21 @@ func tasksProto(ctx context.Context, q *sqlc.Queries, ts []taskRow, viewer uuid.
 				out[i].Relations = append(out[i].Relations, rel)
 			}
 		}
+	}
+	// Approvals (ADR-0049): the votes of all tasks in one query; the state is derived here.
+	aps, err := q.ListTaskApprovers(ctx, ids)
+	if err != nil {
+		return nil, err
+	}
+	states := make(map[uuid.UUID][]string, len(ts))
+	for _, a := range aps {
+		t := out[idx[a.TaskID]]
+		t.Approvers = append(t.Approvers, approverProto(a))
+		states[a.TaskID] = append(states[a.TaskID], a.State)
+	}
+	for i, t := range ts {
+		out[i].ApprovalRequired = uint32(max(t.ApprovalRequired, 0)) //nolint:gosec // CHECK 0..10
+		out[i].ApprovalState = TallyOf(states[t.ID], int(t.ApprovalRequired)).State()
 	}
 	cs, err := q.TaskCounts(ctx, ids)
 	if err != nil {
