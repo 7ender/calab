@@ -58,8 +58,8 @@ func linkWindow(s Series, now time.Time) (notBefore, expires time.Time, ok bool)
 }
 
 // linkBits: the bits a guest link of the organizer grants in the room, 0 = the organizer may
-// not make one (no MANAGE_ROOM there, or the workspace is suspended). Not wider than the
-// organizer's own bits (no escalation through links), unless they are an administrator.
+// not make one (no INVITE_GUESTS there, ADR-0043, or the workspace is suspended). Not wider
+// than the organizer's own bits (no escalation through links), unless they are an administrator.
 func linkBits(ctx context.Context, q *sqlc.Queries, b *bundle) (perm.Bits, error) {
 	if b.ev.RoomID == nil {
 		return 0, nil
@@ -74,7 +74,7 @@ func linkBits(ctx context.Context, q *sqlc.Queries, b *bundle) (perm.Bits, error
 	if err != nil {
 		return 0, err
 	}
-	if !acc.Bits.Has(perm.ManageRoom) {
+	if !acc.Bits.Has(perm.InviteGuests) {
 		return 0, nil
 	}
 	bits := guestBits
