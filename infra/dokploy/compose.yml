@@ -82,6 +82,9 @@ services:
       - DATABASE_URL=postgres://calaba:${POSTGRES_PASSWORD:?}@calab-postgres:5432/calaba
       - REDIS_URL=redis://:${REDIS_PASSWORD:?}@calab-valkey:6379
       - JWT_SECRET=${JWT_SECRET:?}
+      - ACCESS_TOKEN_TTL=${ACCESS_TOKEN_TTL:-24h}
+      - REFRESH_TOKEN_TTL=${REFRESH_TOKEN_TTL:-8760h}
+      - REDIS_KEY_PREFIX=${REDIS_KEY_PREFIX:-}   # только для общего Valkey; пусто = как раньше
       - LIVEKIT_URL=wss://rtc.${DOMAIN}
       - LIVEKIT_INTERNAL_URL=http://calab-livekit:7880
       - LIVEKIT_API_KEY=${LIVEKIT_API_KEY:?}
