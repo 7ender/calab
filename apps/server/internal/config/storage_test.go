@@ -49,3 +49,28 @@ func TestStorageS3(t *testing.T) {
 		t.Fatal("secret in the error")
 	}
 }
+
+// The recordings volume is required only with STORAGE_DRIVER=fs: with s3 the egress uploads
+// recordings into the files bucket.
+func TestRecordingsVolumeOnlyForFS(t *testing.T) {
+	t.Setenv("DATABASE_URL", "postgres://x@localhost/x")
+	t.Setenv("REDIS_URL", "redis://localhost:6379/0")
+	t.Setenv("JWT_SECRET", "0123456789abcdef0123456789abcdef")
+	t.Setenv("RECORDING_EGRESS_DIR", "out")
+	if _, err := Load(); err == nil || !strings.Contains(err.Error(), "RECORDING_EGRESS_DIR") {
+		t.Fatalf("fs, relative egress dir: %v", err)
+	}
+
+	t.Setenv("STORAGE_DRIVER", "s3")
+	t.Setenv("STORAGE_S3_ENDPOINT", "https://s3.example.test")
+	t.Setenv("STORAGE_S3_BUCKET", "files-bucket")
+	t.Setenv("STORAGE_S3_ACCESS_KEY_ID", "key-id")
+	t.Setenv("STORAGE_S3_SECRET_ACCESS_KEY", "test-secret")
+	if _, err := Load(); err != nil {
+		t.Fatalf("s3 without a recordings volume: %v", err)
+	}
+	t.Setenv("RECORDING_MAX_CONCURRENT", "0")
+	if _, err := Load(); err == nil || !strings.Contains(err.Error(), "RECORDING_MAX_CONCURRENT") || strings.Contains(err.Error(), "RECORDINGS_PATH") {
+		t.Fatalf("s3, no concurrent recordings: %v", err)
+	}
+}

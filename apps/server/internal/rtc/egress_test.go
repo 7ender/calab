@@ -1,7 +1,9 @@
 package rtc
 
 import (
+	"context"
 	"encoding/json"
+	"net/http/httptest"
 	"testing"
 	"time"
 
@@ -45,5 +47,57 @@ func TestEgressInfoWireFormats(t *testing.T) {
 	}
 	if numeric.Status != EgressActive || numeric.Ended() || numeric.File().Size != 5 || numeric.File().Duration != 7 {
 		t.Fatalf("numeric / legacy file: %+v", numeric)
+	}
+}
+
+// egressRecorder is LiveKit's generated twirp server side of StartRoomCompositeEgress: it keeps
+// the request as LiveKit decodes it (unknown JSON fields are dropped there, not rejected).
+type egressRecorder struct {
+	livekit.Egress
+	got *livekit.RoomCompositeEgressRequest
+}
+
+func (f *egressRecorder) StartRoomCompositeEgress(_ context.Context, req *livekit.RoomCompositeEgressRequest) (*livekit.EgressInfo, error) {
+	f.got = req
+	return &livekit.EgressInfo{EgressId: "EG_1", RoomName: req.GetRoomName(), Status: livekit.EgressStatus_EGRESS_STARTING}, nil
+}
+
+// The file output of a recording: a path on the shared volume, or an upload into the bucket.
+func TestStartAudioRecordingRequest(t *testing.T) {
+	rec := &egressRecorder{}
+	srv := httptest.NewServer(livekit.NewEgressServer(rec))
+	defer srv.Close()
+	eg := NewEgress(srv.URL, "key", "secret")
+	ctx := context.Background()
+
+	info, err := eg.StartAudioRecording(ctx, "ws_a_room_b", FileOutput{Filepath: "/out/w/r.mp4"})
+	if err != nil || info.EgressID != "EG_1" {
+		t.Fatalf("volume: %+v %v", info, err)
+	}
+	if !rec.got.GetAudioOnly() || rec.got.GetRoomName() != "ws_a_room_b" || len(rec.got.GetFileOutputs()) != 1 {
+		t.Fatalf("volume: %v", rec.got)
+	}
+	f := rec.got.GetFileOutputs()[0]
+	if f.GetFileType() != livekit.EncodedFileType_MP4 || f.GetFilepath() != "/out/w/r.mp4" || f.GetS3() != nil || f.GetDisableManifest() {
+		t.Fatalf("volume file output: %v", f)
+	}
+
+	up := &S3Upload{Endpoint: "https://s3.example.test", Region: "region-1", Bucket: "files", AccessKey: "test-key-id", Secret: "test-secret", ForcePathStyle: true}
+	if _, err := eg.StartAudioRecording(ctx, "ws_a_room_b", FileOutput{Filepath: "calab/files/w/r.mp4", S3: up}); err != nil {
+		t.Fatal(err)
+	}
+	f = rec.got.GetFileOutputs()[0]
+	s3 := f.GetS3()
+	if f.GetFileType() != livekit.EncodedFileType_MP4 || f.GetFilepath() != "calab/files/w/r.mp4" || !f.GetDisableManifest() || s3 == nil ||
+		s3.GetEndpoint() != up.Endpoint || s3.GetRegion() != up.Region || s3.GetBucket() != up.Bucket ||
+		s3.GetAccessKey() != up.AccessKey || s3.GetSecret() != up.Secret || !s3.GetForcePathStyle() {
+		t.Fatalf("bucket file output: %v", f)
+	}
+	up.ForcePathStyle = false
+	if _, err := eg.StartAudioRecording(ctx, "ws_a_room_b", FileOutput{Filepath: "w/r.mp4", S3: up}); err != nil {
+		t.Fatal(err)
+	}
+	if f = rec.got.GetFileOutputs()[0]; f.GetFilepath() != "w/r.mp4" || f.GetS3().GetForcePathStyle() {
+		t.Fatalf("virtual-hosted style: %v", f)
 	}
 }

@@ -3,23 +3,21 @@
 //
 // A workspace pairs with GPTunneL once (a device token, sealed at rest). Any member (not a
 // guest) starts the recording of a voice room: the server starts a LiveKit Egress (room
-// composite, audio only, MP4 on the shared recordings volume) and announces ROOM_RECORDING.
+// composite, audio only, MP4 on the shared recordings volume or uploaded into the files bucket,
+// storage.go) and announces ROOM_RECORDING.
 // When the egress ends (stop, auto-stop, the call ended) the file is uploaded to GPTunneL in
 // resumable chunks by a single worker (Valkey lock, Postgres queue with leases, retries with
 // backoff), GPTunneL's status is polled until done or failed, and a card in the room chat
 // follows each step. After done the file becomes the card's audio attachment (kept
 // RECORDING_KEEP_DAYS) and the summary and transcript are copied from GPTunneL (result.go);
-// other local files go away after 7 days.
+// other recording files go away after 7 days.
 package recording
 
 import (
 	"context"
 	"errors"
-	"fmt"
 	"log/slog"
 	"net/http"
-	"os"
-	"path/filepath"
 	"regexp"
 	"strings"
 	"time"
@@ -62,6 +60,9 @@ type Config struct {
 	MaxConcurrent int    // RECORDING_MAX_CONCURRENT, server-wide
 	Secret        []byte // JWT_SECRET: seals device tokens
 	WebURL        string // GPTUNNEL_WEB_URL: app.gptunnel.ai links are shown on it (docs/17 §4)
+	// Bucket (STORAGE_DRIVER=s3) keeps the recordings in the files bucket instead of the volume:
+	// the egress uploads them there itself, Dir and EgressDir are not used (storage.go).
+	Bucket *Bucket
 }
 
 // Service implements the integration and recording endpoints and the background worker.
@@ -69,7 +70,8 @@ type Service struct {
 	cfg    Config
 	db     *db.DB
 	redis  rueidis.Client
-	eg     rtc.Egress // nil = voice (LiveKit) not configured
+	eg     rtc.Egress  // nil = voice (LiveKit) not configured
+	store  recordStore // where the recordings' files are: the volume or the bucket
 	gpt    *gptunnel.Client
 	files  *files.Service // audio attachments of done recordings (SetFiles); nil = not kept
 	box    *sealbox.Box
@@ -89,7 +91,8 @@ type Service struct {
 	UploadFor     time.Duration   // give up retrying an upload after this (24 h)
 	PollFor       time.Duration   // give up polling GPTunneL after this (2 h)
 	PollMin       time.Duration   // first status poll after the upload, and the shortest interval (20 s)
-	KeepFiles     time.Duration   // local files of failed recordings (7 days)
+	KeepFiles     time.Duration   // files of failed recordings (7 days)
+	StorageWait   time.Duration   // an ended recording waits for a bucket that does not answer (30 min)
 	KeepAudio     time.Duration   // audio attachments of done recordings (RECORDING_KEEP_DAYS, 30 days)
 	ResultBackoff []time.Duration // waits between result attempts; past the last one it gives up
 	Now           func() time.Time
@@ -103,8 +106,12 @@ func New(cfg Config, d *db.DB, r rueidis.Client, eg rtc.Egress, gpt *gptunnel.Cl
 	if cfg.MaxConcurrent < 1 {
 		cfg.MaxConcurrent = 1
 	}
+	var store recordStore = volume{dir: cfg.Dir, egressDir: cfg.EgressDir}
+	if cfg.Bucket != nil {
+		store = *cfg.Bucket
+	}
 	return &Service{
-		cfg: cfg, db: d, redis: r, eg: eg, gpt: gpt, events: ev,
+		cfg: cfg, db: d, redis: r, eg: eg, gpt: gpt, events: ev, store: store,
 		box:    sealbox.New("calaba/workspace-integration/v1", cfg.Secret),
 		system: messages.NewSystem(d, ev),
 		voice:  voice.Store{C: r},
@@ -114,7 +121,7 @@ func New(cfg Config, d *db.DB, r rueidis.Client, eg rtc.Egress, gpt *gptunnel.Cl
 		Tick:   5 * time.Second, LockTTL: 30 * time.Second, Lease: 15 * time.Minute,
 		MaxDuration: gptunnel.MaxDuration - 2*time.Minute, EmptyTimeout: 2 * time.Minute,
 		UploadFor: 24 * time.Hour, PollFor: 2 * time.Hour, PollMin: 20 * time.Second, KeepFiles: 7 * 24 * time.Hour,
-		KeepAudio: 30 * 24 * time.Hour, ResultBackoff: defaultResultBackoff,
+		KeepAudio: 30 * 24 * time.Hour, ResultBackoff: defaultResultBackoff, StorageWait: 30 * time.Minute,
 		Now: time.Now,
 	}
 }
@@ -365,12 +372,9 @@ func (s *Service) participant(r *http.Request) (sqlc.Room, perm.RoomAccess, erro
 	return room, acc, nil
 }
 
-// File layout on the recordings volume: <workspace>/<recording>.mp4.
+// File of a recording: <workspace>/<recording>.mp4, under the recordings volume or a blob key
+// in the files bucket (storage.go).
 func recordingFile(wsID, id uuid.UUID) string { return wsID.String() + "/" + id.String() + ".mp4" }
-
-func (s *Service) localPath(file string) string {
-	return filepath.Join(s.cfg.Dir, filepath.FromSlash(file))
-}
 
 func (s *Service) start(w http.ResponseWriter, r *http.Request) error {
 	room, acc, err := s.participant(r)
@@ -435,16 +439,11 @@ func (s *Service) start(w http.ResponseWriter, r *http.Request) error {
 		}
 		return httpx.Unavailable(cause)
 	}
-	// The egress writes into the workspace directory: it runs as another user, so the
-	// directory is made writable for it (the volume holds nothing else).
-	dir := filepath.Dir(s.localPath(rec.File))
-	if err := os.MkdirAll(dir, 0o777); err != nil { //nolint:gosec // G301: shared with the egress container
-		return fail(fmt.Errorf("recording: create %s: %w", dir, err))
+	out, err := s.store.output(rec.File)
+	if err != nil {
+		return fail(err)
 	}
-	if err := os.Chmod(dir, 0o777); err != nil { //nolint:gosec // G302: see above
-		return fail(fmt.Errorf("recording: chmod %s: %w", dir, err))
-	}
-	info, err := s.eg.StartAudioRecording(ctx, voice.RoomName(acc.WorkspaceID, room.ID), strings.TrimRight(s.cfg.EgressDir, "/")+"/"+rec.File)
+	info, err := s.eg.StartAudioRecording(ctx, voice.RoomName(acc.WorkspaceID, room.ID), out)
 	if err != nil {
 		slog.WarnContext(ctx, "recording: start egress", "room", room.ID, "err", err)
 		return fail(err)

@@ -5,7 +5,6 @@ import (
 	"io/fs"
 	"log/slog"
 	"net/http"
-	"os"
 
 	v1 "github.com/calaba/calaba/server/gen/calaba/v1"
 	"github.com/calaba/calaba/server/internal/db"
@@ -96,11 +95,15 @@ func (s *Service) reupload(w http.ResponseWriter, r *http.Request) error {
 		s.card(r.Context(), rec)
 		return errFileGone
 	}
-	if st, err := os.Stat(s.localPath(rec.File)); err != nil || !st.Mode().IsRegular() || st.Size() == 0 {
+	if size, err := s.store.stat(r.Context(), rec.File); err != nil || size == 0 {
+		if errors.Is(err, errUnavailable) {
+			return httpx.Unavailable(err)
+		}
 		if err != nil && !errors.Is(err, fs.ErrNotExist) {
 			return err
 		}
-		// Gone from the volume behind the database's back: remember it, the card hides the button.
+		// Gone from the volume (or the bucket) behind the database's back: remember it, the card
+		// hides the button.
 		s.forgetFile(r.Context(), rec)
 		return errFileGone
 	}

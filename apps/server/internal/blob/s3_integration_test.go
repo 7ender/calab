@@ -45,7 +45,8 @@ func testS3(t *testing.T) *S3 {
 	t.Cleanup(func() {
 		ctx := context.Background()
 		c := s.api.(*s3.Client)
-		p := s3.NewListObjectsV2Paginator(c, &s3.ListObjectsV2Input{Bucket: &s.bucket, Prefix: &s.prefix})
+		prefix := s.keys.ObjectKey("") // "<KeyPrefix>/"
+		p := s3.NewListObjectsV2Paginator(c, &s3.ListObjectsV2Input{Bucket: &s.bucket, Prefix: &prefix})
 		for p.HasMorePages() {
 			page, err := p.NextPage(ctx)
 			if err != nil {
@@ -64,8 +65,9 @@ func TestS3Contract(t *testing.T) {
 	s := testS3(t)
 	testStoreContract(t, s)
 	// Failed Puts aborted their multipart uploads (the parts would stay stored invisibly).
+	prefix := s.keys.ObjectKey("")
 	out, err := s.api.(*s3.Client).ListMultipartUploads(context.Background(),
-		&s3.ListMultipartUploadsInput{Bucket: &s.bucket, Prefix: &s.prefix})
+		&s3.ListMultipartUploadsInput{Bucket: &s.bucket, Prefix: &prefix})
 	if err != nil {
 		t.Fatal(err)
 	}

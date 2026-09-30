@@ -16,3 +16,6 @@
 - Миграция 00019 (`workspace_integrations`, `room_recordings`); proto: `RoomRecording`, событие `ROOM_RECORDING`, поля в READY (текущие записи).
 - Клиент: вкладка «GPTunneL» в настройках пространства (код, статус, отключить), пункт «Запись встречи / Остановить запись» в меню «…» комнаты, индикация, системная карточка в чате.
 - Просьба к GPTunneL (владелец): эндпоинт результата для device token, приём `audio/ogg`, подсказка имён спикеров.
+
+## Записи в бакете при `STORAGE_DRIVER=s3` (2026-09-30)
+Дополняет п. 1, решение не меняется. Общий volume возможен, только когда API и egress на одном хосте; API в Kubernetes и egress на медиа-хосте диска не делят, и запись заканчивалась «файла нет». С драйвером `s3` (ADR-0011) egress сам загружает файл в бакет файлов (`S3Upload` в `file_outputs`, ключ = `blob`-ключ `<workspace>/<recording>.mp4` под `STORAGE_S3_KEY_PREFIX`, без манифеста), а API читает, проверяет и удаляет его через `blob.Store` (`internal/recording/storage.go`); строка в базе та же. `fs` — как было. Ключ бакета идёт к egress через LiveKit и его Valkey, в `EgressInfo` egress его редактирует. Stray-sweep janitor в бакете не работает (нет листинга) — docs/12. Эксплуатация — docs/06 «Записи встреч в S3».
