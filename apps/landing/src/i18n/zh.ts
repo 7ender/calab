@@ -272,7 +272,7 @@ const zh: Dict = {
     plans: {
       free: { name: 'Free', price: '免费', note: '适合小团队：每个房间最多 5 人' },
       team: { name: 'Team', price: '价格详询', note: '每个房间最多 15 人，100 名成员，300 GB 文件' },
-      business: { name: 'Business', price: '价格详询', note: '每个房间最多 100 人，500 名成员，1 TB 文件，优先支持' },
+      business: { name: 'Business', price: '价格详询', note: '每个房间最多 50 人，500 名成员，1 TB 文件，优先支持' },
       enterprise: { name: 'Enterprise', price: '自己的服务器', note: '无限制的 On-prem，BSL 1.1 或商业许可证' },
     },
     cta: {
@@ -306,12 +306,12 @@ const zh: Dict = {
         price: '价格',
       },
       cells: {
-        room: ['最多 5 人', '最多 15 人', '最多 100 人', '∞'],
+        room: ['最多 5 人', '最多 15 人', '最多 50 人', '∞'],
         members: ['最多 50 人', '最多 100 人', '最多 500 人', '∞'],
         audio: ['最高「普通」', '任意', '任意', '任意'],
         video: ['720p，15 帧/秒', '∞', '∞', '∞'],
-        streams: ['1', '5', '10', '∞'],
-        cameras: ['3', '10', '30', '∞'],
+        streams: ['1', '2', '5', '∞'],
+        cameras: ['3', '10', '25', '∞'],
         files: ['5 GB', '300 GB', '1 TB', '∞'],
         bots: ['1', '5', '20', '∞'],
         stickers: ['1', '∞', '∞', '∞'],
@@ -319,7 +319,7 @@ const zh: Dict = {
         calendar: ['✓', '✓', '✓', '✓'],
         caldav: ['—', '✓', '✓', '✓'],
         onprem: ['—', '—', '—', '✓'],
-        support: ['—', '✓', '优先', '—'],
+        support: ['—', '✓', '优先', '✓'],
         price: ['免费', '详询', '详询', 'BSL 1.1；商业许可详询'],
       },
     },
@@ -377,7 +377,7 @@ const zh: Dict = {
       },
       enterprise: {
         q: 'Team、Business 和 Enterprise 有什么区别？',
-        a: 'Team 和 Business 是有限额的云服务。Team：每个房间最多 15 人，100 名成员，300 GB 文件。Business：每个房间最多 100 人，500 名成员，1 TB 文件，其余不限，并享有优先支持。Enterprise 是部署在你自己服务器（on-prem）上的 Calab，采用 BSL 1.1 或商业许可证，没有任何限制。Team 和 Business 的价格请发邮件至 {email} 咨询。',
+        a: 'Team 和 Business 是有限额的云服务。Team：每个房间最多 15 人，100 名成员，300 GB 文件。Business：每个房间最多 50 人，500 名成员，1 TB 文件，其余不限，并享有优先支持。Enterprise 是部署在你自己服务器（on-prem）上的 Calab，采用 BSL 1.1 或商业许可证，没有任何限制。Team 和 Business 的价格请发邮件至 {email} 咨询。',
       },
       buyTeam: {
         q: '如何购买 Team？',

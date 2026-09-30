@@ -271,7 +271,7 @@ const es: Dict = {
     plans: {
       free: { name: 'Free', price: 'Gratis', note: 'Para equipos pequeños: hasta 5 personas por sala' },
       team: { name: 'Team', price: 'Bajo consulta', note: 'Hasta 15 personas por sala, 100 miembros, 300 GB de archivos' },
-      business: { name: 'Business', price: 'Bajo consulta', note: 'Hasta 100 personas por sala, 500 miembros, 1 TB de archivos y soporte prioritario' },
+      business: { name: 'Business', price: 'Bajo consulta', note: 'Hasta 50 personas por sala, 500 miembros, 1 TB de archivos y soporte prioritario' },
       enterprise: { name: 'Enterprise', price: 'Tu servidor', note: 'On-prem sin límites, licencia BSL 1.1 o comercial' },
     },
     cta: {
@@ -305,12 +305,12 @@ const es: Dict = {
         price: 'Precio',
       },
       cells: {
-        room: ['hasta 5', 'hasta 15', 'hasta 100', '∞'],
+        room: ['hasta 5', 'hasta 15', 'hasta 50', '∞'],
         members: ['hasta 50', 'hasta 100', 'hasta 500', '∞'],
         audio: ['hasta Normal', 'cualquiera', 'cualquiera', 'cualquiera'],
         video: ['720p, 15 fps', '∞', '∞', '∞'],
-        streams: ['1', '5', '10', '∞'],
-        cameras: ['3', '10', '30', '∞'],
+        streams: ['1', '2', '5', '∞'],
+        cameras: ['3', '10', '25', '∞'],
         files: ['5 GB', '300 GB', '1 TB', '∞'],
         bots: ['1', '5', '20', '∞'],
         stickers: ['1', '∞', '∞', '∞'],
@@ -318,7 +318,7 @@ const es: Dict = {
         calendar: ['✓', '✓', '✓', '✓'],
         caldav: ['—', '✓', '✓', '✓'],
         onprem: ['—', '—', '—', '✓'],
-        support: ['—', '✓', 'prioritario', '—'],
+        support: ['—', '✓', 'prioritario', '✓'],
         price: ['gratis', 'bajo consulta', 'bajo consulta', 'BSL 1.1; comercial bajo consulta'],
       },
     },
@@ -376,7 +376,7 @@ const es: Dict = {
       },
       enterprise: {
         q: '¿En qué se diferencian Team, Business y Enterprise?',
-        a: 'Team y Business son la nube con límites. Team: hasta 15 personas por sala, 100 miembros, 300 GB de archivos. Business: hasta 100 personas por sala, 500 miembros, 1 TB de archivos, todo lo demás sin límite, y soporte prioritario. Enterprise es Calab en tu propio servidor (on-prem) con la licencia BSL 1.1 o una comercial, sin límites. El precio de Team y Business es bajo consulta en {email}.',
+        a: 'Team y Business son la nube con límites. Team: hasta 15 personas por sala, 100 miembros, 300 GB de archivos. Business: hasta 50 personas por sala, 500 miembros, 1 TB de archivos, todo lo demás sin límite, y soporte prioritario. Enterprise es Calab en tu propio servidor (on-prem) con la licencia BSL 1.1 o una comercial, sin límites. El precio de Team y Business es bajo consulta en {email}.',
       },
       buyTeam: {
         q: '¿Cómo compro Team?',
