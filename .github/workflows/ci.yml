@@ -3,7 +3,12 @@ name: ci
 on:
   push:
     branches: [main]
+    tags: ['v*']        # a release tag also runs the PostgreSQL 17 integration shards (ADR-0037)
+    # docs-only pushes run no CI (a workflow skipped by paths blocks nothing on a direct push); pull
+    # requests always run everything: on a docs-only PR the required checks would wait forever
+    paths-ignore: ['docs/**', '**/*.md']
   pull_request:
+  workflow_dispatch:     # manual full run, PostgreSQL 17 included
 
 permissions:
   contents: read
@@ -72,9 +77,17 @@ jobs:
         with:
           persist-credentials: false
       - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        id: go
         with:
           go-version: '1.26.x'
-          cache-dependency-path: apps/server/go.sum
+          cache: false   # own key below: the shared setup-go key holds no -race build cache
+      - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: |
+            ~/go/pkg/mod
+            ~/.cache/go-build
+          key: go-unit-${{ runner.os }}-go${{ steps.go.outputs.go-version }}-${{ hashFiles('apps/server/go.sum') }}
+          restore-keys: go-unit-${{ runner.os }}-go${{ steps.go.outputs.go-version }}-
       - run: test -z "$(gofmt -l .)"
       - run: go vet ./...
       - run: go test -race ./...
@@ -104,20 +117,28 @@ jobs:
           cache-dependency-path: apps/server/go.sum
       - run: go run golang.org/x/vuln/cmd/govulncheck@v1.8.0 ./...
 
-  go-integration:
-    name: ${{ matrix.check }}
+  # Integration tests in parallel shards (internal/app runs its tests one after another in one
+  # process — ~5.5 min in a single job): internal/app split by test name, every other package in its
+  # own shard. PostgreSQL 18 on every run; 17 (ADR-0037) on release tags and manual runs only.
+  go-integration-shard:
+    name: go integration ${{ matrix.shard }} (PostgreSQL ${{ matrix.pg }})
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false
       matrix:
-        include:   # PostgreSQL 17 and 18 are supported (ADR-0037); the 18 leg keeps the required check's name
-          - check: go integration tests
-            postgres: postgres:18-alpine@sha256:77f585114c32fbca283dc835b0596f4e52b51b4c6662d7810b2f4084f60a1873
-          - check: go integration tests (PostgreSQL 17)
-            postgres: postgres:17-alpine@sha256:b0f9560a2de083e2cc7382e75f808c7381a32852a7ec49117deedb300e552b24
+        pg: ${{ fromJSON((github.event_name == 'workflow_dispatch' || startsWith(github.ref, 'refs/tags/v')) && '["18","17"]' || '["18"]') }}
+        shard: [app-1, app-2, app-3, rest]
+    env:
+      # internal/app split by the first letter after "Test", balanced on CI step times (30.09: ~2 min
+      # each); app-3 takes everything else and runs the coverage check. Rebalance when a shard drifts.
+      APP_1: '^Test[A-E]'
+      APP_2: '^Test[F-P]'
+      APP_3: '^Test[^A-P]'
+      TEST_DATABASE_URL: postgres://calaba:calaba@localhost:5432/calaba
+      TEST_REDIS_URL: redis://localhost:6379/15
     services:
       postgres:
-        image: ${{ matrix.postgres }}
+        image: ${{ matrix.pg == '17' && 'postgres:17-alpine@sha256:b0f9560a2de083e2cc7382e75f808c7381a32852a7ec49117deedb300e552b24' || 'postgres:18-alpine@sha256:77f585114c32fbca283dc835b0596f4e52b51b4c6662d7810b2f4084f60a1873' }}
         env:
           POSTGRES_USER: calaba
           POSTGRES_PASSWORD: calaba
@@ -138,10 +159,20 @@ jobs:
         with:
           persist-credentials: false
       - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        id: go
         with:
           go-version: '1.26.x'
-          cache-dependency-path: apps/server/go.sum
+          cache: false   # setup-go's shared key is saved by whichever job ends first (no -race/integration builds)
+      # Own cache per shard: modules + the -race/integration build cache of exactly what this shard compiles
+      - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: |
+            ~/go/pkg/mod
+            ~/.cache/go-build
+          key: go-it-${{ matrix.shard }}-${{ runner.os }}-go${{ steps.go.outputs.go-version }}-${{ hashFiles('apps/server/go.sum') }}
+          restore-keys: go-it-${{ matrix.shard }}-${{ runner.os }}-go${{ steps.go.outputs.go-version }}-
       - name: start LiveKit (dev mode; services cannot pass --dev)
+        if: matrix.shard != 'rest'   # only internal/app talks to LiveKit
         run: |
           docker run -d --name livekit -p 7880:7880 -p 7881:7881 -p 7882:7882/udp \
             livekit/livekit-server:v1.13@sha256:6fd3b7088874c4d119160dd688798dfec852bc014786d392caad15f6f63912a3 --dev --bind 0.0.0.0
@@ -156,12 +187,47 @@ jobs:
           ffmpeg -hide_banner -version | head -1
       # blob s3 driver (ADR-0011): single-node Garage (image pinned in the script), bucket + random key → TEST_S3_*
       - name: start Garage (S3)
+        if: matrix.shard == 'rest'   # only internal/blob uses S3
         timeout-minutes: 3   # pull + start take ~3 s; a hung registry must not hold the required job
         run: internal/blob/testdata/garage.sh >> "$GITHUB_ENV"
-      - run: go test -race -tags integration -count=1 ./...
+      # Every test of internal/app runs in exactly one app-N shard: fail on gaps and overlaps (a test named
+      # outside the regexes would silently never run). Same build flags as the run below (cached build).
+      - name: shards cover internal/app exactly once
+        if: matrix.shard == 'app-3'
+        run: |
+          list() { go test -race -tags integration -list "$1" ./internal/app | grep -E '^(Test|Example|Fuzz)' | sort; }
+          d="$RUNNER_TEMP"; list '.*' > "$d/all"; list "$APP_1" > "$d/1"; list "$APP_2" > "$d/2"; list "$APP_3" > "$d/3"
+          overlap=$(sort "$d/1" "$d/2" "$d/3" | uniq -d)
+          gaps=$(sort -u "$d/1" "$d/2" "$d/3" | comm -23 "$d/all" -)
+          echo "internal/app: $(wc -l < "$d/all") tests; app-1 $(wc -l < "$d/1"), app-2 $(wc -l < "$d/2"), app-3 $(wc -l < "$d/3")"
+          [[ -z "$overlap" ]] || { echo "::error::in two shards: $overlap"; exit 1; }
+          [[ -z "$gaps" ]] || { echo "::error::in no shard (fix APP_1..3 in ci.yml): $gaps"; exit 1; }
+      - name: go test (${{ matrix.shard }})
         env:
-          TEST_DATABASE_URL: postgres://calaba:calaba@localhost:5432/calaba
-          TEST_REDIS_URL: redis://localhost:6379/15
+          SHARD: ${{ matrix.shard }}
+        run: |
+          case "$SHARD" in
+            app-1) go test -race -tags integration -count=1 -run "$APP_1" ./internal/app ;;
+            app-2) go test -race -tags integration -count=1 -run "$APP_2" ./internal/app ;;
+            app-3) go test -race -tags integration -count=1 -run "$APP_3" ./internal/app ;;
+            rest) mapfile -t pkgs < <(go list ./... | grep -v '/internal/app$')
+                  go test -race -tags integration -count=1 "${pkgs[@]}" ;;
+            *) echo "unknown shard $SHARD"; exit 1 ;;
+          esac
+
+  # The required check of branch protection keeps its name: green only when every shard is green
+  go-integration:
+    name: go integration tests
+    if: always()
+    needs: go-integration-shard
+    runs-on: ubuntu-latest
+    steps:
+      - name: all shards passed
+        env:
+          RESULT: ${{ needs.go-integration-shard.result }}
+        run: |
+          echo "shards: $RESULT"
+          test "$RESULT" = success
 
   ts:
     name: pnpm typecheck / test
