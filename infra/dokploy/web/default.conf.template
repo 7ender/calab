@@ -15,11 +15,11 @@
 #   DOMAIN_ALT
 #   DOMAIN_LEGACY
 #   LANDING_HOST
-#   RELEASES_HOST
+#   RELEASES_HOST_EFFECTIVE
 #
 # envsubst:
-#   only explicitly exported environment variables are replaced.
-#   nginx runtime variables remain untouched.
+#   Environment variables use ${VAR}
+#   nginx runtime variables use $$VAR
 # ==============================================================
 
 
@@ -34,7 +34,6 @@
 # ==============================================================
 
 resolver 127.0.0.11 valid=30s ipv6=off;
-
 resolver_timeout 5s;
 
 
@@ -42,9 +41,9 @@ resolver_timeout 5s;
 # APP STATIC CACHE
 # ==============================================================
 
-map $uri $calab_cache_control {
-    default     "no-cache";
-    ~^/assets/  "public, max-age=31536000, immutable";
+map $$uri $calab_cache_control {
+    default "no-cache";
+    ~^/assets/ "public, max-age=31536000, immutable";
 }
 
 
@@ -90,23 +89,22 @@ map "${LANDING_HOST}" $calab_landing_enabled {
 # DOWNLOAD USER-AGENT SHORTCUTS
 #
 # Used only for:
-#
 #   /download/
 #
 # Stable shortcuts are handled separately.
 # ==============================================================
 
-map $http_user_agent $calab_download_url {
+map $$http_user_agent $calab_download_url {
     default "";
 
     ~*Macintosh
-      "https://${RELEASES_HOST_EFFECTIVE}/latest/Calab-mac-arm64.dmg";
+        "https://${RELEASES_HOST_EFFECTIVE}/latest/Calab-mac-arm64.dmg";
 
     ~*Windows
-      "https://${RELEASES_HOST_EFFECTIVE}/latest/Calab-win-x64.exe";
+        "https://${RELEASES_HOST_EFFECTIVE}/latest/Calab-win-x64.exe";
 
     ~*(Linux|X11)
-      "https://${RELEASES_HOST_EFFECTIVE}/latest/Calab-linux-x86_64.AppImage";
+        "https://${RELEASES_HOST_EFFECTIVE}/latest/Calab-linux-x86_64.AppImage";
 }
 
 
@@ -118,13 +116,13 @@ map $http_user_agent $calab_download_url {
 #   /
 #       -> /index.html
 #
-# everything else:
+#   everything else:
 #       -> original URI
 # ==============================================================
 
-map $request_uri $calab_s3_uri {
-    "/"      "/index.html";
-    default  $request_uri;
+map $$request_uri $calab_s3_uri {
+    "/"     "/index.html";
+    default $$request_uri;
 }
 
 
@@ -140,21 +138,26 @@ map $request_uri $calab_s3_uri {
 server {
     listen 80;
 
-    server_name ${LANDING_HOST:-__calab_landing_disabled__};
+    server_name ${LANDING_HOST};
 
     root /srv/landing;
 
     server_tokens off;
 
-    # HSTS.
-    add_header Strict-Transport-Security \
+
+    # ----------------------------------------------------------
+    # HSTS
+    # ----------------------------------------------------------
+
+    add_header Strict-Transport-Security
         "max-age=31536000; includeSubDomains" always;
+
 
     # ----------------------------------------------------------
     # Security headers
     # ----------------------------------------------------------
 
-    add_header Content-Security-Policy \
+    add_header Content-Security-Policy
         "default-src 'self'; \
          script-src 'self' 'unsafe-inline'; \
          style-src 'self' 'unsafe-inline'; \
@@ -167,12 +170,12 @@ server {
 
     add_header X-Content-Type-Options "nosniff" always;
 
-    add_header Referrer-Policy \
+    add_header Referrer-Policy
         "strict-origin-when-cross-origin" always;
 
     add_header X-Frame-Options "DENY" always;
 
-    add_header Permissions-Policy \
+    add_header Permissions-Policy
         "camera=(), microphone=(), geolocation=()" always;
 
 
@@ -277,7 +280,7 @@ server {
         # ------------------------------------------------------
         # /download/:
         #
-        # choose installer by User-Agent.
+        # Choose installer by User-Agent.
         # ------------------------------------------------------
 
         location = /download/ {
@@ -292,6 +295,7 @@ server {
 
             # With a landing and no recognized desktop OS,
             # preserve Caddy's fallback to the landing.
+
             if ($calab_landing_enabled = 1) {
                 return 302 https://${LANDING_HOST}/#download;
             }
@@ -348,7 +352,7 @@ server {
         location ^~ /_next/static/ {
             try_files $uri =404;
 
-            add_header Cache-Control \
+            add_header Cache-Control
                 "public, max-age=31536000, immutable";
         }
 
@@ -364,16 +368,25 @@ server {
 # APPLICATION
 #
 # API itself is NOT served by nginx.
-# Traefik routes /api /gateway /healthz directly to api:3000.
+#
+# Traefik routes:
+#   /api
+#   /gateway
+#   /healthz
+#
+# directly to api:3000.
 #
 # nginx only sees the remaining static requests.
+#
+# APP_HOST is the primary application hostname.
+# DOMAIN and legacy aliases remain supported.
 # ==============================================================
 
 server {
     listen 80;
 
     server_name
-        ${APP_HOST:-${DOMAIN}}
+        ${APP_HOST}
         ${DOMAIN}
         ${DOMAIN_ALT}
         ${DOMAIN_LEGACY};
@@ -410,7 +423,7 @@ server {
     # HSTS
     # ----------------------------------------------------------
 
-    add_header Strict-Transport-Security \
+    add_header Strict-Transport-Security
         "max-age=31536000; includeSubDomains" always;
 
 
@@ -421,7 +434,7 @@ server {
     # current Caddy entrypoint.
     # ----------------------------------------------------------
 
-    add_header Content-Security-Policy \
+    add_header Content-Security-Policy
         "default-src 'self'; \
          script-src 'self' 'wasm-unsafe-eval'; \
          connect-src 'self' wss://rtc.${DOMAIN} https://rtc.${DOMAIN}; \
@@ -436,12 +449,12 @@ server {
 
     add_header X-Content-Type-Options "nosniff" always;
 
-    add_header Referrer-Policy \
+    add_header Referrer-Policy
         "same-origin" always;
 
     add_header X-Frame-Options "DENY" always;
 
-    add_header Permissions-Policy \
+    add_header Permissions-Policy
         "microphone=(self), \
          display-capture=(self), \
          speaker-selection=(self), \
@@ -472,11 +485,13 @@ server {
 
     location /download/ {
 
+        # ------------------------------------------------------
         # Stable installer shortcuts.
+        # ------------------------------------------------------
 
         location = /download/mac-arm64 {
             if ($calab_releases_enabled = 0) {
-                try_files $uri =404;
+                return 404;
             }
 
             return 302 https://${RELEASES_HOST_EFFECTIVE}/latest/Calab-mac-arm64.dmg;
@@ -484,7 +499,7 @@ server {
 
         location = /download/mac-arm64/ {
             if ($calab_releases_enabled = 0) {
-                try_files $uri =404;
+                return 404;
             }
 
             return 302 https://${RELEASES_HOST_EFFECTIVE}/latest/Calab-mac-arm64.dmg;
@@ -555,7 +570,9 @@ server {
         }
 
 
+        # ------------------------------------------------------
         # User-Agent based /download/.
+        # ------------------------------------------------------
 
         location = /download/ {
 
@@ -567,10 +584,15 @@ server {
                 return 302 $calab_download_url;
             }
 
+            if ($calab_landing_enabled = 1) {
+                return 302 https://${LANDING_HOST}/#download;
+            }
+
             return 302 https://${RELEASES_HOST_EFFECTIVE}/;
         }
 
 
+        # ------------------------------------------------------
         # Electron updater:
         #
         # /download/latest.yml
@@ -578,6 +600,7 @@ server {
         # /download/releases/...
         #
         # All go to the release host preserving the path.
+        # ------------------------------------------------------
 
         location ~ ^/download/(.*)$ {
 
@@ -600,7 +623,7 @@ server {
 
         try_files $uri =404;
 
-        add_header Cache-Control \
+        add_header Cache-Control
             "public, max-age=31536000, immutable";
     }
 
@@ -608,10 +631,10 @@ server {
     # ----------------------------------------------------------
     # Everything else:
     #
-    # index.html
-    # SPA routes
-    # favicon
-    # etc.
+    #   index.html
+    #   SPA routes
+    #   favicon
+    #   etc.
     #
     # No-cache matches the Caddy deployment.
     # ----------------------------------------------------------
@@ -640,7 +663,7 @@ server {
 server {
     listen 80;
 
-    server_name ${RELEASES_HOST_EFFECTIVE:-__calab_releases_disabled__};
+    server_name ${RELEASES_HOST_EFFECTIVE};
 
     root /srv/releases;
 
@@ -651,7 +674,7 @@ server {
     # Security headers
     # ----------------------------------------------------------
 
-    add_header Strict-Transport-Security \
+    add_header Strict-Transport-Security
         "max-age=31536000; includeSubDomains" always;
 
     add_header X-Content-Type-Options "nosniff" always;
@@ -673,7 +696,6 @@ server {
             return 302 https://${LANDING_HOST}/#download;
         }
 
-        # S3 root.
         if ($calab_s3_enabled = 1) {
             return 302 https://${LANDING_HOST}/#download;
         }
@@ -730,7 +752,7 @@ server {
 
         try_files $uri =404;
 
-        add_header Cache-Control \
+        add_header Cache-Control
             "public, max-age=31536000, immutable";
     }
 
@@ -765,7 +787,7 @@ server {
 
         try_files $uri =404;
 
-        add_header Cache-Control \
+        add_header Cache-Control
             "public, max-age=31536000, immutable";
     }
 
@@ -784,7 +806,8 @@ server {
         # Caddy maps release root to index.html.
         #
         # For all other requests preserve the original URI.
-        set $calab_s3_target \
+
+        set $calab_s3_target
             "${S3_PUBLIC_URL}$calab_s3_uri";
 
         proxy_ssl_server_name on;

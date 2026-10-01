@@ -515,12 +515,7 @@ services:
     ports:
       - "7881:7881/tcp"
       - "7882:7882/udp"
-
-      # TURN/UDP on 443.
-      #
-      # TCP/443 belongs to Traefik, UDP/443 belongs to LiveKit.
-
-      # TURN relay range.
+      - "${TURN_UDP_PORT:-3478}:${TURN_UDP_PORT:-3478}/udp"
       - "20000-29999:20000-29999/udp"
 
     depends_on:
