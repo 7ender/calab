@@ -5,6 +5,7 @@ package app_test
 import (
 	"context"
 	"net/url"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -650,9 +651,20 @@ func TestTaskNotifications(t *testing.T) {
 	})
 	done := statusOf(b, v1.BoardStatusType_BOARD_STATUS_TYPE_COMPLETED)
 	patchTask(t, o, task.GetId(), &v1.UpdateTaskRequest{StatusId: &done}, 200)
-	gb.wait("STATUS notice", func(e *v1.DispatchEvent) bool {
+	stEv := gb.wait("STATUS notice", func(e *v1.DispatchEvent) bool {
 		return e.GetTaskUpdate().GetNotice().GetKind() == v1.TaskNoticeKind_TASK_NOTICE_KIND_STATUS
 	})
+	if !stEv.GetTaskUpdate().GetTask().GetUnread() {
+		t.Fatal("a completed task keeps its own unread mark")
+	}
+	// The READY badge list counts open tasks only, as «Мои задачи» (GET /api/me/tasks?open=1).
+	g3 := dialGW(t)
+	for _, s := range g3.identify(bob.token).GetWorkspaces() {
+		if slices.Contains(s.GetUnreadTaskIds(), task.GetId()) {
+			t.Fatal("READY counts a completed task as unread")
+		}
+	}
+	gb = g3 // the new session replaced the previous one
 
 	// MENTIONS: comments stay silent, @mentions notify; NONE: nothing. «Отписаться» mutes comments.
 	lvl := v1.NotificationLevel_NOTIFICATION_LEVEL_MENTIONS

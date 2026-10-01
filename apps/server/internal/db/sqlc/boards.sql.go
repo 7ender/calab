@@ -2485,6 +2485,7 @@ func (q *Queries) TouchTask(ctx context.Context, id uuid.UUID) error {
 const unreadTaskIDs = `-- name: UnreadTaskIDs :many
 SELECT t.id, t.board_id FROM task_subscribers s
 JOIN tasks t ON t.id = s.task_id AND t.archived_at IS NULL
+JOIN board_statuses st ON st.id = t.status_id AND st.type NOT IN ('completed', 'cancelled')
 JOIN boards b ON b.id = t.board_id AND b.archived_at IS NULL AND b.workspace_id = $1
 WHERE s.user_id = $2 AND s.notified_at IS NOT NULL AND (s.seen_at IS NULL OR s.notified_at > s.seen_at)
 ORDER BY s.notified_at DESC
@@ -2501,8 +2502,9 @@ type UnreadTaskIDsRow struct {
 	BoardID uuid.UUID
 }
 
-// Tasks with something unseen for the user on live boards of the workspace (≤ 999); the caller
-// keeps those on boards the user sees.
+// Open tasks with something unseen for the user on live boards of the workspace (≤ 999); the
+// caller keeps those on boards the user sees. Closed ones are left out: the badge counts what
+// «Мои задачи» lists (GET /api/me/tasks?open=1), a closed task keeps its own unread mark.
 func (q *Queries) UnreadTaskIDs(ctx context.Context, arg UnreadTaskIDsParams) ([]UnreadTaskIDsRow, error) {
 	rows, err := q.db.Query(ctx, unreadTaskIDs, arg.WorkspaceID, arg.UserID)
 	if err != nil {
