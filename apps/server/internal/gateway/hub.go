@@ -22,6 +22,7 @@ import (
 	"github.com/calaba/calaba/server/internal/db"
 	"github.com/calaba/calaba/server/internal/db/sqlc"
 	"github.com/calaba/calaba/server/internal/events"
+	"github.com/calaba/calaba/server/internal/identitypolicy"
 	"github.com/calaba/calaba/server/internal/pbconv"
 	"github.com/calaba/calaba/server/internal/perm"
 	"github.com/calaba/calaba/server/internal/plans"
@@ -61,6 +62,12 @@ type Hub struct {
 
 	IdentityInvalidated func()
 	identityWake        chan struct{}
+	identityRun         sync.Mutex
+	identityCursor      uuid.UUID
+	preparations        chan func()
+	checkWorkspace      func(context.Context, auth.Identity, uuid.UUID) (identitypolicy.Decision, time.Time, error)
+	identityWorkspaces  func(context.Context, uuid.UUID) ([]uuid.UUID, error)
+	checkPrincipal      func(context.Context, auth.Identity) (identitypolicy.Principal, time.Time, error)
 	closing             atomic.Bool
 	nSockets            atomic.Int64
 	// botSeen: when a bot's REST activity was last recorded here (TouchBot throttle).
@@ -76,7 +83,7 @@ func New(cfg Config, d *db.DB, r rueidis.Client, a *auth.Service, pub events.Pub
 		cfg.MaxSessionsPerUser = 5
 	}
 	return &Hub{
-		cfg: cfg, instance: uuid.NewString(), db: d, redis: r, auth: a, pub: pub, identityWake: make(chan struct{}, 1),
+		cfg: cfg, instance: uuid.NewString(), db: d, redis: r, auth: a, pub: pub, identityWake: make(chan struct{}, 1), preparations: make(chan func(), bufferQueue),
 		voice: voice.Store{C: r}, pres: presenceStore{c: r, ttl: 2 * cfg.HeartbeatInterval}, buf: bufferStore{c: r},
 		sessions: map[uuid.UUID]*Session{}, byUser: map[uuid.UUID]map[*Session]bool{},
 		byWS: map[uuid.UUID]map[*Session]bool{}, states: map[uuid.UUID]*wsState{}, releases: map[uuid.UUID]chan struct{}{},
@@ -110,6 +117,7 @@ func (h *Hub) Run(ctx context.Context) {
 	go h.restoreManual(ctx)
 	go h.sweepPresence(ctx)
 	go h.runIdentityEnforcement(ctx)
+	h.runPreparations(ctx)
 	first := true
 	for ctx.Err() == nil {
 		cmd := h.subscription()
@@ -154,7 +162,7 @@ func (h *Hub) onMessage(m rueidis.PubSubMessage) {
 		}
 		return
 	case ch == "identity:invalidated":
-		h.IdentityChanged()
+		h.identityNotification(m.Message)
 		if h.IdentityInvalidated != nil {
 			h.IdentityInvalidated()
 		}
@@ -230,18 +238,6 @@ func (h *Hub) ensureState(ctx context.Context, wid uuid.UUID) {
 	}
 }
 
-// startState makes sure the state is loading without blocking the caller (fan-out path):
-// events arriving meanwhile are kept in the backlog and routed after the load.
-func (h *Hub) startState(wid uuid.UUID) {
-	if st, created := h.placeholder(wid); created {
-		go func() {
-			ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
-			defer cancel()
-			h.loadInto(ctx, st, wid)
-		}()
-	}
-}
-
 func (h *Hub) placeholder(wid uuid.UUID) (*wsState, bool) {
 	h.mu.Lock()
 	defer h.mu.Unlock()
@@ -288,6 +284,12 @@ func (h *Hub) routeWorkspace(wid, id uuid.UUID, ev *v1.DispatchEvent) {
 	st.mu.Lock()
 	defer st.mu.Unlock()
 	if st.loading {
+		if len(st.backlog) >= bufferQueue {
+			for _, s := range h.inWorkspace(wid) {
+				s.broken.Store(true)
+			}
+			return
+		}
 		st.backlog = append(st.backlog, pendingEvent{id: id, enc: newEnc(ev)})
 		return
 	}
@@ -615,7 +617,7 @@ func (h *Hub) syncGuestMembers(st *wsState, wid uuid.UUID, before map[*Session]m
 			continue
 		}
 		marker := s.pause()
-		go func(s *Session, added []uuid.UUID, marker *pauseMark) {
+		if !h.prepareAsync(func() {
 			ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 			defer cancel()
 			var evs []pendingEvent
@@ -633,7 +635,9 @@ func (h *Hub) syncGuestMembers(st *wsState, wid uuid.UUID, before map[*Session]m
 				}
 			}
 			s.resumeMany(marker, evs)
-		}(s, added, marker)
+		}) {
+			s.preparationFailed(marker)
+		}
 	}
 }
 
@@ -690,8 +694,11 @@ func (h *Hub) dispatchGained(s *Session, wid, id uuid.UUID, out *v1.DispatchEven
 		s.dispatchScoped(wid, id, out)
 		return
 	}
-	marker := s.pause()
-	go func() {
+	marker := s.pauseEvent(id)
+	if marker == nil {
+		return
+	}
+	if !h.prepareAsync(func() {
 		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 		defer cancel()
 		rid := parseID(room.GetId())
@@ -714,7 +721,9 @@ func (h *Hub) dispatchGained(s *Session, wid, id uuid.UUID, out *v1.DispatchEven
 			}
 		}
 		s.resumeMany(marker, evs)
-	}()
+	}) {
+		s.preparationFailed(marker)
+	}
 }
 
 func (h *Hub) toAll(sessions []*Session, id uuid.UUID, enc *encEvent) {
@@ -736,78 +745,110 @@ func (h *Hub) routeUser(uid, id uuid.UUID, ev *v1.DispatchEvent) {
 	if len(sessions) == 0 {
 		return
 	}
-	switch e := ev.GetEvent().(type) {
-	case *v1.DispatchEvent_WorkspaceCreate:
-		// Filling the snapshot needs Redis and loading the state needs Postgres: neither may
-		// run on the fan-out path (M2). The user's sessions pause, so events that follow
-		// keep their order behind the snapshot.
-		snap := e.WorkspaceCreate.GetSnapshot()
-		wid := parseID(snap.GetWorkspace().GetId())
-		filtered := sessions[:0]
+	if gone := ev.GetWorkspaceDelete(); gone != nil {
+		enc := newEnc(ev)
 		for _, s := range sessions {
-			if s.bot || s.allowsWorkspace(context.Background(), wid) {
+			s.dispatchEnc(id, enc)
+			h.leaveWorkspace(s, parseID(gone.GetWorkspaceId()))
+		}
+		return
+	}
+	if status := ev.GetWorkspaceIdentityAccessUpdate(); status != nil {
+		enc := newEnc(ev)
+		for _, s := range sessions {
+			s.dispatchEnc(id, enc)
+		}
+		return
+	}
+	if dm := ev.GetDmCreate(); dm != nil {
+		for _, s := range sessions {
+			s.rememberDM(parseID(dm.GetDm().GetRoom().GetId()), parseID(dm.GetDm().GetPeer().GetId()))
+		}
+	}
+	if message := ev.GetMessageCreate(); message != nil {
+		if cmd := message.GetMessage().GetCommand(); cmd != nil && parseID(cmd.GetBotUserId()) != uid {
+			ev = withoutCommand(ev)
+		}
+	}
+	if read := ev.GetReadReceipt(); read != nil {
+		ev = withoutExcept(read)
+		filtered := make([]*Session, 0, len(sessions))
+		for _, s := range sessions {
+			if !s.bot {
 				filtered = append(filtered, s)
 			}
 		}
 		sessions = filtered
-		markers := make([]*pauseMark, len(sessions))
-		for i, s := range sessions {
-			h.joinWorkspace(s, wid)
-			markers[i] = s.pause()
-		}
-		h.startState(wid)
-		go func() {
-			ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-			defer cancel()
-			h.fillLive(ctx, wid, snap)
-			enc := newScopedEnc(wid, ev)
-			for i, s := range sessions {
-				s.resume(markers[i], id, enc)
-			}
-		}()
-		return
-	case *v1.DispatchEvent_WorkspaceDelete:
-		wid := parseID(e.WorkspaceDelete.GetWorkspaceId())
-		defer func() {
-			for _, s := range sessions {
-				h.leaveWorkspace(s, wid)
-			}
-		}()
-	case *v1.DispatchEvent_DmCreate:
-		// The typing check knows the new DM without asking Postgres.
-		rid, peer := parseID(e.DmCreate.GetDm().GetRoom().GetId()), parseID(e.DmCreate.GetDm().GetPeer().GetId())
+	}
+	if typing := ev.GetTypingStart(); typing != nil {
+		filtered := make([]*Session, 0, len(sessions))
 		for _, s := range sessions {
-			s.rememberDM(rid, peer)
-		}
-	case *v1.DispatchEvent_MessageCreate:
-		// A bot command in a DM (ADR-0031): only the addressed bot sees Message.command.
-		if cmd := e.MessageCreate.GetMessage().GetCommand(); cmd != nil && parseID(cmd.GetBotUserId()) != uid {
-			ev = withoutCommand(ev)
-		}
-	case *v1.DispatchEvent_ReadReceipt:
-		// Read receipts (docs/09 #92): never to bots.
-		enc := newEnc(withoutExcept(e.ReadReceipt))
-		for _, s := range sessions {
-			if !s.bot {
-				s.dispatchEnc(id, enc)
+			if s.user != parseID(typing.GetUserId()) && s.isSubscribed(parseID(typing.GetRoomId())) {
+				filtered = append(filtered, s)
 			}
 		}
-		return
-	case *v1.DispatchEvent_TypingStart:
-		// DM typing (ADR-0020) comes on the recipient's user channel: only the sessions that
-		// subscribed to the room get it, as in workspace rooms.
-		rid := parseID(e.TypingStart.GetRoomId())
-		enc := newEnc(ev)
-		for _, s := range sessions {
-			if s.user != parseID(e.TypingStart.GetUserId()) && s.isSubscribed(rid) {
-				s.dispatchEnc(id, enc)
-			}
+		sessions = filtered
+	}
+	markers := make([]*pauseMark, 0, len(sessions))
+	recipients := make([]*Session, 0, len(sessions))
+	for _, s := range sessions {
+		if created := ev.GetWorkspaceCreate(); created != nil && !s.bot && s.principal.Authority != identitypolicy.LocalAccount && s.principal.WorkspaceID != parseID(created.GetSnapshot().GetWorkspace().GetId()) {
+			continue
 		}
+		if mark := s.pauseEvent(id); mark != nil {
+			markers = append(markers, mark)
+			recipients = append(recipients, s)
+		}
+	}
+	sessions = recipients
+	if len(sessions) == 0 {
 		return
 	}
-	enc := newEnc(ev)
-	for _, s := range sessions {
-		s.dispatchEnc(id, enc)
+	var preparingState *wsState
+	loadPreparingState := false
+	if created := ev.GetWorkspaceCreate(); created != nil {
+		wid := parseID(created.GetSnapshot().GetWorkspace().GetId())
+		// Subscribe provisionally while paused so post-snapshot workspace events enter
+		// the bounded backlog. No content is emitted until the exact device lease warms.
+		for _, s := range sessions {
+			h.joinWorkspace(s, wid)
+		}
+		preparingState, loadPreparingState = h.placeholder(wid)
+	}
+	// The sentinel is installed at arrival, before async attribution: concurrent
+	// workspace events remain behind it, regardless of preparation completion order.
+	if !h.prepareAsync(func() {
+		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+		enc := newEnc(ev)
+		if created := ev.GetWorkspaceCreate(); created != nil {
+			snap := created.GetSnapshot()
+			wid := parseID(snap.GetWorkspace().GetId())
+			h.fillLive(ctx, wid, snap)
+			enc = newScopedEnc(wid, ev)
+			for _, s := range sessions {
+				if !s.bot {
+					_, _ = s.refreshWorkspaceLease(ctx, wid)
+				}
+				if s.bot || s.allowsWorkspace(ctx, wid) {
+					h.joinWorkspace(s, wid)
+				} else {
+					h.leaveWorkspace(s, wid)
+				}
+			}
+			if loadPreparingState {
+				h.loadInto(ctx, preparingState, wid)
+			}
+		} else {
+			h.prepareEvent(ctx, enc)
+		}
+		for i, s := range sessions {
+			s.resume(markers[i], id, enc)
+		}
+	}) {
+		for i, s := range sessions {
+			s.preparationFailed(markers[i])
+		}
 	}
 }
 
@@ -855,6 +896,14 @@ func (h *Hub) fillLive(ctx context.Context, wid uuid.UUID, snap *v1.WorkspaceSna
 // ---- session registry ----
 
 func (h *Hub) register(s *Session, workspaces []uuid.UUID) {
+	if h.auth != nil && !s.bot {
+		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+		s.refreshSessionLease(ctx)
+		for _, ws := range workspaces {
+			_, _ = s.refreshWorkspaceLease(ctx, ws)
+		}
+		cancel()
+	}
 	h.mu.Lock()
 	h.sessions[s.id] = s
 	if h.byUser[s.user] == nil {
@@ -890,6 +939,10 @@ func (h *Hub) joinWorkspace(s *Session, wid uuid.UUID) {
 }
 
 func (h *Hub) leaveWorkspace(s *Session, wid uuid.UUID) {
+	s.leases.mu.Lock()
+	delete(s.leases.workspaces, wid)
+	s.leases.revision++
+	s.leases.mu.Unlock()
 	h.mu.Lock()
 	delete(h.byWS[wid], s)
 	if len(h.byWS[wid]) == 0 {
