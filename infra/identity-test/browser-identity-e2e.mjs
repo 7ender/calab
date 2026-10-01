@@ -13,6 +13,7 @@ const f = JSON.parse(input);
 assert.equal(new URL(f.origin).hostname, '127.0.0.1');
 assert.equal(new URL(f.issuer).pathname, '/realms/identity.test');
 const callback = `https://rp.identity.test/${f.runID}/callback`;
+const callbackRoute = new RegExp(`^https://rp\\.identity\\.test/${f.runID}/callback(?:\\?.*)?$`);
 const clientID = `calaba-browser-${f.runID}`;
 const upstreamSecret = randomBytes(32).toString('base64url');
 const kcUser = `browser-${f.runID}`;
@@ -93,8 +94,8 @@ async function consentJourney(workspace, client, token, proof, journeyPage = pag
  const verifier = randomBytes(32).toString('base64url');
  const issuer = `${f.origin}/oidc/workspaces/${workspace}`;
  const args = new URLSearchParams({ client_id: client.clientId, redirect_uri: callback, response_type: 'code', scope: 'openid profile email', state, nonce, code_challenge: createHash('sha256').update(verifier).digest('base64url'), code_challenge_method: 'S256', prompt: 'login' });
- let captured;
- await page.route(callback + '**', async route => { captured = new URL(route.request().url()); await route.fulfill({ status: 200, contentType: 'text/plain', body: 'Synthetic relying-party callback received' }); });
+ let captured, authenticatedAt;
+ await page.route(callbackRoute, async route => { captured = new URL(route.request().url()); await route.fulfill({ status: 200, contentType: 'text/plain', body: 'Synthetic relying-party callback received' }); });
  // prompt=login requires authentication after request creation even while the
  // ordinary workspace read summary is ALLOWED. No fixture proof timestamps change.
  await new Promise(r => setTimeout(r, 1100));
@@ -112,7 +113,7 @@ async function consentJourney(workspace, client, token, proof, journeyPage = pag
   await page.locator('input[autocomplete=current-password]').fill(f.password);
   const reauth = page.waitForResponse(r => r.url().endsWith('/api/auth/local/reauth'));
   await page.getByRole('button', { name: 'Confirm password', exact: true }).click();
-  await jsonResponse(await reauth, 200, 'local reauth UI');
+  authenticatedAt = (await jsonResponse(await reauth, 200, 'local reauth UI')).authenticatedAt;
   if (proof === 'local') await page.getByTestId('consent-auth-repair').getByRole('button', { name: 'Refresh', exact: true }).click();
  }
  if (proof !== 'local') {
@@ -125,6 +126,7 @@ async function consentJourney(workspace, client, token, proof, journeyPage = pag
   await api('GET', `/api/workspaces/${f.workspaceB}/identity`, token, undefined, scoped ? 403 : 200, context);
   const confirmed = await api('GET', `/api/workspaces/${workspace}/identity`, token, undefined, 200, context);
   assert.equal(confirmed.access.assurance.workspaceId, workspace);
+  if (scoped) authenticatedAt = confirmed.access.assurance.authenticatedAt;
   await page.waitForURL(consentURL);
   assert.equal(new URL(page.url()).searchParams.get('request'), handle, 'same request restored after SSO');
  }
@@ -155,16 +157,19 @@ async function consentJourney(workspace, client, token, proof, journeyPage = pag
  assert.equal(claims.nonce, nonce); assert.match(claims.sub, /^[A-Za-z0-9_-]{43}$/);
  assert.notEqual(claims.sub, f.userID);
  const now = Math.floor(Date.now() / 1000);
+ assert(authenticatedAt, 'authentication receipt');
+ assert.equal(claims.auth_time, Math.floor(new Date(authenticatedAt).getTime() / 1000));
  assert(Number.isInteger(claims.auth_time) && claims.auth_time <= now + 60 && claims.auth_time >= now - 300);
  assert(claims.iat <= now + 60 && claims.exp > now && claims.exp <= now + 300);
  const info = await jsonResponse(await context.request.get(`${issuer}/userinfo`, { headers: { Authorization: `Bearer ${tokens.access_token}` } }), 200, 'UserInfo');
+ assert.equal(info.name, 'Browser Fixture');
  assert.equal(info.sub, claims.sub); assert.equal(info.email, f.email); assert.equal(info.email_verified, true);
  for (const privateField of ['user_id', 'userId', 'roles', 'workspaces', 'superadmin']) assert.equal(info[privateField], undefined);
  await api('GET', '/api/me', tokens.access_token, undefined, 401, context);
  await jsonResponse(await context.request.post(`${issuer}/token`, { form: exchange }), 400, 'code replay denied');
  const revoke = await context.request.post(`${issuer}/revoke`, { form: { client_id: client.clientId, token: tokens.access_token } }); assert.equal(revoke.status(), 200);
  const denied = await context.request.get(`${issuer}/userinfo`, { headers: { Authorization: `Bearer ${tokens.access_token}` } }); assert.equal(denied.status(), 401);
- await page.unroute(callback + '**');
+ await page.unroute(callbackRoute);
  checkpoint(`${proof} consent, same request, S256, independent JWKS verification, UserInfo and revoke`);
  return claims.sub;
 }
