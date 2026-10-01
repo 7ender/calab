@@ -53,6 +53,9 @@ type Service struct {
 	events events.Publisher
 	// Revoked reports revoked auth sessions (set by the app); joins of revoked devices are kicked.
 	Revoked func(ctx context.Context, sessionID uuid.UUID) (bool, error)
+	// IdentityAccess verifies the exact device principal and target at the DB source.
+	identityWake   chan struct{}
+	IdentityAccess func(context.Context, uuid.UUID, uuid.UUID, uuid.UUID, uuid.UUID) error
 	// noSFUMove is set once LiveKit answered MoveParticipant with "not implemented"
 	// (open-source LiveKit): moves then go the app-level way right away (ADR-0019).
 	noSFUMove atomic.Bool
@@ -78,7 +81,7 @@ func (s *Service) SetSFUMove(supported bool) { s.noSFUMove.Store(!supported) }
 
 // NewService wires the rtc service. ev must be the plain publisher (not the Sync decorator).
 func NewService(cfg Config, d *db.DB, r rueidis.Client, lk LiveKit, ev events.Publisher) *Service {
-	s := &Service{cfg: cfg, db: d, redis: r, lk: lk, voice: voice.Store{C: r}, events: ev}
+	s := &Service{cfg: cfg, db: d, redis: r, lk: lk, voice: voice.Store{C: r}, events: ev, identityWake: make(chan struct{}, 1)}
 	s.voice.OnCalls = s.publishCalls
 	return s
 }
@@ -489,6 +492,9 @@ func (s *Service) voiceSelf(w http.ResponseWriter, r *http.Request) error {
 	}
 	if !ok {
 		return httpx.Conflict("not connected to a voice room")
+	}
+	if err := s.checkIdentity(r.Context(), wsID, roomID, id.UserID, id.SessionID); err != nil {
+		return err
 	}
 	// Musician mode (ADR-0052) is a plan feature: Team and above (409 PLAN_LIMIT on Free).
 	if req.GetMusician() {

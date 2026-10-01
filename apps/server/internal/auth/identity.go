@@ -52,6 +52,14 @@ func (s *Service) ResolvePrincipal(ctx context.Context, id Identity) (identitypo
 	if p.UserID != id.UserID || !identitypolicy.CheckSession(s.now(), p).Allowed {
 		return p, ErrSessionRevoked
 	}
+	u, err := s.db.Q.GetUser(ctx, p.UserID)
+	if err != nil {
+		return p, err
+	}
+	p.Guest, p.Bot = u.IsGuest, u.IsBot
+	if u.DisabledAt != nil || u.IsGuest && u.GuestExpiresAt != nil && !s.now().Before(*u.GuestExpiresAt) {
+		return p, ErrSessionRevoked
+	}
 	return p, nil
 }
 
@@ -72,7 +80,9 @@ func IdentityError(p identitypolicy.Principal, d identitypolicy.Decision, err er
 	switch d.Reason {
 	case identitypolicy.SSORequired:
 		code = v1.ErrorCode_ERROR_CODE_SSO_REQUIRED
-	case identitypolicy.DirectoryStale:
+	case identitypolicy.RecentAuthRequired:
+		code = v1.ErrorCode_ERROR_CODE_RECENT_AUTH_REQUIRED
+	case identitypolicy.DirectoryStale, identitypolicy.MembershipSuspended:
 		code = v1.ErrorCode_ERROR_CODE_DIRECTORY_ACCESS_DENIED
 	case identitypolicy.EntitlementRequired:
 		return httpx.Conflict("identity entitlement required").WithDetails(httpx.ReasonPlanLimit, 0, 0)
@@ -99,7 +109,7 @@ func (s *Service) CheckWorkspace(ctx context.Context, id Identity, ws uuid.UUID,
 		}
 		return nil // existing machine route/permission gates remain mandatory
 	}
-	d, err := s.Policy.CheckWorkspace(ctx, identitypolicy.Principal{UserID: id.UserID, SessionID: id.SessionID}, ws, op)
+	d, err := s.CheckWorkspaceDecision(ctx, id, ws, op)
 	return IdentityError(id.Principal, d, err)
 }
 
@@ -136,7 +146,14 @@ func (s *Service) CheckGlobal(ctx context.Context, id Identity, op identitypolic
 		}
 		granted = !u.IsGuest && !u.IsBot && u.DisabledAt == nil && (granted || (u.EmailVerifiedAt != nil && superadmin.IsPtr(u.Email)))
 	}
-	d := identitypolicy.CheckGlobal(s.now(), p, op, granted)
+	now, err := s.db.Q.IdentityDatabaseNow(ctx)
+	if err != nil {
+		return IdentityError(p, identitypolicy.Decision{Reason: identitypolicy.StateUnavailable}, err)
+	}
+	if host := s.now(); host.After(now) {
+		now = host
+	}
+	d := identitypolicy.CheckGlobal(now, p, op, granted)
 	return IdentityError(p, d, nil)
 }
 
@@ -170,8 +187,31 @@ func (s *Service) LocalReauthenticate(ctx context.Context, id Identity, password
 	if u.IsGuest || u.IsBot || !valid {
 		return time.Time{}, httpx.Unauthenticated("invalid credentials")
 	}
-	at := s.now()
-	if _, err = s.db.Q.RecordLocalAuthentication(ctx, sqlc.RecordLocalAuthenticationParams{SessionID: id.SessionID, UserID: id.UserID, AuthenticatedAt: &at}); err != nil {
+	var at time.Time
+	err = s.db.Tx(ctx, func(q *sqlc.Queries) error {
+		current, err := q.LockPasswordHash(ctx, u.ID)
+		if err != nil {
+			return err
+		}
+		if current == nil || u.PasswordHash == nil || *current != *u.PasswordHash {
+			return httpx.Unauthenticated("credentials changed")
+		}
+		row, err := q.GetSessionForUpdate(ctx, id.SessionID)
+		if err != nil {
+			return err
+		}
+		at, err = q.IdentityDatabaseNow(ctx)
+		if err != nil {
+			return err
+		}
+		p := SessionPrincipal(row)
+		if p.UserID != id.UserID || p.Authority != identitypolicy.LocalAccount || !identitypolicy.CheckSession(at, p).Allowed {
+			return httpx.Unauthenticated("invalid local session")
+		}
+		_, err = q.RecordLocalAuthentication(ctx, sqlc.RecordLocalAuthenticationParams{SessionID: id.SessionID, UserID: id.UserID, AuthenticatedAt: &at})
+		return err
+	})
+	if err != nil {
 		return time.Time{}, err
 	}
 	liveSessions.drop(id.SessionID)
@@ -214,4 +254,104 @@ func (s *Service) IssueIdentityTokens(ctx context.Context, q *sqlc.Queries, sess
 		return nil, ErrInvalidToken
 	}
 	return s.tokenPair(row, secret)
+}
+
+// InvalidateIdentity mutates durable epochs, proofs, scoped sessions and provider grants
+// in the caller's transaction. The workspace source-row lock serializes against issuance.
+func InvalidateIdentity(ctx context.Context, q *sqlc.Queries, ws uuid.UUID, user, actor *uuid.UUID, reason string) error {
+	if _, err := q.LockOAuthWorkspace(ctx, ws); err != nil {
+		return err
+	}
+	policy, err := q.EnsureIdentityPolicy(ctx, ws)
+	if err != nil {
+		return err
+	}
+	accessVersion := int64(1)
+	if user != nil {
+		access, err := q.TouchIdentityAccess(ctx, sqlc.TouchIdentityAccessParams{WorkspaceID: ws, UserID: *user})
+		if err != nil {
+			return err
+		}
+		accessVersion = access.Version
+	} else {
+		policy, err = q.TouchIdentityPolicy(ctx, ws)
+		if err != nil {
+			return err
+		}
+	}
+	if _, err = q.RevokeWorkspaceAssurances(ctx, sqlc.RevokeWorkspaceAssurancesParams{WorkspaceID: ws, UserID: user}); err != nil {
+		return err
+	}
+	if _, err = q.RevokeScopedIdentitySessions(ctx, sqlc.RevokeScopedIdentitySessionsParams{WorkspaceID: &ws, UserID: user}); err != nil {
+		return err
+	}
+	if _, err = q.RevokeWorkspaceOAuthGrants(ctx, sqlc.RevokeWorkspaceOAuthGrantsParams{WorkspaceID: ws, UserID: user, Reason: &reason}); err != nil {
+		return err
+	}
+	if _, err = q.CreateIdentityAudit(ctx, sqlc.CreateIdentityAuditParams{WorkspaceID: ws, ActorID: actor, TargetID: user, Action: reason, Outcome: "revoked"}); err != nil {
+		return err
+	}
+	_, err = q.CreateIdentityInvalidation(ctx, sqlc.CreateIdentityInvalidationParams{WorkspaceID: ws, UserID: user, PolicyVersion: policy.Version, AccessVersion: accessVersion, Reason: reason})
+	return err
+}
+
+// LogoutWorkspace revokes only this workspace device and its originating provider grants.
+// It serializes with provider issuance and RP mutation through the workspace source lock.
+func (s *Service) LogoutWorkspace(ctx context.Context, id Identity, ws uuid.UUID) error {
+	reason := RevokeLogout
+	err := s.db.Tx(ctx, func(q *sqlc.Queries) error {
+		if _, err := q.LockOAuthWorkspace(ctx, ws); err != nil {
+			return err
+		}
+		row, err := q.GetSessionForUpdate(ctx, id.SessionID)
+		if err != nil {
+			return err
+		}
+		if row.UserID != id.UserID || row.AuthorityKind != string(identitypolicy.WorkspaceSSO) || row.AuthorityWorkspaceID == nil || *row.AuthorityWorkspaceID != ws {
+			return httpx.Coded(403, v1.ErrorCode_ERROR_CODE_IDENTITY_SCOPE_DENIED, "workspace session scope denied")
+		}
+		if _, err = q.RevokeSession(ctx, sqlc.RevokeSessionParams{ID: row.ID, Reason: reason}); err != nil {
+			return err
+		}
+		if _, err = q.RevokeOAuthSessionGrants(ctx, sqlc.RevokeOAuthSessionGrantsParams{SessionID: row.ID, Reason: &reason}); err != nil {
+			return err
+		}
+		policy, err := q.EnsureIdentityPolicy(ctx, ws)
+		if err != nil {
+			return err
+		}
+		_, err = q.CreateIdentityInvalidation(ctx, sqlc.CreateIdentityInvalidationParams{WorkspaceID: ws, UserID: &row.UserID, SessionID: &row.ID, PolicyVersion: policy.Version, AccessVersion: 1, Reason: reason})
+		return err
+	})
+	if err == nil {
+		s.afterRevoke(ctx, id.SessionID, reason)
+	}
+	return err
+}
+
+// CheckWorkspaceDecision uses a coherent policy snapshot and a conservative DB-backed
+// clock. A lagging API clock never extends assurance, directory, session or grant expiry.
+func (s *Service) CheckWorkspaceDecision(ctx context.Context, id Identity, ws uuid.UUID, op identitypolicy.Operation) (identitypolicy.Decision, error) {
+	return s.checkWorkspaceDecision(ctx, s.db.Q, id, ws, op)
+}
+func (s *Service) checkWorkspaceDecision(ctx context.Context, q *sqlc.Queries, id Identity, ws uuid.UUID, op identitypolicy.Operation) (identitypolicy.Decision, error) {
+	state, err := identitypolicy.NewSQLLoader(q, s.entitlements).LoadIdentityState(ctx, id.SessionID, id.UserID, ws)
+	if err != nil {
+		return identitypolicy.Decision{Reason: identitypolicy.StateUnavailable}, err
+	}
+	if state.Principal.SessionID != id.SessionID || state.Principal.UserID != id.UserID || state.WorkspaceID != ws {
+		return identitypolicy.Decision{Reason: identitypolicy.StateUnavailable}, identitypolicy.ErrDenied
+	}
+	now, err := q.IdentityDatabaseNow(ctx)
+	if err != nil {
+		return identitypolicy.Decision{Reason: identitypolicy.StateUnavailable}, err
+	}
+	if host := s.now(); host.After(now) {
+		now = host
+	}
+	decision := identitypolicy.Evaluate(now, state, op)
+	if !decision.Allowed {
+		return decision, identitypolicy.ErrDenied
+	}
+	return decision, nil
 }

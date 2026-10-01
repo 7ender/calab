@@ -3,6 +3,7 @@
 package pbconv
 
 import (
+	"context"
 	"encoding/json"
 	"time"
 
@@ -12,6 +13,7 @@ import (
 	"google.golang.org/protobuf/types/known/timestamppb"
 
 	v1 "github.com/calaba/calaba/server/gen/calaba/v1"
+	"github.com/calaba/calaba/server/internal/db"
 	"github.com/calaba/calaba/server/internal/db/sqlc"
 	"github.com/calaba/calaba/server/internal/notifications"
 	"github.com/calaba/calaba/server/internal/perm"
@@ -724,4 +726,20 @@ func SessionAuthority(s sqlc.Session) *v1.SessionAuthority {
 // ScopedMe is the minimal profile available under workspace authority.
 func ScopedMe(u sqlc.User) *v1.Me {
 	return &v1.Me{User: &v1.User{Id: u.ID.String(), DisplayName: u.DisplayName}}
+}
+
+// LocalMe resolves the operator UUID grant for an independently local account profile.
+// Corporate/recovery consumers must instead use ScopedMe and never call this conversion.
+func LocalMe(ctx context.Context, q *sqlc.Queries, u sqlc.User) (*v1.Me, error) {
+	out := Me(u)
+	if u.IsGuest || u.IsBot || u.DisabledAt != nil {
+		out.IsSuperadmin = false
+		return out, nil
+	}
+	grant, err := q.GetProductAdminGrant(ctx, u.ID)
+	if err != nil && !db.IsNotFound(err) {
+		return nil, err
+	}
+	out.IsSuperadmin = out.IsSuperadmin || err == nil && grant.RevokedAt == nil
+	return out, nil
 }

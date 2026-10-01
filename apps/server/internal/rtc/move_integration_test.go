@@ -5,6 +5,7 @@ package rtc
 import (
 	"cmp"
 	"context"
+	"errors"
 	"os"
 	"strconv"
 	"sync"
@@ -99,6 +100,33 @@ func testService(t *testing.T, lk LiveKit) (*Service, rueidis.Client) {
 		}
 	})
 	s := NewService(Config{}, nil, rc, lk, events.Nop{})
+	// These Redis/SFU component fixtures intentionally have no DB or auth service.
+	// Their trusted principal registry is the explicit fixture device pairs, not a
+	// production allow fallback; unknown pairs remain denied.
+	s.IdentityAccess = func(ctx context.Context, wid, rid, uid, sid uuid.UUID) error {
+		if uid == uuid.Nil || sid == uuid.Nil {
+			return errors.New("unknown fixture principal")
+		}
+		states, err := s.voice.List(ctx, wid)
+		if err != nil {
+			return err
+		}
+		for _, state := range states {
+			if state.UserID == uid && state.SessionID == sid {
+				return nil
+			}
+		}
+		participants, err := lk.ListParticipants(ctx, voice.RoomName(wid, rid))
+		if err != nil {
+			return err
+		}
+		for _, p := range participants {
+			if p.Identity == voice.Identity(uid, sid) {
+				return nil
+			}
+		}
+		return errors.New("unknown fixture principal")
+	}
 	s.voice.OnCalls = nil // call-start announcements need Postgres; not under test here
 	return s, rc
 }

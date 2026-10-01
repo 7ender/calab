@@ -23,6 +23,7 @@ import (
 	"github.com/calaba/calaba/server/internal/events"
 	"github.com/calaba/calaba/server/internal/files"
 	"github.com/calaba/calaba/server/internal/httpx"
+	"github.com/calaba/calaba/server/internal/identitypolicy"
 	"github.com/calaba/calaba/server/internal/mail"
 	"github.com/calaba/calaba/server/internal/messages"
 	"github.com/calaba/calaba/server/internal/pbconv"
@@ -63,7 +64,14 @@ func (h *Handlers) get(w http.ResponseWriter, r *http.Request) error {
 	if err != nil {
 		return err
 	}
-	httpx.Write(w, http.StatusOK, &v1.GetMeResponse{Me: pbconv.Me(u)})
+	me, err := pbconv.LocalMe(r.Context(), h.db.Q, u)
+	if err != nil {
+		return err
+	}
+	if !id.IsBot && id.Principal.Authority != identitypolicy.LocalAccount {
+		me = pbconv.ScopedMe(u)
+	}
+	httpx.Write(w, http.StatusOK, &v1.GetMeResponse{Me: me})
 	return nil
 }
 

@@ -881,6 +881,23 @@ func (h *Handlers) myPacks(ctx context.Context, user uuid.UUID) (*v1.MyStickerPa
 	if err != nil {
 		return nil, err
 	}
+	filter := func(rows []sqlc.StickerPack) ([]sqlc.StickerPack, error) {
+		visible := rows[:0]
+		for _, row := range rows {
+			if err := perm.CheckAccess(ctx, row.WorkspaceID, user); err == nil {
+				visible = append(visible, row)
+			} else if httpx.AsError(err).Status >= 500 {
+				return nil, err
+			}
+		}
+		return visible, nil
+	}
+	if inst, err = filter(inst); err != nil {
+		return nil, err
+	}
+	if avail, err = filter(avail); err != nil {
+		return nil, err
+	}
 	all, err := withStickers(ctx, h.db.Q, append(append([]sqlc.StickerPack{}, inst...), avail...))
 	if err != nil {
 		return nil, err

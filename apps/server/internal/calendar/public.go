@@ -45,6 +45,9 @@ func (s *Service) claimsOf(r *http.Request, tok string) (*bundle, sqlc.EventAtte
 	if err != nil {
 		return nil, none, c, err
 	}
+	if err := auth.CheckPublicCapability(r.Context(), s.db.Q, ev.WorkspaceID); err != nil {
+		return nil, none, c, err
+	}
 	b, err := loadOne(r.Context(), s.db.Q, ev)
 	if err != nil {
 		return nil, none, c, err

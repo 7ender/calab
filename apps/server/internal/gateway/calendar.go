@@ -15,6 +15,7 @@ import (
 // addresses are in full for those involved and those who may edit the meeting, masked for other
 // viewers and removed for other bots (a bot that organizes or may edit sees them, ADR-0051).
 func (h *Hub) routeCalendar(st *wsState, sessions []*Session, view func(rid, uid uuid.UUID) bool, id uuid.UUID, ev *v1.DispatchEvent) {
+	wid := parseID(st.ws.GetId())
 	var e *v1.CalendarEvent
 	roomOnly := false
 	wrap := func(*v1.CalendarEvent, pbconv.EmailView) *v1.DispatchEvent { return ev }
@@ -50,7 +51,7 @@ func (h *Hub) routeCalendar(st *wsState, sessions []*Session, view func(rid, uid
 		}
 	case *v1.DispatchEvent_RoomEventEnded:
 		rid := parseID(x.RoomEventEnded.GetRoomId())
-		shared := newEnc(ev)
+		shared := newScopedEnc(wid, ev)
 		for _, s := range sessions {
 			if view(rid, s.user) {
 				s.dispatchEnc(id, shared)
@@ -61,7 +62,7 @@ func (h *Hub) routeCalendar(st *wsState, sessions []*Session, view func(rid, uid
 	var guestEnc *encEvent // ROOM_EVENT_ACTIVE for guests: without attendees
 	guest := func() *encEvent {
 		if guestEnc == nil {
-			guestEnc = newEnc(wrap(pbconv.EventForGuest(e), pbconv.EmailsNone))
+			guestEnc = newScopedEnc(wid, wrap(pbconv.EventForGuest(e), pbconv.EmailsNone))
 		}
 		return guestEnc
 	}
@@ -77,9 +78,9 @@ func (h *Hub) routeCalendar(st *wsState, sessions []*Session, view func(rid, uid
 	enc := func(v pbconv.EmailView) *encEvent {
 		if encs[v] == nil {
 			if v == pbconv.EmailsFull {
-				encs[v] = newEnc(ev)
+				encs[v] = newScopedEnc(wid, ev)
 			} else {
-				encs[v] = newEnc(wrap(pbconv.EventForViewer(e, v), v))
+				encs[v] = newScopedEnc(wid, wrap(pbconv.EventForViewer(e, v), v))
 			}
 		}
 		return encs[v]

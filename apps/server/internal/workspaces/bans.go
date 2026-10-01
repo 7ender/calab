@@ -9,6 +9,7 @@ import (
 	"unicode/utf8"
 
 	v1 "github.com/calaba/calaba/server/gen/calaba/v1"
+	"github.com/calaba/calaba/server/internal/auth"
 	"github.com/calaba/calaba/server/internal/db"
 	"github.com/calaba/calaba/server/internal/db/sqlc"
 	"github.com/calaba/calaba/server/internal/httpx"
@@ -64,6 +65,9 @@ func (h *Handlers) createBan(w http.ResponseWriter, r *http.Request) error {
 		removed bool
 	)
 	err = h.db.Tx(r.Context(), func(q *sqlc.Queries) error {
+		if _, err := q.LockOAuthWorkspace(r.Context(), wsID); err != nil {
+			return err
+		}
 		cur, err := q.GetMember(r.Context(), sqlc.GetMemberParams{WorkspaceID: wsID, UserID: target})
 		switch {
 		case err == nil:
@@ -87,6 +91,9 @@ func (h *Handlers) createBan(w http.ResponseWriter, r *http.Request) error {
 			if err := q.DeletePendingEmailInvitesFor(r.Context(), sqlc.DeletePendingEmailInvitesForParams{WorkspaceID: wsID, Email: *u.Email}); err != nil {
 				return err
 			}
+		}
+		if err := auth.InvalidateIdentity(r.Context(), q, wsID, &target, &actor, "member_banned"); err != nil {
+			return err
 		}
 		ban, err = q.CreateBan(r.Context(), sqlc.CreateBanParams{
 			WorkspaceID: wsID, UserID: target, Email: u.Email, Reason: reason, BannedBy: &actor,
