@@ -357,3 +357,14 @@ SELECT * FROM workspaces WHERE slug=$1;
 
 -- name: IdentityDatabaseNow :one
 SELECT clock_timestamp()::timestamptz AS database_now;
+
+-- name: IsIdentityWorkspaceProfileImage :one
+SELECT EXISTS (
+    SELECT 1 FROM workspaces w
+    WHERE w.id = sqlc.arg('workspace_id') AND w.icon_file_id = sqlc.arg('file_id')
+    UNION ALL
+    SELECT 1 FROM users u
+    JOIN workspace_members m ON m.user_id = u.id
+    WHERE m.workspace_id = sqlc.arg('workspace_id')
+      AND u.avatar_file_id = sqlc.arg('file_id') AND u.disabled_at IS NULL
+)::boolean AS allowed;
