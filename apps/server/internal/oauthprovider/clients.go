@@ -106,9 +106,15 @@ func (s *Service) management(_ http.ResponseWriter, r *http.Request, fn func(con
 		if _, err := q.EnsureIdentityPolicy(r.Context(), ws); err != nil {
 			return err
 		}
-		if _, d, err := s.state(r.Context(), q, p, ws, identitypolicy.ManageOAuth); err != nil {
+		if st, d, err := s.state(r.Context(), q, p, ws, identitypolicy.ManageOAuth); err != nil {
+			if !errors.Is(err, identitypolicy.ErrDenied) && !errors.Is(err, dbNoRows()) {
+				return httpx.Unavailable(nil).WithDetails("IDENTITY_DEPENDENCY_UNAVAILABLE", 0, 0)
+			}
 			if errors.Is(err, dbNoRows()) || d.Reason == identitypolicy.InvalidSession {
 				return httpx.Unauthenticated("invalid session")
+			}
+			if st.Principal.Authority == identitypolicy.Recovery {
+				return httpx.Forbidden("recovery-only session").WithDetails("RECOVERY_ONLY", 0, 0)
 			}
 			if d.Reason == identitypolicy.EntitlementRequired {
 				return httpx.Conflict("Business or Enterprise is required").WithDetails("PLAN_LIMIT", 0, 0)
@@ -390,7 +396,11 @@ func (s *Service) rotateSecret(w http.ResponseWriter, r *http.Request) {
 		if in.RevokeOld {
 			_, err = q.RevokeOAuthClientSecrets(ctx, sqlc.RevokeOAuthClientSecretsParams{WorkspaceID: ws, ClientID: c.ID})
 		} else {
-			until := s.c.Now().Add(10 * time.Minute)
+			dbNow, clockErr := q.IdentityDatabaseNow(ctx)
+			if clockErr != nil {
+				return clockErr
+			}
+			until := minimum(s.c.Now().Add(10*time.Minute), dbNow.Add(10*time.Minute))
 			_, err = q.ExpireOAuthClientSecrets(ctx, sqlc.ExpireOAuthClientSecretsParams{WorkspaceID: ws, ClientID: c.ID, ValidUntil: until})
 			if len(keys) > 0 {
 				out.OldSecretValidUntil = timestamppb.New(until)

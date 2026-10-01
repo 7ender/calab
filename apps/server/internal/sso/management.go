@@ -29,7 +29,7 @@ func provider(v pb.IdentityProvider) string {
 func ConnectionView(c sqlc.WorkspaceIdentityConnection) *pb.IdentityConnection {
 	providers := map[string]pb.IdentityProvider{"entra": pb.IdentityProvider_IDENTITY_PROVIDER_ENTRA, "adfs": pb.IdentityProvider_IDENTITY_PROVIDER_ADFS, "generic": pb.IdentityProvider_IDENTITY_PROVIDER_GENERIC}
 	statuses := map[string]pb.IdentityConnectionStatus{"draft": pb.IdentityConnectionStatus_IDENTITY_CONNECTION_STATUS_DRAFT, "tested": pb.IdentityConnectionStatus_IDENTITY_CONNECTION_STATUS_TESTED, "active": pb.IdentityConnectionStatus_IDENTITY_CONNECTION_STATUS_ACTIVE, "disabled": pb.IdentityConnectionStatus_IDENTITY_CONNECTION_STATUS_DISABLED}
-	out := &pb.IdentityConnection{Id: c.ID.String(), WorkspaceId: c.WorkspaceID.String(), Name: c.Name, Provider: providers[c.Provider], Issuer: c.Issuer, TenantId: c.TenantID, ClientId: c.ClientID, SecretConfigured: len(c.ClientSecretBox) > 0, Version: uint64(c.Version), Status: statuses[c.Status]}
+	out := &pb.IdentityConnection{Id: c.ID.String(), WorkspaceId: c.WorkspaceID.String(), Name: c.Name, Provider: providers[c.Provider], Issuer: c.Issuer, TenantId: c.TenantID, ClientId: c.ClientID, SecretConfigured: len(c.ClientSecretBox) > 0, Version: uint64(max(c.Version, 0)), Status: statuses[c.Status]}
 	if c.TestedAt != nil {
 		out.TestedAt = timestamppb.New(*c.TestedAt)
 	}
@@ -83,11 +83,18 @@ func (s *Service) PutConnection(ctx context.Context, p identitypolicy.Principal,
 				break
 			}
 		}
-		if previous == nil && req.Version != 0 || previous != nil && uint64(previous.Version) != req.Version {
+		if previous == nil && req.Version != 0 || previous != nil && uint64(max(previous.Version, 0)) != req.Version {
 			return ErrChanged
 		}
 		secret := ""
-		if previous != nil && len(previous.ClientSecretBox) > 0 {
+		sameCredentials := previous != nil && previous.Issuer == candidate.Issuer && previous.ClientID == candidate.ClientID
+		if previous != nil && !sameCredentials && len(previous.ClientSecretBox) > 0 && req.ClientSecret == nil {
+			return ErrInvalid
+		}
+		if sameCredentials && (previous.Provider != candidate.Provider || previous.TenantID != candidate.TenantID) {
+			return ErrInvalid
+		}
+		if sameCredentials && len(previous.ClientSecretBox) > 0 {
 			plain, err := s.Keys.Open(secretBinding(*previous), previous.ClientSecretBox)
 			if err != nil {
 				return err
@@ -156,6 +163,9 @@ func (s *Service) ActivateConnection(ctx context.Context, p identitypolicy.Princ
 			return err
 		}
 		if !ownerTestAllowed(s.now(), st) {
+			return ErrDenied
+		}
+		if st.Policy.Mode == identitypolicy.Enforced && !st.RecoveryReady {
 			return ErrDenied
 		}
 		c, err := q.GetIdentityConnectionForUpdate(ctx, sqlc.GetIdentityConnectionForUpdateParams{WorkspaceID: ws, ID: connection})
@@ -229,7 +239,7 @@ func (s *Service) SetPolicy(ctx context.Context, p identitypolicy.Principal, ws 
 		if err != nil {
 			return err
 		}
-		if uint64(st.Policy.Version) != req.Version {
+		if uint64(max(st.Policy.Version, 0)) != req.Version {
 			return ErrChanged
 		}
 		desired := mode(req.Mode)
@@ -245,7 +255,11 @@ func (s *Service) SetPolicy(ctx context.Context, p identitypolicy.Principal, ws 
 				return ErrDenied
 			}
 		}
-		if _, err = q.SetIdentityPolicy(ctx, sqlc.SetIdentityPolicyParams{WorkspaceID: ws, ExpectedVersion: st.Policy.Version, Mode: string(desired), AssuranceMaxAgeSeconds: int32(st.Policy.MaxAge / time.Second), UpdatedBy: &p.UserID}); err != nil {
+		seconds := st.Policy.MaxAge / time.Second
+		if seconds < 300 || seconds > 3600 {
+			return ErrInvalid
+		}
+		if _, err = q.SetIdentityPolicy(ctx, sqlc.SetIdentityPolicyParams{WorkspaceID: ws, ExpectedVersion: st.Policy.Version, Mode: string(desired), AssuranceMaxAgeSeconds: int32(seconds), UpdatedBy: &p.UserID}); err != nil {
 			return err
 		}
 		if err = Invalidate(ctx, q, ws, nil, "policy_changed"); err != nil {
@@ -284,12 +298,18 @@ func (s *Service) RecoveryKit(ctx context.Context, p identitypolicy.Principal, w
 		if _, err = q.DeleteIdentityRecoveryCodes(ctx, ws); err != nil {
 			return err
 		}
+		databaseNow, err := q.IdentityDatabaseNow(ctx)
+		if err != nil {
+			return err
+		}
+		deadline := databaseNow.Add(365 * 24 * time.Hour)
+		out.ExpiresAt = timestamppb.New(deadline)
 		for range 10 {
 			code, err := identitycrypto.Secret()
 			if err != nil {
 				return err
 			}
-			if _, err = q.CreateIdentityRecoveryCode(ctx, sqlc.CreateIdentityRecoveryCodeParams{WorkspaceID: ws, OwnerID: p.UserID, CodeHash: identitycrypto.Hash(code), ExpiresAt: s.now().AddDate(1, 0, 0)}); err != nil {
+			if _, err = q.CreateIdentityRecoveryCode(ctx, sqlc.CreateIdentityRecoveryCodeParams{WorkspaceID: ws, OwnerID: p.UserID, CodeHash: identitycrypto.Hash(code), ExpiresAt: deadline}); err != nil {
 				return err
 			}
 			out.CodesOnce = append(out.CodesOnce, code)
@@ -319,7 +339,11 @@ func (s *Service) Recover(ctx context.Context, p identitypolicy.Principal, ws uu
 		if _, err = q.ConsumeIdentityRecoveryCode(ctx, sqlc.ConsumeIdentityRecoveryCodeParams{WorkspaceID: ws, OwnerID: p.UserID, CodeHash: identitycrypto.Hash(code)}); err != nil {
 			return ErrDenied
 		}
-		issued, err := s.issue(ctx, q, IssueRequest{UserID: p.UserID, WorkspaceID: ws, Authority: identitypolicy.Recovery, AuthenticatedAt: s.now(), ExpiresAt: s.now().Add(10 * time.Minute)})
+		databaseNow, err := q.IdentityDatabaseNow(ctx)
+		if err != nil {
+			return err
+		}
+		issued, err := s.issue(ctx, q, IssueRequest{UserID: p.UserID, WorkspaceID: ws, Authority: identitypolicy.Recovery, AuthenticatedAt: databaseNow, ExpiresAt: databaseNow.Add(10 * time.Minute)})
 		if err != nil {
 			return err
 		}
@@ -379,9 +403,9 @@ func (s *Service) Status(ctx context.Context, p identitypolicy.Principal, ws uui
 		return nil, ErrDenied
 	}
 	modes := map[identitypolicy.Mode]pb.IdentityPolicyMode{identitypolicy.Off: pb.IdentityPolicyMode_IDENTITY_POLICY_MODE_OFF, identitypolicy.Optional: pb.IdentityPolicyMode_IDENTITY_POLICY_MODE_OPTIONAL, identitypolicy.Enforced: pb.IdentityPolicyMode_IDENTITY_POLICY_MODE_ENFORCED}
-	out := &pb.GetWorkspaceIdentityResponse{Access: &pb.WorkspaceIdentityAccess{WorkspaceId: ws.String(), Mode: modes[st.Policy.Mode], PolicyVersion: uint64(st.Policy.Version), MembershipVersion: uint64(st.AccessVersion)}}
+	out := &pb.GetWorkspaceIdentityResponse{Access: &pb.WorkspaceIdentityAccess{WorkspaceId: ws.String(), Mode: modes[st.Policy.Mode], PolicyVersion: uint64(max(st.Policy.Version, 0)), MembershipVersion: uint64(max(st.AccessVersion, 0))}}
 	if st.Assurance != nil && !st.Assurance.Revoked {
-		out.Access.Assurance = &pb.WorkspaceAssurance{WorkspaceId: ws.String(), AuthenticatedAt: timestamppb.New(st.Assurance.AuthenticatedAt), ExpiresAt: timestamppb.New(st.Assurance.ValidUntil), PolicyVersion: uint64(st.Assurance.Versions.Policy), ConnectionVersion: uint64(st.Assurance.Versions.Connection)}
+		out.Access.Assurance = &pb.WorkspaceAssurance{WorkspaceId: ws.String(), AuthenticatedAt: timestamppb.New(st.Assurance.AuthenticatedAt), ExpiresAt: timestamppb.New(st.Assurance.ValidUntil), PolicyVersion: uint64(max(st.Assurance.Versions.Policy, 0)), ConnectionVersion: uint64(max(st.Assurance.Versions.Connection, 0))}
 	}
 	if st.BuiltinRole == "owner" && st.Principal.Authority == identitypolicy.LocalAccount {
 		all, err := s.DB.Q.ListIdentityConnections(ctx, ws)

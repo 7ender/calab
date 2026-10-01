@@ -1716,6 +1716,7 @@ func (x *LocalReauthResponse) GetValidUntil() *timestamppb.Timestamp {
 type IdentityRecoveryKitResponse struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	CodesOnce     []string               `protobuf:"bytes,1,rep,name=codes_once,json=codesOnce,proto3" json:"codes_once,omitempty"`
+	ExpiresAt     *timestamppb.Timestamp `protobuf:"bytes,2,opt,name=expires_at,json=expiresAt,proto3" json:"expires_at,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -1753,6 +1754,13 @@ func (*IdentityRecoveryKitResponse) Descriptor() ([]byte, []int) {
 func (x *IdentityRecoveryKitResponse) GetCodesOnce() []string {
 	if x != nil {
 		return x.CodesOnce
+	}
+	return nil
+}
+
+func (x *IdentityRecoveryKitResponse) GetExpiresAt() *timestamppb.Timestamp {
+	if x != nil {
+		return x.ExpiresAt
 	}
 	return nil
 }
@@ -2296,10 +2304,12 @@ const file_calaba_v1_identity_proto_rawDesc = "" +
 	"\x13LocalReauthResponse\x12E\n" +
 	"\x10authenticated_at\x18\x01 \x01(\v2\x1a.google.protobuf.TimestampR\x0fauthenticatedAt\x12;\n" +
 	"\vvalid_until\x18\x02 \x01(\v2\x1a.google.protobuf.TimestampR\n" +
-	"validUntil\"<\n" +
+	"validUntil\"w\n" +
 	"\x1bIdentityRecoveryKitResponse\x12\x1d\n" +
 	"\n" +
-	"codes_once\x18\x01 \x03(\tR\tcodesOnce\"=\n" +
+	"codes_once\x18\x01 \x03(\tR\tcodesOnce\x129\n" +
+	"\n" +
+	"expires_at\x18\x02 \x01(\v2\x1a.google.protobuf.TimestampR\texpiresAt\"=\n" +
 	"\x16IdentityRecoverRequest\x12#\n" +
 	"\rrecovery_code\x18\x01 \x01(\tR\frecoveryCode\"\xe2\x03\n" +
 	"\x11IdentityDirectory\x12\x0e\n" +
@@ -2478,14 +2488,15 @@ var file_calaba_v1_identity_proto_depIdxs = []int32{
 	34, // 23: calaba.v1.SSOBeginResponse.expires_at:type_name -> google.protobuf.Timestamp
 	34, // 24: calaba.v1.LocalReauthResponse.authenticated_at:type_name -> google.protobuf.Timestamp
 	34, // 25: calaba.v1.LocalReauthResponse.valid_until:type_name -> google.protobuf.Timestamp
-	34, // 26: calaba.v1.IdentityDirectory.last_success_at:type_name -> google.protobuf.Timestamp
-	9,  // 27: calaba.v1.IdentityDirectoryMember.status:type_name -> calaba.v1.DirectoryMemberStatus
-	31, // 28: calaba.v1.ListIdentityDirectoryMembersResponse.members:type_name -> calaba.v1.IdentityDirectoryMember
-	29, // [29:29] is the sub-list for method output_type
-	29, // [29:29] is the sub-list for method input_type
-	29, // [29:29] is the sub-list for extension type_name
-	29, // [29:29] is the sub-list for extension extendee
-	0,  // [0:29] is the sub-list for field type_name
+	34, // 26: calaba.v1.IdentityRecoveryKitResponse.expires_at:type_name -> google.protobuf.Timestamp
+	34, // 27: calaba.v1.IdentityDirectory.last_success_at:type_name -> google.protobuf.Timestamp
+	9,  // 28: calaba.v1.IdentityDirectoryMember.status:type_name -> calaba.v1.DirectoryMemberStatus
+	31, // 29: calaba.v1.ListIdentityDirectoryMembersResponse.members:type_name -> calaba.v1.IdentityDirectoryMember
+	30, // [30:30] is the sub-list for method output_type
+	30, // [30:30] is the sub-list for method input_type
+	30, // [30:30] is the sub-list for extension type_name
+	30, // [30:30] is the sub-list for extension extendee
+	0,  // [0:30] is the sub-list for field type_name
 }
 
 func init() { file_calaba_v1_identity_proto_init() }

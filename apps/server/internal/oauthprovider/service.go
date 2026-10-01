@@ -95,8 +95,9 @@ func minimum(a, b time.Time) time.Time {
 }
 
 func (s *Service) state(ctx context.Context, q *sqlc.Queries, p identitypolicy.Principal, ws uuid.UUID, op identitypolicy.Operation) (identitypolicy.State, identitypolicy.Decision, error) {
-	if _, err := q.LockIdentityBoundary(ctx, sqlc.LockIdentityBoundaryParams{WorkspaceID: ws, UserID: p.UserID, SessionID: p.SessionID}); err != nil {
-		return identitypolicy.State{}, identitypolicy.Decision{}, err
+	_, lockErr := q.LockIdentityBoundary(ctx, sqlc.LockIdentityBoundaryParams{WorkspaceID: ws, UserID: p.UserID, SessionID: p.SessionID})
+	if lockErr != nil && !errors.Is(lockErr, dbNoRows()) {
+		return identitypolicy.State{}, identitypolicy.Decision{}, lockErr
 	}
 	st, err := identitypolicy.NewSQLLoader(q, s.c.Entitlements).LoadIdentityState(ctx, p.SessionID, p.UserID, ws)
 	if err != nil {
@@ -106,6 +107,9 @@ func (s *Service) state(ctx context.Context, q *sqlc.Queries, p identitypolicy.P
 		return st, identitypolicy.Decision{}, identitypolicy.ErrDenied
 	}
 	d := identitypolicy.Evaluate(s.c.Now(), st, op)
+	if lockErr != nil && d.Allowed {
+		d = identitypolicy.Decision{Reason: identitypolicy.MembershipRequired}
+	}
 	if !d.Allowed {
 		return st, d, identitypolicy.ErrDenied
 	}
