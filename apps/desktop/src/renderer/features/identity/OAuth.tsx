@@ -1,6 +1,5 @@
 import { useQuery } from '@tanstack/react-query';
 import {
-  IdentityAccessReason,
   OAuthClientType,
   type OAuthClient,
   type OAuthConsentSnapshot,
@@ -20,6 +19,7 @@ import { identityDate, OneTimeSecret, useIdentityAction } from './IdentitySettin
 import { useIdentity } from '../../stores/identity';
 import { localAuthority } from './model';
 import { LocalReauth, SsoButton } from './SignIn';
+import { consentWorkspaceCandidates } from './consentWorkspaces';
 
 export function OAuthClients({ workspaceId }: { workspaceId: string }): ReactNode {
   const clients = useQuery({
@@ -291,10 +291,7 @@ function BoundConsent({ handle, sessionId }: { handle: string; sessionId: string
   const local = useSession((s) => localAuthority(s.authority));
   const scopedWorkspace = useSession((s) => s.authority?.workspaceId ?? '');
   const workspaceIds = useIdentity((s) =>
-    Object.values(s.access)
-      .filter((a) => a.reason !== IdentityAccessReason.ALLOWED)
-      .map((a) => a.workspaceId)
-      .join('|'),
+    consentWorkspaceCandidates(Object.values(s.access), scopedWorkspace).join('|'),
   );
   const [workspaceId, setWorkspaceId] = useState(scopedWorkspace);
   const [attempt, setAttempt] = useState(0);
@@ -371,7 +368,7 @@ function BoundConsent({ handle, sessionId }: { handle: string; sessionId: string
                 <Field label={t('identity.slug')}>
                   <Select value={workspaceId} onChange={(e) => setWorkspaceId(e.target.value)}>
                     <option value="">—</option>
-                    {[...new Set([...workspaceIds.split('|').filter(Boolean), ...(scopedWorkspace ? [scopedWorkspace] : [])])].map((id) => (
+                    {workspaceIds.split('|').filter(Boolean).map((id) => (
                       <option key={id} value={id}>
                         {id}
                       </option>
