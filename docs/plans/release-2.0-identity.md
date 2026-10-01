@@ -511,6 +511,18 @@ OAuth clients/consent/grants). Renderer не задаёт этот Origin. Ос�
 deadlines; новая assurance не продлевает старую grant. Проверка после ожидавшей
 блокировки обязательна и для одноразовых consumes/финальной публикации LDAP snapshot.
 
+Для изменения данных workspace внешняя REST-проверка — предварительная. Окончательный
+допуск проверяется внутри той же DB-транзакции, что и запись, после общих с отзывом
+workspace/user/member/session locks. Отзыв, завершившийся первым, запрещает запись;
+запись, получившая допуск и lock первой, завершается до отзыва. Проверка учитывает
+истечение proof во время ожидания lock. Прямые одиночные SQL mutations не исключение:
+они используют явную guarded transaction/query boundary. Typed context admission hook
+в db допустим без зависимости db от auth и без анализа SQL-строк; transaction-bound
+policy query не вызывает hook рекурсивно. Нельзя оборачивать целый HTTP response
+в транзакцию или держать lock при чтении upload/сетевых вызовах blob/LiveKit/SMTP.
+Внешняя подготовка выполняется до финального DB commit; события — после commit.
+Cross-workspace операции используют согласованный порядок locks или отдельные units.
+
 READY.identity_access содержит причины и версии закрытых пространств участника,
 но не их защищённые snapshots. UI очищает их caches/subscriptions/media, сохраняя
 независимо разрешённые пространства и личные данные local session. Scoped session
