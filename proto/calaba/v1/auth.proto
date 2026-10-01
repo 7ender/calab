@@ -28,6 +28,13 @@ message AuthTokens {
   SessionAuthority authority = 6;
 }
 
+// First-party SSO completion preserves proof/test results without widening authority.
+message SSOCompleteResponse {
+  AuthTokens tokens = 1;
+  WorkspaceAssurance assurance = 2;
+  bool tested = 3;
+}
+
 // POST /api/auth/register
 message RegisterRequest {
   string email = 1;
