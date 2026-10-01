@@ -64,7 +64,9 @@ func (s *Service) Run(ctx context.Context) {
 		}
 		if time.Since(lastCleanup) > time.Hour {
 			lastCleanup = time.Now()
-			if _, err := s.db.Q.DeleteOldWebhookDeliveries(ctx, now().Add(-7*24*time.Hour)); err != nil {
+			if _, err := db.GuardValue(ctx, s.db, func(guarded *sqlc.Queries) (int64, error) {
+				return guarded.DeleteOldWebhookDeliveries(ctx, now().Add(-7*24*time.Hour))
+			}); err != nil {
 				slog.WarnContext(ctx, "bot webhooks: cleanup", "err", err)
 			}
 		}
@@ -83,8 +85,10 @@ type target struct {
 func (s *Service) ProcessWebhooks(ctx context.Context) (int, error) {
 	sent := 0
 	for range 20 {
-		rows, err := s.db.Q.ClaimWebhookDeliveries(ctx, sqlc.ClaimWebhookDeliveriesParams{
-			Lease: pgtype.Interval{Microseconds: webhookLease.Microseconds(), Valid: true}, Lim: webhookBatch,
+		rows, err := db.GuardValue(ctx, s.db, func(guarded *sqlc.Queries) ([]sqlc.BotWebhookDelivery, error) {
+			return guarded.ClaimWebhookDeliveries(ctx, sqlc.ClaimWebhookDeliveriesParams{
+				Lease: pgtype.Interval{Microseconds: webhookLease.Microseconds(), Valid: true}, Lim: webhookBatch,
+			})
 		})
 		if err != nil {
 			return sent, err
@@ -161,17 +165,19 @@ func clipErr(s string) string {
 func (s *Service) deliver(ctx context.Context, row sqlc.BotWebhookDelivery, t target) bool {
 	log := slog.With("delivery_id", row.ID, "bot_id", row.BotUserID, "attempt", row.Attempts+1)
 	if !t.ok || row.Payload == nil {
-		if err := s.db.Q.MarkWebhookFailed(ctx, sqlc.MarkWebhookFailedParams{ID: row.ID, Error: "webhook removed or disabled"}); err != nil {
+		if err := db.GuardExec(ctx, s.db, func(guarded *sqlc.Queries) error {
+			return guarded.MarkWebhookFailed(ctx, sqlc.MarkWebhookFailedParams{ID: row.ID, Error: "webhook removed or disabled"})
+		}); err != nil {
 			log.WarnContext(ctx, "bot webhooks: mark failed", "err", err)
 		}
 		return false
 	}
 	err := s.post(ctx, row, t)
 	if err == nil {
-		if e := s.db.Q.MarkWebhookDelivered(ctx, row.ID); e != nil {
+		if e := db.GuardExec(ctx, s.db, func(guarded *sqlc.Queries) error { return guarded.MarkWebhookDelivered(ctx, row.ID) }); e != nil {
 			log.WarnContext(ctx, "bot webhooks: mark delivered", "err", e)
 		}
-		if e := s.db.Q.BotWebhookOK(ctx, row.BotUserID); e != nil {
+		if e := db.GuardExec(ctx, s.db, func(guarded *sqlc.Queries) error { return guarded.BotWebhookOK(ctx, row.BotUserID) }); e != nil {
 			log.WarnContext(ctx, "bot webhooks: mark ok", "err", e)
 		}
 		return true
@@ -183,16 +189,22 @@ func (s *Service) deliver(ctx context.Context, row sqlc.BotWebhookDelivery, t ta
 	// the last attempt fails, and gets disabled below.
 	end := row.CreatedAt.Add(s.wh.opts.GiveUp + s.wh.opts.Backoff(0))
 	if !at.Before(end) {
-		if e := s.db.Q.MarkWebhookFailed(ctx, sqlc.MarkWebhookFailedParams{ID: row.ID, Error: msg}); e != nil {
+		if e := db.GuardExec(ctx, s.db, func(guarded *sqlc.Queries) error {
+			return guarded.MarkWebhookFailed(ctx, sqlc.MarkWebhookFailedParams{ID: row.ID, Error: msg})
+		}); e != nil {
 			log.WarnContext(ctx, "bot webhooks: mark failed", "err", e)
 		}
-	} else if e := s.db.Q.MarkWebhookRetry(ctx, sqlc.MarkWebhookRetryParams{
-		ID: row.ID, NextAt: minTime(at.Add(s.wh.opts.Backoff(row.Attempts)), end), Error: msg,
+	} else if e := db.GuardExec(ctx, s.db, func(guarded *sqlc.Queries) error {
+		return guarded.MarkWebhookRetry(ctx, sqlc.MarkWebhookRetryParams{
+			ID: row.ID, NextAt: minTime(at.Add(s.wh.opts.Backoff(row.Attempts)), end), Error: msg,
+		})
 	}); e != nil {
 		log.WarnContext(ctx, "bot webhooks: mark retry", "err", e)
 	}
 	log.InfoContext(ctx, "bot webhook delivery failed", "err", msg)
-	b, e := s.db.Q.BotWebhookFailing(ctx, sqlc.BotWebhookFailingParams{UserID: row.BotUserID, WebhookLastError: msg})
+	b, e := db.GuardValue(ctx, s.db, func(guarded *sqlc.Queries) (sqlc.Bot, error) {
+		return guarded.BotWebhookFailing(ctx, sqlc.BotWebhookFailingParams{UserID: row.BotUserID, WebhookLastError: msg})
+	})
 	if e != nil || b.WebhookFailingSince == nil || at.Sub(*b.WebhookFailingSince) < s.wh.opts.GiveUp {
 		return false
 	}

@@ -150,7 +150,9 @@ func (h *Handlers) deleteBan(w http.ResponseWriter, r *http.Request) error {
 	if err != nil {
 		return err
 	}
-	n, err := h.db.Q.DeleteBan(r.Context(), sqlc.DeleteBanParams{WorkspaceID: wsID, UserID: target})
+	n, err := db.GuardValue(r.Context(), h.db, func(guarded *sqlc.Queries) (int64, error) {
+		return guarded.DeleteBan(r.Context(), sqlc.DeleteBanParams{WorkspaceID: wsID, UserID: target})
+	})
 	if err != nil {
 		return err
 	}

@@ -90,7 +90,9 @@ func (a *Admin) setStorageQuota(w http.ResponseWriter, r *http.Request) error {
 		v := int64(req.GetQuotaBytes()) //nolint:gosec // checked above
 		quota = &v
 	}
-	if _, err := a.db.Q.SetUserStorageQuota(r.Context(), sqlc.SetUserStorageQuotaParams{ID: id, Quota: quota}); err != nil {
+	if _, err := db.GuardValue(r.Context(), a.db, func(guarded *sqlc.Queries) (*int64, error) {
+		return guarded.SetUserStorageQuota(r.Context(), sqlc.SetUserStorageQuotaParams{ID: id, Quota: quota})
+	}); err != nil {
 		if db.IsNotFound(err) {
 			return httpx.NotFound("user")
 		}

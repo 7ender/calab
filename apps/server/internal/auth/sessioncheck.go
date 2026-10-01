@@ -138,7 +138,7 @@ func (s *Service) checkSession(ctx context.Context, sid uuid.UUID) error {
 	liveSessions.put(sess, now)
 	if now.Sub(sess.LastSeenAt) > touchEvery {
 		// «Настройки → Сеансы» shows the last activity; refreshes alone are a day apart now.
-		if err := s.db.Q.TouchSession(ctx, sid); err != nil {
+		if err := db.GuardExec(ctx, s.db, func(guarded *sqlc.Queries) error { return guarded.TouchSession(ctx, sid) }); err != nil {
 			slog.WarnContext(ctx, "session touch failed", "session_id", sid, "err", err)
 		}
 	}

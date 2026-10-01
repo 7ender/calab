@@ -559,7 +559,7 @@ func (h *Handlers) update(w http.ResponseWriter, r *http.Request) error {
 		}
 		p.TimeFormat = &f
 	}
-	ws, err := h.db.Q.UpdateWorkspace(r.Context(), p)
+	ws, err := db.GuardValue(r.Context(), h.db, func(guarded *sqlc.Queries) (sqlc.Workspace, error) { return guarded.UpdateWorkspace(r.Context(), p) })
 	if db.IsForeignKeyViolation(err) {
 		return httpx.Validation("iconFileId", "file not found")
 	}
@@ -893,9 +893,11 @@ func (h *Handlers) createInvite(w http.ResponseWriter, r *http.Request) error {
 		if err != nil {
 			return err
 		}
-		inv, err := h.db.Q.CreateInvite(r.Context(), sqlc.CreateInviteParams{
-			WorkspaceID: wsID, Code: code, CreatedBy: uid(r),
-			MaxUses: int32(req.GetMaxUses()), ExpiresAt: expires, //nolint:gosec // validated
+		inv, err := db.GuardValue(r.Context(), h.db, func(guarded *sqlc.Queries) (sqlc.WorkspaceInvite, error) {
+			return guarded.CreateInvite(r.Context(), sqlc.CreateInviteParams{
+				WorkspaceID: wsID, Code: code, CreatedBy: uid(r),
+				MaxUses: int32(req.GetMaxUses()), ExpiresAt: expires, //nolint:gosec // validated
+			})
 		})
 		if db.UniqueViolation(err) != "" {
 			continue // astronomically unlikely code collision
@@ -935,7 +937,9 @@ func (h *Handlers) deleteInvite(w http.ResponseWriter, r *http.Request) error {
 	if err != nil {
 		return err
 	}
-	n, err := h.db.Q.DeleteInvite(r.Context(), sqlc.DeleteInviteParams{ID: invID, WorkspaceID: wsID})
+	n, err := db.GuardValue(r.Context(), h.db, func(guarded *sqlc.Queries) (int64, error) {
+		return guarded.DeleteInvite(r.Context(), sqlc.DeleteInviteParams{ID: invID, WorkspaceID: wsID})
+	})
 	if err != nil {
 		return err
 	}
@@ -1135,7 +1139,7 @@ func (h *Handlers) updateMember(w http.ResponseWriter, r *http.Request) error {
 		s := string(newRole)
 		p.Role = &s
 	}
-	m, err := h.db.Q.UpdateMember(r.Context(), p)
+	m, err := db.GuardValue(r.Context(), h.db, func(guarded *sqlc.Queries) (sqlc.WorkspaceMember, error) { return guarded.UpdateMember(r.Context(), p) })
 	if err != nil {
 		return err
 	}

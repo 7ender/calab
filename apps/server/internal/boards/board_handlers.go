@@ -459,7 +459,9 @@ func (s *Service) deleteBoard(w http.ResponseWriter, r *http.Request) error {
 		return err
 	}
 	if !purge {
-		if _, err := s.db.Q.SetBoardArchived(r.Context(), sqlc.SetBoardArchivedParams{ID: id, Archived: true}); err != nil {
+		if _, err := db.GuardValue(r.Context(), s.db, func(guarded *sqlc.Queries) (sqlc.Board, error) {
+			return guarded.SetBoardArchived(r.Context(), sqlc.SetBoardArchivedParams{ID: id, Archived: true})
+		}); err != nil {
 			return err
 		}
 	} else {
@@ -492,7 +494,9 @@ func (s *Service) restoreBoard(w http.ResponseWriter, r *http.Request) error {
 	if !acc.Archived {
 		return httpx.Conflict("the board is not archived")
 	}
-	if _, err := s.db.Q.SetBoardArchived(r.Context(), sqlc.SetBoardArchivedParams{ID: id, Archived: false}); err != nil {
+	if _, err := db.GuardValue(r.Context(), s.db, func(guarded *sqlc.Queries) (sqlc.Board, error) {
+		return guarded.SetBoardArchived(r.Context(), sqlc.SetBoardArchivedParams{ID: id, Archived: false})
+	}); err != nil {
 		return err
 	}
 	return s.respondBoard(w, r, id, acc, http.StatusCreated)
@@ -1065,7 +1069,9 @@ func (s *Service) deleteLabel(w http.ResponseWriter, r *http.Request) error {
 	if err != nil {
 		return err
 	}
-	n, err := s.db.Q.DeleteBoardLabel(r.Context(), sqlc.DeleteBoardLabelParams{ID: lid, BoardID: id})
+	n, err := db.GuardValue(r.Context(), s.db, func(guarded *sqlc.Queries) (int64, error) {
+		return guarded.DeleteBoardLabel(r.Context(), sqlc.DeleteBoardLabelParams{ID: lid, BoardID: id})
+	})
 	if err != nil {
 		return err
 	}
@@ -1182,7 +1188,9 @@ func (s *Service) deleteMilestone(w http.ResponseWriter, r *http.Request) error 
 	if err != nil {
 		return err
 	}
-	n, err := s.db.Q.DeleteBoardMilestone(r.Context(), sqlc.DeleteBoardMilestoneParams{ID: mid, BoardID: id})
+	n, err := db.GuardValue(r.Context(), s.db, func(guarded *sqlc.Queries) (int64, error) {
+		return guarded.DeleteBoardMilestone(r.Context(), sqlc.DeleteBoardMilestoneParams{ID: mid, BoardID: id})
+	})
 	if err != nil {
 		return err
 	}

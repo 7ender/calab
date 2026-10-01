@@ -10,6 +10,7 @@ import (
 	"github.com/calaba/calaba/server/internal/identitypolicy"
 	"github.com/calaba/calaba/server/internal/oauthprovider/signing"
 	"github.com/google/uuid"
+	"io"
 	"net/netip"
 	"net/url"
 	"strings"
@@ -107,8 +108,8 @@ func (c *Config) IdentitySettings() (*IdentitySettings, error) {
 	if err != nil || u.Scheme != "https" || u.Host == "" || u.User != nil || u.Path != "" || u.RawQuery != "" || u.ForceQuery || strings.Contains(c.IdentityPublicOrigin, "#") || u.Opaque != "" {
 		return invalid("IDENTITY_PUBLIC_ORIGIN")
 	}
-	var encryption map[string]string
-	if json.Unmarshal([]byte(c.IdentityEncryptionKeys), &encryption) != nil || len(encryption) > 32 {
+	encryption, err := identityKeyMap(c.IdentityEncryptionKeys)
+	if err != nil || len(encryption) > 32 {
 		return invalid("IDENTITY_ENCRYPTION_KEYS")
 	}
 	decoded := map[string][]byte{}
@@ -123,8 +124,8 @@ func (c *Config) IdentitySettings() (*IdentitySettings, error) {
 	if err != nil {
 		return invalid("IDENTITY_ENCRYPTION_KEYS")
 	}
-	var pemKeys map[string]string
-	if json.Unmarshal([]byte(c.OAuthSigningKeys), &pemKeys) != nil {
+	pemKeys, err := identityKeyMap(c.OAuthSigningKeys)
+	if err != nil {
 		return invalid("OAUTH_SIGNING_KEYS")
 	}
 	signingKeys := make([]signing.Key, 0, len(pemKeys))
@@ -180,4 +181,40 @@ func (c *Config) IdentitySettings() (*IdentitySettings, error) {
 		out.DirectoryHosts[host.Host] = IdentityDirectoryHost{Networks: host.Networks, CAPEM: host.CAPEM}
 	}
 	return out, nil
+}
+
+// JSON objects silently overwrite duplicate members in encoding/json. A keyring
+// must have one unambiguous value per KID, including during staged key rotation.
+func identityKeyMap(raw string) (map[string]string, error) {
+	decoder := json.NewDecoder(strings.NewReader(raw))
+	open, err := decoder.Token()
+	if err != nil || open != json.Delim('{') {
+		return nil, fmt.Errorf("invalid key map")
+	}
+	keys := map[string]string{}
+	for decoder.More() {
+		name, err := decoder.Token()
+		if err != nil {
+			return nil, fmt.Errorf("invalid key map")
+		}
+		kid, ok := name.(string)
+		if !ok {
+			return nil, fmt.Errorf("invalid key map")
+		}
+		if _, exists := keys[kid]; exists {
+			return nil, fmt.Errorf("duplicate key id")
+		}
+		var value string
+		if decoder.Decode(&value) != nil {
+			return nil, fmt.Errorf("invalid key map")
+		}
+		keys[kid] = value
+	}
+	if closing, err := decoder.Token(); err != nil || closing != json.Delim('}') {
+		return nil, fmt.Errorf("invalid key map")
+	}
+	if _, err := decoder.Token(); err != io.EOF {
+		return nil, fmt.Errorf("invalid key map")
+	}
+	return keys, nil
 }

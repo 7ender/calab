@@ -1933,6 +1933,34 @@ func (q *Queries) ListIdentityInvalidationsForUpdate(ctx context.Context, limit 
 	return items, nil
 }
 
+const lockIdentityBotShared = `-- name: LockIdentityBotShared :one
+SELECT user_id, owner_user_id, workspace_id, username, description, token_id, token_hash, token_prefix, webhook_url, webhook_secret_enc, webhook_disabled_at, webhook_failing_since, webhook_last_ok_at, webhook_last_error, created_at, revoked_at FROM bots WHERE user_id=$1 FOR SHARE
+`
+
+func (q *Queries) LockIdentityBotShared(ctx context.Context, userID uuid.UUID) (Bot, error) {
+	row := q.db.QueryRow(ctx, lockIdentityBotShared, userID)
+	var i Bot
+	err := row.Scan(
+		&i.UserID,
+		&i.OwnerUserID,
+		&i.WorkspaceID,
+		&i.Username,
+		&i.Description,
+		&i.TokenID,
+		&i.TokenHash,
+		&i.TokenPrefix,
+		&i.WebhookUrl,
+		&i.WebhookSecretEnc,
+		&i.WebhookDisabledAt,
+		&i.WebhookFailingSince,
+		&i.WebhookLastOkAt,
+		&i.WebhookLastError,
+		&i.CreatedAt,
+		&i.RevokedAt,
+	)
+	return i, err
+}
+
 const lockIdentityBoundary = `-- name: LockIdentityBoundary :one
 SELECT s.id FROM workspaces w JOIN workspace_members m ON m.workspace_id=w.id
 JOIN users u ON u.id=m.user_id JOIN sessions s ON s.user_id=u.id
@@ -1951,6 +1979,131 @@ func (q *Queries) LockIdentityBoundary(ctx context.Context, arg LockIdentityBoun
 	var id uuid.UUID
 	err := row.Scan(&id)
 	return id, err
+}
+
+const lockIdentityMemberExclusive = `-- name: LockIdentityMemberExclusive :one
+SELECT user_id FROM workspace_members WHERE workspace_id=$1 AND user_id=$2 FOR UPDATE
+`
+
+type LockIdentityMemberExclusiveParams struct {
+	WorkspaceID uuid.UUID
+	UserID      uuid.UUID
+}
+
+func (q *Queries) LockIdentityMemberExclusive(ctx context.Context, arg LockIdentityMemberExclusiveParams) (uuid.UUID, error) {
+	row := q.db.QueryRow(ctx, lockIdentityMemberExclusive, arg.WorkspaceID, arg.UserID)
+	var user_id uuid.UUID
+	err := row.Scan(&user_id)
+	return user_id, err
+}
+
+const lockIdentityMemberShared = `-- name: LockIdentityMemberShared :one
+SELECT user_id FROM workspace_members WHERE workspace_id=$1 AND user_id=$2 FOR SHARE
+`
+
+type LockIdentityMemberSharedParams struct {
+	WorkspaceID uuid.UUID
+	UserID      uuid.UUID
+}
+
+func (q *Queries) LockIdentityMemberShared(ctx context.Context, arg LockIdentityMemberSharedParams) (uuid.UUID, error) {
+	row := q.db.QueryRow(ctx, lockIdentityMemberShared, arg.WorkspaceID, arg.UserID)
+	var user_id uuid.UUID
+	err := row.Scan(&user_id)
+	return user_id, err
+}
+
+const lockIdentitySessionExclusive = `-- name: LockIdentitySessionExclusive :one
+SELECT id FROM sessions WHERE id=$1 AND user_id=$2 FOR UPDATE
+`
+
+type LockIdentitySessionExclusiveParams struct {
+	ID     uuid.UUID
+	UserID uuid.UUID
+}
+
+func (q *Queries) LockIdentitySessionExclusive(ctx context.Context, arg LockIdentitySessionExclusiveParams) (uuid.UUID, error) {
+	row := q.db.QueryRow(ctx, lockIdentitySessionExclusive, arg.ID, arg.UserID)
+	var id uuid.UUID
+	err := row.Scan(&id)
+	return id, err
+}
+
+const lockIdentitySessionShared = `-- name: LockIdentitySessionShared :one
+SELECT id FROM sessions WHERE id=$1 AND user_id=$2 FOR SHARE
+`
+
+type LockIdentitySessionSharedParams struct {
+	ID     uuid.UUID
+	UserID uuid.UUID
+}
+
+func (q *Queries) LockIdentitySessionShared(ctx context.Context, arg LockIdentitySessionSharedParams) (uuid.UUID, error) {
+	row := q.db.QueryRow(ctx, lockIdentitySessionShared, arg.ID, arg.UserID)
+	var id uuid.UUID
+	err := row.Scan(&id)
+	return id, err
+}
+
+const lockIdentityUserExclusive = `-- name: LockIdentityUserExclusive :one
+SELECT id FROM users WHERE id=$1 FOR UPDATE
+`
+
+func (q *Queries) LockIdentityUserExclusive(ctx context.Context, id uuid.UUID) (uuid.UUID, error) {
+	row := q.db.QueryRow(ctx, lockIdentityUserExclusive, id)
+	var id_2 uuid.UUID
+	err := row.Scan(&id_2)
+	return id_2, err
+}
+
+const lockIdentityUserShared = `-- name: LockIdentityUserShared :one
+SELECT id FROM users WHERE id=$1 FOR SHARE
+`
+
+func (q *Queries) LockIdentityUserShared(ctx context.Context, id uuid.UUID) (uuid.UUID, error) {
+	row := q.db.QueryRow(ctx, lockIdentityUserShared, id)
+	var id_2 uuid.UUID
+	err := row.Scan(&id_2)
+	return id_2, err
+}
+
+const lockIdentityWorkspaceShared = `-- name: LockIdentityWorkspaceShared :one
+SELECT id FROM workspaces WHERE id=$1 FOR SHARE
+`
+
+// Admission locks are shared for ordinary resource writes. Revokers already
+// take LockOAuthWorkspace (FOR UPDATE); UPDATE of user/member/session rows also
+// conflicts with these locks. Acquire sorted workspaces, users, members, sessions.
+// Boundary-row mutations choose the exclusive mode before reading any source.
+func (q *Queries) LockIdentityWorkspaceShared(ctx context.Context, id uuid.UUID) (uuid.UUID, error) {
+	row := q.db.QueryRow(ctx, lockIdentityWorkspaceShared, id)
+	var id_2 uuid.UUID
+	err := row.Scan(&id_2)
+	return id_2, err
+}
+
+const lockProductAdminGrantShared = `-- name: LockProductAdminGrantShared :many
+SELECT user_id FROM product_admin_grants WHERE user_id=$1 FOR SHARE
+`
+
+func (q *Queries) LockProductAdminGrantShared(ctx context.Context, userID uuid.UUID) ([]uuid.UUID, error) {
+	rows, err := q.db.Query(ctx, lockProductAdminGrantShared, userID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []uuid.UUID{}
+	for rows.Next() {
+		var user_id uuid.UUID
+		if err := rows.Scan(&user_id); err != nil {
+			return nil, err
+		}
+		items = append(items, user_id)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
 }
 
 const markIdentityConnectionTested = `-- name: MarkIdentityConnectionTested :one

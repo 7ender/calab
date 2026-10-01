@@ -419,7 +419,9 @@ func (s *Service) putSettings(w http.ResponseWriter, r *http.Request) error {
 	})
 	var pe *providerError
 	if errors.As(err, &pe) {
-		if err := s.db.Q.SetSipLastError(context.WithoutCancel(ctx), sqlc.SetSipLastErrorParams{WorkspaceID: wsID, LastError: pe.msg}); err != nil {
+		if err := db.GuardExec(context.WithoutCancel(ctx), s.db, func(guarded *sqlc.Queries) error {
+			return guarded.SetSipLastError(context.WithoutCancel(ctx), sqlc.SetSipLastErrorParams{WorkspaceID: wsID, LastError: pe.msg})
+		}); err != nil {
 			slog.WarnContext(ctx, "sip: store last_error", "workspace", wsID, "err", err)
 		}
 		e := httpx.Coded(http.StatusBadGateway, v1.ErrorCode_ERROR_CODE_SIP_PROVIDER_ERROR, pe.msg)

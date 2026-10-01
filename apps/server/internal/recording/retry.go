@@ -70,7 +70,9 @@ func (s *Service) recheck(w http.ResponseWriter, r *http.Request) error {
 		s.card(r.Context(), rec) // a card stored before not_uploaded existed offers recheck
 		return httpx.Conflict("the recording never reached GPTunneL: send it again")
 	}
-	upd, err := s.db.Q.RecheckRecording(r.Context(), rec.ID)
+	upd, err := db.GuardValue(r.Context(), s.db, func(guarded *sqlc.Queries) (sqlc.RoomRecording, error) {
+		return guarded.RecheckRecording(r.Context(), rec.ID)
+	})
 	if db.IsNotFound(err) {
 		return httpx.Conflict("the recording has changed meanwhile")
 	}
@@ -107,7 +109,9 @@ func (s *Service) reupload(w http.ResponseWriter, r *http.Request) error {
 		s.forgetFile(r.Context(), rec)
 		return errFileGone
 	}
-	upd, err := s.db.Q.ReuploadRecording(r.Context(), rec.ID)
+	upd, err := db.GuardValue(r.Context(), s.db, func(guarded *sqlc.Queries) (sqlc.RoomRecording, error) {
+		return guarded.ReuploadRecording(r.Context(), rec.ID)
+	})
 	if db.IsNotFound(err) {
 		return httpx.Conflict("the recording has changed meanwhile")
 	}

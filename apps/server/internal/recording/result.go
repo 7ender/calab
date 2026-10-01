@@ -67,8 +67,10 @@ func (s *Service) cardOf(rec sqlc.RoomRecording) *v1.SystemMessage {
 func (s *Service) processResults(ctx context.Context) (int, error) {
 	done := 0
 	for range 5 {
-		rows, err := s.db.Q.ClaimRecordingResults(ctx, sqlc.ClaimRecordingResultsParams{
-			Lease: pgtype.Interval{Microseconds: s.Lease.Microseconds(), Valid: true}, Lim: 2,
+		rows, err := db.GuardValue(ctx, s.db, func(guarded *sqlc.Queries) ([]sqlc.RoomRecording, error) {
+			return guarded.ClaimRecordingResults(ctx, sqlc.ClaimRecordingResultsParams{
+				Lease: pgtype.Interval{Microseconds: s.Lease.Microseconds(), Valid: true}, Lim: 2,
+			})
 		})
 		if err != nil {
 			return done, err
@@ -194,15 +196,19 @@ func (s *Service) retryResult(ctx context.Context, rec sqlc.RoomRecording, cause
 		return
 	}
 	next := s.Now().Add(s.ResultBackoff[n])
-	if err := s.db.Q.RetryRecordingResult(ctx, sqlc.RetryRecordingResultParams{ID: rec.ID, ResultNextAt: &next}); err != nil {
+	if err := db.GuardExec(ctx, s.db, func(guarded *sqlc.Queries) error {
+		return guarded.RetryRecordingResult(ctx, sqlc.RetryRecordingResultParams{ID: rec.ID, ResultNextAt: &next})
+	}); err != nil {
 		slog.WarnContext(ctx, "recording: schedule result", "recording", rec.ID, "err", err)
 	}
 	slog.InfoContext(ctx, "recording: result not available yet", "recording", rec.ID, "attempt", n+1, "next_at", next, "err", cause)
 }
 
 func (s *Service) finishResult(ctx context.Context, rec sqlc.RoomRecording, summary, lang string, transcript []byte, state string) {
-	upd, err := s.db.Q.SetRecordingResult(ctx, sqlc.SetRecordingResultParams{
-		ID: rec.ID, Summary: summary, Language: lang, TranscriptJson: transcript, ResultState: state,
+	upd, err := db.GuardValue(ctx, s.db, func(guarded *sqlc.Queries) (sqlc.RoomRecording, error) {
+		return guarded.SetRecordingResult(ctx, sqlc.SetRecordingResultParams{
+			ID: rec.ID, Summary: summary, Language: lang, TranscriptJson: transcript, ResultState: state,
+		})
 	})
 	if db.IsNotFound(err) {
 		return // deleted meanwhile
@@ -218,7 +224,9 @@ func (s *Service) finishResult(ctx context.Context, rec sqlc.RoomRecording, summ
 
 // forgetToken drops a device token GPTunneL no longer accepts (revoked there).
 func (s *Service) forgetToken(ctx context.Context, rec sqlc.RoomRecording, sealed []byte) {
-	if _, err := s.db.Q.RevokeIntegration(ctx, sqlc.RevokeIntegrationParams{WorkspaceID: rec.WorkspaceID, Kind: kindGPTunnel, TokenEnc: sealed}); err != nil {
+	if _, err := db.GuardValue(ctx, s.db, func(guarded *sqlc.Queries) (int64, error) {
+		return guarded.RevokeIntegration(ctx, sqlc.RevokeIntegrationParams{WorkspaceID: rec.WorkspaceID, Kind: kindGPTunnel, TokenEnc: sealed})
+	}); err != nil {
 		slog.WarnContext(ctx, "recording: forget a revoked device token", "workspace", rec.WorkspaceID, "err", err)
 	}
 }
@@ -414,7 +422,9 @@ func (s *Service) remove(w http.ResponseWriter, r *http.Request) error {
 		return errStillRecording
 	}
 	ctx := r.Context()
-	upd, err := s.db.Q.DeleteRecording(ctx, sqlc.DeleteRecordingParams{ID: rec.ID, DeletedBy: &me})
+	upd, err := db.GuardValue(ctx, s.db, func(guarded *sqlc.Queries) (sqlc.RoomRecording, error) {
+		return guarded.DeleteRecording(ctx, sqlc.DeleteRecordingParams{ID: rec.ID, DeletedBy: &me})
+	})
 	if db.IsNotFound(err) {
 		return httpx.NotFound("recording") // deleted (or started again?) meanwhile
 	}
@@ -430,7 +440,7 @@ func (s *Service) remove(w http.ResponseWriter, r *http.Request) error {
 	if pbconv.RecordingHasFile(upd) {
 		if err := s.store.remove(bg, upd.File); err != nil {
 			slog.WarnContext(ctx, "recording: delete the recording's file (the janitor retries)", "recording", rec.ID, "err", err)
-		} else if err := s.db.Q.MarkRecordingFileDeleted(bg, upd.ID); err != nil {
+		} else if err := db.GuardExec(bg, s.db, func(guarded *sqlc.Queries) error { return guarded.MarkRecordingFileDeleted(bg, upd.ID) }); err != nil {
 			slog.WarnContext(ctx, "recording: mark file deleted", "recording", rec.ID, "err", err)
 		}
 	}

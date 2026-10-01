@@ -56,7 +56,9 @@ func (s *Service) setShare(w http.ResponseWriter, r *http.Request) error {
 	default:
 		return httpx.Validation("shareLevel", "one of busy, title, details")
 	}
-	acc, err := s.db.Q.SetCalDavShareLevel(ctx, sqlc.SetCalDavShareLevelParams{UserID: me, ShareLevel: level})
+	acc, err := db.GuardValue(ctx, s.db, func(guarded *sqlc.Queries) (sqlc.CaldavAccount, error) {
+		return guarded.SetCalDavShareLevel(ctx, sqlc.SetCalDavShareLevelParams{UserID: me, ShareLevel: level})
+	})
 	if db.IsNotFound(err) {
 		return httpx.NotFound("CalDAV account")
 	}

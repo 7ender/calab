@@ -78,13 +78,17 @@ func (h *Handlers) putNote(w http.ResponseWriter, r *http.Request) error {
 		return httpx.Validation("text", "note must be at most 1000 characters")
 	}
 	if text == "" {
-		if err := h.db.Q.DeleteUserNote(r.Context(), sqlc.DeleteUserNoteParams{AuthorID: author, SubjectID: subject}); err != nil {
+		if err := db.GuardExec(r.Context(), h.db, func(guarded *sqlc.Queries) error {
+			return guarded.DeleteUserNote(r.Context(), sqlc.DeleteUserNoteParams{AuthorID: author, SubjectID: subject})
+		}); err != nil {
 			return err
 		}
 		httpx.Write(w, http.StatusOK, noteResponse(subject, nil))
 		return nil
 	}
-	n, err := h.db.Q.UpsertUserNote(r.Context(), sqlc.UpsertUserNoteParams{AuthorID: author, SubjectID: subject, Text: text})
+	n, err := db.GuardValue(r.Context(), h.db, func(guarded *sqlc.Queries) (sqlc.UserNote, error) {
+		return guarded.UpsertUserNote(r.Context(), sqlc.UpsertUserNoteParams{AuthorID: author, SubjectID: subject, Text: text})
+	})
 	if err != nil {
 		return err
 	}
@@ -98,7 +102,9 @@ func (h *Handlers) deleteNote(w http.ResponseWriter, r *http.Request) error {
 	if err != nil {
 		return err
 	}
-	if err := h.db.Q.DeleteUserNote(r.Context(), sqlc.DeleteUserNoteParams{AuthorID: author, SubjectID: subject}); err != nil {
+	if err := db.GuardExec(r.Context(), h.db, func(guarded *sqlc.Queries) error {
+		return guarded.DeleteUserNote(r.Context(), sqlc.DeleteUserNoteParams{AuthorID: author, SubjectID: subject})
+	}); err != nil {
 		return err
 	}
 	httpx.NoContent(w)

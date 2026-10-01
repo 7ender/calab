@@ -21,6 +21,7 @@ import (
 
 	v1 "github.com/calaba/calaba/server/gen/calaba/v1"
 	"github.com/calaba/calaba/server/internal/auth"
+	"github.com/calaba/calaba/server/internal/db"
 	"github.com/calaba/calaba/server/internal/db/sqlc"
 	"github.com/calaba/calaba/server/internal/events"
 	"github.com/calaba/calaba/server/internal/httpx"
@@ -381,7 +382,7 @@ func (s *Service) enqueue(ctx context.Context, targets []botEvent) {
 		}
 		p.Ids, p.BotIds, p.Payloads = append(p.Ids, id), append(p.BotIds, b), append(p.Payloads, body)
 	}
-	if err := s.db.Q.EnqueueWebhookDeliveries(ctx, p); err != nil {
+	if err := db.GuardExec(ctx, s.db, func(guarded *sqlc.Queries) error { return guarded.EnqueueWebhookDeliveries(ctx, p) }); err != nil {
 		// A bot that was just deleted (FK) or a Postgres hiccup: the event is lost for the
 		// webhook, like a missed event for a socket; the bot resyncs over REST.
 		slog.WarnContext(ctx, "bot webhook: enqueue", "bots", len(p.BotIds), "err", err)
@@ -464,7 +465,9 @@ func (s *Service) setWebhook(w http.ResponseWriter, r *http.Request) error {
 	if err != nil {
 		return err
 	}
-	if _, err := s.db.Q.SetBotWebhook(r.Context(), sqlc.SetBotWebhookParams{UserID: id, WebhookUrl: &u, WebhookSecretEnc: sealed}); err != nil {
+	if _, err := db.GuardValue(r.Context(), s.db, func(guarded *sqlc.Queries) (sqlc.Bot, error) {
+		return guarded.SetBotWebhook(r.Context(), sqlc.SetBotWebhookParams{UserID: id, WebhookUrl: &u, WebhookSecretEnc: sealed})
+	}); err != nil {
 		return err
 	}
 	s.hooks.invalidate()

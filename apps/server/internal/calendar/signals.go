@@ -8,6 +8,7 @@ import (
 	"google.golang.org/protobuf/types/known/timestamppb"
 
 	v1 "github.com/calaba/calaba/server/gen/calaba/v1"
+	"github.com/calaba/calaba/server/internal/db"
 	"github.com/calaba/calaba/server/internal/db/sqlc"
 	"github.com/calaba/calaba/server/internal/pbconv"
 	"github.com/calaba/calaba/server/internal/perm"
@@ -57,7 +58,9 @@ func (s *Service) roomSignals(ctx context.Context, before, after *bundle) {
 		s.publishEnded(ctx, before.ev.WorkspaceID, *before.ev.RoomID, before.ev.ID, ob.Start)
 	}
 	if isActive {
-		_, err := s.db.Q.ClaimEventRoomSignal(ctx, sqlc.ClaimEventRoomSignalParams{EventID: after.ev.ID, OccurrenceAt: oa.Start, Kind: signalActive})
+		_, err := db.GuardValue(ctx, s.db, func(guarded *sqlc.Queries) (int64, error) {
+			return guarded.ClaimEventRoomSignal(ctx, sqlc.ClaimEventRoomSignalParams{EventID: after.ev.ID, OccurrenceAt: oa.Start, Kind: signalActive})
+		})
 		logErr(ctx, "claim room signal", err)
 		s.publishActive(ctx, after, oa)
 	}
@@ -136,7 +139,9 @@ func (s *Service) RecordingStarted(ctx context.Context, rec sqlc.RoomRecording) 
 		if !ok {
 			continue
 		}
-		n, err := s.db.Q.InsertEventRecording(ctx, sqlc.InsertEventRecordingParams{EventID: b.ev.ID, OccurrenceAt: o.Start, RecordingID: rec.ID})
+		n, err := db.GuardValue(ctx, s.db, func(guarded *sqlc.Queries) (int64, error) {
+			return guarded.InsertEventRecording(ctx, sqlc.InsertEventRecordingParams{EventID: b.ev.ID, OccurrenceAt: o.Start, RecordingID: rec.ID})
+		})
 		if err != nil || n == 0 {
 			logErr(ctx, "recording: link", err)
 			continue

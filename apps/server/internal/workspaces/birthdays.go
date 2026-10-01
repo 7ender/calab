@@ -98,7 +98,7 @@ func (h *Handlers) setMemberBirthday(w http.ResponseWriter, r *http.Request) err
 	if p.BirthdayDay, p.BirthdayMonth, p.BirthdayYear, err = birthdays.Columns(req.GetBirthday(), time.Now()); err != nil {
 		return err
 	}
-	u, err := h.db.Q.UpdateUser(r.Context(), p)
+	u, err := db.GuardValue(r.Context(), h.db, func(guarded *sqlc.Queries) (sqlc.User, error) { return guarded.UpdateUser(r.Context(), p) })
 	if err != nil {
 		return err
 	}

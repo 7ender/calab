@@ -87,7 +87,9 @@ func (h *Handlers) createCategory(w http.ResponseWriter, r *http.Request) error 
 	if err != nil {
 		return err
 	}
-	c, err := h.db.Q.CreateCategory(r.Context(), sqlc.CreateCategoryParams{WorkspaceID: wsID, Name: name, Position: req.Position})
+	c, err := db.GuardValue(r.Context(), h.db, func(guarded *sqlc.Queries) (sqlc.RoomCategory, error) {
+		return guarded.CreateCategory(r.Context(), sqlc.CreateCategoryParams{WorkspaceID: wsID, Name: name, Position: req.Position})
+	})
 	if err != nil {
 		return err
 	}
@@ -135,7 +137,7 @@ func (h *Handlers) updateCategory(w http.ResponseWriter, r *http.Request) error 
 		}
 		p.Name = &n
 	}
-	c, err = h.db.Q.UpdateCategory(r.Context(), p)
+	c, err = db.GuardValue(r.Context(), h.db, func(guarded *sqlc.Queries) (sqlc.RoomCategory, error) { return guarded.UpdateCategory(r.Context(), p) })
 	if err != nil {
 		return err
 	}
@@ -150,7 +152,7 @@ func (h *Handlers) deleteCategory(w http.ResponseWriter, r *http.Request) error 
 	if err != nil {
 		return err
 	}
-	moved, err := h.db.Q.DeleteCategory(r.Context(), c.ID)
+	moved, err := db.GuardValue(r.Context(), h.db, func(guarded *sqlc.Queries) ([]uuid.UUID, error) { return guarded.DeleteCategory(r.Context(), c.ID) })
 	if err != nil {
 		return err
 	}

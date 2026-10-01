@@ -31,7 +31,7 @@ import (
 type identityRegistrar struct {
 	mux     *routeRecorder
 	enabled bool
-	limit   *redisx.RateLimiter
+	quota   func(string, *http.Request) error
 }
 
 func (x identityRegistrar) Handle(pattern string, h http.Handler) {
@@ -44,12 +44,15 @@ func (x identityRegistrar) Handle(pattern string, h http.Handler) {
 			x.reject(w, r, 503, "server_error", httpx.Coded(503, v1.ErrorCode_ERROR_CODE_IDENTITY_DEPENDENCY_UNAVAILABLE, "identity dependency unavailable"))
 			return
 		}
-		if x.limit != nil {
-			if err := x.limit.Take(r.Context(), pattern+":"+httpx.ClientIP(r.Context())); err != nil {
+		if x.quota != nil {
+			if err := x.quota(pattern, r); err != nil {
 				e := httpx.AsError(err)
 				code := "server_error"
 				if e.Status == 429 {
 					code = "temporarily_unavailable"
+				}
+				if e.Status == 400 {
+					code = "invalid_request"
 				}
 				x.reject(w, r, e.Status, code, err)
 				return
@@ -72,6 +75,11 @@ func (x identityRegistrar) reject(w http.ResponseWriter, r *http.Request, status
 		w.WriteHeader(status)
 		_ = json.NewEncoder(w).Encode(map[string]string{"error": code})
 		return
+	}
+	if httpx.AsError(err).Status >= 500 {
+		e := httpx.Coded(503, v1.ErrorCode_ERROR_CODE_IDENTITY_DEPENDENCY_UNAVAILABLE, "identity dependency unavailable")
+		e.Err = err
+		err = e
 	}
 	httpx.WriteError(w, r, err)
 }
@@ -111,6 +119,19 @@ func wireIdentity(d Deps, mux *routeRecorder, a *auth.Service) (*sso.Service, *d
 	var ds *directory.Service
 	var op *oauthprovider.Service
 	if enabled {
+		// Validate every operator endpoint against the transport's complete policy
+		// at startup. The trusted Go test override does not weaken env validation.
+		if len(settings.Endpoints) > 0 {
+			endpoints := make([]identitynet.Endpoint, 0, len(settings.Endpoints))
+			for raw, ep := range settings.Endpoints {
+				endpoints = append(endpoints, identitynet.Endpoint{URL: raw, ApprovedCIDRs: ep.ApprovedCIDRs, PrivateCIDRs: ep.PrivateCIDRs, RootCAs: ep.RootCAs})
+			}
+			transport, err := identitynet.NewTransport(identitynet.Config{Endpoints: endpoints})
+			if err != nil {
+				panic("invalid identity operator endpoint policy")
+			}
+			transport.CloseIdleConnections()
+		}
 		policy := d.IdentityEndpointPolicy
 		if policy == nil {
 			policy = func(raw string) (identitynet.Endpoint, error) {
@@ -204,6 +225,11 @@ func wireIdentity(d Deps, mux *routeRecorder, a *auth.Service) (*sso.Service, *d
 					err = httpx.Coded(503, v1.ErrorCode_ERROR_CODE_IDENTITY_DEPENDENCY_UNAVAILABLE, "identity dependency unavailable")
 				}
 			}
+			if httpx.AsError(err).Status >= 500 {
+				e := httpx.Coded(503, v1.ErrorCode_ERROR_CODE_IDENTITY_DEPENDENCY_UNAVAILABLE, "identity dependency unavailable")
+				e.Err = err
+				err = e
+			}
 			httpx.WriteError(w, r, err)
 		},
 	}}
@@ -211,7 +237,7 @@ func wireIdentity(d Deps, mux *routeRecorder, a *auth.Service) (*sso.Service, *d
 	(&directory.HTTP{Service: ds, Gate: h}).Routes(registrar)
 	// RegisterRoutes itself only binds method handlers; nil service never executes behind
 	// the explicitly disabled registrar, retaining complete route census on old installs.
-	op.RegisterRoutes(identityRegistrar{mux: mux, enabled: enabled, limit: redisx.NewRateLimiter(d.Redis, "rl:oauth:", 60, 60)})
+	op.RegisterRoutes(identityRegistrar{mux: mux, enabled: enabled, quota: providerQuotas(d, a)})
 	registrar.Handle("POST /api/auth/local/reauth", httpx.HandlerFunc(func(w http.ResponseWriter, r *http.Request) error {
 		if r.Header.Get("Origin") != settings.Origin {
 			return httpx.Forbidden("cross-origin request rejected")

@@ -23,6 +23,7 @@ import (
 	v1 "github.com/calaba/calaba/server/gen/calaba/v1"
 	"github.com/calaba/calaba/server/internal/app"
 	"github.com/calaba/calaba/server/internal/auth"
+	"github.com/calaba/calaba/server/internal/db"
 	"github.com/calaba/calaba/server/internal/events"
 	"github.com/google/uuid"
 	"google.golang.org/protobuf/encoding/protojson"
@@ -30,6 +31,9 @@ import (
 )
 
 func identityHTTP(t *testing.T) (*app.App, string) {
+	return identityHTTPWithDB(t, testDB)
+}
+func identityHTTPWithDB(t *testing.T, database *db.DB) (*app.App, string) {
 	t.Helper()
 	c := *testCfg
 	c.IdentityPublicOrigin = "https://app.example.com"
@@ -44,7 +48,7 @@ func identityHTTP(t *testing.T) (*app.App, string) {
 	signing, _ := json.Marshal(map[string]string{"active": string(pem.EncodeToMemory(&pem.Block{Type: "RSA PRIVATE KEY", Bytes: x509.MarshalPKCS1PrivateKey(key)}))})
 	c.OAuthSigningKeys = string(signing)
 	c.OAuthSigningActiveKID = "active"
-	a := app.New(app.Deps{Config: &c, DB: testDB, Redis: testRedis, Events: events.Redis{C: testRedis}, Blob: testStore, LiveKit: lkRec, Mail: testMail})
+	a := app.New(app.Deps{Config: &c, DB: database, Redis: testRedis, Events: events.Redis{C: testRedis}, Blob: testStore, LiveKit: lkRec, Mail: testMail})
 	srv := httptest.NewServer(a.Handler)
 	t.Cleanup(srv.Close)
 	return a, srv.URL

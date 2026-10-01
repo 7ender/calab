@@ -30,7 +30,9 @@ func (s *System) Post(ctx context.Context, workspaceID, roomID, author uuid.UUID
 	if err != nil {
 		return uuid.Nil, err
 	}
-	m, err := s.h.db.Q.InsertSystemMessage(ctx, sqlc.InsertSystemMessageParams{RoomID: roomID, AuthorID: author, Payload: raw})
+	m, err := db.GuardValue(ctx, s.h.db, func(guarded *sqlc.Queries) (sqlc.Message, error) {
+		return guarded.InsertSystemMessage(ctx, sqlc.InsertSystemMessageParams{RoomID: roomID, AuthorID: author, Payload: raw})
+	})
 	if err != nil {
 		return uuid.Nil, err
 	}
@@ -98,7 +100,9 @@ func (s *System) Update(ctx context.Context, workspaceID, messageID uuid.UUID, p
 	if err != nil {
 		return err
 	}
-	m, err := s.h.db.Q.UpdateSystemMessage(ctx, sqlc.UpdateSystemMessageParams{ID: messageID, Payload: raw})
+	m, err := db.GuardValue(ctx, s.h.db, func(guarded *sqlc.Queries) (sqlc.Message, error) {
+		return guarded.UpdateSystemMessage(ctx, sqlc.UpdateSystemMessageParams{ID: messageID, Payload: raw})
+	})
 	switch {
 	case db.IsNotFound(err):
 	case err != nil:
@@ -108,7 +112,9 @@ func (s *System) Update(ctx context.Context, workspaceID, messageID uuid.UUID, p
 			return err
 		}
 	}
-	copies, err := s.h.db.Q.UpdateForwardedSystemMessages(ctx, sqlc.UpdateForwardedSystemMessagesParams{ForwardedFrom: &messageID, Payload: raw})
+	copies, err := db.GuardValue(ctx, s.h.db, func(guarded *sqlc.Queries) ([]sqlc.Message, error) {
+		return guarded.UpdateForwardedSystemMessages(ctx, sqlc.UpdateForwardedSystemMessagesParams{ForwardedFrom: &messageID, Payload: raw})
+	})
 	if err != nil {
 		return err
 	}

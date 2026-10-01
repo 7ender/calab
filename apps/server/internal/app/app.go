@@ -258,6 +258,12 @@ func New(d Deps) *App {
 				return httpx.Unavailable(err)
 			}
 			id := auth.Identity{UserID: user, SessionID: session, IsBot: u.IsBot}
+			if u.IsBot {
+				bot, err := d.DB.Q.GetBotAuth(ctx, user)
+				if err != nil || bot.TokenID == nil || *bot.TokenID != session || len(bot.TokenHash) == 0 {
+					return httpx.Forbidden("bot session revoked")
+				}
+			}
 			if !u.IsBot {
 				p, err := authSvc.ResolvePrincipal(ctx, id)
 				if err != nil {
@@ -282,6 +288,9 @@ func New(d Deps) *App {
 			} else {
 				if row.WorkspaceID == nil || *row.WorkspaceID != ws {
 					return httpx.Forbidden("voice scope mismatch")
+				}
+				if err := auth.RecordMutationWorkspace(ctx, ws); err != nil {
+					return err
 				}
 				if err := authSvc.CheckWorkspace(ctx, id, ws, identitypolicy.RTC); err != nil {
 					return err

@@ -6,6 +6,7 @@ import (
 
 	v1 "github.com/calaba/calaba/server/gen/calaba/v1"
 	"github.com/calaba/calaba/server/internal/auth"
+	"github.com/calaba/calaba/server/internal/db"
 	"github.com/calaba/calaba/server/internal/db/sqlc"
 	"github.com/calaba/calaba/server/internal/httpx"
 	"github.com/calaba/calaba/server/internal/notifications"
@@ -38,12 +39,16 @@ func (h *Handlers) setNotifications(w http.ResponseWriter, r *http.Request) erro
 	userID := auth.MustFromContext(r.Context()).UserID
 	out := &v1.RoomNotificationSettings{RoomId: roomID.String(), Level: v1.NotificationLevel_NOTIFICATION_LEVEL_INHERIT}
 	if level == notifications.DBInherit && until == nil {
-		if err := h.db.Q.DeleteRoomNotificationSettings(r.Context(), sqlc.DeleteRoomNotificationSettingsParams{UserID: userID, RoomID: roomID}); err != nil {
+		if err := db.GuardExec(r.Context(), h.db, func(guarded *sqlc.Queries) error {
+			return guarded.DeleteRoomNotificationSettings(r.Context(), sqlc.DeleteRoomNotificationSettingsParams{UserID: userID, RoomID: roomID})
+		}); err != nil {
 			return err
 		}
 	} else {
-		row, err := h.db.Q.UpsertRoomNotificationSettings(r.Context(), sqlc.UpsertRoomNotificationSettingsParams{
-			UserID: userID, RoomID: roomID, Level: level, MutedUntil: until,
+		row, err := db.GuardValue(r.Context(), h.db, func(guarded *sqlc.Queries) (sqlc.RoomNotificationSetting, error) {
+			return guarded.UpsertRoomNotificationSettings(r.Context(), sqlc.UpsertRoomNotificationSettingsParams{
+				UserID: userID, RoomID: roomID, Level: level, MutedUntil: until,
+			})
 		})
 		if err != nil {
 			return err
