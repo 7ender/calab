@@ -56,6 +56,7 @@ type Service struct {
 	// IdentityAccess verifies the exact device principal and target at the DB source.
 	identityWake   chan struct{}
 	IdentityAccess func(context.Context, uuid.UUID, uuid.UUID, uuid.UUID, uuid.UUID) error
+	identitySweep  identitySweepState
 	// noSFUMove is set once LiveKit answered MoveParticipant with "not implemented"
 	// (open-source LiveKit): moves then go the app-level way right away (ADR-0019).
 	noSFUMove atomic.Bool
