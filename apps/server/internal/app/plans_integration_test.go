@@ -61,6 +61,7 @@ func registerEmail(t *testing.T, inviteCode, email string) *user {
 }
 
 var superUser *user
+var superUserProofUntil time.Time
 
 func superadminUser(t *testing.T) *user {
 	t.Helper()
@@ -70,6 +71,7 @@ func superadminUser(t *testing.T) *user {
 		superUser = registerEmail(t, invite(t, o, ws.GetId()), superadminEmail)
 	}
 	superUser.t = t
+	ensureFixtureLocalProof(t, superUser, srv.URL, &superUserProofUntil)
 	return superUser
 }
 

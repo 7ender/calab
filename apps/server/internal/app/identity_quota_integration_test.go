@@ -60,9 +60,29 @@ func quotaWire(t *testing.T, base, method, path, ip, bearer, basicUser, basicSec
 	}
 	return resp.StatusCode, resp.Header, raw
 }
+
+// Cache only the real endpoint's proof deadline, with a minute of setup headroom.
+// Full-package runs outlive the management proof; the account and session remain
+// valid. Never extend DB timestamps or relax the production five-minute limit.
+func ensureFixtureLocalProof(t *testing.T, u *user, base string, validUntil *time.Time) {
+	t.Helper()
+	if time.Until(*validUntil) > time.Minute {
+		return
+	}
+	status, raw, _ := identityRequest(t, base, "POST", "/api/auth/local/reauth", u.token, "https://app.example.com", nil, &v1.LocalReauthRequest{CurrentPassword: "password123"})
+	var proof v1.LocalReauthResponse
+	if status != 200 || protojson.Unmarshal(raw, &proof) != nil || proof.ValidUntil == nil || time.Until(proof.ValidUntil.AsTime()) <= time.Minute {
+		t.Fatalf("fixture local reauth=%d %s", status, raw)
+	}
+	*validUntil = proof.ValidUntil.AsTime()
+}
+
+var quotaOwnerProofUntil time.Time
+
 func quotaClient(t *testing.T, base, ws string, kind v1.OAuthClientType) *v1.OAuthClientSecretResponse {
 	t.Helper()
 	o := owner(t)
+	ensureFixtureLocalProof(t, o, base, &quotaOwnerProofUntil)
 	status, raw, _ := identityRequest(t, base, "POST", "/api/workspaces/"+ws+"/oauth/clients", o.token, "https://app.example.com", nil, &v1.CreateOAuthClientRequest{Name: "Quota client", Type: kind, RedirectUris: []string{"https://client.example/callback"}, Scopes: []string{"openid"}})
 	if status != 201 {
 		t.Fatalf("client create=%d %s", status, raw)
