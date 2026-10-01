@@ -472,6 +472,9 @@ function create(appId: string, url: string): Entry | null {
   markAppSession(ses); // before the webContents exists: web-contents-created sees an app session
   configureSession(ses);
   const view = new WebContentsView({ webPreferences: viewPreferences(ses) });
+  // CSS overflow on the renderer placeholder cannot clip this native layer.
+  // Match --radius-panel at the native compositing boundary as well.
+  view.setBorderRadius(12);
   view.setVisible(false);
   view.setBackgroundColor('#ffffff');
   const e: Entry = { appId, view, home: url, failed: '', crashed: false, attached: false, check: undefined };

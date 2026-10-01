@@ -113,13 +113,9 @@ export function visibleViewRect(view: ViewRect, overlays: readonly ViewRect[], g
   return r.width >= MIN_VIEW_WIDTH && r.height >= MIN_VIEW_HEIGHT ? r : null;
 }
 
-/**
- * The bottom island (profile, mic, voice bar) while a web app fills the screen: gone, so the
- * site reaches the window's bottom — unless I am in a voice call, then it stays for the call
- * controls (ADR-0050 «Уточнение»).
- */
-export function showBottomIsland(appOpen: boolean, inVoice: boolean): boolean {
-  return !appOpen || inVoice;
+/** Hide profile and voice controls while a web app fills the content area. */
+export function showBottomIsland(appOpen: boolean): boolean {
+  return !appOpen;
 }
 
 /**
