@@ -118,7 +118,7 @@ owner local reauth + свежий SSO, с уведомлением и audit.
 запрещены; grants/assurances инвалидируются. Enforced → effective `entitlement_locked`,
 не optional. Recovery/revoke/просмотр своего статуса блокировки доступны без подписки.
 
-REST: 401 только невалидная Calaba session; 403 `SSO_REQUIRED`, `IDENTITY_SCOPE_DENIED`,
+REST: 401 только невалидная Calaba session; 403 `SSO_REQUIRED`, `RECENT_AUTH_REQUIRED`, `IDENTITY_SCOPE_DENIED`,
 `DIRECTORY_ACCESS_DENIED`, `RECOVERY_ONLY`; 409 `PLAN_LIMIT`, `IDENTITY_CONFIG_CHANGED`,
 `IDENTITY_NOT_LINKED`; 422 валидация; 503 `IDENTITY_DEPENDENCY_UNAVAILABLE`.
 OAuth endpoints используют стандартные OAuth/OIDC JSON errors, не protojson envelope.
@@ -137,12 +137,12 @@ Public discovery/login ошибки не раскрывают существов
 | OAuth authorization code | 60 секунд, один atomic exchange |
 | Provider access / ID token | не более 5 минут и не дальше срока session/assurance/entitlement |
 | Provider refresh | 8 часов absolute, 30 минут idle, только пока жива исходная session/assurance |
-| Recovery session | 10 минут, только policy repair |
+| Recovery code / session | код 365 дней от выдачи по часам БД, одноразовый / сессия 10 минут, только policy repair |
 | Clock skew при входящем ID token | 60 секунд; не продлевает внутренние deadlines |
 | LDAP sync / max staleness | 5 минут / 1 час после полного успеха |
 | Положительный read/WS/RTC policy cache | максимум 30 секунд, не дальше ближайшего deadline |
 | Outbound HTTP | timeout 10 секунд, body до 1 MiB, redirects запрещены |
-| Config/UI | name 1–100 символов, redirects 1–20, каждый до 2048 байт |
+| Config/UI | name 1–100 символов, redirects 1–10, каждый до 2048 байт; до 10 origins и 20 активных клиентов/workspace |
 | Случайные credentials/state/nonce | не менее 32 случайных байт, CSPRNG |
 
 Provider revoke/deactivation проверяются из БД при issue/refresh/UserInfo, без
@@ -193,10 +193,11 @@ main token broker с раздельным хранением local и workspace 
 | Метод / путь | Контракт / доступ |
 |---|---|
 | GET `/api/auth/sso/workspaces/{slug}` | public descriptor: workspace_id, display_name, login_enabled, login_label; rate limit |
-| POST `/api/auth/reauth` | local bearer + current_password → authenticated_at, valid_until; не SSO |
+| POST `/api/auth/local/reauth` | local bearer + current_password → authenticated_at, valid_until; не SSO |
 | GET `/api/workspaces/{id}/identity` | member: effective mode, lock_reason, entitlement, собственная assurance; owner дополнительно redacted config |
 | PUT `/api/workspaces/{id}/identity/connection` | owner local reauth; version, preset, issuer, tenant_id?, client_id, secret? → redacted config; отсутствие secret сохраняет, пустой недопустим |
 | POST `/api/workspaces/{id}/identity/test` | owner local reauth; создаёт purpose=test; success только после реального callback |
+| POST `/api/workspaces/{id}/identity/connections/{connection_id}/activate` | owner, version; явная активация проверенной connection по §3, возвращает redacted IdentityConnection, mode не меняет |
 | PUT `/api/workspaces/{id}/identity/policy` | owner local reauth + fresh assurance либо recovery; version, mode; guards из §3 |
 | POST `/api/auth/sso/workspaces/{id}/begin` | purpose, client_kind web/desktop, desktop_challenge? → flow_id, browser_start_url (desktop) или authorization_url (web), expires_at |
 | GET `/api/auth/sso/browser-start` | одноразовый bootstrap handle → browser binding cookie и trusted IdP redirect; только desktop initiation |
@@ -426,7 +427,7 @@ SSO/Directory/Provider → Integration/Client → T01–T16 + R1/R2. Crypto и Q
 Любая несовместимость текущей незавершённой работы оформляется mapping/diff к этому
 контракту до продолжения зависимых edits. Готовность Foundation не равна готовности SSO.
 
-Проверки: make gen + drift, server make lint, target unit/integration/race, client
+Проверки: make gen + drift, make lint из корня, target unit/integration/race, client
 typecheck/lint/unit; полный integration один раз перед merge. На каждый Txx записать
 command, SHA, result/count, env; не собирать пустые «зелёные» отчёты. R1 и R2 независимо
 проверяют итоговый diff, blocker/major устранены до merge. Push/deploy/tag этим документом
@@ -438,3 +439,107 @@ URI metadata для path issuer сверены раздельно: [OIDC Discove
 и [RFC 8414 §3](https://www.rfc-editor.org/rfc/rfc8414.html#section-3).
 Native redirects и системный браузер — [RFC 8252](https://www.rfc-editor.org/rfc/rfc8252.html).
 Остальные источники — в ADR-0054. Таблицы сроков/ACL/entitlements — выбранный профиль Calaba.
+
+## 13. Уточнения ведущего при интеграции (2026-10-01)
+
+Это принятые решения по обнаруженным пробелам контракта, а не отчёт о завершении
+реализации или тестов. Они обязательны для серверного и клиентского consumers.
+
+### Завершение входа и управление connection
+
+`SSOCompleteResponse` из auth.proto содержит `tokens`, `assurance`, `tested`.
+Web finish, native exchange и recovery возвращают этот общий generated ответ.
+Test не выдаёт credentials/assurance; link и step-up возвращают assurance, сохраняя
+независимую локальную сессию; standalone login выдаёт scoped tokens и assurance.
+Web refresh secret остаётся в HttpOnly cookie и удаляется из JSON; native получает
+его только в main token broker. AbortSignal/смена аккаунта или сервера запрещают
+запоздалый auth commit даже после успешного HTTP-ответа.
+
+Активация connection — отдельный POST из §5 с её явными id/version. Policy PUT
+не выбирает последний draft автоматически. Отсутствующий secret сохраняет прежний
+только при неизменных issuer/client_id; смена этой пары у существующего confidential
+подключения требует нового явно переданного secret. Это не переход в public client.
+Свежий public client может не иметь secret. Recovery kit возвращает `codes_once`
+и `expires_at`; UI показывает оба один раз и не сохраняет plaintext-коды. Истёкший
+kit не позволяет включить enforced/выполнить требующую kit ротацию или восстановиться.
+
+### Приглашения в enforced workspace
+
+Публичный preview приглашения возвращает `SSO_REQUIRED` без имени workspace,
+email или данных участников. UI сохраняет opaque invite code и предлагает локальный
+вход/регистрацию. POST `/api/invites/{code}/join` доступен независимому local human
+(не guest/bot/recovery/workspace_sso), проверяет обычные условия приглашения,
+подтверждённый email, лимит использований и bans. Он может подготовить membership,
+но не выдаёт assurance или данные пространства: `JoinWorkspaceResponse.identity_access`
+содержит только workspace_id, enforced и SSO_REQUIRED; workspace/member отсутствуют.
+Далее нужны свежая local reauth и явный SSO link. Регистрация/email autojoin также
+могут подготовить membership без подтверждения SSO. Open join и guest join закрыты.
+
+### Браузерный consent и cookies
+
+Consent UI расположен на `/oauth/consent?request=<opaque handle>`. Сервер создаёт
+отдельную HttpOnly/Secure/Lax browser cookie для request, ответы имеют no-store,
+no-referrer и CSP frame-ancestors none. Bind получает generated `BindOAuthRequest`
+с csrf_token, равным исходному handle, first-party bearer, cookie и точный Origin.
+Успешный atomic bind возвращает `OAuthConsentSnapshot` с новым одноразовым csrf_token;
+на сервере хранится его hash. `DecideOAuthRequest` содержит allow, allow_refresh,
+csrf_token; `OAuthDecisionResponse` — redirect_url. Client/scopes/redirect берутся
+только из server snapshot. Смена аккаунта требует нового request.
+
+Прежняя локальная refresh cookie с path `/api/auth` сохраняется. При включённой
+identity-конфигурации дополнительная `__Host-calab-local-session` (Path=/,
+Secure/HttpOnly/Lax) служит только read-only browser resolver на authorize.
+Если в ней refresh secret, resolver сравнивает текущий hash constant-time и заново
+проверяет session/user в БД; не ротирует refresh и не запускает reuse detection.
+Scoped refresh cookie называется `__Secure-calab-workspace-refresh-{uuid}`, имеет
+точный path `/api/auth/sso/workspaces/{uuid}`, Secure/HttpOnly/Lax и не имеет Domain.
+Дополнительная `__Host-calab-workspace-session-{uuid}` с Path=/ допускается только
+для prompt=none в соответствующем issuer. Login/refresh/logout/account switch
+согласованно обновляют/удаляют обе соответствующие cookies; expiry ограничен session.
+Management/consent/обычный API по-прежнему требуют bearer; cookies не подменяют его.
+
+Electron main выставляет доверенный Origin сохранённого HTTPS server только для
+известных first-party identity маршрутов (SSO, local reauth, identity management,
+OAuth clients/consent/grants). Renderer не задаёт этот Origin. Остальные API-потоки
+не получают глобальной переписи заголовка; native begin/exchange соблюдают то же правило.
+
+### Часы и границы уже открытого приложения
+
+После получения boundary locks policy использует более позднее из app clock и
+`clock_timestamp()` БД. Внутренние сроки не продлеваются допустимым JWT skew.
+Выдача ограничена меньшим из app+TTL, DB+TTL и сохранённых session/assurance/grant
+deadlines; новая assurance не продлевает старую grant. Проверка после ожидавшей
+блокировки обязательна и для одноразовых consumes/финальной публикации LDAP snapshot.
+
+READY.identity_access содержит причины и версии закрытых пространств участника,
+но не их защищённые snapshots. UI очищает их caches/subscriptions/media, сохраняя
+независимо разрешённые пространства и личные данные local session. Scoped session
+не показывает недоступные глобальные действия. GET/HEAD avatar для workspace_sso(A)
+разрешён только после свежего WorkspaceRead(A), если exact file id является текущим
+avatar текущего non-disabled участника A или текущей иконкой A. Это не общий доступ
+к файлам пользователя: старый avatar, B-only member, DM или произвольный global file
+не проходят. Recovery не получает этот доступ.
+
+Существующий операторский SUPERADMIN_EMAILS остаётся совместимым только для
+независимо локально подтверждённого nonbot/nonguest local account и свежей local proof.
+Постоянный UUID grant остаётся отдельным основанием. Автоматического постоянного
+backfill из email нет; изменение env/email отзывает legacy-основание. SSO/recovery
+и claims IdP не дают product admin, в том числе в /me, gateway и permission resolution.
+
+### Загрузка операторской конфигурации
+
+Полностью отсутствующая identity-конфигурация сохраняет запуск старой инсталляции:
+маршруты зарегистрированы, но возвращают 503. Частичная/невалидная конфигурация
+origin/keyrings/network policy запрещает startup. Edition/feature grants сами по себе
+не означают настроенный keyring. `IDENTITY_PUBLIC_ORIGIN` — exact HTTPS origin без
+path/query/fragment. `IDENTITY_ENCRYPTION_KEYS` — JSON kid→base64 AES-256 key;
+`OAUTH_SIGNING_KEYS` — JSON kid→PEM RSA; active kid задаётся отдельными env из §8.
+Keyring snapshots immutable и не используют JWT_SECRET.
+
+`IDENTITY_ENDPOINTS` задаёт точные URL/CIDR/CA исключения оператора; обычные публичные
+HTTPS endpoints проходят общий защищённый identitynet transport без обязательного
+предварительного каталога всех публичных IdP. `IDENTITY_DIRECTORY_HOSTS` задаёт
+обязательный exact host/CIDR/CA allowlist для LDAPS. Test injection допускается только
+через доверенные Go dependencies. После подключений пакетов лицензии регенерируются
+для фактического server binary. Результаты TLS fixtures и реального Microsoft стенда
+фиксируются отдельно; отсутствие последнего не превращается в passed.
