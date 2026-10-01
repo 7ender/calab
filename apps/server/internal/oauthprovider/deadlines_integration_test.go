@@ -11,6 +11,8 @@ import (
 	"time"
 
 	v1 "github.com/calaba/calaba/server/gen/calaba/v1"
+	"github.com/google/uuid"
+	"google.golang.org/protobuf/encoding/protojson"
 )
 
 func TestProviderDatabaseAndSigningClockBounds(t *testing.T) {
@@ -193,4 +195,64 @@ func TestProviderIdleExpiresWhileSessionLocked(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestProviderManagementRejectsDatabaseExpiredProofAndGrant(t *testing.T) {
+	f := fixture(t)
+	c := f.client(v1.OAuthClientType_OAUTH_CLIENT_TYPE_PUBLIC_NATIVE, false)
+	f.s.c.Now = func() time.Time { return time.Now().Add(-2 * time.Second) }
+	f.sql("UPDATE sessions SET local_authenticated_at=clock_timestamp()-interval '5 minutes 1 second' WHERE id=$1", f.session)
+	path := "/api/workspaces/" + f.ws.String() + "/oauth/clients/" + c.Client.Id
+	st, _, body := f.proto("GET", path, nil)
+	assertAPIError(t, st, body, 403, v1.ErrorCode_ERROR_CODE_RECENT_AUTH_REQUIRED)
+	f.sql("UPDATE sessions SET local_authenticated_at=clock_timestamp()-interval '30 seconds' WHERE id=$1", f.session)
+	f.sql("UPDATE workspace_identity_grants SET valid_until=clock_timestamp()-interval '1 second' WHERE workspace_id=$1 AND feature='oauth_provider'", f.ws)
+	if st, _, _ := f.proto("GET", path, nil); st != 409 {
+		t.Fatalf("DB-expired entitlement accepted by slow app clock: %d", st)
+	}
+	q := url.Values{"response_type": {"code"}, "client_id": {c.Client.ClientId}, "redirect_uri": {c.Client.RedirectUris[0]}, "scope": {"openid"}, "state": {"state"}, "nonce": {"nonce"}, "code_challenge_method": {"S256"}, "code_challenge": {opaque("")}}
+	st, h, _ := f.wire("GET", "/oidc/workspaces/"+f.ws.String()+"/authorize?"+q.Encode(), "", nil, "", "")
+	if st != 303 {
+		t.Fatalf("authorize denial status %d", st)
+	}
+	u, err := url.Parse(h.Get("Location"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if u.Query().Get("error") != "access_denied" {
+		t.Fatal("anonymous authorize ignored DB-expired entitlement")
+	}
+}
+
+func assertAPIError(t *testing.T, status int, body []byte, wantStatus int, wantCode v1.ErrorCode) {
+	t.Helper()
+	out := &v1.ApiError{}
+	if err := protojson.Unmarshal(body, out); err != nil {
+		t.Fatalf("invalid API error %s: %v", body, err)
+	}
+	if status != wantStatus || out.Code != wantCode {
+		t.Fatalf("API error %d %s; want %d %s", status, body, wantStatus, wantCode)
+	}
+}
+func TestProviderFirstPartyRecoveryAndDependencyCodes(t *testing.T) {
+	t.Run("recovery", func(t *testing.T) {
+		f := fixture(t)
+		c := f.client(v1.OAuthClientType_OAUTH_CLIENT_TYPE_PUBLIC_NATIVE, false)
+		f.session = uuid.New()
+		f.sql("INSERT INTO sessions(id,user_id,refresh_token_hash,authority_kind,authority_workspace_id,recovery_authenticated_at,expires_at) VALUES($1,$2,$3,'recovery',$4,clock_timestamp(),clock_timestamp()+interval '5 minutes')", f.session, f.user, hash("recovery fixture"), f.ws)
+		st, _, body := f.proto("GET", "/api/workspaces/"+f.ws.String()+"/oauth/clients/"+c.Client.Id, nil)
+		assertAPIError(t, st, body, 403, v1.ErrorCode_ERROR_CODE_RECOVERY_ONLY)
+		st, _, body = f.proto("GET", "/api/me/oauth-grants", nil)
+		assertAPIError(t, st, body, 403, v1.ErrorCode_ERROR_CODE_RECOVERY_ONLY)
+	})
+	t.Run("database", func(t *testing.T) {
+		f := fixture(t)
+		c := f.client(v1.OAuthClientType_OAUTH_CLIENT_TYPE_PUBLIC_NATIVE, false)
+		f.sql("ALTER TABLE workspace_members RENAME TO unavailable_members")
+		st, _, body := f.proto("GET", "/api/workspaces/"+f.ws.String()+"/oauth/clients/"+c.Client.Id, nil)
+		assertAPIError(t, st, body, 503, v1.ErrorCode_ERROR_CODE_IDENTITY_DEPENDENCY_UNAVAILABLE)
+		f.sql("ALTER TABLE sessions RENAME TO unavailable_sessions")
+		st, _, body = f.proto("GET", "/api/me/oauth-grants", nil)
+		assertAPIError(t, st, body, 503, v1.ErrorCode_ERROR_CODE_IDENTITY_DEPENDENCY_UNAVAILABLE)
+	})
 }

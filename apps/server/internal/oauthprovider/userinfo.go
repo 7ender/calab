@@ -155,19 +155,38 @@ func (s *Service) revokeGrant(ctx context.Context, q *sqlc.Queries, g sqlc.Oauth
 
 func (s *Service) ownPrincipal(r *http.Request) (identitypolicy.Principal, error) {
 	p, err := s.resolveBearer(r)
-	if err != nil || !identitypolicy.CheckSession(s.c.Now(), p).Allowed || p.Guest || p.Bot || p.Authority == identitypolicy.Recovery {
+	if err != nil {
+		return p, apiSessionError(err)
+	}
+	if !identitypolicy.CheckSession(s.c.Now(), p).Allowed || p.Guest || p.Bot {
 		return p, &protocolError{code: "invalid_token", status: http.StatusUnauthorized}
 	}
 	session, err := s.c.DB.Q.GetSession(r.Context(), p.SessionID)
-	if err != nil || session.UserID != p.UserID || session.RevokedAt != nil || !s.c.Now().Before(session.ExpiresAt) || session.AuthorityVersion != p.Version || session.AuthorityKind != string(p.Authority) {
+	if err != nil {
+		return p, apiSessionError(err)
+	}
+	if session.UserID != p.UserID || session.RevokedAt != nil || !s.c.Now().Before(session.ExpiresAt) || session.AuthorityVersion != p.Version || session.AuthorityKind != string(p.Authority) {
 		return p, &protocolError{code: "invalid_token", status: http.StatusUnauthorized}
 	}
 	u, err := s.c.DB.Q.GetUser(r.Context(), p.UserID)
-	if err != nil || u.DisabledAt != nil || u.IsGuest || u.IsBot {
+	if err != nil {
+		return p, apiSessionError(err)
+	}
+	if u.DisabledAt != nil || u.IsGuest || u.IsBot {
 		return p, &protocolError{code: "invalid_token", status: http.StatusUnauthorized}
 	}
 	if p.Authority == identitypolicy.WorkspaceSSO && (session.AuthorityWorkspaceID == nil || *session.AuthorityWorkspaceID != p.WorkspaceID) {
 		return p, &protocolError{code: "invalid_token", status: http.StatusUnauthorized}
+	}
+	now, err := s.policyNow(r.Context(), s.c.DB.Q)
+	if err != nil {
+		return p, err
+	}
+	if !now.Before(session.ExpiresAt) {
+		return p, &protocolError{code: "invalid_token", status: http.StatusUnauthorized}
+	}
+	if p.Authority == identitypolicy.Recovery {
+		return p, apiIdentityError(identitypolicy.State{Principal: p}, identitypolicy.Decision{}, identitypolicy.ErrDenied)
 	}
 	return p, nil
 }

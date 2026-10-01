@@ -9,8 +9,10 @@ import (
 	"net/url"
 	"strings"
 
+	v1 "github.com/calaba/calaba/server/gen/calaba/v1"
 	"github.com/calaba/calaba/server/internal/db/sqlc"
 	"github.com/calaba/calaba/server/internal/httpx"
+	"github.com/calaba/calaba/server/internal/identitypolicy"
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
 	"google.golang.org/protobuf/encoding/protojson"
@@ -76,17 +78,17 @@ func writeAPIError(w http.ResponseWriter, err error) {
 	if !errors.As(err, &api) {
 		var e *protocolError
 		if !errors.As(err, &e) {
-			api = httpx.Unavailable(nil).WithDetails("IDENTITY_DEPENDENCY_UNAVAILABLE", 0, 0)
+			api = httpx.Coded(http.StatusServiceUnavailable, v1.ErrorCode_ERROR_CODE_IDENTITY_DEPENDENCY_UNAVAILABLE, "identity dependency unavailable")
 		} else {
 			switch e.code {
 			case "invalid_token":
 				api = httpx.Unauthenticated("invalid session")
 			case "access_denied":
-				api = httpx.Forbidden("identity access denied")
+				api = httpx.Coded(http.StatusForbidden, v1.ErrorCode_ERROR_CODE_IDENTITY_SCOPE_DENIED, "identity access denied")
 			case "interaction_required":
-				api = httpx.Forbidden("workspace authentication required").WithDetails("SSO_REQUIRED", 0, 0)
+				api = httpx.Coded(http.StatusForbidden, v1.ErrorCode_ERROR_CODE_SSO_REQUIRED, "workspace authentication required")
 			case "login_required":
-				api = httpx.Forbidden("fresh authentication required").WithDetails("RECENT_AUTH_REQUIRED", 0, 0)
+				api = httpx.Coded(http.StatusForbidden, v1.ErrorCode_ERROR_CODE_RECENT_AUTH_REQUIRED, "fresh authentication required")
 			case "client_limit":
 				api = httpx.Conflict("OAuth client limit reached").WithDetails("PLAN_LIMIT", 20, 20)
 			case "secret_limit":
@@ -265,4 +267,40 @@ func bearer(r *http.Request) string {
 		return ""
 	}
 	return a[0][7:]
+}
+
+// apiIdentityError preserves the first-party generated error contract. External
+// OIDC handlers continue to emit RFC protocol errors through writeError.
+func apiIdentityError(st identitypolicy.State, d identitypolicy.Decision, err error) error {
+	if err != nil && !errors.Is(err, identitypolicy.ErrDenied) && !errors.Is(err, dbNoRows()) || d.Reason == identitypolicy.StateUnavailable {
+		e := httpx.Coded(http.StatusServiceUnavailable, v1.ErrorCode_ERROR_CODE_IDENTITY_DEPENDENCY_UNAVAILABLE, "identity dependency unavailable")
+		e.Err = err
+		return e
+	}
+	if errors.Is(err, dbNoRows()) || d.Reason == identitypolicy.InvalidSession {
+		return httpx.Unauthenticated("invalid session")
+	}
+	code := v1.ErrorCode_ERROR_CODE_IDENTITY_SCOPE_DENIED
+	switch d.Reason {
+	case identitypolicy.SSORequired:
+		code = v1.ErrorCode_ERROR_CODE_SSO_REQUIRED
+	case identitypolicy.RecentAuthRequired:
+		code = v1.ErrorCode_ERROR_CODE_RECENT_AUTH_REQUIRED
+	case identitypolicy.DirectoryStale, identitypolicy.MembershipSuspended:
+		code = v1.ErrorCode_ERROR_CODE_DIRECTORY_ACCESS_DENIED
+	case identitypolicy.EntitlementRequired:
+		return httpx.Conflict("Business or Enterprise is required").WithDetails(httpx.ReasonPlanLimit, 0, 0)
+	case identitypolicy.WorkspaceSuspended:
+		code = v1.ErrorCode_ERROR_CODE_WORKSPACE_SUSPENDED
+	}
+	if st.Principal.Authority == identitypolicy.Recovery {
+		code = v1.ErrorCode_ERROR_CODE_RECOVERY_ONLY
+	}
+	return httpx.Coded(http.StatusForbidden, code, "identity access denied")
+}
+func apiSessionError(err error) error {
+	if errors.Is(err, identitypolicy.ErrDenied) || errors.Is(err, dbNoRows()) {
+		return httpx.Unauthenticated("invalid session")
+	}
+	return apiIdentityError(identitypolicy.State{}, identitypolicy.Decision{}, err)
 }
