@@ -111,19 +111,23 @@ func (s *Service) checkGrant(ctx context.Context, q *sqlc.Queries, c sqlc.OauthC
 	if consent.RevokedAt != nil || consent.UserID != g.UserID || consent.ClientID != c.ID || consent.Version != g.ConsentVersion || !subset(g.Scopes, consent.Scopes) {
 		return identitypolicy.Decision{}, oauthError("invalid_grant")
 	}
-	// Lock the source session before evaluating its authoritative scope/assurance.
-	session, err := q.GetSessionForUpdate(ctx, g.SessionID)
-	if err != nil {
-		return identitypolicy.Decision{}, err
-	}
-	if session.UserID != g.UserID {
-		return identitypolicy.Decision{}, oauthError("invalid_grant")
-	}
+	// state locks the matching workspace/user/member/session boundary before
+	// loading authority. The composite grant FK and that lock bind the source user.
 	_, d, err := s.state(ctx, q, identitypolicy.Principal{SessionID: g.SessionID, UserID: g.UserID}, g.WorkspaceID, op)
 	if err != nil {
 		return d, oauthError("invalid_grant")
 	}
-	if d.Versions.Policy != g.PolicyVersion || d.Versions.Access != g.AccessVersion || d.Versions.Entitlement != g.EntitlementVersion || d.Versions.Session != g.SessionVersion || g.AssuranceExpiresAt != nil && !now.Before(*g.AssuranceExpiresAt) {
+	// Session/member locks may have waited after the first deadline check. Both
+	// clocks are read again only after every boundary lock and fresh policy load.
+	now = s.c.Now()
+	dbNow, err := q.IdentityDatabaseNow(ctx)
+	if err != nil {
+		return d, err
+	}
+	if !now.Before(g.ExpiresAt) || !now.Before(g.IdleExpiresAt) || !dbNow.Before(g.ExpiresAt) || !dbNow.Before(g.IdleExpiresAt) || !now.Before(d.ValidUntil) || !dbNow.Before(d.ValidUntil) {
+		return d, oauthError("invalid_grant")
+	}
+	if d.Versions.Policy != g.PolicyVersion || d.Versions.Access != g.AccessVersion || d.Versions.Entitlement != g.EntitlementVersion || d.Versions.Session != g.SessionVersion || g.AssuranceExpiresAt != nil && (!now.Before(*g.AssuranceExpiresAt) || !dbNow.Before(*g.AssuranceExpiresAt)) {
 		return d, oauthError("invalid_grant")
 	}
 	return d, nil
@@ -140,6 +144,9 @@ func (s *Service) issueTokens(ctx context.Context, q *sqlc.Queries, c sqlc.Oauth
 		deadline = minimum(deadline, *g.AssuranceExpiresAt)
 	}
 	until := minimum(minimum(now.Add(identitypolicy.AccessTokenTTL), dbNow.Add(identitypolicy.AccessTokenTTL)), deadline)
+	// ID tokens serialize integer seconds. Apply the same actual expiration to
+	// opaque access tokens and never round a proof or lifetime deadline upwards.
+	until = time.Unix(until.Unix(), 0).UTC()
 	if !until.After(now) || !until.After(dbNow) {
 		return tokenResponse{}, oauthError("invalid_grant")
 	}
@@ -222,6 +229,17 @@ func (s *Service) exchange(ctx context.Context, ws uuid.UUID, r *http.Request, f
 			if err != nil {
 				if revokeErr := s.revokeGrant(ctx, q, g, "identity_access_lost"); revokeErr != nil {
 					return revokeErr
+				}
+				wireErr = oauthError("invalid_grant")
+				return nil
+			}
+			dbNow, err := q.IdentityDatabaseNow(ctx)
+			if err != nil {
+				return err
+			}
+			if !s.c.Now().Before(code.ExpiresAt) || !dbNow.Before(code.ExpiresAt) {
+				if err = s.revokeGrant(ctx, q, g, "authorization_code_expired"); err != nil {
+					return err
 				}
 				wireErr = oauthError("invalid_grant")
 				return nil
