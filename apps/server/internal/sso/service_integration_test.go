@@ -352,3 +352,72 @@ func TestSSOExpiredRecoveryKitAndRotation(t *testing.T) {
 		t.Fatal(err)
 	}
 }
+
+func TestSSOLockedBoundaryUsesConservativeDatabaseClock(t *testing.T) {
+	f := newServiceFixture(t)
+	f.activate(t)
+	ctx := context.Background()
+	f.s.Now = func() time.Time { return time.Now().Add(-30 * time.Minute) }
+	if _, err := f.s.DB.Pool.Exec(ctx, `UPDATE workspace_plans SET valid_until=clock_timestamp()-interval '5 minutes' WHERE workspace_id=$1`, f.ws); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := f.s.Begin(ctx, identitypolicy.Principal{}, f.ws, &pb.SSOBeginRequest{Purpose: pb.SSOFlowPurpose_SSO_FLOW_PURPOSE_LOGIN, ClientKind: pb.SSOClientKind_SSO_CLIENT_KIND_WEB}); err == nil {
+		t.Fatal("behind app clock extended expired entitlement")
+	}
+	if _, err := f.s.DB.Pool.Exec(ctx, `UPDATE workspace_plans SET valid_until=NULL WHERE workspace_id=$1`, f.ws); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := f.s.DB.Pool.Exec(ctx, `UPDATE sessions SET local_authenticated_at=clock_timestamp()-interval '6 minutes' WHERE id=$1`, f.p.SessionID); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := f.s.RecoveryKit(ctx, f.p, f.ws); err == nil {
+		t.Fatal("behind app clock accepted stale local proof")
+	}
+}
+
+func TestAccessDenialsPreserveReasonAndDependencyFailure(t *testing.T) {
+	f := newServiceFixture(t)
+	ctx := t.Context()
+	expect := func(err error, reason identitypolicy.Reason) {
+		t.Helper()
+		var access *AccessError
+		if !errors.Is(err, ErrDenied) || !errors.As(err, &access) || access.Decision.Reason != reason {
+			t.Fatalf("want typed %s, got %v", reason, err)
+		}
+	}
+	_, err := f.s.DB.Pool.Exec(ctx, `UPDATE sessions SET local_authenticated_at=clock_timestamp()-interval '6 minutes' WHERE id=$1`, f.p.SessionID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, err = f.s.RecoveryKit(ctx, f.p, f.ws)
+	expect(err, identitypolicy.RecentAuthRequired)
+	_, err = f.s.DB.Pool.Exec(ctx, `UPDATE sessions SET local_authenticated_at=clock_timestamp() WHERE id=$1`, f.p.SessionID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, err = f.s.DB.Q.SetIdentityPolicy(ctx, sqlc.SetIdentityPolicyParams{WorkspaceID: f.ws, ExpectedVersion: 1, Mode: "enforced", AssuranceMaxAgeSeconds: 3600})
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, err = f.s.RecoveryKit(ctx, f.p, f.ws)
+	expect(err, identitypolicy.SSORequired)
+	status, err := f.s.Status(ctx, f.p, f.ws)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if status.Access.Reason != pb.IdentityAccessReason_IDENTITY_ACCESS_REASON_SSO_REQUIRED || status.Access.ValidUntil != nil {
+		t.Fatalf("incorrect denial descriptor: %v", status.Access)
+	}
+	_, err = f.s.DB.Pool.Exec(ctx, `UPDATE workspace_identity_grants SET enabled=false WHERE workspace_id=$1`, f.ws)
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, err = f.s.RequireFeature(ctx, f.s.DB.Q, f.ws, identitypolicy.SSO)
+	expect(err, identitypolicy.EntitlementRequired)
+	canceled, cancel := context.WithCancel(ctx)
+	cancel()
+	_, err = f.s.RequireFeature(canceled, f.s.DB.Q, f.ws, identitypolicy.SSO)
+	if err == nil || errors.Is(err, ErrDenied) {
+		t.Fatalf("dependency failure collapsed: %v", err)
+	}
+}
