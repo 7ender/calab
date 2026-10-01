@@ -25,7 +25,7 @@ export const identityDate = (value?: Timestamp): string =>
   value ? new Intl.DateTimeFormat(getLocale(), { dateStyle: 'medium', timeStyle: 'short' }).format(timestampDate(value)) : '—';
 export function OneTimeSecret({ value, deadline, onClose }: { value: string; deadline?: Timestamp; onClose: () => void }): ReactNode {
   return (
-    <Modal open title={t('identity.once')} onClose={onClose} footer={<Button onClick={onClose}>{t('identity.done')}</Button>}>
+    <Modal open title={t('identity.once')} onClose={onClose} footer={<div className="flex w-full justify-end pt-3"><Button onClick={onClose}>{t('identity.done')}</Button></div>}>
       <div className="flex flex-col gap-4">
         <p className="text-body text-muted">{t('identity.once')}</p>
         <pre
@@ -110,6 +110,7 @@ export function IdentitySettings({ workspaceId, owner }: { workspaceId: string; 
       <SsoButton workspaceId={workspaceId} purpose="step_up" />
       {local ? (
         <Button
+              className="self-end mobile:self-stretch"
           variant="destructive"
           busy={action.busy}
           onClick={() =>
@@ -141,9 +142,13 @@ export function IdentitySettings({ workspaceId, owner }: { workspaceId: string; 
             kitSaved={kitSaved}
             onSaved={reload}
           />
-          <SsoButton workspaceId={workspaceId} purpose="test" onDone={() => void reload()} />
+          <Card title={t('identity.setupCheck')}>
+            <div className="flex flex-col gap-4 p-4">
+              <p className="text-body text-muted">{t('identity.setupHelp')}</p>
+              <SsoButton workspaceId={workspaceId} purpose="test" onDone={() => void reload()} />
           {connection ? (
             <Button
+              className="self-end mobile:self-stretch"
               disabled={connection.status !== IdentityConnectionStatus.TESTED}
               busy={action.busy}
               onClick={() =>
@@ -156,6 +161,8 @@ export function IdentitySettings({ workspaceId, owner }: { workspaceId: string; 
               {t('identity.activate')}
             </Button>
           ) : null}
+            </div>
+          </Card>
           <Card title={t('identity.policy')}>
             <div className="flex flex-col gap-3 p-4">
               <p className="text-body text-muted">{t('identity.enforceHelp')}</p>
@@ -174,8 +181,10 @@ export function IdentitySettings({ workspaceId, owner }: { workspaceId: string; 
                 <option value={IdentityPolicyMode.OPTIONAL}>{t('identity.optional')}</option>
                 <option value={IdentityPolicyMode.ENFORCED}>{t('identity.enforced')}</option>
               </Select>
+              <h3 className="mt-3 text-body font-semibold">{t('identity.recoverySection')}</h3>
               <Toggle label={t('identity.recoverySaved')} checked={kitSaved} onChange={setKitSaved} />
               <Button
+              className="self-end mobile:self-stretch"
                 disabled={!access || (mode === IdentityPolicyMode.ENFORCED && !kitSaved)}
                 busy={action.busy}
                 onClick={() =>
@@ -198,6 +207,7 @@ export function IdentitySettings({ workspaceId, owner }: { workspaceId: string; 
                 {t('identity.save')}
               </Button>
               <Button
+              className="self-end mobile:self-stretch"
                 variant="secondary"
                 busy={action.busy}
                 onClick={() =>
@@ -287,18 +297,18 @@ function ConnectionForm({
             <option value={IdentityProvider.ADFS}>AD FS 2019+</option>
           </Select>
         </Field>
-        <Field label={t('identity.issuer')}>
-          <Input value={issuer} onChange={(e) => setIssuer(e.target.value)} />
+        <Field label={t('identity.issuer')} hint={t('identity.issuerHelp')}>
+          <Input placeholder="https://login.example.com" spellCheck={false} value={issuer} onChange={(e) => setIssuer(e.target.value)} />
         </Field>
         {provider === IdentityProvider.ENTRA ? (
-          <Field label={t('identity.tenant')}>
-            <Input value={tenantId} onChange={(e) => setTenantId(e.target.value)} />
+          <Field label={t('identity.tenant')} hint={t('identity.tenantHelp')}>
+            <Input placeholder="00000000-0000-0000-0000-000000000000" spellCheck={false} value={tenantId} onChange={(e) => setTenantId(e.target.value)} />
           </Field>
         ) : null}
-        <Field label={t('identity.clientId')}>
+        <Field label={t('identity.clientId')} hint={t('identity.clientIdHelp')}>
           <Input value={clientId} onChange={(e) => setClientId(e.target.value)} />
         </Field>
-        <Field label={t('identity.secret')}>
+        <Field label={t('identity.secret')} hint={t('identity.secretHelp')}>
           <PasswordInput
             value={secret}
             autoComplete="new-password"
@@ -313,6 +323,7 @@ function ConnectionForm({
           </p>
         ) : null}
         <Button
+              className="self-end mobile:self-stretch"
           busy={action.busy}
           disabled={
             !name.trim() ||
@@ -358,6 +369,7 @@ export function DirectorySettings({ workspaceId }: { workspaceId: string }): Rea
           {config.data?.lastError ? <p role="alert">{config.data.lastError}</p> : null}
           {config.error ? <p role="alert">{errorText(config.error)}</p> : null}
           <Button
+              className="self-end mobile:self-stretch"
             variant="secondary"
             busy={action.busy}
             onClick={() =>
@@ -369,6 +381,7 @@ export function DirectorySettings({ workspaceId }: { workspaceId: string }): Rea
             {t('identity.connectionTest')}
           </Button>
           <Button
+              className="self-end mobile:self-stretch"
             variant="secondary"
             busy={action.busy}
             onClick={() =>
@@ -402,6 +415,7 @@ export function DirectorySettings({ workspaceId }: { workspaceId: string }): Rea
             <Input value={guid} onChange={(e) => setGuid(e.target.value)} />
           </Field>
           <Button
+              className="self-end mobile:self-stretch"
             busy={action.busy}
             disabled={!userId || !guid}
             onClick={() =>
@@ -430,6 +444,7 @@ export function DirectorySettings({ workspaceId }: { workspaceId: string }): Rea
                   )}
                 </span>
                 <Button
+              className="self-end mobile:self-stretch"
                   variant="destructive"
                   busy={action.busy}
                   onClick={() =>
@@ -453,7 +468,7 @@ export function DirectorySettings({ workspaceId }: { workspaceId: string }): Rea
               </div>
             ))}
           {members.hasNextPage ? (
-            <Button variant="secondary" busy={members.isFetchingNextPage} onClick={() => void members.fetchNextPage()}>
+            <Button className="self-end mobile:self-stretch" variant="secondary" busy={members.isFetchingNextPage} onClick={() => void members.fetchNextPage()}>
               {t('identity.refresh')}
             </Button>
           ) : null}
@@ -484,31 +499,34 @@ function DirectoryForm({
   const [groups, setGroups] = useState(config.allowedGroupDns.join('\n'));
   const action = useIdentityAction();
   return (
-    <Card title={t('identity.directory')}>
+    <Card title={t('identity.directoryConfig')}>
       <div className="flex flex-col gap-3 p-4">
         <Toggle label={t('identity.enabled')} checked={enabled} onChange={setEnabled} />
         {(
           [
-            [url, setUrl, 'identity.url'],
-            [bindDn, setBindDn, 'identity.bindDn'],
-            [baseDn, setBaseDn, 'identity.baseDn'],
+            [url, setUrl, 'identity.url', 'identity.urlHelp', 'ldaps://ad.example.com:636'],
+            [bindDn, setBindDn, 'identity.bindDn', 'identity.bindHelp', 'CN=Calaba,OU=Services,DC=example,DC=com'],
+            [baseDn, setBaseDn, 'identity.baseDn', 'identity.baseHelp', 'DC=example,DC=com'],
           ] as const
-        ).map(([value, setter, label]) => (
-          <Field key={label} label={t(label)}>
-            <Input value={value} onChange={(e) => setter(e.target.value)} />
+        ).map(([value, setter, label, hint, placeholder]) => (
+          <Field key={label} label={t(label)} hint={t(hint)}>
+            <Input placeholder={placeholder} spellCheck={false} value={value} onChange={(e) => setter(e.target.value)} />
           </Field>
         ))}
-        <Field label={t('identity.bindPassword')}>
+        <Field label={t('identity.bindPassword')} hint={t('identity.secretKeep')}>
           <PasswordInput value={bindPassword} autoComplete="new-password" onChange={(e) => setBindPassword(e.target.value)} />
         </Field>
-        <Field label={t('identity.groups')}>
+        <Field label={t('identity.groups')} hint={t('identity.groupsHelp')}>
           <textarea
             className="min-h-24 w-full rounded-[var(--radius-card)] border border-line bg-hover p-3"
+            placeholder="CN=Team,OU=Groups,DC=example,DC=com"
+            spellCheck={false}
             value={groups}
             onChange={(e) => setGroups(e.target.value)}
           />
         </Field>
         <Button
+              className="self-end mobile:self-stretch"
           busy={action.busy}
           onClick={() =>
             void action.run(async () => {

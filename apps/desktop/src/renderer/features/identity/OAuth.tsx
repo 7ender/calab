@@ -68,7 +68,7 @@ export function OAuthClients({ workspaceId }: { workspaceId: string }): ReactNod
       <LocalReauth />
       <Card title={t('identity.oauth')}>
         <div className="flex flex-col gap-3 p-4">
-          <Button onClick={() => setEdit('new')}>{t('identity.create')}</Button>
+          <Button className="self-end mobile:self-stretch" onClick={() => setEdit('new')}>{t('identity.create')}</Button>
           <Toggle label={t('identity.revokeOld')} checked={revokeOld} onChange={setRevokeOld} />
           {clients.data?.clients.map((c) => (
             <ClientRow key={c.id} client={c} busy={action.busy} onEdit={setEdit} onDelete={removeClient} onRotate={rotateClient} />
@@ -79,7 +79,7 @@ export function OAuthClients({ workspaceId }: { workspaceId: string }): ReactNod
               {action.error || errorText(clients.error)}
             </p>
           ) : null}
-          <Button variant="secondary" busy={clients.isFetching} onClick={() => void clients.refetch()}>
+          <Button className="self-end mobile:self-stretch" variant="secondary" busy={clients.isFetching} onClick={() => void clients.refetch()}>
             {t('identity.refresh')}
           </Button>
         </div>
@@ -129,15 +129,15 @@ const ClientRow = memo(function ClientRow({
         {client.disabledAt ? <p>{t('identity.off')}</p> : null}
       </div>
       <div className="flex flex-wrap gap-2">
-        <Button variant="secondary" disabled={busy} onClick={() => onEdit(client)}>
+        <Button className="self-end mobile:self-stretch" variant="secondary" disabled={busy} onClick={() => onEdit(client)}>
           {t('identity.edit')}
         </Button>
         {client.type === OAuthClientType.OAUTH_CLIENT_TYPE_CONFIDENTIAL_WEB ? (
-          <Button variant="secondary" disabled={busy} onClick={() => onRotate(client)}>
+          <Button className="self-end mobile:self-stretch" variant="secondary" disabled={busy} onClick={() => onRotate(client)}>
             {t('identity.rotate')}
           </Button>
         ) : null}
-        <Button variant="destructive" disabled={busy} onClick={() => onDelete(client)}>
+        <Button className="self-end mobile:self-stretch" variant="destructive" disabled={busy} onClick={() => onDelete(client)}>
           {t('identity.delete')}
         </Button>
       </div>
@@ -182,21 +182,23 @@ function ClientForm({
       title={t(client ? 'identity.edit' : 'identity.create')}
       onClose={onClose}
       footer={
-        <>
-          <Button variant="secondary" onClick={onClose}>
+        <div className="flex w-full flex-wrap justify-end gap-2 pt-3">
+          <Button className="self-end mobile:self-stretch" variant="secondary" onClick={onClose}>
             {t('identity.cancel')}
           </Button>
           <Button
+          className="self-end mobile:self-stretch"
             busy={action.busy}
             disabled={!name.trim() || !lines(redirects).length || lines(redirects).length > 10 || lines(origins).length > 10}
             onClick={() => void action.run(save)}
           >
             {t('identity.save')}
           </Button>
-        </>
+        </div>
       }
     >
-      <div className="flex flex-col gap-3 p-4">
+      <div className="flex flex-col gap-3">
+        <h3 className="text-body font-semibold">{t('identity.appDetails')}</h3>
         <Field label={t('identity.name')}>
           <Input value={name} maxLength={100} onChange={(e) => setName(e.target.value)} />
         </Field>
@@ -207,20 +209,28 @@ function ClientForm({
             <option value={OAuthClientType.OAUTH_CLIENT_TYPE_PUBLIC_SPA}>{t('identity.clientSpa')}</option>
           </Select>
         </Field>
-        <Field label={t('identity.redirects')}>
+        <h3 className="mt-2 text-body font-semibold">{t('identity.callbackSection')}</h3>
+        <Field label={t('identity.redirects')} hint={t(type === OAuthClientType.OAUTH_CLIENT_TYPE_PUBLIC_NATIVE ? 'identity.nativeRedirectHelp' : 'identity.redirectHelp')}>
           <textarea
-            className="min-h-24 w-full rounded-[var(--radius-card)] border border-line bg-hover p-3"
+            className="w-full rounded-[var(--radius-card)] border border-line bg-hover p-3"
+            rows={3}
+            placeholder="https://app.example.com/auth/callback"
+            spellCheck={false}
             value={redirects}
             onChange={(e) => setRedirects(e.target.value)}
           />
         </Field>
-        <Field label={t('identity.origins')}>
+        <Field label={t('identity.origins')} hint={t('identity.originsHelp')}>
           <textarea
-            className="min-h-20 w-full rounded-[var(--radius-card)] border border-line bg-hover p-3"
+            className="w-full rounded-[var(--radius-card)] border border-line bg-hover p-3"
+            rows={2}
+            placeholder="https://app.example.com"
+            spellCheck={false}
             value={origins}
             onChange={(e) => setOrigins(e.target.value)}
           />
         </Field>
+        <h3 className="mt-2 text-body font-semibold">{t('identity.accessSection')}</h3>
         <Toggle label={t('identity.scopes')} checked={profile} onChange={setProfile} />
         <Toggle label={t('auth.email')} checked={email} onChange={setEmail} />
         <Toggle label={t('identity.refreshAccess')} checked={refresh} onChange={setRefresh} />
@@ -257,6 +267,7 @@ export function AuthorizedApps(): ReactNode {
                 </p>
               </div>
               <Button
+          className="self-end mobile:self-stretch"
                 variant="destructive"
                 busy={action.busy}
                 onClick={() =>
@@ -350,10 +361,10 @@ function BoundConsent({ handle, sessionId }: { handle: string; sessionId: string
               </p>
               {snapshot.refreshRequested ? <Toggle label={t('identity.refreshAccess')} checked={refresh} onChange={setRefresh} /> : null}
               <div className="flex flex-wrap justify-end gap-3">
-                <Button variant="secondary" busy={action.busy} onClick={() => void action.run(() => decide(false))}>
+                <Button className="self-end mobile:self-stretch" variant="secondary" busy={action.busy} onClick={() => void action.run(() => decide(false))}>
                   {t('identity.deny')}
                 </Button>
-                <Button busy={action.busy} onClick={() => void action.run(() => decide(true))}>
+                <Button className="self-end mobile:self-stretch" busy={action.busy} onClick={() => void action.run(() => decide(true))}>
                   {t('identity.allow')}
                 </Button>
               </div>
@@ -386,6 +397,7 @@ function BoundConsent({ handle, sessionId }: { handle: string; sessionId: string
                   />
                 ) : null}
                 <Button
+          className="self-end mobile:self-stretch"
                   variant="secondary"
                   onClick={() => {
                     setError('');
