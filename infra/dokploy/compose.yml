@@ -519,7 +519,6 @@ services:
       # TURN/UDP on 443.
       #
       # TCP/443 belongs to Traefik, UDP/443 belongs to LiveKit.
-      - "443:443/udp"
 
       # TURN relay range.
       - "20000-29999:20000-29999/udp"
