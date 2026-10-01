@@ -4,11 +4,12 @@ import { useCallback, useEffect, useLayoutEffect, useRef, useState, type ReactNo
 import { createPortal } from 'react-dom';
 import { Avatar } from '../../components/Avatar';
 import { Badge, CloseButton, IconButton, Slider, cx } from '../../components/ui';
-import { t } from '../../i18n';
+import { plural, t } from '../../i18n';
 import { platform } from '../../platform';
 import { useMediaQuery } from '../../lib/useMediaQuery';
 import { voice } from '../../services/voice';
 import { useMessages } from '../../stores/messages';
+import { showsUnread, useRooms } from '../../stores/rooms';
 import { useVoice, type RemoteStream, type StreamQuality } from '../../stores/voice';
 import { useMemberName, useWorkspaces } from '../../stores/workspaces';
 import { menuBox, menuItem } from '../shell/menu';
@@ -487,6 +488,33 @@ function PreviewTile({ stream, wsId, current, detached }: { stream: RemoteStream
 
 
 
+/**
+ * The room's chat unread while the stage hides the feed (issue #35): the mention counter as in
+ * the room rows (it survives a muted room), else the unread counter, else — when the count is
+ * unknown (no read state yet) — a plain dot; a quiet room shows only mentions (docs/09 #22).
+ */
+function ChatUnreadBadge(): ReactNode {
+  const roomId = useVoice((s) => s.roomId);
+  const mentions = useRooms((s) => (roomId ? (s.mentions[roomId] ?? 0) : 0));
+  const unread = useRooms((s) => (roomId ? (s.unread[roomId] ?? 0) : 0));
+  const dot = useRooms((s) => (roomId ? showsUnread(roomId, s) : false));
+  if (mentions > 0) {
+    return (
+      <span aria-label={plural('shell.unreadMentions', mentions)} data-testid="stream-chat-unread" className="rounded-full bg-danger-fill px-1.5 text-micro font-bold leading-4 text-white">
+        {mentions > 99 ? '99+' : mentions}
+      </span>
+    );
+  }
+  if (unread > 0 && dot) {
+    return (
+      <span aria-label={plural('stream.chatUnread', unread)} data-testid="stream-chat-unread" className="rounded-full bg-accent-strong px-1.5 text-micro font-semibold leading-4 text-accent-fg">
+        {unread > 99 ? '99+' : unread}
+      </span>
+    );
+  }
+  return dot ? <span aria-label={t('ws.unread')} data-testid="stream-chat-unread" className="size-1.5 shrink-0 rounded-full bg-white" /> : null;
+}
+
 function Stage({ stream, streams, wsId, box, emptyFeed }: { stream: RemoteStream; streams: RemoteStream[]; wsId: string | null; box: Box; emptyFeed: boolean }): ReactNode {
   const stage = useVoice((s) => s.stage);
   const [menuOpen, setMenuOpen] = useState(false);
@@ -521,6 +549,7 @@ function Stage({ stream, streams, wsId, box, emptyFeed }: { stream: RemoteStream
         >
           <MessageCircle className="size-3.5" aria-hidden />
           {t('stream.showChat')}
+          <ChatUnreadBadge />
         </button>
         {stage === 'popout' ? (
           <div className="absolute inset-0 grid place-items-center bg-black/80 text-white">

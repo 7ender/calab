@@ -213,3 +213,16 @@ export const useVoice = create<VoiceStore>()((set) => ({
 }));
 
 export const setVoice = (p: Partial<VoiceStore>): void => useVoice.getState().set(p);
+
+/**
+ * The stream viewer hides the room's feed (docs/09 #18): any non-PiP stage — expanded or the
+ * pop-out's placeholder — covers the message list, as does stream full screen (`fullscreen`
+ * is the layout flag, independent of `stage`). The PiP leaves the chat open. While covered
+ * the chat is not on screen: a new message counts as unread and the read marker must not move
+ * (issue #35).
+ */
+export function streamCoversChat(s: Pick<VoiceStore, 'roomId' | 'stage' | 'streams' | 'watching'>, roomId: string, fullscreen = false): boolean {
+  if (s.roomId !== roomId) return false;
+  if (!s.streams.some((x) => x.trackSid === s.watching)) return false;
+  return s.stage !== 'pip' || fullscreen;
+}

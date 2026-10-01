@@ -11,7 +11,8 @@ import { log } from '../../lib/log';
 import { EMPTY_ROOM_MESSAGES, useMessages, type ChatMessage } from '../../stores/messages';
 import { useRooms } from '../../stores/rooms';
 import { useSession } from '../../stores/session';
-import { useVoice } from '../../stores/voice';
+import { streamCoversChat, useVoice } from '../../stores/voice';
+import { useStreamFullscreen } from '../voice/fullscreen';
 import { toast } from '../../stores/toasts';
 import { useChatView } from './chatView';
 import { buildMetas, type RowMeta } from './grouping';
@@ -161,16 +162,21 @@ function Feed({ workspaceId, room, perms, newMarker }: { workspaceId: string; ro
   }, [items, firstUnread, me]);
   const moreUnread = state.hasMoreAfter && newestKnown > lastSentId;
 
+  // The stream stage / stream full screen covers this feed: messages behind it are unseen,
+  // so they keep their unread state and the marker must not move (issue #35).
+  const streamFs = useStreamFullscreen((s) => s.on);
+  const covered = useVoice((s) => streamCoversChat(s, roomId, streamFs));
+
   // Read state: the newest message is on screen and the window is focused.
   useEffect(() => {
-    if (!atBottom || !lastSentId) return;
+    if (!atBottom || !lastSentId || covered) return;
     const mark = (): void => {
       if (document.hasFocus()) markRead(roomId, lastSentId);
     };
     mark();
     window.addEventListener('focus', mark);
     return () => window.removeEventListener('focus', mark);
-  }, [atBottom, lastSentId, roomId]);
+  }, [atBottom, lastSentId, roomId, covered]);
 
   // Jump requests (search, reply quotes, pins): load the window if needed, scroll, highlight.
   const alive = useRef(true);
