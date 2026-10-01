@@ -10,7 +10,6 @@ import (
 
 	v1 "github.com/calaba/calaba/server/gen/calaba/v1"
 	"github.com/calaba/calaba/server/internal/db/sqlc"
-	"github.com/calaba/calaba/server/internal/httpx"
 	"github.com/calaba/calaba/server/internal/identitypolicy"
 	"github.com/google/uuid"
 	"google.golang.org/protobuf/types/known/timestamppb"
@@ -94,7 +93,7 @@ func (s *Service) management(_ http.ResponseWriter, r *http.Request, fn func(con
 	}
 	p, err := s.resolveBearer(r)
 	if err != nil {
-		return &protocolError{code: "invalid_token", status: http.StatusUnauthorized}
+		return apiSessionError(err)
 	}
 	if r.Method != "GET" && !s.sameOrigin(r) {
 		return oauthError("invalid_request")
@@ -107,27 +106,17 @@ func (s *Service) management(_ http.ResponseWriter, r *http.Request, fn func(con
 			return err
 		}
 		if st, d, err := s.state(r.Context(), q, p, ws, identitypolicy.ManageOAuth); err != nil {
-			if !errors.Is(err, identitypolicy.ErrDenied) && !errors.Is(err, dbNoRows()) {
-				return httpx.Unavailable(nil).WithDetails("IDENTITY_DEPENDENCY_UNAVAILABLE", 0, 0)
-			}
-			if errors.Is(err, dbNoRows()) || d.Reason == identitypolicy.InvalidSession {
-				return httpx.Unauthenticated("invalid session")
-			}
-			if st.Principal.Authority == identitypolicy.Recovery {
-				return httpx.Forbidden("recovery-only session").WithDetails("RECOVERY_ONLY", 0, 0)
-			}
-			if d.Reason == identitypolicy.EntitlementRequired {
-				return httpx.Conflict("Business or Enterprise is required").WithDetails("PLAN_LIMIT", 0, 0)
-			}
-			if d.Reason == identitypolicy.SSORequired {
-				return httpx.Forbidden("workspace authentication required").WithDetails("SSO_REQUIRED", 0, 0)
-			}
-			if d.Reason == identitypolicy.DirectoryStale || d.Reason == identitypolicy.MembershipSuspended {
-				return httpx.Forbidden("directory access denied").WithDetails("DIRECTORY_ACCESS_DENIED", 0, 0)
-			}
-			return httpx.Forbidden("identity access denied").WithDetails("IDENTITY_SCOPE_DENIED", 0, 0)
+			return apiIdentityError(st, d, err)
 		}
-		return fn(r.Context(), q, ws, p)
+		if err := fn(r.Context(), q, ws, p); err != nil {
+			return err
+		}
+		// The client lock or a batch of management queries may have crossed a
+		// proof deadline. A failed final check rolls back the mutation and audit.
+		if st, d, err := s.state(r.Context(), q, p, ws, identitypolicy.ManageOAuth); err != nil {
+			return apiIdentityError(st, d, err)
+		}
+		return nil
 	})
 }
 

@@ -44,7 +44,9 @@ and expected security version. Name-only updates preserve that version. Security
 updates and secret rotation revoke families and invalidate pending requests/codes.
 Only two unexpired secrets are accepted during the bounded ten-minute overlap;
 `revoke_old` closes it immediately. Secret responses and all protocol credentials
-are no-store and secrets are shown once.
+are no-store and secrets are shown once. First-party errors carry the generated
+identity error code (including recent authentication, recovery-only, and dependency
+failures); external OIDC errors retain the RFC form and snake_case JSON contract.
 
 Transactions lock workspace/policy before client/grant and the matching identity
 boundary, then load policy state. Post-lock checks use fresh application and DB

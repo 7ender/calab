@@ -71,7 +71,17 @@ func (s *Service) deleteGrant(w http.ResponseWriter, r *http.Request) {
 			return err
 		}
 		session, err := q.GetSessionForUpdate(r.Context(), p.SessionID)
-		if err != nil || session.UserID != p.UserID || session.RevokedAt != nil || !s.c.Now().Before(session.ExpiresAt) || session.AuthorityVersion != p.Version {
+		if err != nil {
+			return apiSessionError(err)
+		}
+		if session.UserID != p.UserID || session.RevokedAt != nil || !s.c.Now().Before(session.ExpiresAt) || session.AuthorityVersion != p.Version {
+			return &protocolError{code: "invalid_token", status: http.StatusUnauthorized}
+		}
+		now, err := s.policyNow(r.Context(), q)
+		if err != nil {
+			return err
+		}
+		if !now.Before(session.ExpiresAt) {
 			return &protocolError{code: "invalid_token", status: http.StatusUnauthorized}
 		}
 		if _, err := q.GetOAuthClientForUpdate(r.Context(), sqlc.GetOAuthClientForUpdateParams{WorkspaceID: chosen.WorkspaceID, ID: chosen.ClientID}); err != nil {
