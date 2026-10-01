@@ -1331,7 +1331,7 @@ const narrowOAuthGrantScopes = `-- name: NarrowOAuthGrantScopes :one
 UPDATE oauth_grants SET scopes=$1
 WHERE workspace_id=$2 AND id=$3 AND client_id=$4
 AND $1::text[] <@ scopes AND 'openid'=ANY($1::text[])
-AND revoked_at IS NULL AND absolute_expires_at>clock_timestamp() AND idle_expires_at>clock_timestamp()
+AND revoked_at IS NULL AND expires_at>clock_timestamp() AND idle_expires_at>clock_timestamp()
 RETURNING id, workspace_id, user_id, client_id, consent_id, session_id, scopes, issuer, client_version, consent_version, policy_version, access_version, entitlement_version, session_version, authenticated_at, assurance_expires_at, created_at, expires_at, idle_expires_at, revoked_at, revoked_reason
 `
 

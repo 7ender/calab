@@ -9,7 +9,7 @@ RETURNING *;
 UPDATE oauth_grants SET scopes=sqlc.arg('scopes')
 WHERE workspace_id=sqlc.arg('workspace_id') AND id=sqlc.arg('id') AND client_id=sqlc.arg('client_id')
 AND sqlc.arg('scopes')::text[] <@ scopes AND 'openid'=ANY(sqlc.arg('scopes')::text[])
-AND revoked_at IS NULL AND absolute_expires_at>clock_timestamp() AND idle_expires_at>clock_timestamp()
+AND revoked_at IS NULL AND expires_at>clock_timestamp() AND idle_expires_at>clock_timestamp()
 RETURNING *;
 
 -- name: GetOAuthClient :one

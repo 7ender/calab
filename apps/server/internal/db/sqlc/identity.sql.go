@@ -1820,6 +1820,26 @@ func (q *Queries) ListIdentityInvalidationsForUpdate(ctx context.Context, limit 
 	return items, nil
 }
 
+const lockIdentityBoundary = `-- name: LockIdentityBoundary :one
+SELECT s.id FROM workspaces w JOIN workspace_members m ON m.workspace_id=w.id
+JOIN users u ON u.id=m.user_id JOIN sessions s ON s.user_id=u.id
+WHERE w.id=$1 AND u.id=$2 AND s.id=$3
+FOR UPDATE OF w,u,m,s
+`
+
+type LockIdentityBoundaryParams struct {
+	WorkspaceID uuid.UUID
+	UserID      uuid.UUID
+	SessionID   uuid.UUID
+}
+
+func (q *Queries) LockIdentityBoundary(ctx context.Context, arg LockIdentityBoundaryParams) (uuid.UUID, error) {
+	row := q.db.QueryRow(ctx, lockIdentityBoundary, arg.WorkspaceID, arg.UserID, arg.SessionID)
+	var id uuid.UUID
+	err := row.Scan(&id)
+	return id, err
+}
+
 const markIdentityConnectionTested = `-- name: MarkIdentityConnectionTested :one
 UPDATE workspace_identity_connections SET tested_version=version, tested_at=clock_timestamp(), status='tested'
 WHERE workspace_id=$1 AND id=$2 AND version=$3 AND disabled_at IS NULL RETURNING id, workspace_id, name, status, tenant_id, provider, issuer, client_id, client_secret_box, scopes, version, tested_version, tested_at, disabled_at, created_by, created_at

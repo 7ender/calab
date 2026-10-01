@@ -340,3 +340,9 @@ LEFT JOIN workspace_identity_access a ON a.workspace_id=w.id AND a.user_id=u.id
 LEFT JOIN workspace_directories d ON d.workspace_id=w.id
 LEFT JOIN directory_objects o ON o.workspace_id=w.id AND o.directory_id=d.id AND o.user_id=u.id
 WHERE u.id=sqlc.arg('user_id');
+
+-- name: LockIdentityBoundary :one
+SELECT s.id FROM workspaces w JOIN workspace_members m ON m.workspace_id=w.id
+JOIN users u ON u.id=m.user_id JOIN sessions s ON s.user_id=u.id
+WHERE w.id=sqlc.arg('workspace_id') AND u.id=sqlc.arg('user_id') AND s.id=sqlc.arg('session_id')
+FOR UPDATE OF w,u,m,s;
