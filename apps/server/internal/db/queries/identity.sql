@@ -103,13 +103,13 @@ VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10) RETURNING *;
 -- name: RecordLocalAuthentication :one
 UPDATE sessions SET local_authenticated_at = sqlc.arg('authenticated_at')
 WHERE id = sqlc.arg('session_id') AND user_id = sqlc.arg('user_id') AND authority_kind = 'local_account'
-AND revoked_at IS NULL AND expires_at > now() RETURNING *;
+AND revoked_at IS NULL AND expires_at > clock_timestamp() RETURNING *;
 
 -- name: UpsertIdentityGrant :one
 INSERT INTO workspace_identity_grants(workspace_id,feature,enabled,source,valid_until,updated_by)
 VALUES ($1,$2,$3,$4,$5,$6) ON CONFLICT (workspace_id,feature) DO UPDATE SET
     enabled=EXCLUDED.enabled, source=EXCLUDED.source, valid_until=EXCLUDED.valid_until,
-    revoked_at=NULL, version=workspace_identity_grants.version+1, updated_by=EXCLUDED.updated_by, updated_at=now()
+    revoked_at=NULL, version=workspace_identity_grants.version+1, updated_by=EXCLUDED.updated_by, updated_at=clock_timestamp()
 RETURNING *;
 
 -- name: ListIdentityGrants :many
@@ -120,7 +120,7 @@ SELECT * FROM workspace_identity_policies WHERE workspace_id=$1 FOR UPDATE;
 
 -- name: SetIdentityPolicy :one
 UPDATE workspace_identity_policies SET mode=sqlc.arg('mode'), version=version+1,
-    assurance_max_age_seconds=sqlc.arg('assurance_max_age_seconds'), updated_by=sqlc.narg('updated_by'), updated_at=now()
+    assurance_max_age_seconds=sqlc.arg('assurance_max_age_seconds'), updated_by=sqlc.narg('updated_by'), updated_at=clock_timestamp()
 WHERE workspace_id=sqlc.arg('workspace_id') AND version=sqlc.arg('expected_version') RETURNING *;
 
 -- name: ListIdentityConnections :many
@@ -139,7 +139,7 @@ UPDATE workspace_identity_connections SET name=sqlc.arg('name'), client_id=sqlc.
 WHERE workspace_id=sqlc.arg('workspace_id') AND id=sqlc.arg('id') AND version=sqlc.arg('expected_version') RETURNING *;
 
 -- name: MarkIdentityConnectionTested :one
-UPDATE workspace_identity_connections SET tested_version=version, tested_at=now(), status='tested'
+UPDATE workspace_identity_connections SET tested_version=version, tested_at=clock_timestamp(), status='tested'
 WHERE workspace_id=$1 AND id=$2 AND version=$3 AND disabled_at IS NULL RETURNING *;
 
 -- name: ActivateIdentityConnection :one
@@ -147,7 +147,7 @@ UPDATE workspace_identity_connections SET status='active'
 WHERE workspace_id=$1 AND id=$2 AND version=$3 AND tested_version=version AND disabled_at IS NULL RETURNING *;
 
 -- name: DisableIdentityConnection :one
-UPDATE workspace_identity_connections SET status='disabled',disabled_at=now(),version=version+1,tested_version=NULL
+UPDATE workspace_identity_connections SET status='disabled',disabled_at=clock_timestamp(),version=version+1,tested_version=NULL
 WHERE workspace_id=$1 AND id=$2 RETURNING *;
 
 -- name: FindExternalIdentity :one
@@ -163,7 +163,7 @@ UPDATE workspace_external_identities SET status=$4,version=version+1 WHERE works
 -- name: UpsertIdentityAccess :one
 INSERT INTO workspace_identity_access(workspace_id,user_id,status,reason) VALUES($1,$2,$3,$4)
 ON CONFLICT (workspace_id,user_id) DO UPDATE SET status=EXCLUDED.status,reason=EXCLUDED.reason,
-version=workspace_identity_access.version+1,updated_at=now() RETURNING *;
+version=workspace_identity_access.version+1,updated_at=clock_timestamp() RETURNING *;
 
 -- name: UpsertWorkspaceAssurance :one
 INSERT INTO session_workspace_assurances(session_id,workspace_id,user_id,connection_id,identity_id,authenticated_at,valid_until,policy_version,access_version,connection_version,identity_version,entitlement_version,session_version)
@@ -174,35 +174,65 @@ access_version=EXCLUDED.access_version,connection_version=EXCLUDED.connection_ve
 entitlement_version=EXCLUDED.entitlement_version,session_version=EXCLUDED.session_version,revoked_at=NULL RETURNING *;
 
 -- name: RevokeWorkspaceAssurances :execrows
-UPDATE session_workspace_assurances SET revoked_at=now()
+UPDATE session_workspace_assurances SET revoked_at=clock_timestamp()
 WHERE workspace_id=sqlc.arg('workspace_id') AND (sqlc.narg('user_id')::uuid IS NULL OR user_id=sqlc.narg('user_id'))
 AND (sqlc.narg('session_id')::uuid IS NULL OR session_id=sqlc.narg('session_id')) AND revoked_at IS NULL;
 
 -- name: ConsumeIdentityLoginTransaction :one
-UPDATE identity_login_transactions SET consumed_at=now()
-WHERE state_hash=$1 AND browser_hash=$2 AND connection_id=$3 AND connection_version=$4
-AND expires_at>now() AND consumed_at IS NULL RETURNING *;
+WITH locked AS MATERIALIZED (
+    SELECT src.* FROM identity_login_transactions AS src WHERE src.state_hash=$1 AND src.browser_hash=$2 AND src.connection_id=$3 AND src.connection_version=$4 FOR UPDATE
+), eligible AS MATERIALIZED (
+    SELECT locked.id FROM locked WHERE locked.consumed_at IS NULL AND locked.expires_at>clock_timestamp()
+)
+UPDATE identity_login_transactions AS t SET consumed_at=clock_timestamp()
+FROM eligible WHERE t.id=eligible.id RETURNING t.*;
 
 -- name: ConsumeIdentityBrowserStart :one
-UPDATE identity_login_transactions SET browser_started_at=now()
-WHERE browser_start_hash=$1 AND expires_at>now() AND browser_started_at IS NULL AND consumed_at IS NULL RETURNING *;
+WITH locked AS MATERIALIZED (
+    SELECT src.* FROM identity_login_transactions AS src WHERE src.browser_start_hash=$1 FOR UPDATE
+), eligible AS MATERIALIZED (
+    SELECT locked.id FROM locked WHERE locked.browser_started_at IS NULL AND locked.consumed_at IS NULL AND locked.expires_at>clock_timestamp()
+)
+UPDATE identity_login_transactions AS t SET browser_started_at=clock_timestamp()
+FROM eligible WHERE t.id=eligible.id RETURNING t.*;
 
 -- name: CompleteIdentityLoginTransaction :one
-UPDATE identity_login_transactions SET result_box=$2,completed_at=now()
-WHERE id=$1 AND consumed_at IS NOT NULL AND completed_at IS NULL AND expires_at>now() RETURNING *;
+WITH locked AS MATERIALIZED (
+    SELECT src.* FROM identity_login_transactions AS src WHERE src.id=$1 FOR UPDATE
+), eligible AS MATERIALIZED (
+    SELECT locked.id FROM locked WHERE locked.consumed_at IS NOT NULL AND locked.completed_at IS NULL AND locked.expires_at>clock_timestamp()
+)
+UPDATE identity_login_transactions AS t SET result_box=$2,completed_at=clock_timestamp()
+FROM eligible WHERE t.id=eligible.id RETURNING t.*;
 
 -- name: FinishIdentityLoginTransaction :one
-UPDATE identity_login_transactions SET finished_at=now()
-WHERE id=$1 AND browser_hash=$2 AND completed_at IS NOT NULL AND finished_at IS NULL AND expires_at>now() RETURNING *;
+WITH locked AS MATERIALIZED (
+    SELECT src.* FROM identity_login_transactions AS src WHERE src.id=$1 AND src.browser_hash=$2 FOR UPDATE
+), eligible AS MATERIALIZED (
+    SELECT locked.id FROM locked WHERE locked.completed_at IS NOT NULL AND locked.finished_at IS NULL AND locked.expires_at>clock_timestamp()
+)
+UPDATE identity_login_transactions AS t SET finished_at=clock_timestamp()
+FROM eligible WHERE t.id=eligible.id RETURNING t.*;
 
 -- name: ConsumeIdentityNativeHandoff :one
-UPDATE identity_native_handoffs SET consumed_at=now()
-WHERE transaction_id=$1 AND ticket_hash=$2 AND challenge=$3 AND consumed_at IS NULL AND expires_at>now() RETURNING *;
+WITH locked AS MATERIALIZED (
+    SELECT src.* FROM identity_native_handoffs AS src WHERE src.transaction_id=$1 AND src.ticket_hash=$2 AND src.challenge=$3 FOR UPDATE
+), eligible AS MATERIALIZED (
+    SELECT locked.id FROM locked WHERE locked.consumed_at IS NULL AND locked.expires_at>clock_timestamp()
+)
+UPDATE identity_native_handoffs AS t SET consumed_at=clock_timestamp()
+FROM eligible WHERE t.id=eligible.id RETURNING t.*;
 
 -- name: ConsumeIdentityRecoveryCode :one
-UPDATE workspace_identity_recovery_codes r SET consumed_at=now()
-FROM workspaces w WHERE r.workspace_id=w.id AND r.workspace_id=$1 AND r.owner_id=$2 AND w.owner_id=$2
-AND r.code_hash=$3 AND r.consumed_at IS NULL AND r.expires_at>now() RETURNING r.*;
+WITH locked AS MATERIALIZED (
+    SELECT r.*,w.owner_id AS current_owner_id FROM workspace_identity_recovery_codes r
+    JOIN workspaces w ON w.id=r.workspace_id
+    WHERE r.workspace_id=$1 AND r.owner_id=$2 AND r.code_hash=$3 FOR UPDATE OF r,w
+), eligible AS MATERIALIZED (
+    SELECT locked.id FROM locked WHERE locked.current_owner_id=$2 AND locked.consumed_at IS NULL AND locked.expires_at>clock_timestamp()
+)
+UPDATE workspace_identity_recovery_codes AS r SET consumed_at=clock_timestamp()
+FROM eligible WHERE r.id=eligible.id RETURNING r.*;
 
 -- name: DeleteIdentityRecoveryCodes :execrows
 DELETE FROM workspace_identity_recovery_codes WHERE workspace_id=$1;
@@ -211,7 +241,7 @@ DELETE FROM workspace_identity_recovery_codes WHERE workspace_id=$1;
 SELECT * FROM identity_invalidation_outbox WHERE delivered_at IS NULL ORDER BY id LIMIT $1 FOR UPDATE SKIP LOCKED;
 
 -- name: MarkIdentityInvalidationDelivered :exec
-UPDATE identity_invalidation_outbox SET delivered_at=now() WHERE id=$1;
+UPDATE identity_invalidation_outbox SET delivered_at=clock_timestamp() WHERE id=$1;
 
 -- name: ListIdentityAudit :many
 SELECT * FROM workspace_identity_audit WHERE workspace_id=$1 AND (sqlc.narg('before_id')::uuid IS NULL OR id<sqlc.narg('before_id'))
@@ -223,7 +253,7 @@ SELECT uuidv7()::uuid AS id;
 -- name: GetIdentityGateState :one
 -- A single MVCC snapshot; transaction-sensitive callers use Queries.WithTx and locks.
 SELECT sqlc.embed(s), u.is_guest, u.is_bot,
-(u.disabled_at IS NOT NULL OR (u.is_guest AND u.guest_expires_at<=now()))::boolean AS user_disabled,
+(u.disabled_at IS NOT NULL OR (u.is_guest AND u.guest_expires_at<=clock_timestamp()))::boolean AS user_disabled,
 w.id AS workspace_id, (w.suspended_at IS NOT NULL)::boolean AS workspace_suspended,
 (m.user_id IS NOT NULL)::boolean AS member,
 COALESCE(CASE WHEN w.owner_id=u.id AND m.role='owner' THEN 'owner' WHEN m.role='owner' THEN 'member' ELSE m.role END,'')::text AS builtin_role,
@@ -232,7 +262,7 @@ COALESCE(x.version,1)::bigint AS access_version,
 COALESCE(p.mode,'off')::text AS policy_mode, COALESCE(p.version,1)::bigint AS policy_version,
 COALESCE(p.entitlement_version,1)::bigint AS entitlement_version,
 COALESCE(p.assurance_max_age_seconds,3600)::integer AS max_age_seconds,
-COALESCE(wp.plan='enterprise' AND (wp.valid_until IS NULL OR wp.valid_until>now()),false)::boolean AS business_eligible,
+COALESCE(wp.plan='enterprise' AND (wp.valid_until IS NULL OR wp.valid_until>clock_timestamp()),false)::boolean AS business_eligible,
 wp.valid_until AS plan_valid_until,
 a.session_id AS assurance_session_id, a.user_id AS assurance_user_id, a.connection_id AS assurance_connection_id, a.identity_id AS assurance_identity_id,
 a.authenticated_at AS assurance_authenticated_at, a.valid_until AS assurance_valid_until, a.revoked_at AS assurance_revoked_at,
@@ -250,7 +280,7 @@ COALESCE(e.status='active' AND e.issuer=c.issuer,false)::boolean AS identity_act
 COALESCE(o.status='active',false)::boolean AS directory_active,
 (d.disabled_at IS NULL AND d.last_success_at IS NOT NULL)::boolean AS directory_enabled,
 COALESCE(d.last_success_at + make_interval(secs=>d.max_staleness_seconds),'epoch'::timestamptz)::timestamptz AS directory_valid_until,
-EXISTS(SELECT FROM workspace_identity_recovery_codes r WHERE r.workspace_id=w.id AND r.owner_id=w.owner_id AND r.consumed_at IS NULL AND r.expires_at>now())::boolean AS recovery_ready,
+EXISTS(SELECT FROM workspace_identity_recovery_codes r WHERE r.workspace_id=w.id AND r.owner_id=w.owner_id AND r.consumed_at IS NULL AND r.expires_at>clock_timestamp())::boolean AS recovery_ready,
 EXISTS(SELECT FROM product_admin_grants g WHERE g.user_id=u.id AND g.revoked_at IS NULL)::boolean AS product_admin_granted,
 gs.enabled AS sso_enabled, gs.source AS sso_source, gs.valid_until AS sso_valid_until, gs.revoked_at AS sso_revoked_at,COALESCE(gs.version,0)::bigint AS sso_version,
 gd.enabled AS directory_granted, gd.source AS directory_source, gd.valid_until AS directory_grant_valid_until,gd.revoked_at AS directory_revoked_at,COALESCE(gd.version,0)::bigint AS directory_grant_version,
