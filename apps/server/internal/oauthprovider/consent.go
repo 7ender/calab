@@ -90,7 +90,9 @@ func parseAuthorize(f url.Values, c sqlc.OauthClient) (sqlc.CreateOAuthRequestPa
 			return sqlc.CreateOAuthRequestParams{}, oauthError("invalid_request")
 		}
 	}
-	for _, k := range []string{"request", "request_uri", "claims", "acr_values", "resource", "audience"} {
+	// Unsupported optional acr_values preferences are ignored (OIDC Core 15.1).
+	// Issued tokens never fabricate acr/amr or a stronger authentication claim.
+	for _, k := range []string{"request", "request_uri", "claims", "id_token_hint", "resource", "audience"} {
 		if f.Has(k) {
 			return sqlc.CreateOAuthRequestParams{}, oauthError("invalid_request")
 		}
@@ -160,7 +162,12 @@ func (s *Service) authorize(w http.ResponseWriter, r *http.Request) {
 		writeError(w, err)
 		return
 	}
-	f, err := url.ParseQuery(r.URL.RawQuery)
+	var f url.Values
+	if r.Method == http.MethodPost {
+		f, err = form(w, r)
+	} else {
+		f, err = url.ParseQuery(r.URL.RawQuery)
+	}
 	if err != nil {
 		writeError(w, oauthError("invalid_request"))
 		return

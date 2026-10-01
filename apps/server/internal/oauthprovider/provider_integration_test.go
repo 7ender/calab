@@ -362,9 +362,6 @@ func TestProviderIndependentRPAndTokenIsolation(t *testing.T) {
 			t.Fatalf("confused token accepted %d", st)
 		}
 	}
-	if st, _, _ := f.exchange(c, req, code); st != 400 {
-		t.Fatal("authorization code replay accepted")
-	}
 	st, rotated, b := f.token(c, url.Values{"grant_type": {"refresh_token"}, "refresh_token": {tokens.RefreshToken}, "scope": {"openid"}})
 	if st != 200 {
 		t.Fatalf("refresh %d %s", st, b)
@@ -412,6 +409,20 @@ func TestProviderParallelExchangeAndRefresh(t *testing.T) {
 	if success.Load() != 1 {
 		t.Fatalf("code successes %d", success.Load())
 	}
+	if st, _ := f.info(winner.AccessToken); st != 401 {
+		t.Fatal("parallel code reuse did not revoke the issued family")
+	}
+	if st, _, _ := f.token(c, url.Values{"grant_type": {"refresh_token"}, "refresh_token": {winner.RefreshToken}}); st != 400 {
+		t.Fatal("parallel code reuse left refresh usable")
+	}
+	// Refresh races use an independently issued family: the code race above
+	// deliberately invalidates its winner under the release reuse contract.
+	req, code = f.code(c.Client, true)
+	st, fresh, b := f.exchange(c, req, code)
+	if st != 200 {
+		t.Fatalf("fresh exchange %d %s", st, b)
+	}
+	winner = fresh
 	other := f.client(v1.OAuthClientType_OAUTH_CLIENT_TYPE_PUBLIC_NATIVE, true)
 	if st, _, _ := f.token(other, url.Values{"grant_type": {"refresh_token"}, "refresh_token": {winner.RefreshToken}}); st != 400 {
 		t.Fatal("wrong client refreshed")

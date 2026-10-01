@@ -166,6 +166,11 @@ FROM eligible WHERE t.id=eligible.id RETURNING t.*;
 -- name: FindOAuthToken :one
 SELECT * FROM oauth_tokens WHERE workspace_id=$1 AND token_hash=$2 AND token_type=$3;
 
+-- name: GetConsumedOAuthCodeForUpdate :one
+SELECT * FROM oauth_authorization_codes
+WHERE workspace_id=$1 AND client_id=$2 AND code_hash=$3 AND redirect_uri=$4 AND pkce_challenge=$5 AND consumed_at IS NOT NULL
+FOR UPDATE;
+
 -- name: GetOAuthTokenForUpdate :one
 SELECT * FROM oauth_tokens WHERE workspace_id=$1 AND client_id=$2 AND token_hash=$3 AND token_type=$4 FOR UPDATE;
 

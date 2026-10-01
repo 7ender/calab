@@ -372,7 +372,7 @@ func providerSessionResolver(a *auth.Service) oauthprovider.SessionResolver {
 				return identitypolicy.Principal{}, err
 			}
 		}
-		authorize := r.Method == "GET" && strings.HasSuffix(r.URL.Path, "/authorize")
+		authorize := (r.Method == http.MethodGet || r.Method == http.MethodPost) && strings.HasSuffix(r.URL.Path, "/authorize")
 		if !authorize {
 			if bearer.SessionID == uuid.Nil {
 				return bearer, auth.ErrInvalidToken
@@ -408,7 +408,13 @@ func providerSessionResolver(a *auth.Service) oauthprovider.SessionResolver {
 		if bearer.SessionID != uuid.Nil {
 			return bearer, nil
 		}
-		if r.URL.Query().Get("prompt") != "none" || browser.SessionID == uuid.Nil {
+		prompt := r.URL.Query().Get("prompt")
+		if r.Method == http.MethodPost {
+			// The provider validates the bounded, single-valued body before
+			// calling this resolver. Never parse or merge query/body here.
+			prompt = r.PostForm.Get("prompt")
+		}
+		if prompt != "none" || browser.SessionID == uuid.Nil {
 			return identitypolicy.Principal{}, auth.ErrInvalidToken
 		}
 		return browser, nil

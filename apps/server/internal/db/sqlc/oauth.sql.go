@@ -788,6 +788,46 @@ func (q *Queries) FindOAuthToken(ctx context.Context, arg FindOAuthTokenParams) 
 	return i, err
 }
 
+const getConsumedOAuthCodeForUpdate = `-- name: GetConsumedOAuthCodeForUpdate :one
+SELECT id, workspace_id, grant_id, user_id, client_id, code_hash, redirect_uri, pkce_challenge, nonce, created_at, expires_at, consumed_at FROM oauth_authorization_codes
+WHERE workspace_id=$1 AND client_id=$2 AND code_hash=$3 AND redirect_uri=$4 AND pkce_challenge=$5 AND consumed_at IS NOT NULL
+FOR UPDATE
+`
+
+type GetConsumedOAuthCodeForUpdateParams struct {
+	WorkspaceID   uuid.UUID
+	ClientID      uuid.UUID
+	CodeHash      []byte
+	RedirectUri   string
+	PkceChallenge string
+}
+
+func (q *Queries) GetConsumedOAuthCodeForUpdate(ctx context.Context, arg GetConsumedOAuthCodeForUpdateParams) (OauthAuthorizationCode, error) {
+	row := q.db.QueryRow(ctx, getConsumedOAuthCodeForUpdate,
+		arg.WorkspaceID,
+		arg.ClientID,
+		arg.CodeHash,
+		arg.RedirectUri,
+		arg.PkceChallenge,
+	)
+	var i OauthAuthorizationCode
+	err := row.Scan(
+		&i.ID,
+		&i.WorkspaceID,
+		&i.GrantID,
+		&i.UserID,
+		&i.ClientID,
+		&i.CodeHash,
+		&i.RedirectUri,
+		&i.PkceChallenge,
+		&i.Nonce,
+		&i.CreatedAt,
+		&i.ExpiresAt,
+		&i.ConsumedAt,
+	)
+	return i, err
+}
+
 const getOAuthClient = `-- name: GetOAuthClient :one
 SELECT id, workspace_id, client_id, name, client_type, refresh_enabled, allowed_origins, auth_method, scopes, version, disabled_at, created_by, created_at FROM oauth_clients WHERE workspace_id = $1 AND id = $2
 `

@@ -42,7 +42,7 @@ func TestAuthorizeValidation(t *testing.T) {
 	c := sqlc.OauthClient{Scopes: []string{"openid", "profile", "email"}}
 	base := url.Values{"response_type": {"code"}, "redirect_uri": {"https://rp.example/callback"}, "scope": {"openid profile"}, "state": {"state"}, "nonce": {"nonce"}, "code_challenge_method": {"S256"}, "code_challenge": {base64.RawURLEncoding.EncodeToString(hash("verifier"))}}
 	for _, tc := range []struct{ key, value, code string }{
-		{"response_type", "token", "unsupported_response_type"}, {"code_challenge_method", "plain", "invalid_request"}, {"code_challenge", "abc", "invalid_request"}, {"state", "", "invalid_request"}, {"nonce", "", "invalid_request"}, {"scope", "openid offline_access", "invalid_scope"}, {"scope", "openid profile profile", "invalid_scope"}, {"prompt", "none login", "invalid_request"}, {"prompt", "none consent", "invalid_request"}, {"prompt", "select_account", "invalid_request"}, {"max_age", "-1", "invalid_request"}, {"max_age", "2147483648", "invalid_request"}, {"request_uri", "https://evil.example/jar", "invalid_request"}, {"claims", "{}", "invalid_request"},
+		{"response_type", "token", "unsupported_response_type"}, {"code_challenge_method", "plain", "invalid_request"}, {"code_challenge", "abc", "invalid_request"}, {"state", "", "invalid_request"}, {"nonce", "", "invalid_request"}, {"scope", "openid offline_access", "invalid_scope"}, {"scope", "openid profile profile", "invalid_scope"}, {"prompt", "none login", "invalid_request"}, {"prompt", "none consent", "invalid_request"}, {"prompt", "select_account", "invalid_request"}, {"max_age", "-1", "invalid_request"}, {"max_age", "2147483648", "invalid_request"}, {"request_uri", "https://evil.example/jar", "invalid_request"}, {"claims", "{}", "invalid_request"}, {"id_token_hint", "not-a-jwt", "invalid_request"},
 	} {
 		t.Run(tc.key+tc.value, func(t *testing.T) {
 			f := url.Values{}
@@ -74,6 +74,15 @@ func TestAuthorizeValidation(t *testing.T) {
 	f["state"] = []string{"one", "two"}
 	if _, err := parseAuthorize(f, c); err == nil {
 		t.Fatal("duplicate state accepted")
+	}
+	f.Set("state", "state")
+	f.Set("acr_values", "unsupported-mfa-preference another-preference")
+	if req, err := parseAuthorize(f, c); err != nil || req.State != "state" || req.PkceChallenge != base.Get("code_challenge") {
+		t.Fatalf("optional acr preference changed authorization: %+v %v", req, err)
+	}
+	f["acr_values"] = []string{"one", "two"}
+	if _, err := parseAuthorize(f, c); err == nil {
+		t.Fatal("duplicate acr_values accepted")
 	}
 }
 
