@@ -26,6 +26,7 @@ const (
 )
 
 type entry struct {
+	enc            *encEvent // resolved replay attribution; not serialized
 	workspace      uuid.UUID
 	identityFormat bool
 	id             uuid.UUID

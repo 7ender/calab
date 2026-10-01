@@ -448,7 +448,7 @@ func (h *Hub) buildReady(ctx context.Context, s *Session, uid uuid.UUID) (*v1.Re
 			if s.principal.Authority == identitypolicy.WorkspaceSSO && w.ID != s.principal.WorkspaceID {
 				continue
 			}
-			decision, err := h.auth.CheckWorkspaceDecision(ctx, s.identity(), w.ID, identitypolicy.Realtime)
+			decision, err := s.refreshWorkspaceLease(ctx, w.ID)
 			access = identityAccessStatus(w.ID, decision, err, s.principal)
 			if policy, e := h.db.Q.GetIdentityPolicy(ctx, w.ID); e == nil {
 				access.Mode = identityMode(policy.Mode)
@@ -682,14 +682,14 @@ func (h *Hub) abandon(s *Session) {
 	s.closeQueue()
 }
 
-func transcodeAll(c *conn, es []entry) ([]outMsg, bool) {
+func transcodeAll(c *conn, s *Session, es []entry) ([]outMsg, bool) {
 	out := make([]outMsg, 0, len(es))
 	for _, e := range es {
 		typ, b, err := c.codec.transcode(e.frame)
 		if err != nil {
 			return nil, false
 		}
-		out = append(out, outMsg{typ: typ, data: b})
+		out = append(out, outMsg{typ: typ, data: b, session: s, event: e.enc})
 	}
 	return out, true
 }
@@ -730,7 +730,7 @@ func (h *Hub) replayLocal(ctx context.Context, s *Session, c *conn, clientSeq ui
 		c.setReplay(nil)
 		return false
 	}
-	frames, ok := transcodeAll(c, kept)
+	frames, ok := transcodeAll(c, s, kept)
 	if !ok {
 		c.setReplay(nil)
 		return false
@@ -760,7 +760,7 @@ func (h *Hub) replayTakenOver(ctx context.Context, s *Session, c *conn, clientSe
 	if !s.replayAllowed(missed) {
 		return false
 	}
-	frames, ok := transcodeAll(c, missed)
+	frames, ok := transcodeAll(c, s, missed)
 	if !ok {
 		return false
 	}

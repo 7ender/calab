@@ -1,8 +1,11 @@
 package gateway
 
 import (
+	"bytes"
 	"context"
+	"encoding/json"
 	"errors"
+	"slices"
 	"sync"
 	"time"
 
@@ -23,12 +26,18 @@ func newScopedEnc(ws uuid.UUID, ev *v1.DispatchEvent) *encEvent {
 func (s *Session) dispatchScoped(ws, id uuid.UUID, ev *v1.DispatchEvent) {
 	s.dispatchEnc(id, newScopedEnc(ws, ev))
 }
+func (s *Session) identityEnabled() bool {
+	return s.hub != nil && (s.hub.auth != nil || s.hub.checkWorkspace != nil)
+}
 func (s *Session) identity() auth.Identity {
 	return auth.Identity{UserID: s.user, SessionID: s.asess, IsBot: s.bot, Principal: s.principal}
 }
 
-func (s *Session) allowsWorkspace(ctx context.Context, ws uuid.UUID) bool {
-	return s.hub.auth.CheckWorkspace(ctx, s.identity(), ws, identitypolicy.Realtime) == nil
+func (s *Session) allowsWorkspace(_ context.Context, ws uuid.UUID) bool {
+	if s.bot {
+		return true
+	}
+	return s.sessionLeaseAllows() && s.workspaceLeaseAllows(ws)
 }
 
 // eventResources extracts durable parent references, including nested task notifications
@@ -36,13 +45,24 @@ func (s *Session) allowsWorkspace(ctx context.Context, ws uuid.UUID) bool {
 func (h *Hub) eventResources(ctx context.Context, ev *v1.DispatchEvent) (map[uuid.UUID]bool, bool) {
 	workspaces := map[uuid.UUID]bool{}
 	valid := true
+	resolved := map[string]uuid.UUID{}
 	var visit func(protoreflect.Message)
 	visit = func(m protoreflect.Message) {
 		m.Range(func(f protoreflect.FieldDescriptor, v protoreflect.Value) bool {
+			if !valid || ctx.Err() != nil {
+				valid = false
+				return false
+			}
+			if f.IsMap() {
+				if f.MapValue().Kind() == protoreflect.MessageKind {
+					v.Map().Range(func(_ protoreflect.MapKey, value protoreflect.Value) bool { visit(value.Message()); return valid })
+				}
+				return valid
+			}
 			if f.IsList() {
 				if f.Kind() == protoreflect.MessageKind {
 					list := v.List()
-					for i := 0; i < list.Len(); i++ {
+					for i := 0; i < list.Len() && valid; i++ {
 						visit(list.Get(i).Message())
 					}
 				}
@@ -77,6 +97,15 @@ func (h *Hub) eventResources(ctx context.Context, ev *v1.DispatchEvent) (map[uui
 				valid = false
 				return true
 			}
+			key := name + ":" + id.String()
+			if ws, ok := resolved[key]; ok {
+				workspaces[ws] = true
+				return true
+			}
+			if len(resolved) >= 128 {
+				valid = false
+				return false
+			}
 			ws := uuid.Nil
 			switch name {
 			case "workspace_id":
@@ -108,6 +137,7 @@ func (h *Hub) eventResources(ctx context.Context, ev *v1.DispatchEvent) (map[uui
 					}
 				}
 			}
+			resolved[key] = ws
 			workspaces[ws] = true
 			return true
 		})
@@ -116,70 +146,105 @@ func (h *Hub) eventResources(ctx context.Context, ev *v1.DispatchEvent) (map[uui
 	return workspaces, valid
 }
 
-// allowsEvent runs both before queueing and immediately before emission. It deliberately
-// has no positive policy cache: DB epochs and proof expiry take effect on the next event
-// even when Redis invalidations were lost. Unknown scoped events are refused.
+// allowsEvent is memory-only, including when called under workspace/session locks.
+// Scope attribution is immutable and prepared before fan-out; unknown events deny.
 func (s *Session) allowsEvent(enc *encEvent) bool {
-	if s.hub.auth == nil {
+	if enc == nil || enc.ev == nil || enc.ev.GetEvent() == nil {
 		return false
 	}
 	if s.bot {
 		return true
-	} // the existing machine route and viewer gates are separate
-	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
-	defer cancel()
-	ev := enc.ev
-	if enc.workspace != uuid.Nil && ev.GetWorkspaceDelete() == nil {
-		return s.allowsWorkspace(ctx, enc.workspace)
+	} // existing machine route and viewer gates remain mandatory
+	if !s.sessionLeaseAllows() {
+		return false
 	}
+	ev := enc.ev
 	if gone := ev.GetWorkspaceDelete(); gone != nil {
 		ws := parseID(gone.GetWorkspaceId())
-		return ws != uuid.Nil && (s.principal.Authority == identitypolicy.LocalAccount || s.principal.WorkspaceID == ws) && s.hub.auth.CheckSession(ctx, s.asess) == nil
-	}
-	if ready := ev.GetReady(); ready != nil {
-		for _, snap := range ready.Workspaces {
-			if !s.allowsWorkspace(ctx, parseID(snap.GetWorkspace().GetId())) {
-				return false
-			}
-		}
-		return s.principal.Authority != identitypolicy.Recovery
-	}
-	if ev.GetResumed() != nil {
-		return s.hub.auth.CheckSession(ctx, s.asess) == nil
+		return ws != uuid.Nil && (s.principal.Authority == identitypolicy.LocalAccount || s.principal.WorkspaceID == ws)
 	}
 	if status := ev.GetWorkspaceIdentityAccessUpdate(); status != nil {
 		return status.GetSessionId() == s.asess.String()
 	}
-	scopes, valid := s.hub.eventResources(ctx, ev)
-	if !valid {
-		return false
+	if ev.GetResumed() != nil {
+		return true
 	}
-	for ws := range scopes {
-		if ws == uuid.Nil {
-			if s.hub.auth.CheckGlobal(ctx, s.identity(), identitypolicy.GlobalRead) != nil {
+	if ready := ev.GetReady(); ready != nil {
+		if s.principal.Authority == identitypolicy.Recovery {
+			return false
+		}
+		for _, snap := range ready.Workspaces {
+			if !s.workspaceLeaseAllows(parseID(snap.GetWorkspace().GetId())) {
 				return false
 			}
-		} else if !s.allowsWorkspace(ctx, ws) {
+		}
+		return true
+	}
+	if enc.workspace != uuid.Nil {
+		return knownScopedEvent(ev) && s.workspaceLeaseAllows(enc.workspace)
+	}
+	if !enc.scoped {
+		return false
+	}
+	for _, ws := range enc.scopes {
+		if ws == uuid.Nil {
+			if s.principal.Authority != identitypolicy.LocalAccount {
+				return false
+			}
+		} else if !s.workspaceLeaseAllows(ws) {
 			return false
 		}
 	}
-	if len(scopes) != 0 {
-		return true
-	}
-	// These events hold local account state; absent resource attribution never implies
-	// workspace access. New event types need an explicit classification here.
-	switch ev.GetEvent().(type) {
-	case *v1.DispatchEvent_UserUpdate, *v1.DispatchEvent_PresenceUpdate:
-		return s.hub.auth.CheckGlobal(ctx, s.identity(), identitypolicy.GlobalRead) == nil
-	default:
+	return len(enc.scopes) > 0
+}
+
+// The existing wire variants are explicit; a new or absent oneof needs classification.
+func knownScopedEvent(ev *v1.DispatchEvent) bool {
+	f := ev.ProtoReflect().WhichOneof(ev.ProtoReflect().Descriptor().Oneofs().ByName("event"))
+	if f == nil {
 		return false
 	}
+	n := f.Number()
+	return n >= 2 && n <= 85 && n != 22 && n != 31 && n != 39 && n != 46 && n != 47 && (n < 57 || n > 59) && (n < 72 || n > 74) && n != 82
+}
+
+// prepareEvent resolves resource parents once, outside all gateway locks. Its result is
+// shared by recipients and remains attached through pauses and the socket write queue.
+func (h *Hub) prepareEvent(ctx context.Context, enc *encEvent) {
+	if enc.workspace != uuid.Nil || enc.ev.GetReady() != nil || enc.ev.GetResumed() != nil || enc.ev.GetWorkspaceDelete() != nil || enc.ev.GetWorkspaceIdentityAccessUpdate() != nil {
+		return
+	}
+	scopes, valid := h.eventResources(ctx, enc.ev)
+	if !valid {
+		return
+	}
+	if len(scopes) == 0 {
+		switch enc.ev.GetEvent().(type) {
+		case *v1.DispatchEvent_UserUpdate, *v1.DispatchEvent_PresenceUpdate,
+			*v1.DispatchEvent_CallRing, *v1.DispatchEvent_CallState,
+			*v1.DispatchEvent_NotesCreate, *v1.DispatchEvent_NotesUpdate, *v1.DispatchEvent_NotesDelete,
+			*v1.DispatchEvent_BotCreate, *v1.DispatchEvent_BotUpdate, *v1.DispatchEvent_BotDelete:
+			scopes[uuid.Nil] = true
+		default:
+			return
+		}
+	}
+	for ws := range scopes {
+		enc.scopes = append(enc.scopes, ws)
+	}
+	enc.scoped = true
 }
 
 // replayAllowed revalidates every stored event, retaining sequence continuity only when
 // the entire replay is allowed. A denied event forces a filtered fresh READY.
 func (s *Session) replayAllowed(es []entry) bool {
-	for _, e := range es {
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	if !s.bot {
+		s.refreshSessionLease(ctx)
+	}
+	checked := map[uuid.UUID]bool{}
+	for i, e := range es {
 		if !e.identityFormat {
 			return false
 		} // pre-identity buffers cannot prove their source scope
@@ -187,9 +252,28 @@ func (s *Session) replayAllowed(es []entry) bool {
 		if proto.Unmarshal(e.frame, &frame) != nil || frame.GetDispatch() == nil {
 			return false
 		}
-		if !s.allowsEvent(newScopedEnc(e.workspace, frame.GetDispatch())) {
+		enc := newScopedEnc(e.workspace, frame.GetDispatch())
+		if s.bot {
+			es[i].enc = enc
+			continue
+		}
+		s.hub.prepareEvent(ctx, enc)
+		scopes := append([]uuid.UUID{enc.workspace}, enc.scopes...)
+		if ready := enc.ev.GetReady(); ready != nil {
+			for _, snap := range ready.Workspaces {
+				scopes = append(scopes, parseID(snap.GetWorkspace().GetId()))
+			}
+		}
+		for _, ws := range scopes {
+			if ws != uuid.Nil && !checked[ws] {
+				_, _ = s.refreshWorkspaceLease(ctx, ws)
+				checked[ws] = true
+			}
+		}
+		if !s.allowsEvent(enc) {
 			return false
 		}
+		es[i].enc = enc
 	}
 	return true
 }
@@ -197,6 +281,17 @@ func (s *Session) replayAllowed(es []entry) bool {
 // EnforceIdentity reconciles subscriptions and sends only a content-free removal/status
 // when access is lost. It works without pubsub and never closes unrelated workspace B.
 func (h *Hub) EnforceIdentity(ctx context.Context) {
+	h.identityRun.Lock()
+	defer h.identityRun.Unlock()
+	sessions := h.sessionsWhere(func(s *Session) bool { return !s.bot })
+	slices.SortFunc(sessions, func(a, b *Session) int { return bytes.Compare(a.id[:], b.id[:]) })
+	offset := 0
+	for offset < len(sessions) && bytes.Compare(sessions[offset].id[:], h.identityCursor[:]) <= 0 {
+		offset++
+	}
+	if offset == len(sessions) {
+		offset = 0
+	}
 
 	jobs := make(chan *Session)
 	var workers sync.WaitGroup
@@ -210,9 +305,11 @@ func (h *Hub) EnforceIdentity(ctx context.Context) {
 		}()
 	}
 scheduling:
-	for _, s := range h.sessionsWhere(func(s *Session) bool { return !s.bot }) {
+	for i := range sessions {
+		s := sessions[(offset+i)%len(sessions)]
 		select {
 		case jobs <- s:
+			h.identityCursor = s.id
 		case <-ctx.Done():
 			break scheduling
 		}
@@ -221,22 +318,25 @@ scheduling:
 	workers.Wait()
 }
 func (h *Hub) enforceIdentitySession(ctx context.Context, s *Session) {
+	ctx, done := context.WithTimeout(ctx, 3*time.Second)
+	defer done()
+	sessionCtx, sessionCancel := context.WithTimeout(ctx, 500*time.Millisecond)
+	s.refreshSessionLease(sessionCtx)
+	sessionCancel()
 	query, cancel := context.WithTimeout(ctx, 500*time.Millisecond)
-	ids, err := h.db.Q.ListUserWorkspaceIDs(query, s.user)
+	var ids []uuid.UUID
+	var err error
+	if h.identityWorkspaces != nil {
+		ids, err = h.identityWorkspaces(query, s.user)
+	} else {
+		ids, err = h.db.Q.ListUserWorkspaceIDs(query, s.user)
+	}
 	cancel()
 	if err != nil {
 		ids = nil
-	}
-	allowed := map[uuid.UUID]bool{}
-	decisions := map[uuid.UUID]*v1.WorkspaceIdentityAccess{}
-	for _, ws := range ids {
-		gate, cancel := context.WithTimeout(ctx, 500*time.Millisecond)
-		decision, err := h.auth.CheckWorkspaceDecision(gate, s.identity(), ws, identitypolicy.Realtime)
-		cancel()
-		decisions[ws] = identityAccessStatus(ws, decision, err, s.principal)
-		if err == nil && decision.Allowed {
-			allowed[ws] = true
-		}
+		s.leases.mu.Lock()
+		s.leases.workspaces = nil
+		s.leases.mu.Unlock()
 	}
 	s.mu.Lock()
 	old := make(map[uuid.UUID]bool, len(s.workspaces))
@@ -244,16 +344,42 @@ func (h *Hub) enforceIdentitySession(ctx context.Context, s *Session) {
 		old[ws] = true
 	}
 	s.mu.Unlock()
+	present := map[uuid.UUID]bool{}
+	for _, ws := range ids {
+		present[ws] = true
+	}
 	for ws := range old {
-		if allowed[ws] {
-			continue
+		if !present[ws] {
+			h.identityRemoveWorkspace(s, ws, identitypolicy.Decision{Reason: identitypolicy.MembershipRequired}, err)
 		}
-		if decisions[ws] == nil {
-			decisions[ws] = identityAccessStatus(ws, identitypolicy.Decision{Reason: identitypolicy.ScopeDenied}, nil, s.principal)
+	}
+	slices.SortFunc(ids, func(a, b uuid.UUID) int { return bytes.Compare(a[:], b[:]) })
+	s.leases.mu.Lock()
+	cursor := s.leases.cursor
+	s.leases.mu.Unlock()
+	offset := 0
+	for offset < len(ids) && bytes.Compare(ids[offset][:], cursor[:]) <= 0 {
+		offset++
+	}
+	if offset == len(ids) {
+		offset = 0
+	}
+	allowed := map[uuid.UUID]bool{}
+	// At most four workspace checks per session per pass. Rotation persists across
+	// canceled passes, so a slow first workspace cannot repeatedly starve the tail.
+	for i := 0; i < min(len(ids), 4) && ctx.Err() == nil; i++ {
+		ws := ids[(offset+i)%len(ids)]
+		gate, cancel := context.WithTimeout(ctx, 500*time.Millisecond)
+		decision, err := s.refreshWorkspaceLease(gate, ws)
+		cancel()
+		s.leases.mu.Lock()
+		s.leases.cursor = ws
+		s.leases.mu.Unlock()
+		if err == nil && decision.Allowed && s.workspaceLeaseAllows(ws) {
+			allowed[ws] = true
+		} else if old[ws] {
+			h.identityRemoveWorkspace(s, ws, decision, err)
 		}
-		s.dispatch(uuid.New(), &v1.DispatchEvent{Event: &v1.DispatchEvent_WorkspaceDelete{WorkspaceDelete: &v1.WorkspaceDelete{WorkspaceId: ws.String()}}})
-		s.dispatch(uuid.New(), &v1.DispatchEvent{Event: &v1.DispatchEvent_WorkspaceIdentityAccessUpdate{WorkspaceIdentityAccessUpdate: &v1.WorkspaceIdentityAccessUpdate{SessionId: s.asess.String(), Access: decisions[ws]}}})
-		h.leaveWorkspace(s, ws)
 	}
 	for ws := range allowed {
 		if old[ws] {
@@ -277,6 +403,12 @@ func (h *Hub) enforceIdentitySession(ctx context.Context, s *Session) {
 		h.ensureState(ctx, ws)
 		s.dispatchScoped(ws, uuid.New(), &v1.DispatchEvent{Event: &v1.DispatchEvent_WorkspaceCreate{WorkspaceCreate: &v1.WorkspaceCreate{Snapshot: snap}}})
 	}
+}
+
+func (h *Hub) identityRemoveWorkspace(s *Session, ws uuid.UUID, d identitypolicy.Decision, err error) {
+	s.dispatch(uuid.New(), &v1.DispatchEvent{Event: &v1.DispatchEvent_WorkspaceDelete{WorkspaceDelete: &v1.WorkspaceDelete{WorkspaceId: ws.String()}}})
+	s.dispatch(uuid.New(), &v1.DispatchEvent{Event: &v1.DispatchEvent_WorkspaceIdentityAccessUpdate{WorkspaceIdentityAccessUpdate: &v1.WorkspaceIdentityAccessUpdate{SessionId: s.asess.String(), Access: identityAccessStatus(ws, d, err, s.principal)}}})
+	h.leaveWorkspace(s, ws)
 }
 
 func (h *Hub) runIdentityEnforcement(ctx context.Context) {
@@ -304,6 +436,33 @@ func (h *Hub) IdentityChanged() {
 	case h.identityWake <- struct{}{}:
 	default:
 	}
+}
+
+// Notifications carry only workspace policy/access versions. Stale/duplicate
+// versions do not alter deadlines; other epochs require fresh DB reconciliation.
+func (h *Hub) identityNotification(payload string) {
+	var notice struct {
+		Workspace uuid.UUID `json:"workspace"`
+		Policy    int64     `json:"policy_version"`
+		Access    int64     `json:"access_version"`
+	}
+	if json.Unmarshal([]byte(payload), &notice) == nil && notice.Workspace != uuid.Nil {
+		for _, s := range h.inWorkspace(notice.Workspace) {
+			s.leases.mu.Lock()
+			l := s.leases.workspaces[notice.Workspace]
+			if notice.Policy > l.versions.Policy || notice.Access > l.versions.Access {
+				l.until = time.Time{}
+				l.versions.Policy = max(l.versions.Policy, notice.Policy)
+				l.versions.Access = max(l.versions.Access, notice.Access)
+				if l.session != uuid.Nil {
+					s.leases.workspaces[notice.Workspace] = l
+				}
+				s.leases.revision++
+			}
+			s.leases.mu.Unlock()
+		}
+	}
+	h.IdentityChanged()
 }
 
 func identityAccessStatus(ws uuid.UUID, d identitypolicy.Decision, err error, p identitypolicy.Principal) *v1.WorkspaceIdentityAccess {

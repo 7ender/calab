@@ -3,6 +3,8 @@ package gateway
 import (
 	"context"
 	"errors"
+	"fmt"
+	"github.com/google/uuid"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -82,5 +84,59 @@ func TestPresenceSoftExempt(t *testing.T) {
 	}
 	if softExempt(s, &v1.GatewayFrame{Payload: &v1.GatewayFrame_Typing{Typing: &v1.Typing{}}}) {
 		t.Fatal("typing is soft-limited")
+	}
+}
+
+// An allowed event may spend time in the socket queue or a RESUME hold. Authority
+// is checked again at the final wire write, without consulting a dependency.
+func TestIdentityLeaseQueuedWriteAndReplayDenyAfterExpiry(t *testing.T) {
+	for _, replay := range []bool{false, true} {
+		t.Run(fmt.Sprintf("replay=%t", replay), func(t *testing.T) {
+			h := leaseTestHub()
+			wid := uuid.New()
+			s := leasedSession(h, wid)
+			enc := leaseEvent(wid)
+			srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				ws, err := websocket.Accept(w, r, nil)
+				if err != nil {
+					return
+				}
+				c := newConn(ws, codec{})
+				c.hold()
+				go c.writeLoop()
+				if !replay {
+					c.sendEvent(websocket.MessageBinary, []byte("private payload"), s, enc)
+				}
+				s.leases.mu.Lock()
+				lease := s.leases.workspaces[wid]
+				lease.until = time.Now().Add(-time.Second)
+				s.leases.workspaces[wid] = lease
+				s.leases.mu.Unlock()
+				var frames []outMsg
+				if replay {
+					frames = []outMsg{{typ: websocket.MessageBinary, data: []byte("private replay"), session: s, event: enc}}
+				}
+				c.setReplay(frames)
+				<-c.ctx.Done()
+			}))
+			defer srv.Close()
+			ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+			defer cancel()
+			ws, resp, err := websocket.Dial(ctx, "ws"+strings.TrimPrefix(srv.URL, "http"), nil)
+			if resp != nil && resp.Body != nil {
+				_ = resp.Body.Close()
+			}
+			if err != nil {
+				t.Fatal(err)
+			}
+			defer func() { _ = ws.CloseNow() }()
+			_, payload, err := ws.Read(ctx)
+			if err == nil {
+				t.Fatalf("expired payload reached wire: %s", payload)
+			}
+			if websocket.CloseStatus(err) != 4000 {
+				t.Fatalf("expected resync close, got %v", err)
+			}
+		})
 	}
 }

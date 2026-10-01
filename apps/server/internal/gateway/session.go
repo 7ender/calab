@@ -23,6 +23,8 @@ const bufferQueue = 512
 // receive it (security review M13); each session only prepends its op and seq.
 type encEvent struct {
 	workspace uuid.UUID
+	scopes    []uuid.UUID
+	scoped    bool
 	ev        *v1.DispatchEvent
 	once      sync.Once
 	b         []byte
@@ -82,6 +84,7 @@ type Session struct {
 	client          clientInfo // Identify.device (docs/09 #143); set before register, then read-only
 	hub             *Hub
 
+	leases     identityLeases
 	mu         sync.Mutex
 	seq        uint64
 	ready      bool           // READY (or resume replay) sent; before that events wait in pending
@@ -212,7 +215,7 @@ func (s *Session) dispatch(id uuid.UUID, ev *v1.DispatchEvent) { s.dispatchEnc(i
 
 // dispatchEnc delivers a (shared) encoded event, deduplicated by event id.
 func (s *Session) dispatchEnc(id uuid.UUID, enc *encEvent) {
-	if s.hub != nil && s.hub.auth != nil && !s.allowsEvent(enc) {
+	if s.identityEnabled() && !s.allowsEvent(enc) {
 		return
 	}
 	s.mu.Lock()
@@ -221,6 +224,13 @@ func (s *Session) dispatchEnc(id uuid.UUID, enc *encEvent) {
 		return
 	}
 	if !s.ready || s.paused > 0 {
+		if len(s.pending) >= bufferQueue {
+			s.broken.Store(true)
+			if s.conn != nil {
+				s.conn.closeNow(4000, "resync required")
+			}
+			return
+		}
 		s.pending = append(s.pending, pendingEvent{id: id, enc: enc})
 		return
 	}
@@ -230,7 +240,7 @@ func (s *Session) dispatchEnc(id uuid.UUID, enc *encEvent) {
 // emit assigns the next seq, buffers the frame and sends it (an ephemeral event: sends only,
 // without a seq); s.mu must be held.
 func (s *Session) emit(id uuid.UUID, enc *encEvent) {
-	if s.dead || (s.hub != nil && s.hub.auth != nil && !s.allowsEvent(enc)) {
+	if s.dead || (s.identityEnabled() && !s.allowsEvent(enc)) {
 		return
 	}
 	payload, err := enc.bytes()
@@ -241,7 +251,7 @@ func (s *Session) emit(id uuid.UUID, enc *encEvent) {
 		eventsDispatched.Inc()
 		if s.conn != nil {
 			if typ, b, err := s.conn.codec.transcode(frameBytes(0, payload)); err == nil {
-				s.conn.send(typ, b)
+				s.conn.sendEvent(typ, b, s, enc)
 			}
 		}
 		return
@@ -255,7 +265,7 @@ func (s *Session) emit(id uuid.UUID, enc *encEvent) {
 	if s.conn != nil {
 		typ, b, err := s.conn.codec.transcode(bin)
 		if err == nil {
-			s.conn.send(typ, b)
+			s.conn.sendEvent(typ, b, s, enc)
 		}
 	}
 }
@@ -288,7 +298,28 @@ func (s *Session) flushPending(skip map[uuid.UUID]bool) {
 func (s *Session) pause() *pauseMark {
 	s.mu.Lock()
 	defer s.mu.Unlock()
+	return s.pauseLocked()
+}
+
+// pauseEvent reserves deduplication at arrival, before preparations can finish out of order.
+func (s *Session) pauseEvent(id uuid.UUID) *pauseMark {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.dead || s.seen(id) {
+		return nil
+	}
+	return s.pauseLocked()
+}
+
+func (s *Session) pauseLocked() *pauseMark {
 	m := &pauseMark{}
+	if len(s.pending) >= bufferQueue {
+		s.broken.Store(true)
+		if s.conn != nil {
+			s.conn.closeNow(4000, "resync required")
+		}
+		return m
+	}
 	s.paused++
 	s.pending = append(s.pending, pendingEvent{mark: m})
 	return m
@@ -302,12 +333,16 @@ func (s *Session) resume(m *pauseMark, id uuid.UUID, enc *encEvent) {
 func (s *Session) resumeMany(m *pauseMark, evs []pendingEvent) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	s.paused--
 	if s.dead {
 		return
 	}
 	for i, p := range s.pending {
 		if p.mark == m {
+			s.paused--
+			if len(evs)+len(s.pending)-1 > bufferQueue {
+				evs = nil
+				s.broken.Store(true)
+			}
 			rest := append([]pendingEvent{}, s.pending[i+1:]...)
 			s.pending = append(append(s.pending[:i], evs...), rest...)
 			break
