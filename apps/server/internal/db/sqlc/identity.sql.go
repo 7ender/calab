@@ -1641,6 +1641,84 @@ func (q *Queries) GetProductAdminGrant(ctx context.Context, userID uuid.UUID) (P
 	return i, err
 }
 
+const getRecentIdentityConnectionTest = `-- name: GetRecentIdentityConnectionTest :one
+SELECT id, workspace_id, connection_id, connection_version, purpose, session_id, user_id, state_hash, browser_hash, nonce_hash, verifier_box, return_uri, native_challenge, browser_start_hash, browser_started_at, result_box, completed_at, finished_at, expires_at, consumed_at, created_at FROM identity_login_transactions WHERE workspace_id=$1 AND connection_id=$2 AND user_id=$3
+AND connection_version=$4 AND purpose='test' AND finished_at>clock_timestamp()-interval '5 minutes'
+ORDER BY finished_at DESC LIMIT 1
+`
+
+type GetRecentIdentityConnectionTestParams struct {
+	WorkspaceID       uuid.UUID
+	ConnectionID      uuid.UUID
+	UserID            *uuid.UUID
+	ConnectionVersion int64
+}
+
+func (q *Queries) GetRecentIdentityConnectionTest(ctx context.Context, arg GetRecentIdentityConnectionTestParams) (IdentityLoginTransaction, error) {
+	row := q.db.QueryRow(ctx, getRecentIdentityConnectionTest,
+		arg.WorkspaceID,
+		arg.ConnectionID,
+		arg.UserID,
+		arg.ConnectionVersion,
+	)
+	var i IdentityLoginTransaction
+	err := row.Scan(
+		&i.ID,
+		&i.WorkspaceID,
+		&i.ConnectionID,
+		&i.ConnectionVersion,
+		&i.Purpose,
+		&i.SessionID,
+		&i.UserID,
+		&i.StateHash,
+		&i.BrowserHash,
+		&i.NonceHash,
+		&i.VerifierBox,
+		&i.ReturnUri,
+		&i.NativeChallenge,
+		&i.BrowserStartHash,
+		&i.BrowserStartedAt,
+		&i.ResultBox,
+		&i.CompletedAt,
+		&i.FinishedAt,
+		&i.ExpiresAt,
+		&i.ConsumedAt,
+		&i.CreatedAt,
+	)
+	return i, err
+}
+
+const getSSOWorkspaceBySlug = `-- name: GetSSOWorkspaceBySlug :one
+SELECT id, slug, name, icon_file_id, visibility, owner_id, created_at, default_audio_bitrate_kbps, default_max_stream_preset, default_max_streams, storage_quota_bytes, storage_used_bytes, allow_self_nickname, default_camera_limit, suspended_at, suspended_reason, suspended_by, time_format, sip_enabled FROM workspaces WHERE slug=$1
+`
+
+func (q *Queries) GetSSOWorkspaceBySlug(ctx context.Context, slug string) (Workspace, error) {
+	row := q.db.QueryRow(ctx, getSSOWorkspaceBySlug, slug)
+	var i Workspace
+	err := row.Scan(
+		&i.ID,
+		&i.Slug,
+		&i.Name,
+		&i.IconFileID,
+		&i.Visibility,
+		&i.OwnerID,
+		&i.CreatedAt,
+		&i.DefaultAudioBitrateKbps,
+		&i.DefaultMaxStreamPreset,
+		&i.DefaultMaxStreams,
+		&i.StorageQuotaBytes,
+		&i.StorageUsedBytes,
+		&i.AllowSelfNickname,
+		&i.DefaultCameraLimit,
+		&i.SuspendedAt,
+		&i.SuspendedReason,
+		&i.SuspendedBy,
+		&i.TimeFormat,
+		&i.SipEnabled,
+	)
+	return i, err
+}
+
 const getWorkspaceAssurance = `-- name: GetWorkspaceAssurance :one
 SELECT session_id, workspace_id, user_id, connection_id, identity_id, authenticated_at, valid_until, policy_version, access_version, connection_version, identity_version, entitlement_version, session_version, revoked_at FROM session_workspace_assurances WHERE session_id = $1 AND workspace_id = $2
 `

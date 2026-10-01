@@ -1273,6 +1273,50 @@ func (x *PutIdentityPolicyRequest) GetMode() IdentityPolicyMode {
 	return IdentityPolicyMode_IDENTITY_POLICY_MODE_UNSPECIFIED
 }
 
+type ActivateIdentityConnectionRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Version       uint64                 `protobuf:"varint,1,opt,name=version,proto3" json:"version,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *ActivateIdentityConnectionRequest) Reset() {
+	*x = ActivateIdentityConnectionRequest{}
+	mi := &file_calaba_v1_identity_proto_msgTypes[9]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ActivateIdentityConnectionRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ActivateIdentityConnectionRequest) ProtoMessage() {}
+
+func (x *ActivateIdentityConnectionRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_calaba_v1_identity_proto_msgTypes[9]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ActivateIdentityConnectionRequest.ProtoReflect.Descriptor instead.
+func (*ActivateIdentityConnectionRequest) Descriptor() ([]byte, []int) {
+	return file_calaba_v1_identity_proto_rawDescGZIP(), []int{9}
+}
+
+func (x *ActivateIdentityConnectionRequest) GetVersion() uint64 {
+	if x != nil {
+		return x.Version
+	}
+	return 0
+}
+
 type PublicSSOWorkspace struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	WorkspaceId   string                 `protobuf:"bytes,1,opt,name=workspace_id,json=workspaceId,proto3" json:"workspace_id,omitempty"`
@@ -1285,7 +1329,7 @@ type PublicSSOWorkspace struct {
 
 func (x *PublicSSOWorkspace) Reset() {
 	*x = PublicSSOWorkspace{}
-	mi := &file_calaba_v1_identity_proto_msgTypes[9]
+	mi := &file_calaba_v1_identity_proto_msgTypes[10]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1297,7 +1341,7 @@ func (x *PublicSSOWorkspace) String() string {
 func (*PublicSSOWorkspace) ProtoMessage() {}
 
 func (x *PublicSSOWorkspace) ProtoReflect() protoreflect.Message {
-	mi := &file_calaba_v1_identity_proto_msgTypes[9]
+	mi := &file_calaba_v1_identity_proto_msgTypes[10]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1310,7 +1354,7 @@ func (x *PublicSSOWorkspace) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use PublicSSOWorkspace.ProtoReflect.Descriptor instead.
 func (*PublicSSOWorkspace) Descriptor() ([]byte, []int) {
-	return file_calaba_v1_identity_proto_rawDescGZIP(), []int{9}
+	return file_calaba_v1_identity_proto_rawDescGZIP(), []int{10}
 }
 
 func (x *PublicSSOWorkspace) GetWorkspaceId() string {
@@ -1352,7 +1396,7 @@ type SSOBeginRequest struct {
 
 func (x *SSOBeginRequest) Reset() {
 	*x = SSOBeginRequest{}
-	mi := &file_calaba_v1_identity_proto_msgTypes[10]
+	mi := &file_calaba_v1_identity_proto_msgTypes[11]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1364,7 +1408,7 @@ func (x *SSOBeginRequest) String() string {
 func (*SSOBeginRequest) ProtoMessage() {}
 
 func (x *SSOBeginRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_calaba_v1_identity_proto_msgTypes[10]
+	mi := &file_calaba_v1_identity_proto_msgTypes[11]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1377,7 +1421,7 @@ func (x *SSOBeginRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use SSOBeginRequest.ProtoReflect.Descriptor instead.
 func (*SSOBeginRequest) Descriptor() ([]byte, []int) {
-	return file_calaba_v1_identity_proto_rawDescGZIP(), []int{10}
+	return file_calaba_v1_identity_proto_rawDescGZIP(), []int{11}
 }
 
 func (x *SSOBeginRequest) GetPurpose() SSOFlowPurpose {
@@ -1413,7 +1457,7 @@ type SSOBeginResponse struct {
 
 func (x *SSOBeginResponse) Reset() {
 	*x = SSOBeginResponse{}
-	mi := &file_calaba_v1_identity_proto_msgTypes[11]
+	mi := &file_calaba_v1_identity_proto_msgTypes[12]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1425,7 +1469,7 @@ func (x *SSOBeginResponse) String() string {
 func (*SSOBeginResponse) ProtoMessage() {}
 
 func (x *SSOBeginResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_calaba_v1_identity_proto_msgTypes[11]
+	mi := &file_calaba_v1_identity_proto_msgTypes[12]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1438,7 +1482,7 @@ func (x *SSOBeginResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use SSOBeginResponse.ProtoReflect.Descriptor instead.
 func (*SSOBeginResponse) Descriptor() ([]byte, []int) {
-	return file_calaba_v1_identity_proto_rawDescGZIP(), []int{11}
+	return file_calaba_v1_identity_proto_rawDescGZIP(), []int{12}
 }
 
 func (x *SSOBeginResponse) GetFlowId() string {
@@ -1478,7 +1522,7 @@ type SSOFinishRequest struct {
 
 func (x *SSOFinishRequest) Reset() {
 	*x = SSOFinishRequest{}
-	mi := &file_calaba_v1_identity_proto_msgTypes[12]
+	mi := &file_calaba_v1_identity_proto_msgTypes[13]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1490,7 +1534,7 @@ func (x *SSOFinishRequest) String() string {
 func (*SSOFinishRequest) ProtoMessage() {}
 
 func (x *SSOFinishRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_calaba_v1_identity_proto_msgTypes[12]
+	mi := &file_calaba_v1_identity_proto_msgTypes[13]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1503,7 +1547,7 @@ func (x *SSOFinishRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use SSOFinishRequest.ProtoReflect.Descriptor instead.
 func (*SSOFinishRequest) Descriptor() ([]byte, []int) {
-	return file_calaba_v1_identity_proto_rawDescGZIP(), []int{12}
+	return file_calaba_v1_identity_proto_rawDescGZIP(), []int{13}
 }
 
 func (x *SSOFinishRequest) GetFlowId() string {
@@ -1524,7 +1568,7 @@ type SSOExchangeRequest struct {
 
 func (x *SSOExchangeRequest) Reset() {
 	*x = SSOExchangeRequest{}
-	mi := &file_calaba_v1_identity_proto_msgTypes[13]
+	mi := &file_calaba_v1_identity_proto_msgTypes[14]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1536,7 +1580,7 @@ func (x *SSOExchangeRequest) String() string {
 func (*SSOExchangeRequest) ProtoMessage() {}
 
 func (x *SSOExchangeRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_calaba_v1_identity_proto_msgTypes[13]
+	mi := &file_calaba_v1_identity_proto_msgTypes[14]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1549,7 +1593,7 @@ func (x *SSOExchangeRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use SSOExchangeRequest.ProtoReflect.Descriptor instead.
 func (*SSOExchangeRequest) Descriptor() ([]byte, []int) {
-	return file_calaba_v1_identity_proto_rawDescGZIP(), []int{13}
+	return file_calaba_v1_identity_proto_rawDescGZIP(), []int{14}
 }
 
 func (x *SSOExchangeRequest) GetFlowId() string {
@@ -1582,7 +1626,7 @@ type LocalReauthRequest struct {
 
 func (x *LocalReauthRequest) Reset() {
 	*x = LocalReauthRequest{}
-	mi := &file_calaba_v1_identity_proto_msgTypes[14]
+	mi := &file_calaba_v1_identity_proto_msgTypes[15]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1594,7 +1638,7 @@ func (x *LocalReauthRequest) String() string {
 func (*LocalReauthRequest) ProtoMessage() {}
 
 func (x *LocalReauthRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_calaba_v1_identity_proto_msgTypes[14]
+	mi := &file_calaba_v1_identity_proto_msgTypes[15]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1607,7 +1651,7 @@ func (x *LocalReauthRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use LocalReauthRequest.ProtoReflect.Descriptor instead.
 func (*LocalReauthRequest) Descriptor() ([]byte, []int) {
-	return file_calaba_v1_identity_proto_rawDescGZIP(), []int{14}
+	return file_calaba_v1_identity_proto_rawDescGZIP(), []int{15}
 }
 
 func (x *LocalReauthRequest) GetCurrentPassword() string {
@@ -1627,7 +1671,7 @@ type LocalReauthResponse struct {
 
 func (x *LocalReauthResponse) Reset() {
 	*x = LocalReauthResponse{}
-	mi := &file_calaba_v1_identity_proto_msgTypes[15]
+	mi := &file_calaba_v1_identity_proto_msgTypes[16]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1639,7 +1683,7 @@ func (x *LocalReauthResponse) String() string {
 func (*LocalReauthResponse) ProtoMessage() {}
 
 func (x *LocalReauthResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_calaba_v1_identity_proto_msgTypes[15]
+	mi := &file_calaba_v1_identity_proto_msgTypes[16]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1652,7 +1696,7 @@ func (x *LocalReauthResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use LocalReauthResponse.ProtoReflect.Descriptor instead.
 func (*LocalReauthResponse) Descriptor() ([]byte, []int) {
-	return file_calaba_v1_identity_proto_rawDescGZIP(), []int{15}
+	return file_calaba_v1_identity_proto_rawDescGZIP(), []int{16}
 }
 
 func (x *LocalReauthResponse) GetAuthenticatedAt() *timestamppb.Timestamp {
@@ -1678,7 +1722,7 @@ type IdentityRecoveryKitResponse struct {
 
 func (x *IdentityRecoveryKitResponse) Reset() {
 	*x = IdentityRecoveryKitResponse{}
-	mi := &file_calaba_v1_identity_proto_msgTypes[16]
+	mi := &file_calaba_v1_identity_proto_msgTypes[17]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1690,7 +1734,7 @@ func (x *IdentityRecoveryKitResponse) String() string {
 func (*IdentityRecoveryKitResponse) ProtoMessage() {}
 
 func (x *IdentityRecoveryKitResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_calaba_v1_identity_proto_msgTypes[16]
+	mi := &file_calaba_v1_identity_proto_msgTypes[17]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1703,7 +1747,7 @@ func (x *IdentityRecoveryKitResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use IdentityRecoveryKitResponse.ProtoReflect.Descriptor instead.
 func (*IdentityRecoveryKitResponse) Descriptor() ([]byte, []int) {
-	return file_calaba_v1_identity_proto_rawDescGZIP(), []int{16}
+	return file_calaba_v1_identity_proto_rawDescGZIP(), []int{17}
 }
 
 func (x *IdentityRecoveryKitResponse) GetCodesOnce() []string {
@@ -1722,7 +1766,7 @@ type IdentityRecoverRequest struct {
 
 func (x *IdentityRecoverRequest) Reset() {
 	*x = IdentityRecoverRequest{}
-	mi := &file_calaba_v1_identity_proto_msgTypes[17]
+	mi := &file_calaba_v1_identity_proto_msgTypes[18]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1734,7 +1778,7 @@ func (x *IdentityRecoverRequest) String() string {
 func (*IdentityRecoverRequest) ProtoMessage() {}
 
 func (x *IdentityRecoverRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_calaba_v1_identity_proto_msgTypes[17]
+	mi := &file_calaba_v1_identity_proto_msgTypes[18]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1747,7 +1791,7 @@ func (x *IdentityRecoverRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use IdentityRecoverRequest.ProtoReflect.Descriptor instead.
 func (*IdentityRecoverRequest) Descriptor() ([]byte, []int) {
-	return file_calaba_v1_identity_proto_rawDescGZIP(), []int{17}
+	return file_calaba_v1_identity_proto_rawDescGZIP(), []int{18}
 }
 
 func (x *IdentityRecoverRequest) GetRecoveryCode() string {
@@ -1778,7 +1822,7 @@ type IdentityDirectory struct {
 
 func (x *IdentityDirectory) Reset() {
 	*x = IdentityDirectory{}
-	mi := &file_calaba_v1_identity_proto_msgTypes[18]
+	mi := &file_calaba_v1_identity_proto_msgTypes[19]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1790,7 +1834,7 @@ func (x *IdentityDirectory) String() string {
 func (*IdentityDirectory) ProtoMessage() {}
 
 func (x *IdentityDirectory) ProtoReflect() protoreflect.Message {
-	mi := &file_calaba_v1_identity_proto_msgTypes[18]
+	mi := &file_calaba_v1_identity_proto_msgTypes[19]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1803,7 +1847,7 @@ func (x *IdentityDirectory) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use IdentityDirectory.ProtoReflect.Descriptor instead.
 func (*IdentityDirectory) Descriptor() ([]byte, []int) {
-	return file_calaba_v1_identity_proto_rawDescGZIP(), []int{18}
+	return file_calaba_v1_identity_proto_rawDescGZIP(), []int{19}
 }
 
 func (x *IdentityDirectory) GetId() string {
@@ -1912,7 +1956,7 @@ type PutIdentityDirectoryRequest struct {
 
 func (x *PutIdentityDirectoryRequest) Reset() {
 	*x = PutIdentityDirectoryRequest{}
-	mi := &file_calaba_v1_identity_proto_msgTypes[19]
+	mi := &file_calaba_v1_identity_proto_msgTypes[20]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1924,7 +1968,7 @@ func (x *PutIdentityDirectoryRequest) String() string {
 func (*PutIdentityDirectoryRequest) ProtoMessage() {}
 
 func (x *PutIdentityDirectoryRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_calaba_v1_identity_proto_msgTypes[19]
+	mi := &file_calaba_v1_identity_proto_msgTypes[20]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1937,7 +1981,7 @@ func (x *PutIdentityDirectoryRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use PutIdentityDirectoryRequest.ProtoReflect.Descriptor instead.
 func (*PutIdentityDirectoryRequest) Descriptor() ([]byte, []int) {
-	return file_calaba_v1_identity_proto_rawDescGZIP(), []int{19}
+	return file_calaba_v1_identity_proto_rawDescGZIP(), []int{20}
 }
 
 func (x *PutIdentityDirectoryRequest) GetVersion() uint64 {
@@ -2001,7 +2045,7 @@ type IdentityDirectoryMember struct {
 
 func (x *IdentityDirectoryMember) Reset() {
 	*x = IdentityDirectoryMember{}
-	mi := &file_calaba_v1_identity_proto_msgTypes[20]
+	mi := &file_calaba_v1_identity_proto_msgTypes[21]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2013,7 +2057,7 @@ func (x *IdentityDirectoryMember) String() string {
 func (*IdentityDirectoryMember) ProtoMessage() {}
 
 func (x *IdentityDirectoryMember) ProtoReflect() protoreflect.Message {
-	mi := &file_calaba_v1_identity_proto_msgTypes[20]
+	mi := &file_calaba_v1_identity_proto_msgTypes[21]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2026,7 +2070,7 @@ func (x *IdentityDirectoryMember) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use IdentityDirectoryMember.ProtoReflect.Descriptor instead.
 func (*IdentityDirectoryMember) Descriptor() ([]byte, []int) {
-	return file_calaba_v1_identity_proto_rawDescGZIP(), []int{20}
+	return file_calaba_v1_identity_proto_rawDescGZIP(), []int{21}
 }
 
 func (x *IdentityDirectoryMember) GetUserId() string {
@@ -2067,7 +2111,7 @@ type ListIdentityDirectoryMembersResponse struct {
 
 func (x *ListIdentityDirectoryMembersResponse) Reset() {
 	*x = ListIdentityDirectoryMembersResponse{}
-	mi := &file_calaba_v1_identity_proto_msgTypes[21]
+	mi := &file_calaba_v1_identity_proto_msgTypes[22]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2079,7 +2123,7 @@ func (x *ListIdentityDirectoryMembersResponse) String() string {
 func (*ListIdentityDirectoryMembersResponse) ProtoMessage() {}
 
 func (x *ListIdentityDirectoryMembersResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_calaba_v1_identity_proto_msgTypes[21]
+	mi := &file_calaba_v1_identity_proto_msgTypes[22]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2092,7 +2136,7 @@ func (x *ListIdentityDirectoryMembersResponse) ProtoReflect() protoreflect.Messa
 
 // Deprecated: Use ListIdentityDirectoryMembersResponse.ProtoReflect.Descriptor instead.
 func (*ListIdentityDirectoryMembersResponse) Descriptor() ([]byte, []int) {
-	return file_calaba_v1_identity_proto_rawDescGZIP(), []int{21}
+	return file_calaba_v1_identity_proto_rawDescGZIP(), []int{22}
 }
 
 func (x *ListIdentityDirectoryMembersResponse) GetMembers() []*IdentityDirectoryMember {
@@ -2118,7 +2162,7 @@ type PutIdentityDirectoryMemberRequest struct {
 
 func (x *PutIdentityDirectoryMemberRequest) Reset() {
 	*x = PutIdentityDirectoryMemberRequest{}
-	mi := &file_calaba_v1_identity_proto_msgTypes[22]
+	mi := &file_calaba_v1_identity_proto_msgTypes[23]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2130,7 +2174,7 @@ func (x *PutIdentityDirectoryMemberRequest) String() string {
 func (*PutIdentityDirectoryMemberRequest) ProtoMessage() {}
 
 func (x *PutIdentityDirectoryMemberRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_calaba_v1_identity_proto_msgTypes[22]
+	mi := &file_calaba_v1_identity_proto_msgTypes[23]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2143,7 +2187,7 @@ func (x *PutIdentityDirectoryMemberRequest) ProtoReflect() protoreflect.Message 
 
 // Deprecated: Use PutIdentityDirectoryMemberRequest.ProtoReflect.Descriptor instead.
 func (*PutIdentityDirectoryMemberRequest) Descriptor() ([]byte, []int) {
-	return file_calaba_v1_identity_proto_rawDescGZIP(), []int{22}
+	return file_calaba_v1_identity_proto_rawDescGZIP(), []int{23}
 }
 
 func (x *PutIdentityDirectoryMemberRequest) GetObjectGuid() string {
@@ -2221,7 +2265,9 @@ const file_calaba_v1_identity_proto_rawDesc = "" +
 	"\tdirectory\x18\x03 \x01(\v2\x1c.calaba.v1.IdentityDirectoryR\tdirectory\"g\n" +
 	"\x18PutIdentityPolicyRequest\x12\x18\n" +
 	"\aversion\x18\x01 \x01(\x04R\aversion\x121\n" +
-	"\x04mode\x18\x02 \x01(\x0e2\x1d.calaba.v1.IdentityPolicyModeR\x04mode\"\xa0\x01\n" +
+	"\x04mode\x18\x02 \x01(\x0e2\x1d.calaba.v1.IdentityPolicyModeR\x04mode\"=\n" +
+	"!ActivateIdentityConnectionRequest\x12\x18\n" +
+	"\aversion\x18\x01 \x01(\x04R\aversion\"\xa0\x01\n" +
 	"\x12PublicSSOWorkspace\x12!\n" +
 	"\fworkspace_id\x18\x01 \x01(\tR\vworkspaceId\x12!\n" +
 	"\fdisplay_name\x18\x02 \x01(\tR\vdisplayName\x12#\n" +
@@ -2367,7 +2413,7 @@ func file_calaba_v1_identity_proto_rawDescGZIP() []byte {
 }
 
 var file_calaba_v1_identity_proto_enumTypes = make([]protoimpl.EnumInfo, 10)
-var file_calaba_v1_identity_proto_msgTypes = make([]protoimpl.MessageInfo, 23)
+var file_calaba_v1_identity_proto_msgTypes = make([]protoimpl.MessageInfo, 24)
 var file_calaba_v1_identity_proto_goTypes = []any{
 	(SessionAuthorityKind)(0),                    // 0: calaba.v1.SessionAuthorityKind
 	(IdentityPolicyMode)(0),                      // 1: calaba.v1.IdentityPolicyMode
@@ -2388,52 +2434,53 @@ var file_calaba_v1_identity_proto_goTypes = []any{
 	(*PutIdentityConnectionRequest)(nil),         // 16: calaba.v1.PutIdentityConnectionRequest
 	(*GetWorkspaceIdentityResponse)(nil),         // 17: calaba.v1.GetWorkspaceIdentityResponse
 	(*PutIdentityPolicyRequest)(nil),             // 18: calaba.v1.PutIdentityPolicyRequest
-	(*PublicSSOWorkspace)(nil),                   // 19: calaba.v1.PublicSSOWorkspace
-	(*SSOBeginRequest)(nil),                      // 20: calaba.v1.SSOBeginRequest
-	(*SSOBeginResponse)(nil),                     // 21: calaba.v1.SSOBeginResponse
-	(*SSOFinishRequest)(nil),                     // 22: calaba.v1.SSOFinishRequest
-	(*SSOExchangeRequest)(nil),                   // 23: calaba.v1.SSOExchangeRequest
-	(*LocalReauthRequest)(nil),                   // 24: calaba.v1.LocalReauthRequest
-	(*LocalReauthResponse)(nil),                  // 25: calaba.v1.LocalReauthResponse
-	(*IdentityRecoveryKitResponse)(nil),          // 26: calaba.v1.IdentityRecoveryKitResponse
-	(*IdentityRecoverRequest)(nil),               // 27: calaba.v1.IdentityRecoverRequest
-	(*IdentityDirectory)(nil),                    // 28: calaba.v1.IdentityDirectory
-	(*PutIdentityDirectoryRequest)(nil),          // 29: calaba.v1.PutIdentityDirectoryRequest
-	(*IdentityDirectoryMember)(nil),              // 30: calaba.v1.IdentityDirectoryMember
-	(*ListIdentityDirectoryMembersResponse)(nil), // 31: calaba.v1.ListIdentityDirectoryMembersResponse
-	(*PutIdentityDirectoryMemberRequest)(nil),    // 32: calaba.v1.PutIdentityDirectoryMemberRequest
-	(*timestamppb.Timestamp)(nil),                // 33: google.protobuf.Timestamp
+	(*ActivateIdentityConnectionRequest)(nil),    // 19: calaba.v1.ActivateIdentityConnectionRequest
+	(*PublicSSOWorkspace)(nil),                   // 20: calaba.v1.PublicSSOWorkspace
+	(*SSOBeginRequest)(nil),                      // 21: calaba.v1.SSOBeginRequest
+	(*SSOBeginResponse)(nil),                     // 22: calaba.v1.SSOBeginResponse
+	(*SSOFinishRequest)(nil),                     // 23: calaba.v1.SSOFinishRequest
+	(*SSOExchangeRequest)(nil),                   // 24: calaba.v1.SSOExchangeRequest
+	(*LocalReauthRequest)(nil),                   // 25: calaba.v1.LocalReauthRequest
+	(*LocalReauthResponse)(nil),                  // 26: calaba.v1.LocalReauthResponse
+	(*IdentityRecoveryKitResponse)(nil),          // 27: calaba.v1.IdentityRecoveryKitResponse
+	(*IdentityRecoverRequest)(nil),               // 28: calaba.v1.IdentityRecoverRequest
+	(*IdentityDirectory)(nil),                    // 29: calaba.v1.IdentityDirectory
+	(*PutIdentityDirectoryRequest)(nil),          // 30: calaba.v1.PutIdentityDirectoryRequest
+	(*IdentityDirectoryMember)(nil),              // 31: calaba.v1.IdentityDirectoryMember
+	(*ListIdentityDirectoryMembersResponse)(nil), // 32: calaba.v1.ListIdentityDirectoryMembersResponse
+	(*PutIdentityDirectoryMemberRequest)(nil),    // 33: calaba.v1.PutIdentityDirectoryMemberRequest
+	(*timestamppb.Timestamp)(nil),                // 34: google.protobuf.Timestamp
 }
 var file_calaba_v1_identity_proto_depIdxs = []int32{
 	0,  // 0: calaba.v1.SessionAuthority.kind:type_name -> calaba.v1.SessionAuthorityKind
-	33, // 1: calaba.v1.SessionAuthority.local_authenticated_at:type_name -> google.protobuf.Timestamp
+	34, // 1: calaba.v1.SessionAuthority.local_authenticated_at:type_name -> google.protobuf.Timestamp
 	2,  // 2: calaba.v1.IdentityEntitlement.feature:type_name -> calaba.v1.IdentityFeature
 	3,  // 3: calaba.v1.IdentityEntitlement.source:type_name -> calaba.v1.IdentityGrantSource
-	33, // 4: calaba.v1.IdentityEntitlement.valid_until:type_name -> google.protobuf.Timestamp
+	34, // 4: calaba.v1.IdentityEntitlement.valid_until:type_name -> google.protobuf.Timestamp
 	11, // 5: calaba.v1.WorkspaceIdentityEntitlements.grants:type_name -> calaba.v1.IdentityEntitlement
-	33, // 6: calaba.v1.WorkspaceAssurance.authenticated_at:type_name -> google.protobuf.Timestamp
-	33, // 7: calaba.v1.WorkspaceAssurance.expires_at:type_name -> google.protobuf.Timestamp
+	34, // 6: calaba.v1.WorkspaceAssurance.authenticated_at:type_name -> google.protobuf.Timestamp
+	34, // 7: calaba.v1.WorkspaceAssurance.expires_at:type_name -> google.protobuf.Timestamp
 	1,  // 8: calaba.v1.WorkspaceIdentityAccess.mode:type_name -> calaba.v1.IdentityPolicyMode
 	4,  // 9: calaba.v1.WorkspaceIdentityAccess.reason:type_name -> calaba.v1.IdentityAccessReason
-	33, // 10: calaba.v1.WorkspaceIdentityAccess.valid_until:type_name -> google.protobuf.Timestamp
+	34, // 10: calaba.v1.WorkspaceIdentityAccess.valid_until:type_name -> google.protobuf.Timestamp
 	13, // 11: calaba.v1.WorkspaceIdentityAccess.assurance:type_name -> calaba.v1.WorkspaceAssurance
 	12, // 12: calaba.v1.WorkspaceIdentityAccess.entitlements:type_name -> calaba.v1.WorkspaceIdentityEntitlements
 	5,  // 13: calaba.v1.IdentityConnection.provider:type_name -> calaba.v1.IdentityProvider
 	6,  // 14: calaba.v1.IdentityConnection.status:type_name -> calaba.v1.IdentityConnectionStatus
-	33, // 15: calaba.v1.IdentityConnection.tested_at:type_name -> google.protobuf.Timestamp
+	34, // 15: calaba.v1.IdentityConnection.tested_at:type_name -> google.protobuf.Timestamp
 	5,  // 16: calaba.v1.PutIdentityConnectionRequest.provider:type_name -> calaba.v1.IdentityProvider
 	14, // 17: calaba.v1.GetWorkspaceIdentityResponse.access:type_name -> calaba.v1.WorkspaceIdentityAccess
 	15, // 18: calaba.v1.GetWorkspaceIdentityResponse.connection:type_name -> calaba.v1.IdentityConnection
-	28, // 19: calaba.v1.GetWorkspaceIdentityResponse.directory:type_name -> calaba.v1.IdentityDirectory
+	29, // 19: calaba.v1.GetWorkspaceIdentityResponse.directory:type_name -> calaba.v1.IdentityDirectory
 	1,  // 20: calaba.v1.PutIdentityPolicyRequest.mode:type_name -> calaba.v1.IdentityPolicyMode
 	7,  // 21: calaba.v1.SSOBeginRequest.purpose:type_name -> calaba.v1.SSOFlowPurpose
 	8,  // 22: calaba.v1.SSOBeginRequest.client_kind:type_name -> calaba.v1.SSOClientKind
-	33, // 23: calaba.v1.SSOBeginResponse.expires_at:type_name -> google.protobuf.Timestamp
-	33, // 24: calaba.v1.LocalReauthResponse.authenticated_at:type_name -> google.protobuf.Timestamp
-	33, // 25: calaba.v1.LocalReauthResponse.valid_until:type_name -> google.protobuf.Timestamp
-	33, // 26: calaba.v1.IdentityDirectory.last_success_at:type_name -> google.protobuf.Timestamp
+	34, // 23: calaba.v1.SSOBeginResponse.expires_at:type_name -> google.protobuf.Timestamp
+	34, // 24: calaba.v1.LocalReauthResponse.authenticated_at:type_name -> google.protobuf.Timestamp
+	34, // 25: calaba.v1.LocalReauthResponse.valid_until:type_name -> google.protobuf.Timestamp
+	34, // 26: calaba.v1.IdentityDirectory.last_success_at:type_name -> google.protobuf.Timestamp
 	9,  // 27: calaba.v1.IdentityDirectoryMember.status:type_name -> calaba.v1.DirectoryMemberStatus
-	30, // 28: calaba.v1.ListIdentityDirectoryMembersResponse.members:type_name -> calaba.v1.IdentityDirectoryMember
+	31, // 28: calaba.v1.ListIdentityDirectoryMembersResponse.members:type_name -> calaba.v1.IdentityDirectoryMember
 	29, // [29:29] is the sub-list for method output_type
 	29, // [29:29] is the sub-list for method input_type
 	29, // [29:29] is the sub-list for extension type_name
@@ -2447,14 +2494,14 @@ func file_calaba_v1_identity_proto_init() {
 		return
 	}
 	file_calaba_v1_identity_proto_msgTypes[6].OneofWrappers = []any{}
-	file_calaba_v1_identity_proto_msgTypes[19].OneofWrappers = []any{}
+	file_calaba_v1_identity_proto_msgTypes[20].OneofWrappers = []any{}
 	type x struct{}
 	out := protoimpl.TypeBuilder{
 		File: protoimpl.DescBuilder{
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_calaba_v1_identity_proto_rawDesc), len(file_calaba_v1_identity_proto_rawDesc)),
 			NumEnums:      10,
-			NumMessages:   23,
+			NumMessages:   24,
 			NumExtensions: 0,
 			NumServices:   0,
 		},

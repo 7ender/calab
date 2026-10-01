@@ -118,6 +118,7 @@ message PutIdentityPolicyRequest {
   uint64 version = 1;
   IdentityPolicyMode mode = 2;
 }
+message ActivateIdentityConnectionRequest { uint64 version = 1; }
 message PublicSSOWorkspace {
   string workspace_id = 1;
   string display_name = 2;
