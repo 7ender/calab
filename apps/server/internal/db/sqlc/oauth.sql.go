@@ -1486,6 +1486,24 @@ func (q *Queries) RevokeOAuthGrantForReplay(ctx context.Context, arg RevokeOAuth
 	return i, err
 }
 
+const revokeOAuthSessionGrants = `-- name: RevokeOAuthSessionGrants :execrows
+UPDATE oauth_grants SET revoked_at=clock_timestamp(),revoked_reason=$1
+WHERE session_id=$2 AND revoked_at IS NULL
+`
+
+type RevokeOAuthSessionGrantsParams struct {
+	Reason    *string
+	SessionID uuid.UUID
+}
+
+func (q *Queries) RevokeOAuthSessionGrants(ctx context.Context, arg RevokeOAuthSessionGrantsParams) (int64, error) {
+	result, err := q.db.Exec(ctx, revokeOAuthSessionGrants, arg.Reason, arg.SessionID)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
+}
+
 const revokeWorkspaceOAuthGrants = `-- name: RevokeWorkspaceOAuthGrants :execrows
 UPDATE oauth_grants SET revoked_at=clock_timestamp(),revoked_reason=$1
 WHERE workspace_id=$2 AND revoked_at IS NULL
