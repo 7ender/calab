@@ -37,6 +37,10 @@ type identityRegistrar struct {
 func (x identityRegistrar) Handle(pattern string, h http.Handler) {
 	x.mux.Handle(pattern, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if auth.IsBotToken(strings.TrimPrefix(r.Header.Get("Authorization"), "Bearer ")) {
+			if pattern == "GET /oidc/workspaces/{workspace}/userinfo" || pattern == "POST /oidc/workspaces/{workspace}/userinfo" {
+				x.reject(w, r, http.StatusUnauthorized, "invalid_token", auth.ErrInvalidToken)
+				return
+			}
 			x.reject(w, r, 403, "access_denied", auth.ErrBotNotAllowed)
 			return
 		}
@@ -69,6 +73,9 @@ func (x identityRegistrar) reject(w http.ResponseWriter, r *http.Request, status
 		w.Header().Set("X-Content-Type-Options", "nosniff")
 		w.Header().Set("Content-Security-Policy", "default-src 'none'; frame-ancestors 'none'")
 		w.Header().Set("Content-Type", "application/json")
+		if status == http.StatusUnauthorized && code == "invalid_token" {
+			w.Header().Set("WWW-Authenticate", `Bearer error="invalid_token"`)
+		}
 		if retry := httpx.AsError(err).RetryAfter; retry > 0 {
 			w.Header().Set("Retry-After", strconv.Itoa(max(1, int(retry.Seconds()))))
 		}
