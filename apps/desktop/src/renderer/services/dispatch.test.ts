@@ -69,6 +69,8 @@ const { useSession } = await import('../stores/session');
 const { rolesOf } = await import('../stores/workspaces');
 const { mayInviteGuestsIn, mayInviteMembers, mayInviteToRoom } = await import('../lib/permissions');
 const { useSipCalls } = await import('../stores/sipCalls');
+const { useVoice } = await import('../stores/voice');
+const { useStreamFullscreen } = await import('../features/voice/fullscreen');
 const { ENDED_LINGER_MS, mayHangUp, statusKey } = await import('../lib/sip');
 
 const WS = 'ws-1';
@@ -352,6 +354,60 @@ describe('dispatch: my roles and their permissions apply live (ADR-0026, ADR-004
     const host = create(RoleSchema, { id: 'host', workspaceId: WS, position: 3, permissions: PERMISSION_BITS.INVITE_GUESTS | PERMISSION_BITS.INVITE_MEMBERS });
     expect(mayInviteMembers([guestRole, host])).toBe(false);
     expect(mayInviteMembers([...roles.slice(2), host])).toBe(true);
+  });
+});
+
+// Issue #35: the stream stage (and stream full screen) covers the open room's feed — a message
+// behind it is not «on screen», so it must arrive as unread (visible = false → addUnread).
+describe('MESSAGE_CREATE while the stream viewer covers the feed (#35)', () => {
+  const stream = { trackSid: 't1', userId: 'u2', identity: 'u2:s', hasAudio: false };
+  /** `visible` arg of the last onIncomingMessage call (message, workspaceId, visible). */
+  const lastVisible = (): unknown => onIncomingMessage.mock.calls.at(-1)?.[2];
+
+  afterEach(() => {
+    useVoice.getState().set({ roomId: null, workspaceId: null, stage: 'pip', streams: [], watching: null });
+    useStreamFullscreen.setState({ on: false });
+    useUi.setState({ activeWorkspaceId: null, lastRoom: {} });
+    vi.stubGlobal('document', { hasFocus: () => false });
+  });
+
+  it('expanded stage hides the open room’s feed; the PiP does not', () => {
+    vi.stubGlobal('document', { hasFocus: () => true });
+    applyDispatch(ready([room('a'), room('b')]));
+    useUi.getState().openRoom(WS, 'a');
+    useVoice.getState().set({ roomId: 'a', workspaceId: WS, stage: 'expanded', streams: [stream], watching: 't1' });
+    applyDispatch(messageCreate('a', 200));
+    expect(lastVisible()).toBe(false);
+
+    useVoice.getState().set({ stage: 'pip' });
+    applyDispatch(messageCreate('a', 201));
+    expect(lastVisible()).toBe(true);
+  });
+
+  it('pop-out and stream full screen hide it too', () => {
+    vi.stubGlobal('document', { hasFocus: () => true });
+    applyDispatch(ready([room('a')]));
+    useUi.getState().openRoom(WS, 'a');
+    useVoice.getState().set({ roomId: 'a', workspaceId: WS, stage: 'popout', streams: [stream], watching: 't1' });
+    applyDispatch(messageCreate('a', 210));
+    expect(lastVisible()).toBe(false);
+
+    useVoice.getState().set({ stage: 'pip' });
+    useStreamFullscreen.setState({ on: true });
+    applyDispatch(messageCreate('a', 211));
+    expect(lastVisible()).toBe(false);
+  });
+
+  it('a covered voice room does not mark another open room hidden', () => {
+    vi.stubGlobal('document', { hasFocus: () => true });
+    applyDispatch(ready([room('a'), room('b')]));
+    useUi.getState().openRoom(WS, 'b');
+    useVoice.getState().set({ roomId: 'a', workspaceId: WS, stage: 'expanded', streams: [stream], watching: 't1' });
+    applyDispatch(messageCreate('b', 220));
+    expect(lastVisible()).toBe(true);
+    // The covered room is not the open one either way.
+    applyDispatch(messageCreate('a', 221));
+    expect(lastVisible()).toBe(false);
   });
 });
 

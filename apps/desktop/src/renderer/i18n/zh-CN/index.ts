@@ -418,6 +418,7 @@ export const zhCN: Dict = {
   'stream.close': '停止观看',
   'stream.showChat': '聊天',
   'stream.showChatHint': '显示聊天，屏幕共享置于角落',
+  'stream.chatUnread': { other: '{n} 条未读消息' },
   'stream.inPopout': '屏幕共享已在独立窗口中打开',
   'stream.returnHere': '收回到此处',
 
