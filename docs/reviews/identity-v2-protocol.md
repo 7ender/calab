@@ -2,7 +2,7 @@
 
 Reviewed source: `479d99c8f42ffe3c5f9be47d4dbb298fcbc2707a` against `99a60fc54cb1989c26c1a114a77631ea3380ecde`, 2026-10-01. Independent pass completed without reading another review. ADR-0054, ADR-0055, release contract including section 13, implementation, SQL, root wiring, native/web clients, proxy routes and official standards were inspected. Only this report is committed; reproduction tests use Go overlays outside the checkout.
 
-**Verdict: REJECT this source for release: three confirmed major findings, no confirmed blocker.** This is an initial exact-SHA assessment; subsequent fixes and integrated final SHA require delta review. Coordinator has assigned a provider correction and explicitly chosen same-client/exact-redirect/PKCE code-replay revocation in specification commit `3e576cf4`.
+**Verdict: REJECT this source for release: four confirmed major findings, no confirmed blocker.** This is an initial exact-SHA assessment; subsequent fixes and integrated final SHA require delta review. Coordinator has assigned a provider correction and explicitly chosen same-client/exact-redirect/PKCE code-replay revocation in specification commit `3e576cf4`.
 
 ## Confirmed findings
 
@@ -26,6 +26,12 @@ RFC 6749 requires denial (**MUST**, already satisfied) and recommends revocation
 
 Reproduction: `TestProtocolReviewCodeReplayRevocation` below: incorrect client cannot exchange or revoke the victim; correct client plus all original bindings receives 400, then victim UserInfo and refresh both receive 200. Required correction: detect exactly bound consumed code and commit family revocation before returning `invalid_grant`; retain non-revocation for incorrect client/issuer/redirect/verifier and nonexistent codes. Concurrent double exchange still has one issuance, with the replay loser revoking that issuance. Add durable DB and descendant-refresh checks.
 
+### P4 — Major: valid OIDC authorization POST is rejected
+
+`http.go:33` registers only GET authorize; `consent.go` reads only the query. Valid form-urlencoded POST with the same client, redirect, scope, state, nonce and S256 challenge that works over GET receives **405**, `Allow: GET, HEAD, OPTIONS`. OIDC Core requires GET **and** POST at the authorization endpoint; the OAuth-only rule permits POST as optional, but this release advertises OIDC. The GET-only internal release table does not remove the normative OIDC requirement. [OIDC Core §3.1.2.1](https://openid.net/specs/openid-connect-core-1_0.html#AuthRequest).
+
+Reproduction: `TestProtocolReviewAuthorizationPOST` below, Go1.26.5/own PG18, `/tmp/identity-v2-protocol-post.log`. Required correction: register POST, parse bounded single-valued form body, reject query/body ambiguity, preserve exact redirect/PKCE/prompt rules and identity quotas. Review root recorder/resolver assumptions about method/query as part of integration. Form navigation must retain 303 redirects without forwarding the form body to the client.
+
 ## Independent assessment of the remaining protocol boundaries
 
 - Path issuer discovery uses the OIDC suffix and RFC 8414 prefix correctly, with the exact trusted origin/workspace issuer in both documents. Caddy proxies both before SPA fallback; Host/forwarded input does not construct issuer. Maintained `coreos/go-oidc/v3` RP successfully discovered, fetched JWKS, and verified RS256/issuer/audience/expiry plus the original nonce. [OIDC Discovery §4.1](https://openid.net/specs/openid-connect-discovery-1_0.html#ProviderConfigurationRequest), [RFC 8414 §3](https://www.rfc-editor.org/rfc/rfc8414.html#section-3).
@@ -45,11 +51,11 @@ Final review runs use Go **1.26.5 darwin/arm64**, PostgreSQL **18** in the origi
 |---|---|
 | `go test -race -tags integration -count=1 -json ./internal/oauthprovider/... ./internal/sso/... ./internal/identitynet/... ./internal/identitycrypto/...` | PASS; identitycrypto: 3 passing cases, oauthprovider/signing: 48 passing cases, identitynet: 65 passing cases, sso: 74 passing cases, oauthprovider: 71 passing cases. Default live Keycloak case skipped, separately executed below. |
 | `go test -race -tags integration -count=1 -json -run 'TestIdentityHTTP\|TestIdentityAuthorityAndStepUp\|TestIdentityRouteInventoryAndCrossWorkspace\|TestIdentityRefreshAndRecoveryScope\|TestIdentityNoGrantAndLostRedisRevocation\|TestIdentityGatewayPerSessionFanoutAndStaleReplay' ./internal/app` | PASS, 238 cases including route subtests. |
-| Independent provider overlay, `-run TestProtocolReview` | maintained RP PASS; three finding probes FAIL as expected; no race report. |
+| Independent provider overlay, `-run TestProtocolReview` | maintained RP PASS; four finding probes FAIL as expected; no race report. |
 | Keycloak26.4.7 TLS live RP, `CALABA_KEYCLOAK_LIVE=1`, `-run TestKeycloakLiveRP` | PASS, eight subtests; only overlay alteration is fixture DB admission from `identity_keycloak` to own `identity_protocol`. |
 | `pnpm -F @calaba/desktop test src/main/auth.identity.test.ts src/main/ssoHandoff.test.ts src/main/deeplink.test.ts src/renderer/platform/web.identity.test.ts src/shared/ssoReturn.test.ts src/shared/identityOrigin.test.ts src/renderer/services/identity.test.ts` | PASS, 7 files / 136 tests; installed frozen lockfile with scripts disabled. |
 
-Raw local evidence: `/tmp/identity-v2-protocol-final.json`, `/tmp/identity-v2-protocol-app-final.json`, `/tmp/identity-v2-protocol-probes-final.log`, `/tmp/identity-v2-protocol-keycloak-final.log`, `/tmp/identity-v2-protocol-desktop.log`. These paths are ephemeral, so executable finding probes are included below. Report-only changes do not justify rerunning common lint/full integration; no visual suites, media or production mutations were run.
+Raw local evidence: `/tmp/identity-v2-protocol-final.json`, `/tmp/identity-v2-protocol-app-final.json`, `/tmp/identity-v2-protocol-probes-final.log`, `/tmp/identity-v2-protocol-post.log`, `/tmp/identity-v2-protocol-keycloak-final.log`, `/tmp/identity-v2-protocol-desktop.log`. These paths are ephemeral, so executable finding probes are included below. Report-only changes do not justify rerunning common lint/full integration; no visual suites, media or production mutations were run.
 
 Not verified here: Entra, AD FS2019+, Windows AD/LDAPS interoperability, actual external browser consent render/navigation, production proxy/key/secret/backup setup, PG17, full server integration and legacy application binaries. Positive Keycloak evidence proves generic local OIDC interoperability only. Coordinator must ensure two independent final-SHA reviews and QA gates; this report is one independent review.
 
@@ -76,6 +82,7 @@ package oauthprovider
 import (
  "context"
  "encoding/json"
+ "encoding/base64"
  "net/http"
  "net/url"
  "testing"
@@ -118,5 +125,14 @@ func TestProtocolReviewCodeReplayRevocation(t *testing.T) {
  if status,_,_:=f.exchange(c,req,code);status!=400 {t.Fatalf("replay %d",status)}
  if status,_:=f.info(tokens.AccessToken);status!=401 {t.Errorf("correct-client code replay left access valid: %d",status)}
  if status,_,_:=f.token(c,url.Values{"grant_type":{"refresh_token"},"refresh_token":{tokens.RefreshToken}});status!=400 {t.Errorf("correct-client code replay left refresh usable: %d",status)}
+}
+
+func TestProtocolReviewAuthorizationPOST(t *testing.T) {
+ f:=fixture(t); c:=f.client(v1.OAuthClientType_OAUTH_CLIENT_TYPE_CONFIDENTIAL_WEB,false)
+ req:=f.begin(c.Client,nil)
+ form:=url.Values{"response_type":{"code"},"client_id":{c.Client.ClientId},"redirect_uri":{req.redirect},"scope":{"openid"},"state":{req.state},"nonce":{req.nonce},"code_challenge_method":{"S256"},"code_challenge":{base64.RawURLEncoding.EncodeToString(hash(req.verifier))}}
+ status,h,b:=f.wire("POST","/oidc/workspaces/"+f.ws.String()+"/authorize","application/x-www-form-urlencoded",[]byte(form.Encode()),"","")
+ if status!=303 {t.Fatalf("valid OIDC POST authorization rejected: %d allow=%q body=%s",status,h.Get("Allow"),b)}
+ u,err:=url.Parse(h.Get("Location")); if err!=nil || u.Path!="/oauth/consent" || u.Query().Get("request")=="" {t.Fatal("missing POST consent request")}
 }
 ```
