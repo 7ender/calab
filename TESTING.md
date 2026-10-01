@@ -1,5 +1,19 @@
 # TESTING — инструкции для тестировщика
 
+## Identity 2.0 final acceptance
+
+1. Лид назначает **точный итоговый SHA** после merge docs/browser evidence; текущие исторические reports не signoff. Команды ниже — план, здесь не выполнены; записать SHA/env/exit/skips и два независимых security/protocol review на нём.
+2. Только отдельная QA DB/Valkey/RTC; env брать из собственного `tools/identity-test-env.sh env 18 qa` либо из выделенного coordinator harness ([правила](docs/plans/identity-v2-validation.md)), не поднимать/сбрасывать чужой. Go 1.26.x как CI, golangci-lint 2.14.0, sqlc 1.31.1; записать реальные версии.
+3. Из корня: `make gen` → `git diff --exit-code -- proto apps/server/gen apps/server/internal/db/sqlc packages/protocol/src/gen`; `make lint`; `pnpm -s typecheck`; `pnpm -r test`. Ожидается без drift/errors.
+4. Unit/race: `(cd apps/server && go test -race -count=1 ./internal/auth ./internal/identitypolicy ./internal/identitycrypto ./internal/identitynet ./internal/oauthprovider/... ./internal/sso ./internal/directory ./internal/gateway ./internal/rtc)`.
+5. PG18 целевые integration/race: `(cd apps/server && go test -race -tags integration -count=1 ./internal/sso ./internal/directory ./internal/oauthprovider/...)`; отдельно `go test -race -tags integration -count=1 -run '^TestIdentity' ./internal/app` из `apps/server`.
+6. PG17 последовательно в том же QA slot: переключить выделенный env, повторить шаг 5 и `go test -race -tags integration -count=1 ./internal/db/...` из `apps/server`; подтвердить migration/backward compatibility. Недоступно/skipped ≠ passed.
+7. Один назначенный QA runner на собранном SHA делает полный `(cd apps/server && go test -race -tags integration -count=1 ./...)` в выделенной PG18 среде; повтор только при релевантной правке/сбое, обязательный tag CI проверяет PG17/18.
+8. Реальный generic RP: `GOTOOLCHAIN=go1.26.5 IDENTITY_TEST_HARNESS=<coordinator-assigned-harness> infra/identity-test/calaba-keycloak-test.sh 18`; ожидается `TestKeycloakLiveRP`, 8 subtests без skips, scopes basic/profile/email. [Старое evidence](docs/plans/identity-v2-keycloak-evidence.md) не доказывает итоговый SHA и Entra/AD FS/Windows AD.
+9. Browser round trip и один ручной QA screenshot pass новых identity экранов: local/SSO step-up → consent bind/decision; native handoff; account/server switch, cancel/expiry и arbitrary return URL; токены/refresh/verifier в URL/renderer не попадают. Visual suites выключены.
+10. Сквозные отрицательные сценарии: A enforced/B independent, scopes, invite bootstrap без данных, legacy SUPERADMIN_EMAILS source/revocation, grant expiry, REST mutation race, READY/RESUME/lost pubsub/RTC eviction и DB failure; ожидается отказ без чужих данных/side effects, lease ≤30 секунд.
+11. Production activation — отдельное поручение оператору после [preflight](docs/plans/identity-v2-operator-preflight.md): Vault/config/Caddy/pins, protected backup/identity-aware fallback, synthetic success/error/parser/Referer log sentinels и recovery; затем off → optional → enforced. Реальный Microsoft стенд и незакрытые operator gates записывать как unverified/blocked.
+
 ## Как пользоваться этим файлом
 
 - Каждый раздел самодостаточен: предусловия указаны в нём или ссылкой на раздел выше. Команды — из корня репозитория (`/Users/macbook/Documents/Projects/Calaba`), если не сказано иное.

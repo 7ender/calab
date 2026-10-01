@@ -123,6 +123,19 @@ func (s *Service) requireTest(ctx context.Context, q *sqlc.Queries, st identityp
 	st.Directory.Required = false
 	return s.require(ctx, q, st, identitypolicy.ManageSSO)
 }
+
+// Owner tests retain the upstream authentication deadline through every commit.
+// Completion and tested timestamps record workflow progress, never a new proof.
+func (s *Service) requireOwnerTestProof(ctx context.Context, q *sqlc.Queries, proof Proof) error {
+	now, err := s.boundaryNow(ctx, q)
+	if err != nil {
+		return err
+	}
+	if proof.AuthenticatedAt.IsZero() || proof.AuthenticatedAt.After(now) || !now.Before(proof.AuthenticatedAt.Add(identitypolicy.ManagementMaxAge)) {
+		return denied(identitypolicy.RecentAuthRequired)
+	}
+	return nil
+}
 func (s *Service) requireEnforcement(ctx context.Context, q *sqlc.Queries, st identitypolicy.State) error {
 	now, err := s.boundaryNow(ctx, q)
 	if err != nil {
@@ -134,7 +147,47 @@ func (s *Service) requireEnforcement(ctx context.Context, q *sqlc.Queries, st id
 type flowPayload struct {
 	Verifier, Browser, Authorization string
 	Versions                         identitypolicy.Versions
+	ScopedStepUp                     *scopedStepUp
 }
+
+// A scoped reauthentication is bound to the original identity and absolute deadline.
+type scopedStepUp struct {
+	SessionID, UserID, WorkspaceID, ConnectionID, IdentityID uuid.UUID
+	Issuer, Subject                                          string
+	SessionExpiresAt                                         time.Time
+}
+
+func (s *Service) stepUpBinding(ctx context.Context, q *sqlc.Queries, st identitypolicy.State, c sqlc.WorkspaceIdentityConnection) (*scopedStepUp, int64, error) {
+	p := st.Principal
+	if err := s.live(ctx, q, p); err != nil {
+		return nil, 0, err
+	}
+	if p.Guest || p.Bot || (p.Authority != identitypolicy.LocalAccount && p.Authority != identitypolicy.WorkspaceSSO) {
+		return nil, 0, denied(identitypolicy.ScopeDenied)
+	}
+	if _, _, err := s.member(ctx, q, st.WorkspaceID, p.UserID, false); err != nil {
+		return nil, 0, err
+	}
+	if p.Authority == identitypolicy.LocalAccount {
+		return nil, 0, nil
+	}
+	if p.WorkspaceID != st.WorkspaceID || p.ConnectionID != c.ID || c.WorkspaceID != st.WorkspaceID || c.Status != "active" || c.DisabledAt != nil || c.TestedVersion == nil || *c.TestedVersion != c.Version {
+		return nil, 0, denied(identitypolicy.ScopeDenied)
+	}
+	identity, err := q.FindUserExternalIdentity(ctx, sqlc.FindUserExternalIdentityParams{WorkspaceID: st.WorkspaceID, ConnectionID: c.ID, UserID: p.UserID})
+	if err != nil || identity.Status != "active" || identity.Issuer != c.Issuer {
+		return nil, 0, classified(err, ErrNotLinked)
+	}
+	return &scopedStepUp{SessionID: p.SessionID, UserID: p.UserID, WorkspaceID: st.WorkspaceID, ConnectionID: c.ID, IdentityID: identity.ID, Issuer: identity.Issuer, Subject: identity.Subject, SessionExpiresAt: p.ExpiresAt}, identity.Version, nil
+}
+
+func sameScopedStepUp(a, b *scopedStepUp) bool {
+	if a == nil || b == nil {
+		return a == b
+	}
+	return a.SessionID == b.SessionID && a.UserID == b.UserID && a.WorkspaceID == b.WorkspaceID && a.ConnectionID == b.ConnectionID && a.IdentityID == b.IdentityID && a.Issuer == b.Issuer && a.Subject == b.Subject && a.SessionExpiresAt.Equal(b.SessionExpiresAt)
+}
+
 type completion struct {
 	Proof              Proof
 	IdentityID, UserID uuid.UUID
@@ -356,6 +409,7 @@ func (s *Service) Begin(ctx context.Context, p identitypolicy.Principal, ws uuid
 		}
 		versions := identitypolicy.Versions{Policy: policy.Version, Entitlement: policy.EntitlementVersion, Connection: c.Version}
 		var session, user *uuid.UUID
+		var scoped *scopedStepUp
 		if what != "login" {
 			st, err := s.state(ctx, q, p, ws)
 			if err != nil {
@@ -366,13 +420,8 @@ func (s *Service) Begin(ctx context.Context, p identitypolicy.Principal, ws uuid
 				op = identitypolicy.ManageSSO
 			}
 			if what == "step_up" {
-				if err := s.live(ctx, q, st.Principal); err != nil {
-					return err
-				}
-				if st.Principal.Authority != identitypolicy.LocalAccount || st.Principal.Guest || st.Principal.Bot {
-					return denied(identitypolicy.ScopeDenied)
-				}
-				if _, _, err = s.member(ctx, q, ws, p.UserID, false); err != nil {
+				scoped, versions.Identity, err = s.stepUpBinding(ctx, q, st, c)
+				if err != nil {
 					return err
 				}
 			} else if what == "test" {
@@ -396,7 +445,7 @@ func (s *Service) Begin(ctx context.Context, p identitypolicy.Principal, ws uuid
 		if err != nil {
 			return err
 		}
-		encrypted, err := s.seal(t, "sso-pending", flowPayload{Verifier: verifier, Browser: browser, Authorization: auth, Versions: versions})
+		encrypted, err := s.seal(t, "sso-pending", flowPayload{Verifier: verifier, Browser: browser, Authorization: auth, Versions: versions, ScopedStepUp: scoped})
 		if err != nil {
 			return err
 		}
@@ -411,6 +460,9 @@ func (s *Service) Begin(ctx context.Context, p identitypolicy.Principal, ws uuid
 			return err
 		}
 		expires := databaseNow.Add(5 * time.Minute)
+		if scoped != nil {
+			expires = minTime(expires, scoped.SessionExpiresAt)
+		}
 		_, err = q.CreateIdentityLoginTransaction(ctx, sqlc.CreateIdentityLoginTransactionParams{ID: &id, WorkspaceID: ws, ConnectionID: c.ID, ConnectionVersion: c.Version, Purpose: what, SessionID: session, UserID: user, StateHash: identitycrypto.Hash(state), BrowserHash: identitycrypto.Hash(browser), NonceHash: identitycrypto.Hash(nonce), VerifierBox: encrypted, ReturnUri: "/sso/complete", NativeChallenge: challenge, BrowserStartHash: startHash, ExpiresAt: expires})
 		if err != nil {
 			return err
@@ -466,14 +518,12 @@ func (s *Service) validateFlow(ctx context.Context, q *sqlc.Queries, t sqlc.Iden
 			return c, ErrChanged
 		}
 		if t.Purpose == "step_up" {
-			if err := s.live(ctx, q, st.Principal); err != nil {
+			scoped, version, err := s.stepUpBinding(ctx, q, st, c)
+			if err != nil {
 				return c, err
 			}
-			if st.Principal.Authority != identitypolicy.LocalAccount {
-				return c, denied(identitypolicy.ScopeDenied)
-			}
-			if _, _, err = s.member(ctx, q, t.WorkspaceID, p.UserID, false); err != nil {
-				return c, err
+			if !sameScopedStepUp(scoped, payload.ScopedStepUp) || version != payload.Versions.Identity {
+				return c, ErrChanged
 			}
 		} else {
 			op := identitypolicy.BootstrapLink
@@ -528,15 +578,15 @@ func (s *Service) Callback(ctx context.Context, connection uuid.UUID, state, bro
 	if err != nil {
 		return result, err
 	}
-	if t.Purpose == "test" && !s.now().Before(proof.AuthenticatedAt.Add(5*time.Minute)) {
-		return result, ErrInvalidProof
-	}
 	err = s.DB.Tx(ctx, func(q *sqlc.Queries) error {
 		if _, err := s.validateFlow(ctx, q, t, payload); err != nil {
 			return err
 		}
 		done := completion{Proof: proof, Versions: payload.Versions}
 		if t.Purpose == "test" {
+			if err := s.requireOwnerTestProof(ctx, q, proof); err != nil {
+				return err
+			}
 			done.UserID = *t.UserID
 			linked, err := q.FindExternalIdentity(ctx, sqlc.FindExternalIdentityParams{WorkspaceID: t.WorkspaceID, ConnectionID: t.ConnectionID, Issuer: proof.Issuer, Subject: proof.Subject})
 			if err != nil || linked.UserID != *t.UserID || linked.Status != "active" {
@@ -557,6 +607,9 @@ func (s *Service) Callback(ctx context.Context, connection uuid.UUID, state, bro
 			}
 			if t.UserID != nil && identity.UserID != *t.UserID {
 				return denied(identitypolicy.ScopeDenied)
+			}
+			if scoped := payload.ScopedStepUp; scoped != nil && (identity.ID != scoped.IdentityID || identity.Version != payload.Versions.Identity || proof.Issuer != scoped.Issuer || proof.Subject != scoped.Subject) {
+				return ErrChanged
 			}
 			access, _, err := s.member(ctx, q, t.WorkspaceID, identity.UserID, t.Purpose == "link")
 			if err != nil {
@@ -639,8 +692,11 @@ func (s *Service) finish(ctx context.Context, flow uuid.UUID, browser, ticket, v
 		}
 		if t.Purpose == "test" {
 			linked, err := q.GetExternalIdentity(ctx, sqlc.GetExternalIdentityParams{WorkspaceID: t.WorkspaceID, ID: done.IdentityID})
-			if err != nil || linked.Status != "active" || linked.UserID != done.UserID || linked.Version != done.Versions.Identity {
+			if err != nil || t.UserID == nil || done.UserID != *t.UserID || linked.Status != "active" || linked.UserID != done.UserID || linked.Version != done.Versions.Identity || linked.ConnectionID != c.ID || linked.Issuer != c.Issuer || linked.Issuer != done.Proof.Issuer || linked.Subject != done.Proof.Subject {
 				return classified(err, ErrChanged)
+			}
+			if err := s.requireOwnerTestProof(ctx, q, done.Proof); err != nil {
+				return err
 			}
 			if _, err = q.MarkIdentityConnectionTested(ctx, sqlc.MarkIdentityConnectionTestedParams{WorkspaceID: c.WorkspaceID, ID: c.ID, Version: c.Version}); err != nil {
 				return err
@@ -651,6 +707,9 @@ func (s *Service) finish(ctx context.Context, flow uuid.UUID, browser, ticket, v
 		identity, err := q.GetExternalIdentity(ctx, sqlc.GetExternalIdentityParams{WorkspaceID: t.WorkspaceID, ID: done.IdentityID})
 		if err != nil || identity.Status != "active" || identity.Version != done.Versions.Identity || identity.UserID != done.UserID {
 			return classified(err, ErrChanged)
+		}
+		if scoped := pending.ScopedStepUp; scoped != nil && (done.UserID != scoped.UserID || identity.ID != scoped.IdentityID || identity.ConnectionID != scoped.ConnectionID || identity.Issuer != scoped.Issuer || identity.Subject != scoped.Subject || done.Proof.Issuer != scoped.Issuer || done.Proof.Subject != scoped.Subject) {
+			return ErrChanged
 		}
 		if t.Purpose == "link" && c.Status != "active" {
 			return Audit(ctx, q, t.WorkspaceID, &done.UserID, "draft_identity_linked", &done.IdentityID)
