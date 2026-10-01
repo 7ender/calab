@@ -52,6 +52,18 @@ func TestReactorList(t *testing.T) {
 		}
 	}
 
+	// Bots follow the same room visibility rules as people.
+	b := createBot(t, o, ws.GetId(), "reactorreader")
+	var botReactors v1.ListReactionUsersResponse
+	b.must(200, "GET", path(mid, "👍"), nil, &botReactors)
+	if !slices.Equal(ids(&botReactors), want) || botReactors.GetHasMore() {
+		t.Fatalf("bot reactors: %v, want %v", ids(&botReactors), want)
+	}
+	privateRoom := textRoom(t, o, ws.GetId(), "private reactors", true)
+	privateMessage := send(t, o, privateRoom, "hidden reaction", "").GetId()
+	o.must(204, "PUT", path(privateMessage, "👍"), nil, nil)
+	b.must(404, "GET", path(privateMessage, "👍"), nil, nil)
+
 	// A different emoji carries only its own reactors; an unused one is an empty page.
 	var heart v1.ListReactionUsersResponse
 	bob.must(200, "GET", path(mid, "❤️"), nil, &heart)

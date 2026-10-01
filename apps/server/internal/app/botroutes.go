@@ -138,6 +138,7 @@ var botRoutes = map[string]botAccess{
 	"DELETE /api/messages/{id}":                   botAllow,
 	"PUT /api/rooms/{id}/read":                    botAllow,
 	"GET /api/workspaces/{id}/messages/search":    botAllow,
+	"GET /api/messages/{id}/reactions/{emoji}":    botAllow,
 	"PUT /api/messages/{id}/reactions/{emoji}":    botAllow,
 	"DELETE /api/messages/{id}/reactions/{emoji}": botAllow,
 	"PUT /api/messages/{id}/pin":                  botAllow,
