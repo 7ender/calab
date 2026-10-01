@@ -13,7 +13,7 @@ CREATE TABLE oauth_clients (
     version bigint NOT NULL DEFAULT 1 CHECK (version > 0),
     disabled_at timestamptz,
     created_by uuid REFERENCES users(id) ON DELETE SET NULL,
-    created_at timestamptz NOT NULL DEFAULT now(),
+    created_at timestamptz NOT NULL DEFAULT clock_timestamp(),
     UNIQUE (workspace_id, id),
     CHECK ((client_type IN ('public_native', 'public_spa') AND auth_method = 'none') OR
            (client_type = 'confidential_web' AND auth_method = 'client_secret_basic'))
@@ -30,7 +30,7 @@ CREATE TABLE oauth_client_secrets (
     workspace_id uuid NOT NULL,
     client_id uuid NOT NULL,
     secret_hash bytea NOT NULL UNIQUE CHECK (octet_length(secret_hash) = 32),
-    created_at timestamptz NOT NULL DEFAULT now(),
+    created_at timestamptz NOT NULL DEFAULT clock_timestamp(),
     valid_until timestamptz NOT NULL,
     revoked_at timestamptz,
     FOREIGN KEY (workspace_id, client_id) REFERENCES oauth_clients(workspace_id, id) ON DELETE CASCADE
@@ -76,7 +76,7 @@ CREATE TABLE oauth_authorization_requests (
     max_age_seconds integer CHECK (max_age_seconds >= 0),
     expires_at timestamptz NOT NULL,
     consumed_at timestamptz,
-    created_at timestamptz NOT NULL DEFAULT now(),
+    created_at timestamptz NOT NULL DEFAULT clock_timestamp(),
     FOREIGN KEY (workspace_id, client_id) REFERENCES oauth_clients(workspace_id, id) ON DELETE CASCADE,
     FOREIGN KEY (session_id, user_id) REFERENCES sessions(id, user_id) ON DELETE CASCADE,
     CHECK ((session_id IS NULL) = (user_id IS NULL))
@@ -100,7 +100,7 @@ CREATE TABLE oauth_grants (
     session_version bigint NOT NULL,
     authenticated_at timestamptz NOT NULL,
     assurance_expires_at timestamptz,
-    created_at timestamptz NOT NULL DEFAULT now(),
+    created_at timestamptz NOT NULL DEFAULT clock_timestamp(),
     expires_at timestamptz NOT NULL,
     idle_expires_at timestamptz NOT NULL,
     revoked_at timestamptz,
@@ -125,7 +125,7 @@ CREATE TABLE oauth_authorization_codes (
     redirect_uri text NOT NULL,
     pkce_challenge text NOT NULL CHECK (pkce_challenge ~ '^[A-Za-z0-9_-]{43}$'),
     nonce text NOT NULL CHECK (octet_length(nonce) BETWEEN 1 AND 512),
-    created_at timestamptz NOT NULL DEFAULT now(),
+    created_at timestamptz NOT NULL DEFAULT clock_timestamp(),
     expires_at timestamptz NOT NULL,
     consumed_at timestamptz,
     FOREIGN KEY (workspace_id, grant_id, user_id, client_id) REFERENCES oauth_grants(workspace_id, id, user_id, client_id) ON DELETE CASCADE,
@@ -142,7 +142,7 @@ CREATE TABLE oauth_tokens (
     token_type text NOT NULL CHECK (token_type IN ('access', 'refresh')),
     generation bigint NOT NULL CHECK (generation > 0),
     parent_token_id uuid,
-    created_at timestamptz NOT NULL DEFAULT now(),
+    created_at timestamptz NOT NULL DEFAULT clock_timestamp(),
     expires_at timestamptz NOT NULL,
     used_at timestamptz,
     revoked_at timestamptz,

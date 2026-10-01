@@ -48,8 +48,13 @@ func (q *Queries) ActivateIdentityConnection(ctx context.Context, arg ActivateId
 }
 
 const completeIdentityLoginTransaction = `-- name: CompleteIdentityLoginTransaction :one
-UPDATE identity_login_transactions SET result_box=$2,completed_at=now()
-WHERE id=$1 AND consumed_at IS NOT NULL AND completed_at IS NULL AND expires_at>now() RETURNING id, workspace_id, connection_id, connection_version, purpose, session_id, user_id, state_hash, browser_hash, nonce_hash, verifier_box, return_uri, native_challenge, browser_start_hash, browser_started_at, result_box, completed_at, finished_at, expires_at, consumed_at, created_at
+WITH locked AS MATERIALIZED (
+    SELECT src.id, src.workspace_id, src.connection_id, src.connection_version, src.purpose, src.session_id, src.user_id, src.state_hash, src.browser_hash, src.nonce_hash, src.verifier_box, src.return_uri, src.native_challenge, src.browser_start_hash, src.browser_started_at, src.result_box, src.completed_at, src.finished_at, src.expires_at, src.consumed_at, src.created_at FROM identity_login_transactions AS src WHERE src.id=$1 FOR UPDATE
+), eligible AS MATERIALIZED (
+    SELECT locked.id FROM locked WHERE locked.consumed_at IS NOT NULL AND locked.completed_at IS NULL AND locked.expires_at>clock_timestamp()
+)
+UPDATE identity_login_transactions AS t SET result_box=$2,completed_at=clock_timestamp()
+FROM eligible WHERE t.id=eligible.id RETURNING t.id, t.workspace_id, t.connection_id, t.connection_version, t.purpose, t.session_id, t.user_id, t.state_hash, t.browser_hash, t.nonce_hash, t.verifier_box, t.return_uri, t.native_challenge, t.browser_start_hash, t.browser_started_at, t.result_box, t.completed_at, t.finished_at, t.expires_at, t.consumed_at, t.created_at
 `
 
 type CompleteIdentityLoginTransactionParams struct {
@@ -87,8 +92,13 @@ func (q *Queries) CompleteIdentityLoginTransaction(ctx context.Context, arg Comp
 }
 
 const consumeIdentityBrowserStart = `-- name: ConsumeIdentityBrowserStart :one
-UPDATE identity_login_transactions SET browser_started_at=now()
-WHERE browser_start_hash=$1 AND expires_at>now() AND browser_started_at IS NULL AND consumed_at IS NULL RETURNING id, workspace_id, connection_id, connection_version, purpose, session_id, user_id, state_hash, browser_hash, nonce_hash, verifier_box, return_uri, native_challenge, browser_start_hash, browser_started_at, result_box, completed_at, finished_at, expires_at, consumed_at, created_at
+WITH locked AS MATERIALIZED (
+    SELECT src.id, src.workspace_id, src.connection_id, src.connection_version, src.purpose, src.session_id, src.user_id, src.state_hash, src.browser_hash, src.nonce_hash, src.verifier_box, src.return_uri, src.native_challenge, src.browser_start_hash, src.browser_started_at, src.result_box, src.completed_at, src.finished_at, src.expires_at, src.consumed_at, src.created_at FROM identity_login_transactions AS src WHERE src.browser_start_hash=$1 FOR UPDATE
+), eligible AS MATERIALIZED (
+    SELECT locked.id FROM locked WHERE locked.browser_started_at IS NULL AND locked.consumed_at IS NULL AND locked.expires_at>clock_timestamp()
+)
+UPDATE identity_login_transactions AS t SET browser_started_at=clock_timestamp()
+FROM eligible WHERE t.id=eligible.id RETURNING t.id, t.workspace_id, t.connection_id, t.connection_version, t.purpose, t.session_id, t.user_id, t.state_hash, t.browser_hash, t.nonce_hash, t.verifier_box, t.return_uri, t.native_challenge, t.browser_start_hash, t.browser_started_at, t.result_box, t.completed_at, t.finished_at, t.expires_at, t.consumed_at, t.created_at
 `
 
 func (q *Queries) ConsumeIdentityBrowserStart(ctx context.Context, browserStartHash []byte) (IdentityLoginTransaction, error) {
@@ -121,9 +131,13 @@ func (q *Queries) ConsumeIdentityBrowserStart(ctx context.Context, browserStartH
 }
 
 const consumeIdentityLoginTransaction = `-- name: ConsumeIdentityLoginTransaction :one
-UPDATE identity_login_transactions SET consumed_at=now()
-WHERE state_hash=$1 AND browser_hash=$2 AND connection_id=$3 AND connection_version=$4
-AND expires_at>now() AND consumed_at IS NULL RETURNING id, workspace_id, connection_id, connection_version, purpose, session_id, user_id, state_hash, browser_hash, nonce_hash, verifier_box, return_uri, native_challenge, browser_start_hash, browser_started_at, result_box, completed_at, finished_at, expires_at, consumed_at, created_at
+WITH locked AS MATERIALIZED (
+    SELECT src.id, src.workspace_id, src.connection_id, src.connection_version, src.purpose, src.session_id, src.user_id, src.state_hash, src.browser_hash, src.nonce_hash, src.verifier_box, src.return_uri, src.native_challenge, src.browser_start_hash, src.browser_started_at, src.result_box, src.completed_at, src.finished_at, src.expires_at, src.consumed_at, src.created_at FROM identity_login_transactions AS src WHERE src.state_hash=$1 AND src.browser_hash=$2 AND src.connection_id=$3 AND src.connection_version=$4 FOR UPDATE
+), eligible AS MATERIALIZED (
+    SELECT locked.id FROM locked WHERE locked.consumed_at IS NULL AND locked.expires_at>clock_timestamp()
+)
+UPDATE identity_login_transactions AS t SET consumed_at=clock_timestamp()
+FROM eligible WHERE t.id=eligible.id RETURNING t.id, t.workspace_id, t.connection_id, t.connection_version, t.purpose, t.session_id, t.user_id, t.state_hash, t.browser_hash, t.nonce_hash, t.verifier_box, t.return_uri, t.native_challenge, t.browser_start_hash, t.browser_started_at, t.result_box, t.completed_at, t.finished_at, t.expires_at, t.consumed_at, t.created_at
 `
 
 type ConsumeIdentityLoginTransactionParams struct {
@@ -168,8 +182,13 @@ func (q *Queries) ConsumeIdentityLoginTransaction(ctx context.Context, arg Consu
 }
 
 const consumeIdentityNativeHandoff = `-- name: ConsumeIdentityNativeHandoff :one
-UPDATE identity_native_handoffs SET consumed_at=now()
-WHERE transaction_id=$1 AND ticket_hash=$2 AND challenge=$3 AND consumed_at IS NULL AND expires_at>now() RETURNING id, transaction_id, ticket_hash, challenge, result_box, expires_at, consumed_at
+WITH locked AS MATERIALIZED (
+    SELECT src.id, src.transaction_id, src.ticket_hash, src.challenge, src.result_box, src.expires_at, src.consumed_at FROM identity_native_handoffs AS src WHERE src.transaction_id=$1 AND src.ticket_hash=$2 AND src.challenge=$3 FOR UPDATE
+), eligible AS MATERIALIZED (
+    SELECT locked.id FROM locked WHERE locked.consumed_at IS NULL AND locked.expires_at>clock_timestamp()
+)
+UPDATE identity_native_handoffs AS t SET consumed_at=clock_timestamp()
+FROM eligible WHERE t.id=eligible.id RETURNING t.id, t.transaction_id, t.ticket_hash, t.challenge, t.result_box, t.expires_at, t.consumed_at
 `
 
 type ConsumeIdentityNativeHandoffParams struct {
@@ -194,9 +213,15 @@ func (q *Queries) ConsumeIdentityNativeHandoff(ctx context.Context, arg ConsumeI
 }
 
 const consumeIdentityRecoveryCode = `-- name: ConsumeIdentityRecoveryCode :one
-UPDATE workspace_identity_recovery_codes r SET consumed_at=now()
-FROM workspaces w WHERE r.workspace_id=w.id AND r.workspace_id=$1 AND r.owner_id=$2 AND w.owner_id=$2
-AND r.code_hash=$3 AND r.consumed_at IS NULL AND r.expires_at>now() RETURNING r.id, r.workspace_id, r.owner_id, r.code_hash, r.expires_at, r.consumed_at, r.created_at
+WITH locked AS MATERIALIZED (
+    SELECT r.id, r.workspace_id, r.owner_id, r.code_hash, r.expires_at, r.consumed_at, r.created_at,w.owner_id AS current_owner_id FROM workspace_identity_recovery_codes r
+    JOIN workspaces w ON w.id=r.workspace_id
+    WHERE r.workspace_id=$1 AND r.owner_id=$2 AND r.code_hash=$3 FOR UPDATE OF r,w
+), eligible AS MATERIALIZED (
+    SELECT locked.id FROM locked WHERE locked.current_owner_id=$2 AND locked.consumed_at IS NULL AND locked.expires_at>clock_timestamp()
+)
+UPDATE workspace_identity_recovery_codes AS r SET consumed_at=clock_timestamp()
+FROM eligible WHERE r.id=eligible.id RETURNING r.id, r.workspace_id, r.owner_id, r.code_hash, r.expires_at, r.consumed_at, r.created_at
 `
 
 type ConsumeIdentityRecoveryCodeParams struct {
@@ -787,7 +812,7 @@ func (q *Queries) DeleteIdentityRecoveryCodes(ctx context.Context, workspaceID u
 }
 
 const disableIdentityConnection = `-- name: DisableIdentityConnection :one
-UPDATE workspace_identity_connections SET status='disabled',disabled_at=now(),version=version+1,tested_version=NULL
+UPDATE workspace_identity_connections SET status='disabled',disabled_at=clock_timestamp(),version=version+1,tested_version=NULL
 WHERE workspace_id=$1 AND id=$2 RETURNING id, workspace_id, name, status, tenant_id, provider, issuer, client_id, client_secret_box, scopes, version, tested_version, tested_at, disabled_at, created_by, created_at
 `
 
@@ -902,8 +927,13 @@ func (q *Queries) FindUserExternalIdentity(ctx context.Context, arg FindUserExte
 }
 
 const finishIdentityLoginTransaction = `-- name: FinishIdentityLoginTransaction :one
-UPDATE identity_login_transactions SET finished_at=now()
-WHERE id=$1 AND browser_hash=$2 AND completed_at IS NOT NULL AND finished_at IS NULL AND expires_at>now() RETURNING id, workspace_id, connection_id, connection_version, purpose, session_id, user_id, state_hash, browser_hash, nonce_hash, verifier_box, return_uri, native_challenge, browser_start_hash, browser_started_at, result_box, completed_at, finished_at, expires_at, consumed_at, created_at
+WITH locked AS MATERIALIZED (
+    SELECT src.id, src.workspace_id, src.connection_id, src.connection_version, src.purpose, src.session_id, src.user_id, src.state_hash, src.browser_hash, src.nonce_hash, src.verifier_box, src.return_uri, src.native_challenge, src.browser_start_hash, src.browser_started_at, src.result_box, src.completed_at, src.finished_at, src.expires_at, src.consumed_at, src.created_at FROM identity_login_transactions AS src WHERE src.id=$1 AND src.browser_hash=$2 FOR UPDATE
+), eligible AS MATERIALIZED (
+    SELECT locked.id FROM locked WHERE locked.completed_at IS NOT NULL AND locked.finished_at IS NULL AND locked.expires_at>clock_timestamp()
+)
+UPDATE identity_login_transactions AS t SET finished_at=clock_timestamp()
+FROM eligible WHERE t.id=eligible.id RETURNING t.id, t.workspace_id, t.connection_id, t.connection_version, t.purpose, t.session_id, t.user_id, t.state_hash, t.browser_hash, t.nonce_hash, t.verifier_box, t.return_uri, t.native_challenge, t.browser_start_hash, t.browser_started_at, t.result_box, t.completed_at, t.finished_at, t.expires_at, t.consumed_at, t.created_at
 `
 
 type FinishIdentityLoginTransactionParams struct {
@@ -1109,7 +1139,7 @@ func (q *Queries) GetIdentityConnectionForUpdate(ctx context.Context, arg GetIde
 
 const getIdentityGateState = `-- name: GetIdentityGateState :one
 SELECT s.id, s.user_id, s.refresh_token_hash, s.prev_refresh_token_hash, s.rotated_at, s.device_name, s.ip, s.user_agent, s.created_at, s.last_seen_at, s.expires_at, s.revoked_at, s.refresh_gen, s.refresh_used_at, s.replay_seal, s.revoked_reason, s.authority_kind, s.authority_workspace_id, s.authority_connection_id, s.local_authenticated_at, s.recovery_authenticated_at, s.authority_version, u.is_guest, u.is_bot,
-(u.disabled_at IS NOT NULL OR (u.is_guest AND u.guest_expires_at<=now()))::boolean AS user_disabled,
+(u.disabled_at IS NOT NULL OR (u.is_guest AND u.guest_expires_at<=clock_timestamp()))::boolean AS user_disabled,
 w.id AS workspace_id, (w.suspended_at IS NOT NULL)::boolean AS workspace_suspended,
 (m.user_id IS NOT NULL)::boolean AS member,
 COALESCE(CASE WHEN w.owner_id=u.id AND m.role='owner' THEN 'owner' WHEN m.role='owner' THEN 'member' ELSE m.role END,'')::text AS builtin_role,
@@ -1118,7 +1148,7 @@ COALESCE(x.version,1)::bigint AS access_version,
 COALESCE(p.mode,'off')::text AS policy_mode, COALESCE(p.version,1)::bigint AS policy_version,
 COALESCE(p.entitlement_version,1)::bigint AS entitlement_version,
 COALESCE(p.assurance_max_age_seconds,3600)::integer AS max_age_seconds,
-COALESCE(wp.plan='enterprise' AND (wp.valid_until IS NULL OR wp.valid_until>now()),false)::boolean AS business_eligible,
+COALESCE(wp.plan='enterprise' AND (wp.valid_until IS NULL OR wp.valid_until>clock_timestamp()),false)::boolean AS business_eligible,
 wp.valid_until AS plan_valid_until,
 a.session_id AS assurance_session_id, a.user_id AS assurance_user_id, a.connection_id AS assurance_connection_id, a.identity_id AS assurance_identity_id,
 a.authenticated_at AS assurance_authenticated_at, a.valid_until AS assurance_valid_until, a.revoked_at AS assurance_revoked_at,
@@ -1136,7 +1166,7 @@ COALESCE(e.status='active' AND e.issuer=c.issuer,false)::boolean AS identity_act
 COALESCE(o.status='active',false)::boolean AS directory_active,
 (d.disabled_at IS NULL AND d.last_success_at IS NOT NULL)::boolean AS directory_enabled,
 COALESCE(d.last_success_at + make_interval(secs=>d.max_staleness_seconds),'epoch'::timestamptz)::timestamptz AS directory_valid_until,
-EXISTS(SELECT FROM workspace_identity_recovery_codes r WHERE r.workspace_id=w.id AND r.owner_id=w.owner_id AND r.consumed_at IS NULL AND r.expires_at>now())::boolean AS recovery_ready,
+EXISTS(SELECT FROM workspace_identity_recovery_codes r WHERE r.workspace_id=w.id AND r.owner_id=w.owner_id AND r.consumed_at IS NULL AND r.expires_at>clock_timestamp())::boolean AS recovery_ready,
 EXISTS(SELECT FROM product_admin_grants g WHERE g.user_id=u.id AND g.revoked_at IS NULL)::boolean AS product_admin_granted,
 gs.enabled AS sso_enabled, gs.source AS sso_source, gs.valid_until AS sso_valid_until, gs.revoked_at AS sso_revoked_at,COALESCE(gs.version,0)::bigint AS sso_version,
 gd.enabled AS directory_granted, gd.source AS directory_source, gd.valid_until AS directory_grant_valid_until,gd.revoked_at AS directory_revoked_at,COALESCE(gd.version,0)::bigint AS directory_grant_version,
@@ -1677,7 +1707,7 @@ func (q *Queries) ListIdentityInvalidationsForUpdate(ctx context.Context, limit 
 }
 
 const markIdentityConnectionTested = `-- name: MarkIdentityConnectionTested :one
-UPDATE workspace_identity_connections SET tested_version=version, tested_at=now(), status='tested'
+UPDATE workspace_identity_connections SET tested_version=version, tested_at=clock_timestamp(), status='tested'
 WHERE workspace_id=$1 AND id=$2 AND version=$3 AND disabled_at IS NULL RETURNING id, workspace_id, name, status, tenant_id, provider, issuer, client_id, client_secret_box, scopes, version, tested_version, tested_at, disabled_at, created_by, created_at
 `
 
@@ -1712,7 +1742,7 @@ func (q *Queries) MarkIdentityConnectionTested(ctx context.Context, arg MarkIden
 }
 
 const markIdentityInvalidationDelivered = `-- name: MarkIdentityInvalidationDelivered :exec
-UPDATE identity_invalidation_outbox SET delivered_at=now() WHERE id=$1
+UPDATE identity_invalidation_outbox SET delivered_at=clock_timestamp() WHERE id=$1
 `
 
 func (q *Queries) MarkIdentityInvalidationDelivered(ctx context.Context, id uuid.UUID) error {
@@ -1723,7 +1753,7 @@ func (q *Queries) MarkIdentityInvalidationDelivered(ctx context.Context, id uuid
 const recordLocalAuthentication = `-- name: RecordLocalAuthentication :one
 UPDATE sessions SET local_authenticated_at = $1
 WHERE id = $2 AND user_id = $3 AND authority_kind = 'local_account'
-AND revoked_at IS NULL AND expires_at > now() RETURNING id, user_id, refresh_token_hash, prev_refresh_token_hash, rotated_at, device_name, ip, user_agent, created_at, last_seen_at, expires_at, revoked_at, refresh_gen, refresh_used_at, replay_seal, revoked_reason, authority_kind, authority_workspace_id, authority_connection_id, local_authenticated_at, recovery_authenticated_at, authority_version
+AND revoked_at IS NULL AND expires_at > clock_timestamp() RETURNING id, user_id, refresh_token_hash, prev_refresh_token_hash, rotated_at, device_name, ip, user_agent, created_at, last_seen_at, expires_at, revoked_at, refresh_gen, refresh_used_at, replay_seal, revoked_reason, authority_kind, authority_workspace_id, authority_connection_id, local_authenticated_at, recovery_authenticated_at, authority_version
 `
 
 type RecordLocalAuthenticationParams struct {
@@ -1774,7 +1804,7 @@ func (q *Queries) ReserveIdentityID(ctx context.Context) (uuid.UUID, error) {
 }
 
 const revokeWorkspaceAssurances = `-- name: RevokeWorkspaceAssurances :execrows
-UPDATE session_workspace_assurances SET revoked_at=now()
+UPDATE session_workspace_assurances SET revoked_at=clock_timestamp()
 WHERE workspace_id=$1 AND ($2::uuid IS NULL OR user_id=$2)
 AND ($3::uuid IS NULL OR session_id=$3) AND revoked_at IS NULL
 `
@@ -1828,7 +1858,7 @@ func (q *Queries) SetExternalIdentityStatus(ctx context.Context, arg SetExternal
 
 const setIdentityPolicy = `-- name: SetIdentityPolicy :one
 UPDATE workspace_identity_policies SET mode=$1, version=version+1,
-    assurance_max_age_seconds=$2, updated_by=$3, updated_at=now()
+    assurance_max_age_seconds=$2, updated_by=$3, updated_at=clock_timestamp()
 WHERE workspace_id=$4 AND version=$5 RETURNING workspace_id, entitlement_version, mode, version, assurance_max_age_seconds, updated_by, updated_at
 `
 
@@ -1913,7 +1943,7 @@ func (q *Queries) UpdateIdentityConnection(ctx context.Context, arg UpdateIdenti
 const upsertIdentityAccess = `-- name: UpsertIdentityAccess :one
 INSERT INTO workspace_identity_access(workspace_id,user_id,status,reason) VALUES($1,$2,$3,$4)
 ON CONFLICT (workspace_id,user_id) DO UPDATE SET status=EXCLUDED.status,reason=EXCLUDED.reason,
-version=workspace_identity_access.version+1,updated_at=now() RETURNING workspace_id, user_id, status, version, reason, updated_at
+version=workspace_identity_access.version+1,updated_at=clock_timestamp() RETURNING workspace_id, user_id, status, version, reason, updated_at
 `
 
 type UpsertIdentityAccessParams struct {
@@ -1946,7 +1976,7 @@ const upsertIdentityGrant = `-- name: UpsertIdentityGrant :one
 INSERT INTO workspace_identity_grants(workspace_id,feature,enabled,source,valid_until,updated_by)
 VALUES ($1,$2,$3,$4,$5,$6) ON CONFLICT (workspace_id,feature) DO UPDATE SET
     enabled=EXCLUDED.enabled, source=EXCLUDED.source, valid_until=EXCLUDED.valid_until,
-    revoked_at=NULL, version=workspace_identity_grants.version+1, updated_by=EXCLUDED.updated_by, updated_at=now()
+    revoked_at=NULL, version=workspace_identity_grants.version+1, updated_by=EXCLUDED.updated_by, updated_at=clock_timestamp()
 RETURNING workspace_id, feature, enabled, source, valid_until, revoked_at, version, updated_by, updated_at
 `
 

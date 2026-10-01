@@ -16,6 +16,7 @@ type SQLLoader struct {
 	Config EntitlementConfig
 }
 
+// NewSQLLoader copies trusted edition configuration and binds generated queries.
 func NewSQLLoader(q *sqlc.Queries, config EntitlementConfig) *SQLLoader {
 	copied := EntitlementConfig{Edition: config.Edition, EnterpriseWorkspaceIDs: map[uuid.UUID]bool{}}
 	for id, enabled := range config.EnterpriseWorkspaceIDs {
@@ -35,6 +36,8 @@ func uuidValue(value *uuid.UUID) uuid.UUID {
 	}
 	return *value
 }
+
+// LoadIdentityState reads one coherent database snapshot for the exact session/user/workspace.
 func (l *SQLLoader) LoadIdentityState(ctx context.Context, sessionID, userID, workspaceID uuid.UUID) (State, error) {
 	if l == nil || l.Q == nil {
 		return State{}, errors.New("identity database is unavailable")

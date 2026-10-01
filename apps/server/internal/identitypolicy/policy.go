@@ -10,24 +10,30 @@ import (
 	"github.com/google/uuid"
 )
 
+// Authority records how a session authenticated and which trust domain it owns.
 type Authority string
 
+// Session authority kinds.
 const (
 	LocalAccount Authority = "local_account"
 	WorkspaceSSO Authority = "workspace_sso"
 	Recovery     Authority = "recovery"
 )
 
+// Mode is the persisted workspace SSO requirement.
 type Mode string
 
+// Workspace SSO modes.
 const (
 	Off      Mode = "off"
 	Optional Mode = "optional"
 	Enforced Mode = "enforced"
 )
 
+// Operation is a closed access classification from release contract section 2.
 type Operation string
 
+// Closed operation classes; resource permissions remain a separate gate.
 const (
 	WorkspaceRead   Operation = "read"
 	WorkspaceWrite  Operation = "mutate"
@@ -48,13 +54,17 @@ const (
 	ProductAdmin    Operation = "product_admin"
 )
 
+// Feature names a separately granted workspace identity entitlement.
 type Feature string
 
+// Identity entitlement features.
 const (
 	SSO           Feature = "corporate_sso"
 	DirectorySync Feature = "directory_sync"
 	OAuthProvider Feature = "oauth_provider"
 )
+
+// Maximum identity lifetimes; operator configuration may only tighten them.
 const (
 	CorporateProofMaxAge  = time.Hour
 	RecoveryMaxAge        = 10 * time.Minute
@@ -68,6 +78,7 @@ const (
 	DirectoryMaxStaleness = time.Hour
 )
 
+// Principal contains authoritative session fields, never unverified token claims.
 type Principal struct {
 	UserID, SessionID                                        uuid.UUID
 	Authority                                                Authority
@@ -77,9 +88,13 @@ type Principal struct {
 	Guest, Bot                                               bool
 	Version                                                  int64
 }
+
+// Versions binds a decision or proof to durable invalidation epochs.
 type Versions struct {
 	Policy, Access, Connection, Identity, Entitlement, Session int64
 }
+
+// Grant is a positive feature grant resolved against the current plan or operator edition.
 type Grant struct {
 	WorkspaceID                    uuid.UUID
 	Feature                        Feature
@@ -95,6 +110,7 @@ type EntitlementConfig struct {
 	EnterpriseWorkspaceIDs map[uuid.UUID]bool
 }
 
+// Eligible checks the current Business plan or exact operator Enterprise allowlist.
 func (c EntitlementConfig) Eligible(ws uuid.UUID, source string, business bool) bool {
 	switch source {
 	case "cloud_business":
@@ -106,27 +122,36 @@ func (c EntitlementConfig) Eligible(ws uuid.UUID, source string, business bool) 
 	}
 }
 
+// Policy supplies a versioned SSO requirement and a bounded proof age.
 type Policy struct {
 	Mode    Mode
 	Version int64
 	MaxAge  time.Duration
 }
+
+// Assurance is the workspace proof issued by a verified corporate callback.
 type Assurance struct {
 	WorkspaceID, UserID, SessionID, ConnectionID, IdentityID uuid.UUID
 	AuthenticatedAt, ValidUntil                              time.Time
 	Versions                                                 Versions
 	Revoked                                                  bool
 }
+
+// Connection describes the currently linked configuration and test state.
 type Connection struct {
 	ID              uuid.UUID
 	Version         int64
 	Enabled, Tested bool
 }
+
+// Identity describes the immutable external binding and its suspension epoch.
 type Identity struct {
 	ID, ConnectionID uuid.UUID
 	Version          int64
 	Active           bool
 }
+
+// Directory is the current eligibility and complete-sync deadline of a managed member.
 type Directory struct {
 	Required, Active, Enabled bool
 	ValidUntil                time.Time
@@ -149,8 +174,11 @@ type State struct {
 	Directory                                    Directory
 	ProductAdminGranted                          bool
 }
+
+// Reason is a closed internal denial classification; consumers map it to wire errors.
 type Reason string
 
+// Policy decision reasons.
 const (
 	Allowed             Reason = "allowed"
 	InvalidSession      Reason = "invalid_session"
@@ -168,6 +196,7 @@ const (
 	StateUnavailable    Reason = "identity_state_unavailable"
 )
 
+// Decision authorizes only its checked scope until an absolute deadline.
 type Decision struct {
 	Allowed    bool
 	Reason     Reason
@@ -285,7 +314,7 @@ func Evaluate(now time.Time, s State, op Operation) Decision {
 	if p.Bot {
 		return deny(ScopeDenied)
 	}
-	if s.AccessVersion < 1 || s.Policy.Version < 1 || (s.Policy.Mode != Off && s.Policy.Mode != Optional && s.Policy.Mode != Enforced) || s.Policy.MaxAge < ManagementMaxAge || s.Policy.MaxAge > CorporateProofMaxAge {
+	if s.EntitlementVersion < 1 || s.AccessVersion < 1 || s.Policy.Version < 1 || (s.Policy.Mode != Off && s.Policy.Mode != Optional && s.Policy.Mode != Enforced) || s.Policy.MaxAge < ManagementMaxAge || s.Policy.MaxAge > CorporateProofMaxAge {
 		return deny(PolicyInvalid)
 	}
 	d.Versions = Versions{Policy: s.Policy.Version, Access: s.AccessVersion, Connection: s.Connection.Version, Identity: s.Identity.Version, Entitlement: s.EntitlementVersion, Session: p.Version}
@@ -361,7 +390,7 @@ func Evaluate(now time.Time, s State, op Operation) Decision {
 			proofAge = ManagementMaxAge
 		}
 		a := s.Assurance
-		if s.BuiltinRole == "guest" || a == nil || a.Revoked || !s.Connection.Enabled || !s.Connection.Tested || !s.Identity.Active || s.Identity.ConnectionID != s.Connection.ID || a.IdentityID != s.Identity.ID || a.ConnectionID != s.Connection.ID || (p.Authority == WorkspaceSSO && p.ConnectionID != a.ConnectionID) || a.WorkspaceID != s.WorkspaceID || a.UserID != p.UserID || a.SessionID != p.SessionID || a.AuthenticatedAt.After(now) || !now.Before(a.ValidUntil) || !recent(now, a.AuthenticatedAt, proofAge) || a.ValidUntil.After(a.AuthenticatedAt.Add(CorporateProofMaxAge)) || a.Versions.Policy != s.Policy.Version || a.Versions.Access != s.AccessVersion || a.Versions.Connection != s.Connection.Version || a.Versions.Identity != s.Identity.Version || a.Versions.Entitlement != s.EntitlementVersion || a.Versions.Session != p.Version {
+		if s.Connection.ID == uuid.Nil || s.Identity.ID == uuid.Nil || s.Connection.Version < 1 || s.Identity.Version < 1 || s.BuiltinRole == "guest" || a == nil || a.Revoked || !s.Connection.Enabled || !s.Connection.Tested || !s.Identity.Active || s.Identity.ConnectionID != s.Connection.ID || a.IdentityID != s.Identity.ID || a.ConnectionID != s.Connection.ID || (p.Authority == WorkspaceSSO && p.ConnectionID != a.ConnectionID) || a.WorkspaceID != s.WorkspaceID || a.UserID != p.UserID || a.SessionID != p.SessionID || a.AuthenticatedAt.After(now) || !now.Before(a.ValidUntil) || !recent(now, a.AuthenticatedAt, proofAge) || a.ValidUntil.After(a.AuthenticatedAt.Add(CorporateProofMaxAge)) || a.Versions.Policy != s.Policy.Version || a.Versions.Access != s.AccessVersion || a.Versions.Connection != s.Connection.Version || a.Versions.Identity != s.Identity.Version || a.Versions.Entitlement != s.EntitlementVersion || a.Versions.Session != p.Version {
 			return deny(SSORequired)
 		}
 		d.ValidUntil = minimum(d.ValidUntil, minimum(a.ValidUntil, a.AuthenticatedAt.Add(proofAge)))
@@ -395,13 +424,17 @@ func EvaluateEnforcement(now time.Time, s State) Decision {
 type Loader interface {
 	LoadIdentityState(context.Context, uuid.UUID, uuid.UUID, uuid.UUID) (State, error)
 }
+
+// Service obtains fresh authoritative state before evaluating workspace access.
 type Service struct {
 	Loader Loader
 	Now    func() time.Time
 }
 
+// ErrDenied signals a policy denial without disclosing any resource data.
 var ErrDenied = errors.New("identity policy denied")
 
+// CheckWorkspace checks the database principal and returns a typed scoped decision.
 func (s *Service) CheckWorkspace(ctx context.Context, p Principal, ws uuid.UUID, op Operation) (Decision, error) {
 	if s == nil || s.Loader == nil {
 		return deny(StateUnavailable), ErrDenied

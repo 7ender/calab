@@ -238,7 +238,7 @@ func (q *Queries) FindDirectoryObjectGUID(ctx context.Context, arg FindDirectory
 }
 
 const finishDirectorySyncRun = `-- name: FinishDirectorySyncRun :one
-UPDATE directory_sync_runs SET status=$2,complete=$3,objects_seen=$4,finished_at=now()
+UPDATE directory_sync_runs SET status=$2,complete=$3,objects_seen=$4,finished_at=clock_timestamp()
 WHERE id=$1 AND status='running' RETURNING id, workspace_id, directory_id, full_scan, config_version, generation, lease_until, status, complete, objects_seen, started_at, finished_at
 `
 
@@ -575,8 +575,60 @@ func (q *Queries) ListEnabledIdentityDirectories(ctx context.Context, limit int3
 	return items, nil
 }
 
+const listEnabledIdentityDirectoriesAfter = `-- name: ListEnabledIdentityDirectoriesAfter :many
+SELECT id, workspace_id, name, host, url, allowed_group_dns, generation, port, base_dn, bind_dn, bind_secret_box, ca_pem, sync_interval_seconds, max_staleness_seconds, version, last_success_at, cursor_box, last_error, disabled_at, created_at FROM workspace_directories WHERE disabled_at IS NULL
+AND ($1::uuid IS NULL OR id>$1)
+ORDER BY id LIMIT $2
+`
+
+type ListEnabledIdentityDirectoriesAfterParams struct {
+	AfterID    *uuid.UUID
+	LimitCount int32
+}
+
+func (q *Queries) ListEnabledIdentityDirectoriesAfter(ctx context.Context, arg ListEnabledIdentityDirectoriesAfterParams) ([]WorkspaceDirectory, error) {
+	rows, err := q.db.Query(ctx, listEnabledIdentityDirectoriesAfter, arg.AfterID, arg.LimitCount)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []WorkspaceDirectory{}
+	for rows.Next() {
+		var i WorkspaceDirectory
+		if err := rows.Scan(
+			&i.ID,
+			&i.WorkspaceID,
+			&i.Name,
+			&i.Host,
+			&i.Url,
+			&i.AllowedGroupDns,
+			&i.Generation,
+			&i.Port,
+			&i.BaseDn,
+			&i.BindDn,
+			&i.BindSecretBox,
+			&i.CaPem,
+			&i.SyncIntervalSeconds,
+			&i.MaxStalenessSeconds,
+			&i.Version,
+			&i.LastSuccessAt,
+			&i.CursorBox,
+			&i.LastError,
+			&i.DisabledAt,
+			&i.CreatedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const publishDirectorySuccess = `-- name: PublishDirectorySuccess :one
-UPDATE workspace_directories d SET last_success_at=now(),generation=$1,cursor_box=$2,last_error=''
+UPDATE workspace_directories d SET last_success_at=clock_timestamp(),generation=$1,cursor_box=$2,last_error=''
 WHERE d.workspace_id=$3 AND d.id=$4 AND d.version=$5
 AND EXISTS(SELECT FROM directory_sync_runs r WHERE r.id=$6 AND r.directory_id=d.id AND r.config_version=d.version
 AND r.status='succeeded' AND r.complete AND r.full_scan AND r.generation=$1 AND r.generation>d.generation)
@@ -643,7 +695,7 @@ func (q *Queries) SetDirectoryError(ctx context.Context, arg SetDirectoryErrorPa
 }
 
 const setDirectoryObjectStatus = `-- name: SetDirectoryObjectStatus :one
-UPDATE directory_objects SET status=$3,version=version+1,updated_at=now() WHERE workspace_id=$1 AND id=$2 RETURNING id, workspace_id, directory_id, object_guid, user_id, distinguished_name, status, version, last_seen_run_id, missing_full_scans, updated_at
+UPDATE directory_objects SET status=$3,version=version+1,updated_at=clock_timestamp() WHERE workspace_id=$1 AND id=$2 RETURNING id, workspace_id, directory_id, object_guid, user_id, distinguished_name, status, version, last_seen_run_id, missing_full_scans, updated_at
 `
 
 type SetDirectoryObjectStatusParams struct {
@@ -672,7 +724,7 @@ func (q *Queries) SetDirectoryObjectStatus(ctx context.Context, arg SetDirectory
 }
 
 const setDirectoryObjectUser = `-- name: SetDirectoryObjectUser :one
-UPDATE directory_objects SET user_id=$3,version=version+1,updated_at=now() WHERE workspace_id=$1 AND id=$2 RETURNING id, workspace_id, directory_id, object_guid, user_id, distinguished_name, status, version, last_seen_run_id, missing_full_scans, updated_at
+UPDATE directory_objects SET user_id=$3,version=version+1,updated_at=clock_timestamp() WHERE workspace_id=$1 AND id=$2 RETURNING id, workspace_id, directory_id, object_guid, user_id, distinguished_name, status, version, last_seen_run_id, missing_full_scans, updated_at
 `
 
 type SetDirectoryObjectUserParams struct {
@@ -683,6 +735,53 @@ type SetDirectoryObjectUserParams struct {
 
 func (q *Queries) SetDirectoryObjectUser(ctx context.Context, arg SetDirectoryObjectUserParams) (DirectoryObject, error) {
 	row := q.db.QueryRow(ctx, setDirectoryObjectUser, arg.WorkspaceID, arg.ID, arg.UserID)
+	var i DirectoryObject
+	err := row.Scan(
+		&i.ID,
+		&i.WorkspaceID,
+		&i.DirectoryID,
+		&i.ObjectGuid,
+		&i.UserID,
+		&i.DistinguishedName,
+		&i.Status,
+		&i.Version,
+		&i.LastSeenRunID,
+		&i.MissingFullScans,
+		&i.UpdatedAt,
+	)
+	return i, err
+}
+
+const updateDirectoryObjectSnapshot = `-- name: UpdateDirectoryObjectSnapshot :one
+UPDATE directory_objects SET distinguished_name=$1,status=$2,
+last_seen_run_id=$3,missing_full_scans=$4,
+version=version+1,updated_at=clock_timestamp()
+WHERE workspace_id=$5 AND directory_id=$6 AND id=$7
+AND version=$8 RETURNING id, workspace_id, directory_id, object_guid, user_id, distinguished_name, status, version, last_seen_run_id, missing_full_scans, updated_at
+`
+
+type UpdateDirectoryObjectSnapshotParams struct {
+	DistinguishedName string
+	Status            string
+	LastSeenRunID     *uuid.UUID
+	MissingFullScans  int32
+	WorkspaceID       uuid.UUID
+	DirectoryID       uuid.UUID
+	ID                uuid.UUID
+	ExpectedVersion   int64
+}
+
+func (q *Queries) UpdateDirectoryObjectSnapshot(ctx context.Context, arg UpdateDirectoryObjectSnapshotParams) (DirectoryObject, error) {
+	row := q.db.QueryRow(ctx, updateDirectoryObjectSnapshot,
+		arg.DistinguishedName,
+		arg.Status,
+		arg.LastSeenRunID,
+		arg.MissingFullScans,
+		arg.WorkspaceID,
+		arg.DirectoryID,
+		arg.ID,
+		arg.ExpectedVersion,
+	)
 	var i DirectoryObject
 	err := row.Scan(
 		&i.ID,

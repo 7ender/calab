@@ -13,8 +13,13 @@ import (
 )
 
 const bindOAuthRequest = `-- name: BindOAuthRequest :one
-UPDATE oauth_authorization_requests SET session_id=$3,user_id=$4,csrf_hash=$5
-WHERE id=$1 AND browser_hash=$2 AND session_id IS NULL AND consumed_at IS NULL AND expires_at>now() RETURNING id, workspace_id, client_id, issuer, client_version, handle_hash, browser_hash, csrf_hash, session_id, user_id, redirect_uri, scopes, state, nonce, pkce_challenge, prompt, max_age_seconds, expires_at, consumed_at, created_at
+WITH locked AS MATERIALIZED (
+    SELECT src.id, src.workspace_id, src.client_id, src.issuer, src.client_version, src.handle_hash, src.browser_hash, src.csrf_hash, src.session_id, src.user_id, src.redirect_uri, src.scopes, src.state, src.nonce, src.pkce_challenge, src.prompt, src.max_age_seconds, src.expires_at, src.consumed_at, src.created_at FROM oauth_authorization_requests AS src WHERE src.id=$1 AND src.browser_hash=$2 FOR UPDATE
+), eligible AS MATERIALIZED (
+    SELECT locked.id FROM locked WHERE locked.session_id IS NULL AND locked.consumed_at IS NULL AND locked.expires_at>clock_timestamp()
+)
+UPDATE oauth_authorization_requests AS t SET session_id=$3,user_id=$4,csrf_hash=$5
+FROM eligible WHERE t.id=eligible.id RETURNING t.id, t.workspace_id, t.client_id, t.issuer, t.client_version, t.handle_hash, t.browser_hash, t.csrf_hash, t.session_id, t.user_id, t.redirect_uri, t.scopes, t.state, t.nonce, t.pkce_challenge, t.prompt, t.max_age_seconds, t.expires_at, t.consumed_at, t.created_at
 `
 
 type BindOAuthRequestParams struct {
@@ -60,11 +65,13 @@ func (q *Queries) BindOAuthRequest(ctx context.Context, arg BindOAuthRequestPara
 }
 
 const consumeOAuthCode = `-- name: ConsumeOAuthCode :one
-UPDATE oauth_authorization_codes AS c SET consumed_at=now()
-WHERE c.workspace_id=$1 AND c.client_id=$2 AND c.code_hash=$3 AND c.redirect_uri=$4 AND c.pkce_challenge=$5
-AND c.consumed_at IS NULL AND c.expires_at>now()
-AND EXISTS(SELECT FROM oauth_grants g WHERE g.id=c.grant_id AND g.revoked_at IS NULL AND g.expires_at>now() AND g.idle_expires_at>now())
-RETURNING id, workspace_id, grant_id, user_id, client_id, code_hash, redirect_uri, pkce_challenge, nonce, created_at, expires_at, consumed_at
+WITH locked AS MATERIALIZED (
+    SELECT src.id, src.workspace_id, src.grant_id, src.user_id, src.client_id, src.code_hash, src.redirect_uri, src.pkce_challenge, src.nonce, src.created_at, src.expires_at, src.consumed_at FROM oauth_authorization_codes AS src WHERE src.workspace_id=$1 AND src.client_id=$2 AND src.code_hash=$3 AND src.redirect_uri=$4 AND src.pkce_challenge=$5 FOR UPDATE
+), eligible AS MATERIALIZED (
+    SELECT locked.id FROM locked WHERE locked.consumed_at IS NULL AND locked.expires_at>clock_timestamp() AND EXISTS(SELECT FROM oauth_grants g WHERE g.id=locked.grant_id AND g.revoked_at IS NULL AND g.expires_at>clock_timestamp() AND g.idle_expires_at>clock_timestamp())
+)
+UPDATE oauth_authorization_codes AS t SET consumed_at=clock_timestamp()
+FROM eligible WHERE t.id=eligible.id RETURNING t.id, t.workspace_id, t.grant_id, t.user_id, t.client_id, t.code_hash, t.redirect_uri, t.pkce_challenge, t.nonce, t.created_at, t.expires_at, t.consumed_at
 `
 
 type ConsumeOAuthCodeParams struct {
@@ -102,10 +109,13 @@ func (q *Queries) ConsumeOAuthCode(ctx context.Context, arg ConsumeOAuthCodePara
 }
 
 const consumeOAuthRefresh = `-- name: ConsumeOAuthRefresh :one
-UPDATE oauth_tokens AS t SET used_at=now() WHERE t.workspace_id=$1 AND t.client_id=$2 AND t.token_hash=$3 AND t.token_type='refresh'
-AND t.used_at IS NULL AND t.revoked_at IS NULL AND t.expires_at>now()
-AND EXISTS(SELECT FROM oauth_grants g WHERE g.id=t.grant_id AND g.revoked_at IS NULL AND g.expires_at>now() AND g.idle_expires_at>now())
-RETURNING id, workspace_id, grant_id, user_id, client_id, token_hash, token_type, generation, parent_token_id, created_at, expires_at, used_at, revoked_at
+WITH locked AS MATERIALIZED (
+    SELECT src.id, src.workspace_id, src.grant_id, src.user_id, src.client_id, src.token_hash, src.token_type, src.generation, src.parent_token_id, src.created_at, src.expires_at, src.used_at, src.revoked_at FROM oauth_tokens AS src WHERE src.workspace_id=$1 AND src.client_id=$2 AND src.token_hash=$3 AND src.token_type='refresh' FOR UPDATE
+), eligible AS MATERIALIZED (
+    SELECT locked.id FROM locked WHERE locked.used_at IS NULL AND locked.revoked_at IS NULL AND locked.expires_at>clock_timestamp() AND EXISTS(SELECT FROM oauth_grants g WHERE g.id=locked.grant_id AND g.revoked_at IS NULL AND g.expires_at>clock_timestamp() AND g.idle_expires_at>clock_timestamp())
+)
+UPDATE oauth_tokens AS t SET used_at=clock_timestamp()
+FROM eligible WHERE t.id=eligible.id RETURNING t.id, t.workspace_id, t.grant_id, t.user_id, t.client_id, t.token_hash, t.token_type, t.generation, t.parent_token_id, t.created_at, t.expires_at, t.used_at, t.revoked_at
 `
 
 type ConsumeOAuthRefreshParams struct {
@@ -136,9 +146,13 @@ func (q *Queries) ConsumeOAuthRefresh(ctx context.Context, arg ConsumeOAuthRefre
 }
 
 const consumeOAuthRequest = `-- name: ConsumeOAuthRequest :one
-UPDATE oauth_authorization_requests SET consumed_at=now()
-WHERE id=$1 AND browser_hash=$2 AND csrf_hash=$3 AND session_id=$4 AND user_id=$5
-AND consumed_at IS NULL AND expires_at>now() RETURNING id, workspace_id, client_id, issuer, client_version, handle_hash, browser_hash, csrf_hash, session_id, user_id, redirect_uri, scopes, state, nonce, pkce_challenge, prompt, max_age_seconds, expires_at, consumed_at, created_at
+WITH locked AS MATERIALIZED (
+    SELECT src.id, src.workspace_id, src.client_id, src.issuer, src.client_version, src.handle_hash, src.browser_hash, src.csrf_hash, src.session_id, src.user_id, src.redirect_uri, src.scopes, src.state, src.nonce, src.pkce_challenge, src.prompt, src.max_age_seconds, src.expires_at, src.consumed_at, src.created_at FROM oauth_authorization_requests AS src WHERE src.id=$1 AND src.browser_hash=$2 AND src.csrf_hash=$3 AND src.session_id=$4 AND src.user_id=$5 FOR UPDATE
+), eligible AS MATERIALIZED (
+    SELECT locked.id FROM locked WHERE locked.consumed_at IS NULL AND locked.expires_at>clock_timestamp()
+)
+UPDATE oauth_authorization_requests AS t SET consumed_at=clock_timestamp()
+FROM eligible WHERE t.id=eligible.id RETURNING t.id, t.workspace_id, t.client_id, t.issuer, t.client_version, t.handle_hash, t.browser_hash, t.csrf_hash, t.session_id, t.user_id, t.redirect_uri, t.scopes, t.state, t.nonce, t.pkce_challenge, t.prompt, t.max_age_seconds, t.expires_at, t.consumed_at, t.created_at
 `
 
 type ConsumeOAuthRequestParams struct {
@@ -602,7 +616,7 @@ func (q *Queries) DeleteOAuthClientRedirects(ctx context.Context, arg DeleteOAut
 }
 
 const disableOAuthClient = `-- name: DisableOAuthClient :one
-UPDATE oauth_clients SET disabled_at=now(),version=version+1 WHERE workspace_id=$1 AND id=$2 RETURNING id, workspace_id, client_id, name, client_type, refresh_enabled, allowed_origins, auth_method, scopes, version, disabled_at, created_by, created_at
+UPDATE oauth_clients SET disabled_at=clock_timestamp(),version=version+1 WHERE workspace_id=$1 AND id=$2 RETURNING id, workspace_id, client_id, name, client_type, refresh_enabled, allowed_origins, auth_method, scopes, version, disabled_at, created_by, created_at
 `
 
 type DisableOAuthClientParams struct {
@@ -1157,7 +1171,7 @@ func (q *Queries) ListOAuthClientRedirects(ctx context.Context, arg ListOAuthCli
 }
 
 const listOAuthClientSecrets = `-- name: ListOAuthClientSecrets :many
-SELECT id, workspace_id, client_id, secret_hash, created_at, valid_until, revoked_at FROM oauth_client_secrets WHERE workspace_id=$1 AND client_id=$2 AND revoked_at IS NULL AND valid_until>now() ORDER BY created_at DESC
+SELECT id, workspace_id, client_id, secret_hash, created_at, valid_until, revoked_at FROM oauth_client_secrets WHERE workspace_id=$1 AND client_id=$2 AND revoked_at IS NULL AND valid_until>clock_timestamp() ORDER BY created_at DESC
 `
 
 type ListOAuthClientSecretsParams struct {
@@ -1283,7 +1297,7 @@ func (q *Queries) ListUserOAuthGrants(ctx context.Context, arg ListUserOAuthGran
 }
 
 const revokeOAuthClientSecrets = `-- name: RevokeOAuthClientSecrets :execrows
-UPDATE oauth_client_secrets SET revoked_at=now() WHERE workspace_id=$1 AND client_id=$2 AND revoked_at IS NULL
+UPDATE oauth_client_secrets SET revoked_at=clock_timestamp() WHERE workspace_id=$1 AND client_id=$2 AND revoked_at IS NULL
 `
 
 type RevokeOAuthClientSecretsParams struct {
@@ -1300,7 +1314,7 @@ func (q *Queries) RevokeOAuthClientSecrets(ctx context.Context, arg RevokeOAuthC
 }
 
 const revokeOAuthConsent = `-- name: RevokeOAuthConsent :one
-UPDATE oauth_consents SET revoked_at=now(),version=version+1 WHERE workspace_id=$1 AND user_id=$2 AND client_id=$3 RETURNING id, workspace_id, user_id, client_id, scopes, version, refresh_allowed, granted_at, revoked_at
+UPDATE oauth_consents SET revoked_at=clock_timestamp(),version=version+1 WHERE workspace_id=$1 AND user_id=$2 AND client_id=$3 RETURNING id, workspace_id, user_id, client_id, scopes, version, refresh_allowed, granted_at, revoked_at
 `
 
 type RevokeOAuthConsentParams struct {
@@ -1327,7 +1341,7 @@ func (q *Queries) RevokeOAuthConsent(ctx context.Context, arg RevokeOAuthConsent
 }
 
 const revokeOAuthGrant = `-- name: RevokeOAuthGrant :execrows
-UPDATE oauth_grants SET revoked_at=now(),revoked_reason=$4 WHERE workspace_id=$1 AND id=$2 AND user_id=$3 AND revoked_at IS NULL
+UPDATE oauth_grants SET revoked_at=clock_timestamp(),revoked_reason=$4 WHERE workspace_id=$1 AND id=$2 AND user_id=$3 AND revoked_at IS NULL
 `
 
 type RevokeOAuthGrantParams struct {
@@ -1351,7 +1365,7 @@ func (q *Queries) RevokeOAuthGrant(ctx context.Context, arg RevokeOAuthGrantPara
 }
 
 const revokeOAuthGrantForReplay = `-- name: RevokeOAuthGrantForReplay :one
-UPDATE oauth_grants g SET revoked_at=now(),revoked_reason='refresh_reuse'
+UPDATE oauth_grants g SET revoked_at=clock_timestamp(),revoked_reason='refresh_reuse'
 WHERE g.workspace_id=$1 AND g.client_id=$2 AND g.revoked_at IS NULL
 AND EXISTS(SELECT FROM oauth_tokens t WHERE t.grant_id=g.id AND t.client_id=$2 AND t.token_hash=$3 AND t.token_type='refresh' AND t.used_at IS NOT NULL)
 RETURNING g.id, g.workspace_id, g.user_id, g.client_id, g.consent_id, g.session_id, g.scopes, g.issuer, g.client_version, g.consent_version, g.policy_version, g.access_version, g.entitlement_version, g.session_version, g.authenticated_at, g.assurance_expires_at, g.created_at, g.expires_at, g.idle_expires_at, g.revoked_at, g.revoked_reason
@@ -1393,7 +1407,7 @@ func (q *Queries) RevokeOAuthGrantForReplay(ctx context.Context, arg RevokeOAuth
 }
 
 const revokeWorkspaceOAuthGrants = `-- name: RevokeWorkspaceOAuthGrants :execrows
-UPDATE oauth_grants SET revoked_at=now(),revoked_reason=$1
+UPDATE oauth_grants SET revoked_at=clock_timestamp(),revoked_reason=$1
 WHERE workspace_id=$2 AND revoked_at IS NULL
 AND ($3::uuid IS NULL OR user_id=$3)
 AND ($4::uuid IS NULL OR session_id=$4)
@@ -1423,8 +1437,13 @@ func (q *Queries) RevokeWorkspaceOAuthGrants(ctx context.Context, arg RevokeWork
 }
 
 const touchOAuthGrant = `-- name: TouchOAuthGrant :one
-UPDATE oauth_grants SET idle_expires_at=LEAST(expires_at,now()+interval '30 minutes')
-WHERE workspace_id=$1 AND id=$2 AND client_id=$3 AND revoked_at IS NULL AND expires_at>now() AND idle_expires_at>now() RETURNING id, workspace_id, user_id, client_id, consent_id, session_id, scopes, issuer, client_version, consent_version, policy_version, access_version, entitlement_version, session_version, authenticated_at, assurance_expires_at, created_at, expires_at, idle_expires_at, revoked_at, revoked_reason
+WITH locked AS MATERIALIZED (
+    SELECT src.id, src.workspace_id, src.user_id, src.client_id, src.consent_id, src.session_id, src.scopes, src.issuer, src.client_version, src.consent_version, src.policy_version, src.access_version, src.entitlement_version, src.session_version, src.authenticated_at, src.assurance_expires_at, src.created_at, src.expires_at, src.idle_expires_at, src.revoked_at, src.revoked_reason FROM oauth_grants AS src WHERE src.workspace_id=$1 AND src.id=$2 AND src.client_id=$3 FOR UPDATE
+), eligible AS MATERIALIZED (
+    SELECT locked.id FROM locked WHERE locked.revoked_at IS NULL AND locked.expires_at>clock_timestamp() AND locked.idle_expires_at>clock_timestamp()
+)
+UPDATE oauth_grants AS t SET idle_expires_at=LEAST(t.expires_at,clock_timestamp()+interval '30 minutes')
+FROM eligible WHERE t.id=eligible.id RETURNING t.id, t.workspace_id, t.user_id, t.client_id, t.consent_id, t.session_id, t.scopes, t.issuer, t.client_version, t.consent_version, t.policy_version, t.access_version, t.entitlement_version, t.session_version, t.authenticated_at, t.assurance_expires_at, t.created_at, t.expires_at, t.idle_expires_at, t.revoked_at, t.revoked_reason
 `
 
 type TouchOAuthGrantParams struct {
@@ -1510,7 +1529,7 @@ func (q *Queries) UpdateOAuthClient(ctx context.Context, arg UpdateOAuthClientPa
 const upsertOAuthConsent = `-- name: UpsertOAuthConsent :one
 INSERT INTO oauth_consents(workspace_id,user_id,client_id,scopes,refresh_allowed) VALUES($1,$2,$3,$4,$5)
 ON CONFLICT(workspace_id,user_id,client_id) DO UPDATE SET scopes=EXCLUDED.scopes,refresh_allowed=EXCLUDED.refresh_allowed,
-version=oauth_consents.version+1,granted_at=now(),revoked_at=NULL RETURNING id, workspace_id, user_id, client_id, scopes, version, refresh_allowed, granted_at, revoked_at
+version=oauth_consents.version+1,granted_at=clock_timestamp(),revoked_at=NULL RETURNING id, workspace_id, user_id, client_id, scopes, version, refresh_allowed, granted_at, revoked_at
 `
 
 type UpsertOAuthConsentParams struct {
