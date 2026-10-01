@@ -563,3 +563,17 @@ HTTPS endpoints проходят общий защищённый identitynet tra
 через доверенные Go dependencies. После подключений пакетов лицензии регенерируются
 для фактического server binary. Результаты TLS fixtures и реального Microsoft стенда
 фиксируются отдельно; отсутствие последнего не превращается в passed.
+
+### Продолжение consent после повторной аутентификации
+
+Ошибка bind, требующая свежей local proof или workspace SSO, не является тупиком UI:
+экран согласия предоставляет повторную аутентификацию и явный повтор bind. До успешного
+bind клиент не показывает непроверенные consent metadata и не выводит authority из URL.
+При web SSO navigation разрешён одноразовый return context в sessionStorage только для
+exact same-origin `/oauth/consent?request=<validated opaque handle>`, связанный с исходным
+session id, flow и deadline. Произвольный return URL запрещён. Успешный non-login step-up
+в той же сессии возвращает этот относительный маршрут и повторяет bind с исходной
+HttpOnly browser cookie; consent/issuance остаются серверными решениями. Cancel, failure,
+смена account/server и истечение flow очищают context. Истёкший authorization request
+требует нового запуска клиентом, а не автоматического создания grant. Проверяется
+navigation round trip, смена account и отказ от произвольного return URL.
