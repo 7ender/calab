@@ -34,16 +34,16 @@ filenames are exposed. The platform owner must identify those files and the
 `calab-api`, ingress, and two CronJob manifest paths before a release can persist
 changes there. Do not invent a Calab-repo manifest or claim an Argo/Flux owner.
 
-The lead authorized read-only Git inspection of platform candidate
-`/Users/macbook/Documents/Projects/cloud-infra`, origin
-`git@github.com:script-heads/cloud-infra.git`. Its local main is
-`3d7798578b794a5b6aeb8eace1f1daa0b78bdf70` (2026-08-01), with no Calab/env-sync
-paths. `git ls-remote` found current remote main
-`0a7510fa8056a9a678483c1e33a75f511cf53ed7`; current tree contents remain unknown
-(existing `gh` authentication unavailable, exit 4; unauthenticated HTTPS tree
-GET failed at transport, curl exit 56). No fetch, checkout changes or unrelated
-file/secret reads were made. The stale local tree cannot establish that today's
-platform repository lacks Calab manifests.
+The lead inspected platform candidate `/Users/macbook/Documents/Projects/cloud-infra`,
+origin `git@github.com:script-heads/cloud-infra.git`, then fetched exact current remote
+main `0a7510fa8056a9a678483c1e33a75f511cf53ed7` into separate bare
+`/tmp/calab-platform-tree-pv6p8ifr` on 2026-10-01. The lead's `git ls-tree` evidence
+contains zero Calab/env-sync filename paths at that revision. The original local
+checkout (`3d7798578b794a5b6aeb8eace1f1daa0b78bdf70`, 2026-08-01) was untouched;
+no unrelated file contents or secrets were inspected. This candidate has not
+identified the actual platform manifest source: its checkout, revision and exact
+paths are still required from the platform owner. This update records the lead's
+evidence; the release-preparation worker did not repeat the fetch.
 
 ## Persistent key/config delivery
 

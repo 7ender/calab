@@ -1,6 +1,12 @@
 # 06 — Деплой
 
-## Сейчас: docker compose на одном хосте
+Production API/web сейчас выпускаются через [`images.yml`](../.github/workflows/images.yml)
+и GitHub Deployment `calab-prod`; конфигурацией управляет платформа кластера.
+Для 2.0 сначала закрыть [identity gates](#identity-20-настройка-и-приёмка).
+Compose/SSH ниже — отдельная self-hosted установка и исторический запасной путь,
+не второй параллельный деплой production.
+
+## Docker compose на одном хосте
 
 Тестовый стенд: `root@141.105.69.177` (Debian 13, 32 vCPU, 123 GB RAM, 1.2 TB свободно, Docker 29, Compose v5).
 
@@ -206,9 +212,48 @@ ACL SETUSER calab on >ПАРОЛЬ resetkeys resetchannels ~calab:* &calab:* db=
 
 **Секреты в GitHub:** `infra/ci/set-secrets.sh [--dry-run] [.env]` — читает `.env` без `source` (никакого выполнения), берёт только ключи из таблицы (прочее, напр. `CFTOKEN`, игнорирует), ставит через `gh secret set --repo itrcz/calab`; авторизация — `GITHUB_TOKEN` из `.env`/окружения (как `GH_TOKEN`) или `gh auth login`. Для base64-сертификатов сообщает `valid`/`INVALID (…)` (та же проверка, что в workflow), значения не печатает; `--dry-run` — только имена, длины и валидность. Секреты передаются в `gh secret set` через stdin (флаг `--body -` сохранил бы буквальный «-» — так было до исправления, из-за чего rc.4/rc.5 собрались без подписи). На 2026-09-26 поставлены S3 (5) и Apple (6, включая `APPLE_TEAM_ID`); Windows — без сертификата, собирается неподписанным.
 
-### Релиз: runbook (v0.1.0)
+### Релиз 2.0.0: текущий порядок
 
-Одна команда на один коммит (`infra/docker/release.sh`); запуск — по решению лида, с указанием коммита. Серверная часть (API, веб, лендинг) выкатывается с Mac на стенд; установщики десктопа собирает и публикует **только** GitHub Actions (`release.yml`, запускается push-ем тега) → S3 → `https://releases.calab.ru/`. С Mac ничего десктопного не публикуется.
+Подготовка документации выполнена на implementation base
+`1b590b855051c74924dceecdf959235d3b1103c8`. Это не финальный release SHA:
+после merge документации и browser evidence лид назначает точный commit для QA
+и обоих security/protocol review. До их завершения выпуск заблокирован.
+
+1. На конечном SHA: scope/ADR сверены, нет blocker/major, генерация без drift,
+   обязательные CI checks и целевые PG18/17 проверки зелёные, один полный server
+   integration прогон и два независимых review подтверждены на этом SHA.
+   Исторические результаты и skipped тесты не заменяют эти evidence.
+2. Оператор закрывает [preflight](plans/identity-v2-operator-preflight.md): источник
+   platform manifests, полный keyring/config, DB+key backup, cluster Caddy port/pins,
+   все front-proxy/logging gates и identity-aware fallback. Это отдельная доставка
+   конфигурации, не действие `images.yml`. Изменения production — только в
+   разрешённое лидом окно. Начальный режим workspace — off.
+3. Назначенный релизный агент проверяет диск, CHANGELOG **этого commit** и usage
+   evidence; затем только по поручению лида публикует тег `v2.0.0` с этим SHA.
+   Версии инжектируются из тега/`VERSION` при сборке, package versions в исходниках
+   для этой подготовки не поднимаются. Дождаться зелёного CI тега до image rollout.
+4. `release.yml` собирает установщики/черновик Release и update feeds;
+   `images.yml` создаёт `calab-prod` с API/web digests после зелёного tag CI.
+   Проверить фактические rollout/readiness обоих компонентов и `/api/version`,
+   а не только факт создания Deployment. Не запускать поверх этого SSH `deploy`.
+5. Проверить smoke API/web, identity routing, synthetic log sentinels, pilot
+   SSO/consent/revoke/recovery, установщики и checksums, версии трёх `latest*.yml`,
+   опубликованный GitHub Release с CHANGELOG того же SHA. Optional pilot разрешён
+   после этих gates; enforced — после проверки recovery и живого целевого IdP.
+6. Завершить выпуск анонсом через существующего бота по точной версии:
+   `tools/release-announce.py 2.0.0` из релизного commit либо отдельным
+   `STEPS=announce VERSION=2.0.0 infra/docker/release.sh <release-commit>`.
+   `nonce=release-2.0.0` делает повтор идемпотентным; записать posted/updated/unchanged,
+   message id и по возможности прочитать сообщение обратно. Skipped, отсутствие
+   токена/прав или непроверенная доставка — незавершённый анонс, не успех релиза.
+   Обычный выпуск не использует `--all`/`--purge`.
+
+Эта подготовка не создаёт тег, Release, Deployment или сообщение бота. Команды
+ниже описывают действия будущего авторизованного релизного агента.
+
+### Исторический compose/SSH runbook (v0.1.0, отдельная установка)
+
+Одна команда на один коммит (`infra/docker/release.sh`); запуск — по решению лида, с указанием коммита и **отдельного compose-окружения**. Этот путь выкатывает API/веб/лендинг с Mac на стенд и не управляет текущим production-кластером. Полный запуск нельзя использовать для текущего 2.0 production: он создаёт неконтролируемый второй деплой. Установщики публикует GitHub Actions → S3 → `https://releases.calab.ru/`; для кластерного релиза из `release.sh` допустим отдельно порученный шаг публикации/анонса, без SSH deploy.
 
 ```sh
 VERSION=0.1.0 infra/docker/release.sh <commit>          # preflight → web → deploy → (verify ∥ desktop) → announce
@@ -267,12 +312,198 @@ Deployment `calab-prod` с digest обоих образов в payload: API и �
 - В кластер workflow не ходит. Выкатку делает кластер сам: забирает заявку, проверяет её и меняет образ по
   digest. Не раскаталось — возвращает прежний образ. Принимаются только заявки, созданные этим workflow
   для коммитов из `main`.
-- Статус и история — вкладка Deployments репо. Откат — перезапуск старого успешного прогона `images`.
+- История заявок — вкладка Deployments репо. По [операторскому preflight](plans/identity-v2-operator-preflight.md) текущий consumer не публикует GitHub deployment statuses, выкатывает компоненты последовательно и при ошибке может оставить смешанные версии. Требуются Kubernetes readiness и фактические digests API/web плюс version smoke; успешная заявка/CronJob сами по себе не подтверждают выкатку.
+- Откат — только на согласованный identity-aware digest с совместимой БД, ключами и platform config. После активации identity нельзя перезапускать старый успешный `images`, если он возвращает pre-identity бинарник. Down guard миграции не защищает от image-only rollback.
 - `YC_REGISTRY` и `YC_CI_SA_ID` — секреты репо: публичные логи их маскируют. Это не ключи, но внутренние id в
   открытых логах не нужны.
 - Конфиг Caddy в проде задаёт кластер, а не образ: правка `infra/docker/caddy/` в прод сама не попадает,
   её переносит владелец кластера (выкатка сообщает ему, что файлы изменились).
 - Прогоны идут строго по одному (`concurrency`), поэтому заявки создаются в порядке коммитов.
+
+### Identity 2.0: настройка и приёмка
+
+Контракт: [ADR-0054](adr/0054-workspace-identity.md), [Identity v1](plans/release-2.0-identity.md).
+Фактическая инфраструктура и оставшиеся operator inputs:
+[production preflight](plans/identity-v2-operator-preflight.md). Итоговые QA/reviews
+ещё не выполнены; подготовленный код не означает разрешение включать identity.
+
+#### Grants, тарифы и ключи
+
+Доступ требует **положительного grant именно текущего workspace** для каждого
+`corporate_sso`, `directory_sync`, `oauth_provider`. В cloud дополнительно нужен
+действующий Business (`PLAN_ENTERPRISE`, SQL `enterprise`); в on-prem —
+`IDENTITY_EDITION=enterprise` и точный UUID в `IDENTITY_ENTERPRISE_WORKSPACE_IDS`.
+По умолчанию edition cloud, список пуст, features off. Free/Team, истёкший план
+и custom без Business/Enterprise основания не дают доступ. Управление тарифом
+не заменяет настройку зависимостей. OAuth provider на тех же тарифах — допущение
+ADR-0054, не дополнительное подтверждение владельца. Downgrade блокирует выдачи,
+не делает enforced необязательным; recovery и отзыв своего grant доступны.
+
+| Env | Требование оператора |
+| --- | --- |
+| `IDENTITY_PUBLIC_ORIGIN` | Точный HTTPS origin без path/query/fragment или завершающего `/`. Для текущей платформы лид утвердил `https://app.calab.ru`; Host/forwarded headers и алиасы issuer не меняют. |
+| `IDENTITY_ENCRYPTION_KEYS` | JSON object `kid` → standard base64 ровно 32 независимых AES-256 bytes; шифрует upstream/LDAPS secrets и verifier с workspace/AAD. |
+| `IDENTITY_ENCRYPTION_ACTIVE_KID` | Идентификатор ключа для новых ciphertext; остальные нужные decrypt keys сохраняются. |
+| `OAUTH_SIGNING_KEYS` | JSON object `kid` → RSA PEM (2048–8192 bits, JSON-escaped newlines); private для подписи, public для prepublish/overlap. |
+| `OAUTH_SIGNING_ACTIVE_KID` | Выбирает private RSA key; JWKS содержит только публичные части. |
+| `IDENTITY_ENDPOINTS` | При необходимости JSON array `{url, approved_cidrs, private_cidrs, ca_pem}`: исключение для точного полного HTTPS URL; обычные публичные IdP проходят защищённый transport без предварительного каталога всех URL. |
+| `IDENTITY_DIRECTORY_HOSTS` | Для LDAPS обязательный JSON array `{host, networks, ca_pem}`: exact lowercase hostname и непустой CIDR allowlist, доверенная CA при необходимости. |
+
+Ключи предоставляет оператор, отдельно от `JWT_SECRET`; здесь нет secret values.
+Никаких insecure TLS, proxy-env обходов, loopback/metadata целей в production или
+редиректов upstream transport. Семь dependency env полностью отсутствуют → новый
+бинарник в существующей установке запускается с identity routes, возвращающими 503; частичная/невалидная
+конфигурация запрещает startup. Network arrays можно оставить пустыми, когда
+частные IdP/каталог не нужны, но origin и оба keyring с active kid нужны вместе.
+
+В текущем кластере keyrings/active kids доставляются **строками** из полного
+Vault KV v2 map `kv/app/calab` через `timenote/calab-env-sync` в `calab-env`.
+Не добавлять Secret-only keys: reconciler удаляет отсутствующие в Vault значения.
+JSON нельзя хранить вложенным Vault object: synchronizer превратит его в Python
+dict string, которую Go не прочитает. Origin/edition/network config — из platform
+источника `calab-api`; избегать одинаковых env names в ConfigMap/Secret.
+ConfigMap-only правка не меняет env-sync checksum и требует отдельного rollout.
+Stage полного config до нового identity-aware binary: эти две доставки не атомарны.
+CronJob success не равен доставке: проверить API readiness обеих реплик, реальный
+`env-sync/env-checksum`, approved digests и public kids, не печатая private keys.
+Источник актуальных platform manifests всё ещё не установлен: проверенный remote
+main кандидата `script-heads/cloud-infra` не содержит Calab/env-sync filename paths.
+
+#### Upgrade, routing и logging gates
+
+Перед rollout — protected DB backup вместе с restorable keyrings/Vault version и
+проверка восстановления в отдельной БД. Миграция `00055` выполняется при старте
+API под advisory lock; требуются evidence PG18 и PG17 на конечном SHA. Старые
+сессии становятся `local_account` без свежего `local_authenticated_at` и assurance:
+для linking/admin нужен повторный независимый локальный вход/reauth. Старый клиент
+не поддерживает scope/bootstrap/consent UX; обновить web/desktop до identity-пилота.
+
+Платформа отдельно переносит provider `/oidc/workspaces/*` и
+`/.well-known/oauth-authorization-server/oidc/workspaces/*` **до SPA fallback**, а
+также no-store/no-referrer/frame-ancestors и безопасное логирование из infra change.
+Cluster Caddy — stock 2.11.4, HTTP `:8080`, upstream `api:3000`; host-network
+`caddy-l4` config не копируется туда целиком. Проверить rendering и обновить
+`UPSTREAM_PINS` `timenote/calab-deploy` по repo Caddyfile/entrypoint на release SHA.
+Pin check происходит после rollout и не откатывает уже запущенные образы.
+
+В preflight front ingress Nginx логирует request/Referer, в том числе в error logs;
+выключение access logs и правки Caddy этого не закрывают. До активации платформа
+должна принять Calab-scoped error isolation и доказать защиту ранних parser errors,
+upstream failures, LB/collectors на всех app aliases (варианты и ограничения — в
+preflight). Тестировать только synthetic code/state/ticket/request/consent/path/
+Referer sentinels. Gate пока открыт; текущему shared controller глобальные logging
+settings здесь не меняются. После rollout проверить реальные digests обеих реплик
+API/web: mixed versions и timeout rollback не являются успешной приёмкой.
+
+#### SSO, каталог и bootstrap
+
+1. Выдать нужные grants, оставить policy off; owner делает local reauth (≤5 минут).
+   Зарегистрировать у IdP exact callback
+   `https://app.calab.ru/api/auth/sso/callback/<connection-id>` для текущей установки;
+   для self-hosted — её доверенный origin. Connection задаёт issuer/client id,
+   provider и secret для confidential подключения, затем явные link → test → activate текущих
+   id/version. Test не выдаёт сессию, смена draft не активирует её автоматически.
+2. Провести optional pilot web/native login и local step-up: `(connection,issuer,sub)`
+   связан явно, равный email ничего не объединяет. `workspace_sso(A)` не открывает
+   B, DM, заметки, global credentials/admin; local session сохраняется при step-up.
+   Generic fixture evidence с Keycloak 26.4.7 — [отдельный RP run](plans/identity-v2-keycloak-evidence.md)
+   на более раннем commit. Встроенные scopes `basic` + `profile` + `email` дают
+   требуемый `auth_time`; `iat` не заменяет его. Live Entra/AD FS/Windows AD acceptance
+   отсутствует. Entra требует exact tenant-specific issuer/tid, AD FS 2019+ — S256;
+   целевой живой Microsoft стенд проверяется отдельно, а не объявляется passed.
+3. Для LDAPS — read-only bind, `ldaps://host:636`, проверяемый сертификат/hostname,
+   явная связь immutable AD `objectGUID` с существующим member. В v1 группы только
+   direct `memberOf`; JIT, nested groups, group-to-role, SCIM/cloud connector отсутствуют.
+   Disabled/missing в полном снимке или потеря allowed group закрывают managed доступ.
+   Sync 5 минут, stale после 1 часа; неполный scan/ошибка сети не означает массовое
+   удаление. Disable/unlink каталога не снимает suspensions автоматически: нужен
+   явный audited detach после проверки, затем новый вход; old grants не оживают.
+4. Проверить recovery kit (10 codes, показаны один раз, срок 365 дней), сохранить
+   у независимого владельца; перед enforced нужны его свежие local и SSO proofs
+   (≤5 минут), проверенная активная connection и действующий kit. Проверить обычные
+   REST, READY/RESUME, файлы и уже открытый RTC при отзыве/потере pubsub, а не только
+   новый login endpoint. Assurance максимум 1 час; refresh её не продлевает.
+
+Enforced invite preview возвращает `SSO_REQUIRED` без данных workspace. Локальный
+verified human может завершить приглашение/onboarding и подготовить membership;
+`JoinWorkspaceResponse.identityAccess` содержит workspace id, enforced/reason,
+а защищённые workspace/member отсутствуют. Дальше нужны local reauth и явный link,
+затем SSO. Bootstrap не даёт assurance, guest/open join при enforced закрыты.
+
+`SUPERADMIN_EMAILS` — отзывное legacy-основание: только independently local verified
+nonbot/nonguest account со свежим local proof. Env/email-change revocation сохраняется;
+UUID grant отдельный, автоматического постоянного backfill из email нет. SSO/recovery
+и IdP claims не получают product admin даже в `/me`, gateway и permission resolution.
+
+#### OAuth clients и точный DTO contract
+
+Issuer: `${IDENTITY_PUBLIC_ORIGIN}/oidc/workspaces/{workspace_uuid}`. Client принадлежит
+одному workspace; CRUD — builtin owner/admin с recent local reauth и требуемой
+assurance, одного custom MANAGE_INTEGRATIONS недостаточно. Types из generated
+`OAuthClientType`: confidential web (`client_secret_basic`), public native/SPA (`none`).
+Exact registered redirects, S256, обязательные state/nonce, explicit user consent;
+scopes только `openid profile email`. Email claim только независимо локально verified;
+`sub` opaque/stable внутри workspace, разные workspace имеют разные subjects.
+Нет API scopes, client_credentials, offline_access, SAML, dynamic registration/SLO.
+
+First-party management/consent JSON — generated proto DTO, lowerCamelCase поля
+и generated enum names, не самодельные interfaces. Источники:
+[`auth.proto`](../proto/calaba/v1/auth.proto), [`identity.proto`](../proto/calaba/v1/identity.proto),
+[`oauth_client.proto`](../proto/calaba/v1/oauth_client.proto). В частности, connection
+использует `provider`, `clientSecret`, `version` (не design-proposal `preset/secret`);
+OAuth client update использует `version` (не `revision`); optional secret отсутствует
+для сохранения прежнего при той же issuer/client pair, пустой недопустим.
+
+- Web finish/native exchange/recovery: `SSOCompleteResponse {tokens, assurance, tested}`.
+  Standalone login даёт scoped tokens; link/step-up — assurance исходной local session;
+  test — только tested. Web refresh secret в HttpOnly cookie, не JSON; native — в main broker.
+- Native begin: `SSOBeginResponse {flowId, browserStartUrl, authorizationUrl, expiresAt}`;
+  browserStartUrl несёт одноразовый bootstrap handle для browser cookie. Handoff
+  ticket (60 секунд) требует verifier main-процесса, не выдаёт токены через deep link.
+- Consent URL `/oauth/consent?request=<opaque handle>` связывает HttpOnly browser cookie
+  и серверный snapshot. `POST /api/oauth/requests/{id}/bind`: bearer + exact Origin +
+  `BindOAuthRequest {csrfToken: <initial handle>}`; только после успешного bind UI
+  показывает `OAuthConsentSnapshot`. Его **новый** csrfToken идёт в
+  `DecideOAuthRequest {allow, allowRefresh, csrfToken}`; ответ `OAuthDecisionResponse {redirectUrl}`.
+  Scopes/client/redirect берутся с сервера; смена account требует нового request.
+  Reauth/step-up возвращает только exact same-origin consent route в той же session;
+  arbitrary return URL запрещён, истёкший request (10 минут) требует нового authorize.
+- Recovery kit: `IdentityRecoveryKitResponse {codesOnce, expiresAt}`; не сохранять
+  plaintext в клиентских caches/logs. Provider token/UserInfo/revoke используют
+  стандартный OAuth JSON/form, не protojson и не first-party/bot/session tokens.
+
+Provider code 60 секунд, access/ID ≤5 минут с учётом исходных deadlines; refresh
+только с включённым client и явным consent, максимум 8 часов absolute/30 минут idle.
+Replay от правильного client отзывает family, retry grace нет: после потерянного
+ответа нужен новый вход. User revoke не зависит от платного entitlement. Уже выданный
+ID token и session стороннего RP нельзя мгновенно отозвать: RP отвечает за её срок.
+
+#### Ротация, recovery и restore
+
+Encryption: добавить новый kid вместе со старыми, доставить всем репликам, переключить
+active kid; старые удалять лишь после re-encryption всех зависимых ciphertext.
+Signing: prepublish next public key в JWKS всех реплик, дождаться минимум 60 секунд
+cache, затем доставить private key/active kid всем репликам. Old public key сохранять
+не меньше последнего old ID token TTL (≤5 минут) + 60 секунд skew + 60 секунд cache.
+Keyring snapshots immutable: изменение env требует контролируемого rollout.
+
+Upstream secret rotation той же issuer/client pair сохраняет tuple, но version++,
+draft и отзыв assurances/scoped sessions/provider grants/pending flows происходят
+сразу: возможен простой. Подготовить kit, свежие proofs и окно; после сохранения
+owner с local reauth проходит новый test и явную activate, не полагается на старую
+assurance. Новый issuer/client требует нового draft/явного link и нового secret;
+email и secret старой connection не наследуются. OAuth client secret — показ один
+раз, overlap 10 минут (или revokeOld для немедленного отзыва); security config
+changes инвалидируют grants/requests/codes, name-only rename этого не требует.
+
+IdP outage/downgrade не открывают enforced данные. Recovery: независимый local login
+владельца + одноразовый code → 10 минут только policy repair, без чатов/RTC/OAuth.
+Переход в optional/off — явный audited owner action; при потере local credential
+**и** kit — только отдельная audited operator/support процедура, не скрытый bypass.
+Restore выполнять с DB и нужными decrypt/public/private keyring версиями; проверить
+в изоляции ciphertext, public kids/JWKS, отзыв и восстановление до открытия трафика.
+Down guard не делает pre-identity image безопасным; fallback обязан проверять
+authority/policy. Не отключать enforcement автоматически ради rollback.
 
 ### Почта (ADR-0023)
 - `.env` стенда: `SMTP_HOST=mail.unne.ai`, `SMTP_PORT=465`, `SMTP_TLS=tls`, `SMTP_USER` = `SMTP_FROM`-адрес, `SMTP_PASSWORD`, `SMTP_FROM="Calab <noreply@calab.ru>"`. Проверка: регистрация → письмо с кодом; в логах API `mail sent` / `mail: giving up`.
