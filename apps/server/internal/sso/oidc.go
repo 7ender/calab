@@ -1,0 +1,194 @@
+// Package sso implements inbound corporate authentication within a workspace.
+package sso
+
+import (
+	"context"
+	"encoding/json"
+	"errors"
+	"net/http"
+	"net/url"
+	"slices"
+	"strings"
+	"time"
+
+	"github.com/calaba/calaba/server/internal/db/sqlc"
+	"github.com/calaba/calaba/server/internal/identitycrypto"
+	"github.com/calaba/calaba/server/internal/identitynet"
+	"github.com/coreos/go-oidc/v3/oidc"
+	"github.com/google/uuid"
+	"golang.org/x/oauth2"
+)
+
+// ErrInvalidProof deliberately hides upstream tokens and provider diagnostics.
+var ErrInvalidProof = errors.New("SSO proof rejected")
+
+// EndpointPolicy is trusted operator configuration, never a workspace setting.
+type EndpointPolicy func(string) (identitynet.Endpoint, error)
+
+// OIDC uses maintained protocol libraries over an exact-endpoint guarded transport.
+type OIDC struct {
+	Policy EndpointPolicy
+	Origin string
+	Now    func() time.Time
+}
+type upstream struct {
+	oauth    oauth2.Config
+	verifier *oidc.IDTokenVerifier
+	client   *http.Client
+}
+type metadata struct {
+	Issuer        string   `json:"issuer"`
+	Authorization string   `json:"authorization_endpoint"`
+	Token         string   `json:"token_endpoint"`
+	JWKS          string   `json:"jwks_uri"`
+	Methods       []string `json:"code_challenge_methods_supported"`
+	AuthMethods   []string `json:"token_endpoint_auth_methods_supported"`
+}
+
+func (o *OIDC) now() time.Time {
+	if o.Now != nil {
+		return o.Now()
+	}
+	return time.Now()
+}
+func validIssuer(c sqlc.WorkspaceIdentityConnection) bool {
+	u, err := url.Parse(c.Issuer)
+	if err != nil || u.Scheme != "https" || u.Host == "" || u.User != nil || u.RawQuery != "" || u.Fragment != "" || len(c.Issuer) > 2048 || c.ClientID == "" {
+		return false
+	}
+	switch c.Provider {
+	case "entra":
+		tenant, err := uuid.Parse(c.TenantID)
+		return err == nil && tenant != uuid.Nil && c.TenantID == tenant.String() && c.Issuer == "https://login.microsoftonline.com/"+tenant.String()+"/v2.0"
+	case "adfs", "generic":
+		return c.TenantID == ""
+	default:
+		return false
+	}
+}
+
+func (o *OIDC) load(ctx context.Context, c sqlc.WorkspaceIdentityConnection, secret string) (*upstream, error) {
+	if o == nil || o.Policy == nil || !validIssuer(c) {
+		return nil, ErrInvalidProof
+	}
+	base, e := url.Parse(o.Origin)
+	if e != nil || base.Scheme != "https" || base.Host == "" || base.Path != "" || base.User != nil || base.RawQuery != "" || base.Fragment != "" {
+		return nil, ErrInvalidProof
+	}
+	discovery := strings.TrimSuffix(c.Issuer, "/") + "/.well-known/openid-configuration"
+	ep, err := o.Policy(discovery)
+	if err != nil {
+		return nil, ErrInvalidProof
+	}
+	ep.URL = discovery
+	ep.MaxResponseBytes = 1 << 20
+	guarded, err := identitynet.NewTransport(identitynet.Config{Endpoints: []identitynet.Endpoint{ep}})
+	if err != nil {
+		return nil, ErrInvalidProof
+	}
+	client := &http.Client{Transport: guarded, Timeout: 10 * time.Second, CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }}
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, discovery, nil)
+	if err != nil {
+		return nil, ErrInvalidProof
+	}
+	resp, err := client.Do(req)
+	if err != nil {
+		return nil, ErrInvalidProof
+	}
+	var m metadata
+	err = json.NewDecoder(resp.Body).Decode(&m)
+	_ = resp.Body.Close()
+	guarded.CloseIdleConnections()
+	if err != nil || resp.StatusCode != 200 || m.Issuer != c.Issuer || m.Authorization == "" || m.Token == "" || m.JWKS == "" || (len(m.Methods) > 0 && !slices.Contains(m.Methods, "S256")) {
+		return nil, ErrInvalidProof
+	}
+	var endpoints []identitynet.Endpoint
+	for _, raw := range []string{discovery, m.Authorization, m.Token, m.JWKS} {
+		e, err := o.Policy(raw)
+		if err != nil {
+			return nil, ErrInvalidProof
+		}
+		e.URL = raw
+		e.MaxResponseBytes = 1 << 20
+		endpoints = append(endpoints, e)
+	}
+	guarded, err = identitynet.NewTransport(identitynet.Config{Endpoints: endpoints})
+	if err != nil {
+		return nil, ErrInvalidProof
+	}
+	client.Transport = guarded
+	ctx = oidc.ClientContext(ctx, client)
+	config := oidc.Config{ClientID: c.ClientID, SupportedSigningAlgs: []string{"RS256"}, Now: o.now}
+	// Keep a single immutable discovery snapshot for browser redirects, exchange and JWKS.
+	oauthEndpoint := oauth2.Endpoint{AuthURL: m.Authorization, TokenURL: m.Token}
+	// Explicit auth style prevents oauth2's credential-bearing auto-detect retry.
+	oauthEndpoint.AuthStyle = oauth2.AuthStyleInHeader
+	method := "client_secret_basic"
+	if c.Provider == "entra" || c.Provider == "adfs" || secret == "" {
+		oauthEndpoint.AuthStyle = oauth2.AuthStyleInParams
+		method = "client_secret_post"
+	}
+	if secret != "" && len(m.AuthMethods) > 0 && !slices.Contains(m.AuthMethods, method) {
+		return nil, ErrInvalidProof
+	}
+	verifier := oidc.NewVerifier(c.Issuer, oidc.NewRemoteKeySet(ctx, m.JWKS), &config)
+	return &upstream{oauth: oauth2.Config{ClientID: c.ClientID, ClientSecret: secret, Endpoint: oauthEndpoint, Scopes: []string{"openid"}, RedirectURL: o.Origin + "/api/auth/sso/callback/" + c.ID.String()}, verifier: verifier, client: client}, nil
+}
+
+// Authorization always uses code/S256, a fresh nonce and bounded authentication age.
+func (o *OIDC) Authorization(ctx context.Context, c sqlc.WorkspaceIdentityConnection, state, nonce, verifier string) (string, error) {
+	p, err := o.load(ctx, c, "")
+	if err != nil {
+		return "", err
+	}
+	challenge, err := identitycrypto.S256(verifier)
+	if err != nil {
+		return "", ErrInvalidProof
+	}
+	return p.oauth.AuthCodeURL(state, oidc.Nonce(nonce), oauth2.S256ChallengeOption(verifier), oauth2.SetAuthURLParam("code_challenge", challenge), oauth2.SetAuthURLParam("max_age", "3600"), oauth2.SetAuthURLParam("prompt", "login")), nil
+}
+
+// Proof contains only the validated immutable subject and authentication time.
+type Proof struct {
+	Issuer, Subject string
+	AuthenticatedAt time.Time
+}
+
+// Exchange validates signatures and the stricter Calaba claim profile after code exchange.
+func (o *OIDC) Exchange(ctx context.Context, c sqlc.WorkspaceIdentityConnection, secret, code, verifier string, nonceHash []byte) (Proof, error) {
+	p, err := o.load(ctx, c, secret)
+	if err != nil {
+		return Proof{}, err
+	}
+	token, err := p.oauth.Exchange(oidc.ClientContext(ctx, p.client), code, oauth2.VerifierOption(verifier))
+	if err != nil {
+		return Proof{}, ErrInvalidProof
+	}
+	raw, ok := token.Extra("id_token").(string)
+	if !ok {
+		return Proof{}, ErrInvalidProof
+	}
+	id, err := p.verifier.Verify(oidc.ClientContext(ctx, p.client), raw)
+	if err != nil {
+		return Proof{}, ErrInvalidProof
+	}
+	var claims struct {
+		AZP      string `json:"azp"`
+		Tenant   string `json:"tid"`
+		AuthTime int64  `json:"auth_time"`
+		NBF      int64  `json:"nbf"`
+	}
+	now := o.now()
+	if id.Claims(&claims) != nil || id.Issuer != c.Issuer || id.Subject == "" || len(id.Subject) > 512 || !identitycrypto.EqualHash(id.Nonce, nonceHash) || (len(id.Audience) > 1 && claims.AZP != c.ClientID) || (claims.AZP != "" && claims.AZP != c.ClientID) || id.IssuedAt.IsZero() || id.IssuedAt.After(now.Add(time.Minute)) || !id.Expiry.After(now) || id.Expiry.Before(id.IssuedAt) || claims.NBF > now.Add(time.Minute).Unix() || claims.AuthTime <= 0 || (c.Provider == "entra" && claims.Tenant != c.TenantID) {
+		return Proof{}, ErrInvalidProof
+	}
+	auth := time.Unix(claims.AuthTime, 0)
+	// Skew may validate the token, but never extends internal proof deadlines.
+	if auth.After(now.Add(time.Minute)) || !now.Before(auth.Add(time.Hour)) {
+		return Proof{}, ErrInvalidProof
+	}
+	if auth.After(now) {
+		auth = now
+	}
+	return Proof{Issuer: id.Issuer, Subject: id.Subject, AuthenticatedAt: auth}, nil
+}
