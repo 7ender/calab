@@ -3,6 +3,7 @@ package sso
 import (
 	"context"
 	"io"
+	"math"
 	"net"
 	"net/http"
 	"net/url"
@@ -47,9 +48,10 @@ func ReadRequest(r *http.Request, m proto.Message) error { return readProto(r, m
 // WriteResponse serializes a generated response without exposing private service state.
 func WriteResponse(w http.ResponseWriter, m proto.Message) { writeProto(w, m) }
 
-// Routes exports the frozen SSO wire paths without touching the application's root router.
+// Registrar records routes in the application router.
 type Registrar interface{ Handle(string, http.Handler) }
 
+// Routes exports the frozen SSO paths through the application route recorder.
 func (h *HTTP) Routes(mux Registrar) {
 	mux.Handle("GET /api/auth/sso/workspaces/{slug}", http.HandlerFunc(h.descriptor))
 	mux.Handle("POST /api/auth/sso/workspaces/{workspace_id}/begin", http.HandlerFunc(h.begin))
@@ -83,11 +85,11 @@ func writeProto(w http.ResponseWriter, m proto.Message) {
 	headers(w)
 	b, e := protojson.Marshal(m)
 	if e != nil {
-		http.Error(w, "Identity dependency unavailable", 503)
+		http.Error(w, "Identity dependency unavailable", http.StatusServiceUnavailable)
 		return
 	}
 	w.Header().Set("Content-Type", "application/json")
-	_, _ = w.Write(b)
+	_, _ = w.Write(b) //nolint:gosec // G705: protobuf JSON with application/json and nosniff, never HTML.
 }
 func readProto(r *http.Request, m proto.Message) error {
 	if r.Header.Get("Content-Type") != "application/json" {
@@ -134,7 +136,7 @@ func (h *HTTP) guard(w http.ResponseWriter, r *http.Request, optional bool, quot
 	}
 	if retry > 0 {
 		w.Header().Set("Retry-After", strconv.Itoa(max(1, int(retry.Seconds()))))
-		http.Error(w, "Identity rate limit exceeded", 429)
+		http.Error(w, "Identity rate limit exceeded", http.StatusTooManyRequests)
 		return p, false
 	}
 	if quota == "begin" {
@@ -145,7 +147,7 @@ func (h *HTTP) guard(w http.ResponseWriter, r *http.Request, optional bool, quot
 		}
 		if retry > 0 {
 			w.Header().Set("Retry-After", strconv.Itoa(max(1, int(retry.Seconds()))))
-			http.Error(w, "Identity rate limit exceeded", 429)
+			http.Error(w, "Identity rate limit exceeded", http.StatusTooManyRequests)
 			return p, false
 		}
 	}
@@ -234,7 +236,7 @@ func (h *HTTP) browserStart(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	setBrowser(w, flow, browser)
-	http.Redirect(w, r, target, 303)
+	http.Redirect(w, r, target, http.StatusSeeOther) //nolint:gosec // G710: encrypted, server-discovered operator-approved authorization URL or fixed completion target.
 }
 func (h *HTTP) callback(w http.ResponseWriter, r *http.Request) {
 	if _, ok := h.guard(w, r, true, "exchange", 30); !ok {
@@ -260,7 +262,7 @@ func (h *HTTP) callback(w http.ResponseWriter, r *http.Request) {
 	if out.Native {
 		target = "calab://sso/complete?flow=" + out.FlowID.String() + "&ticket=" + url.QueryEscape(out.Ticket)
 	}
-	http.Redirect(w, r, target, 303)
+	http.Redirect(w, r, target, http.StatusSeeOther) //nolint:gosec // G710: encrypted, server-discovered operator-approved authorization URL or fixed completion target.
 }
 func (h *HTTP) deliver(w http.ResponseWriter, r *http.Request, out Result) {
 	if h.Deps.WriteResult == nil {
@@ -376,6 +378,10 @@ func (h *HTTP) activate(w http.ResponseWriter, r *http.Request) {
 	req := &pb.ActivateIdentityConnectionRequest{}
 	if e = readProto(r, req); e != nil {
 		h.fail(w, r, e)
+		return
+	}
+	if req.Version > math.MaxInt64 {
+		h.fail(w, r, ErrInvalid)
 		return
 	}
 	out, e := h.Service.ActivateConnection(r.Context(), p, ws, id, int64(req.Version))

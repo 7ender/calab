@@ -159,7 +159,10 @@ message LocalReauthResponse {
   google.protobuf.Timestamp authenticated_at = 1;
   google.protobuf.Timestamp valid_until = 2;
 }
-message IdentityRecoveryKitResponse { repeated string codes_once = 1; }
+message IdentityRecoveryKitResponse {
+  repeated string codes_once = 1;
+  google.protobuf.Timestamp expires_at = 2;
+}
 message IdentityRecoverRequest { string recovery_code = 1; }
 message IdentityDirectory {
   string id = 1;

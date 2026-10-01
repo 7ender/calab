@@ -93,7 +93,7 @@ func (l *LDAP) Validate(c sqlc.WorkspaceDirectory) error {
 }
 func allowed(p HostPolicy, a netip.Addr) bool {
 	a = a.Unmap()
-	if !a.IsValid() || a.Zone() != "" || (!a.IsPrivate() && !unfurl.PublicAddr(a) && !(a.IsLoopback() && p.TestLoopback)) || a == netip.MustParseAddr("168.63.129.16") || a == netip.MustParseAddr("fd00:ec2::254") || a == netip.MustParseAddr("fd20:ce::254") {
+	if !a.IsValid() || a.Zone() != "" || (!a.IsPrivate() && !unfurl.PublicAddr(a) && (!a.IsLoopback() || !p.TestLoopback)) || a == netip.MustParseAddr("168.63.129.16") || a == netip.MustParseAddr("fd00:ec2::254") || a == netip.MustParseAddr("fd20:ce::254") {
 		return false
 	}
 	for _, n := range p.Networks {

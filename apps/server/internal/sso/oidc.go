@@ -124,7 +124,7 @@ func (o *OIDC) load(ctx context.Context, c sqlc.WorkspaceIdentityConnection, sec
 	// Explicit auth style prevents oauth2's credential-bearing auto-detect retry.
 	oauthEndpoint.AuthStyle = oauth2.AuthStyleInHeader
 	method := "client_secret_basic"
-	if c.Provider == "entra" || c.Provider == "adfs" || secret == "" {
+	if c.Provider == "entra" || c.Provider == "adfs" || secret == "" || (len(m.AuthMethods) > 0 && !slices.Contains(m.AuthMethods, "client_secret_basic") && slices.Contains(m.AuthMethods, "client_secret_post")) {
 		oauthEndpoint.AuthStyle = oauth2.AuthStyleInParams
 		method = "client_secret_post"
 	}

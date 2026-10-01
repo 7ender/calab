@@ -104,7 +104,7 @@ func (h *HTTP) sync(w http.ResponseWriter, r *http.Request) {
 	}
 	if retry > 0 {
 		w.Header().Set("Retry-After", strconv.Itoa(max(1, int(retry.Seconds()))))
-		http.Error(w, "Directory rate limit exceeded", 429)
+		http.Error(w, "Directory rate limit exceeded", http.StatusTooManyRequests)
 		return
 	}
 	if err = h.Service.Identity.DB.Tx(r.Context(), func(q *sqlc.Queries) error { return h.Service.authorize(r.Context(), q, p, ws) }); err != nil {
