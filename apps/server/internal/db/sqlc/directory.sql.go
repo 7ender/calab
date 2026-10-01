@@ -804,7 +804,7 @@ UPDATE workspace_directories SET name=$1,host=$2,url=$3,
 base_dn=$4,bind_dn=$5,bind_secret_box=$6,
 allowed_group_dns=$7,ca_pem=$8,version=version+1,
 sync_interval_seconds=$9,max_staleness_seconds=$10,
-disabled_at=$11
+disabled_at=$11,last_success_at=NULL
 WHERE workspace_id=$12 AND version=$13 RETURNING id, workspace_id, name, host, url, allowed_group_dns, generation, port, base_dn, bind_dn, bind_secret_box, ca_pem, sync_interval_seconds, max_staleness_seconds, version, last_success_at, cursor_box, last_error, disabled_at, created_at
 `
 

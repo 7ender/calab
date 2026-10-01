@@ -346,3 +346,11 @@ SELECT s.id FROM workspaces w JOIN workspace_members m ON m.workspace_id=w.id
 JOIN users u ON u.id=m.user_id JOIN sessions s ON s.user_id=u.id
 WHERE w.id=sqlc.arg('workspace_id') AND u.id=sqlc.arg('user_id') AND s.id=sqlc.arg('session_id')
 FOR UPDATE OF w,u,m,s;
+
+-- name: GetRecentIdentityConnectionTest :one
+SELECT * FROM identity_login_transactions WHERE workspace_id=$1 AND connection_id=$2 AND user_id=$3
+AND connection_version=$4 AND purpose='test' AND finished_at>clock_timestamp()-interval '5 minutes'
+ORDER BY finished_at DESC LIMIT 1;
+
+-- name: GetSSOWorkspaceBySlug :one
+SELECT * FROM workspaces WHERE slug=$1;

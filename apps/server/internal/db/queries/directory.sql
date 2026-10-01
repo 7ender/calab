@@ -46,7 +46,7 @@ UPDATE workspace_directories SET name=sqlc.arg('name'),host=sqlc.arg('host'),url
 base_dn=sqlc.arg('base_dn'),bind_dn=sqlc.arg('bind_dn'),bind_secret_box=sqlc.arg('bind_secret_box'),
 allowed_group_dns=sqlc.arg('allowed_group_dns'),ca_pem=sqlc.arg('ca_pem'),version=version+1,
 sync_interval_seconds=sqlc.arg('sync_interval_seconds'),max_staleness_seconds=sqlc.arg('max_staleness_seconds'),
-disabled_at=sqlc.narg('disabled_at')
+disabled_at=sqlc.narg('disabled_at'),last_success_at=NULL
 WHERE workspace_id=sqlc.arg('workspace_id') AND version=sqlc.arg('expected_version') RETURNING *;
 
 -- name: ListDirectoryObjects :many
