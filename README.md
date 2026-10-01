@@ -40,11 +40,14 @@ It is built for teams of up to 20–30 people in voice at once and up to 3 scree
 
 - **Voice rooms** — one click to join; who is talking is visible right in the room list; room status, timer and member limit.
 - **Clean sound** — AEC3 echo cancellation and RNNoise noise suppression (no external services), Opus with DTX; voice activation or **push-to-talk** on any key, even in the background.
+- **Musician mode** — a personal toggle that turns off echo cancellation, noise suppression and auto gain and switches Opus to a music profile (128 kbps mono / 192 kbps stereo, FEC, no DTX): play an instrument or sing live without the processing eating the sound. Headphones required; others see a guitar icon next to your name. Team and above.
 - **Screen sharing** in AV1 or hardware H.264 with simulcast — each viewer gets the quality their connection allows; viewers can point and draw on top of the stream.
 - **Camera** with background blur or a picture (built-in and workspace backgrounds).
 - **One-on-one calls** in direct messages, with ringing, camera and screen sharing.
 - **Meeting recordings** — the server records, GPTunneL transcribes; a card with the summary, audio and full transcript arrives in the room chat.
 - **Soundboard**, moderation (server mute, disconnect, move by drag and drop), statuses.
+- **Phone calls (SIP)** — connect your own SIP provider and dial a landline or mobile number from a voice room; the callee joins as a participant, everyone sees “Dialling → Ringing → On the call”. Provider settings, a call log, a “Place calls” permission that nobody has by default ([ADR-0046](docs/adr/0046-sip-telephony.md)).
+- **Temporary rooms** — a room for an hour or a day with a ready guest link and an optional calendar meeting: a Zoom replacement that disappears by itself ([ADR-0044](docs/adr/0044-temp-rooms.md)).
 
 ### 💬 Chat
 
@@ -84,6 +87,7 @@ It is built for teams of up to 20–30 people in voice at once and up to 3 scree
 - Comments like chat — reactions, stickers, voice messages — mixed with the change history.
 - Filters, saved views, bulk actions; **create a task from any message**; a task link unfolds into a card in the chat.
 
+- **Approvals** — assign approvers and how many approvals are needed (all or N of M); a task can’t move on until it is approved ([ADR-0049](docs/adr/0049-task-approvals.md)).
 ### 📝 Notes
 
 <img src="apps/landing/public/screens/en/notes.webp" width="880" alt="Notes shelves">
@@ -96,9 +100,13 @@ Up to 20 private shelves with your own names and emoji — like Saved Messages i
 
 A guest link leads straight into a room — no sign-up. With approval turned on (per room or per link), the guest waits on this screen until the organizer clicks “Let in”.
 
+### 🧩 Web apps
+
+An admin pins site shortcuts (Grafana, the wiki, the CRM) under the workspace icon in the left rail. A click opens the site full-window inside Calab and the call keeps going; logins are kept separately per app, camera and microphone only with your permission ([ADR-0050](docs/adr/0050-workspace-apps.md)).
+
 ### 🤖 Bots and SDK
 
-A bot is a member with a token: the same REST and gateway as the app, rights through roles. It reads and writes chat, answers `/commands`, talks in voice rooms (LiveKit, Node / Python / Go) and works with boards within its rights; events arrive over WebSocket or a webhook with an HMAC signature.
+A bot is a member with a token: the same REST and gateway as the app, rights through roles. It reads and writes chat, answers `/commands`, talks in voice rooms (LiveKit, Node / Python / Go) and works with boards within its rights; events arrive over WebSocket or a webhook with an HMAC signature. Bot API v2 adds the calendar (meetings, free/busy, finding a time), member profiles, invitations, badges, guest admission and meeting recording, plus buttons under messages ([ADR-0051](docs/adr/0051-bot-api-v2.md)).
 
 ```ts
 import { Bot } from '@calaba/bot-sdk';
@@ -115,7 +123,17 @@ SDK — [`packages/bot-sdk`](packages/bot-sdk), examples — [`examples/bots`](e
 - **Works everywhere**: UDP → ICE/TCP → TURN/UDP 443 → TURN/TLS 443 automatically; one public IP; tested behind VPNs.
 - Media — DTLS-SRTP; API — HTTPS/WSS, HSTS, strict CSP, `HttpOnly/SameSite=Strict` cookies for the web, argon2id, refresh-token rotation with reuse detection, rate limits. No end-to-end encryption yet: media goes through your own media server.
 - Every right (rooms, boards, calendar) is checked on the server; the LiveKit grant mirrors the rights.
+- **Roles by function** — separate rights for boards, members, bots, integrations, journals, events and recordings; private and closed rooms and boards that even administrators can’t see ([ADR-0048](docs/adr/0048-roles-v2.md)).
 - **Docker Compose** with hardened containers, automatic Let’s Encrypt certificates, daily backups with verified restore, Prometheus metrics; PostgreSQL 17 or 18.
+
+## Roadmap
+
+Planned, not available yet:
+
+- **Voice AI assistant** — a voice AI assistant in rooms (in testing).
+- **IVR** — a voice menu and internal extension numbers for phone calls (SIP).
+- **Wiki** — a team knowledge base.
+- **Disk** — shared file storage for the workspace.
 
 ## Quick start
 
@@ -148,21 +166,28 @@ Checks: `make test` (Go + TS), `make test-integration`, visual tests per screen 
 
 ## Plans
 
-| | Free | Team | Enterprise | Self-hosted |
+| | Free | Team | Business | Enterprise (your own server) |
 |---|---|---|---|---|
-| Voice room | up to 5 people | up to 50 people | unlimited | unlimited |
-| Workspace members | up to 50 | unlimited | unlimited | unlimited |
+| Voice room | up to 5 people | up to 15 people | up to 50 people | unlimited |
+| Workspace members | up to 50 | up to 100 | up to 500 | unlimited |
 | Audio quality | up to “Normal” | any, up to “Excellent” | any | any |
-| Screen sharing and camera | up to 720p / 15 fps, 1 share per room | no quality limits | no quality limits | no quality limits |
-| Files | 5 GB per workspace | up to 1 TB per workspace | unlimited | unlimited |
-| Bots | 1 | 20 | unlimited | unlimited |
+| Screen sharing and camera quality | up to 720p / 15 fps | no quality limits | no quality limits | no quality limits |
+| Screen shares at once in a room | 1 | 2 | 5 | unlimited |
+| Cameras at once in a room | 3 | 10 | 25 | unlimited |
+| Files | 5 GB per workspace | 300 GB per workspace | 1 TB per workspace | unlimited |
+| Bots | 1 | 5 | 20 | unlimited |
 | Sticker packs | 1 | unlimited | unlimited | unlimited |
-| Task boards | 3 | unlimited | unlimited | unlimited |
-| Calendar and CalDAV | ✓ | ✓ | ✓ | ✓ |
+| Task boards | 3 | 30 | 50 | unlimited |
+| Calendar | ✓ | ✓ | ✓ | ✓ |
+| CalDAV sync | — | ✓ | ✓ | ✓ |
+| Task approvals | ✓ | ✓ | ✓ | ✓ |
+| Embedded web apps | ✓ | ✓ | ✓ | ✓ |
+| Telephony (SIP) | ✓ | ✓ | ✓ | ✓ |
+| White-label | — | — | — | ✓ |
 | Support | — | support | priority | — |
 | Price | free | on request (**it@gptunnel.ai**) | on request (**it@gptunnel.ai**) | free for non-commercial use (BSL 1.1, “Powered by GPTunneL”); commercial licence on request |
 
-Free, Team and Enterprise are cloud plans of a workspace ([ADR-0024](docs/adr/0024-plans-and-limits.md)); Enterprise is the cloud without limits, like your own server. Details — [calab.ru/en/#pricing](https://calab.ru/en/#pricing) and [COMMERCIAL-LICENSE.md](COMMERCIAL-LICENSE.md).
+Free, Team and Business are cloud plans of a workspace ([ADR-0024](docs/adr/0024-plans-and-limits.md)); Enterprise is your own server with no plan limits. CalDAV belongs to a person: it works if any of their workspaces is on Team or above. Details — [calab.ru/en/#pricing](https://calab.ru/en/#pricing) and [COMMERCIAL-LICENSE.md](COMMERCIAL-LICENSE.md).
 
 ## Licence
 

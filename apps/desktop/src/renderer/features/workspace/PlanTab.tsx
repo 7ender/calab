@@ -107,6 +107,9 @@ function limitRows(limits: PlanLimits | undefined, usage: ReturnType<typeof plan
     { label: t('plan.limit.stream'), used: '—', max: videoLimitText(l?.streamMaxPreset ?? 0, l?.streamMaxFps ?? 0) },
     { label: t('plan.limit.camera'), used: '—', max: videoLimitText(l?.cameraMaxPreset ?? 0, l?.cameraMaxFps ?? 0) },
     counted(t('plan.limit.bots'), usage.bots, l?.bots ?? 0),
+    { label: t('plan.limit.boards'), used: '—', max: countText(l?.boards ?? 0) },
+    { label: t('plan.limit.caldav'), used: '—', max: t(l?.caldavDisabled ? 'plan.caldav.no' : 'plan.caldav.yes') },
+    { label: t('music.mode'), used: '—', max: t(l?.musicianDisabled ? 'plan.caldav.no' : 'plan.caldav.yes') },
     packs === undefined
       ? { label: t('plan.limit.stickerPacks'), used: '—', max: countText(l?.stickerPacks ?? 0) }
       : counted(t('plan.limit.stickerPacks'), packs, l?.stickerPacks ?? 0),

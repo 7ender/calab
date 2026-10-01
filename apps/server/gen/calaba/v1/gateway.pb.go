@@ -2589,7 +2589,11 @@ type VoiceState struct {
 	// Recorded by POST /api/rooms/{id}/join (or an app-level move) but not connected to LiveKit
 	// yet: every device of the user in the room is still connecting. participant_joined clears
 	// it; without a connection within 15 s the state is removed (VOICE_STATE_UPDATE, empty room).
-	Pending       bool `protobuf:"varint,10,opt,name=pending,proto3" json:"pending,omitempty"`
+	Pending bool `protobuf:"varint,10,opt,name=pending,proto3" json:"pending,omitempty"`
+	// Musician mode (ADR-0052): a device of the user in this room sends its microphone without
+	// echo cancellation, noise suppression and gain control, in a music Opus profile. Shown so
+	// others know why they hear raw sound. Set through PATCH /api/voice/self.
+	Musician      bool `protobuf:"varint,11,opt,name=musician,proto3" json:"musician,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -2690,6 +2694,13 @@ func (x *VoiceState) GetCamera() bool {
 func (x *VoiceState) GetPending() bool {
 	if x != nil {
 		return x.Pending
+	}
+	return false
+}
+
+func (x *VoiceState) GetMusician() bool {
+	if x != nil {
+		return x.Musician
 	}
 	return false
 }
@@ -6886,7 +6897,7 @@ const file_calaba_v1_gateway_proto_rawDesc = "" +
 	"\vbot_user_id\x18\x02 \x01(\tR\tbotUserId\x129\n" +
 	"\n" +
 	"created_at\x18\x03 \x01(\v2\x1a.google.protobuf.TimestampR\tcreatedAt\x12.\n" +
-	"\x05event\x18\x04 \x01(\v2\x18.calaba.v1.DispatchEventR\x05event\"\xbf\x02\n" +
+	"\x05event\x18\x04 \x01(\v2\x18.calaba.v1.DispatchEventR\x05event\"\xdb\x02\n" +
 	"\n" +
 	"VoiceState\x12!\n" +
 	"\fworkspace_id\x18\x01 \x01(\tR\vworkspaceId\x12\x17\n" +
@@ -6899,7 +6910,8 @@ const file_calaba_v1_gateway_proto_rawDesc = "" +
 	"\fserver_muted\x18\b \x01(\bR\vserverMuted\x12\x16\n" +
 	"\x06camera\x18\t \x01(\bR\x06camera\x12\x18\n" +
 	"\apending\x18\n" +
-	" \x01(\bR\apending\"\xb6\x03\n" +
+	" \x01(\bR\apending\x12\x1a\n" +
+	"\bmusician\x18\v \x01(\bR\bmusician\"\xb6\x03\n" +
 	"\bPresence\x12\x17\n" +
 	"\auser_id\x18\x01 \x01(\tR\x06userId\x121\n" +
 	"\x06status\x18\x02 \x01(\x0e2\x19.calaba.v1.PresenceStatusR\x06status\x127\n" +

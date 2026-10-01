@@ -24,12 +24,14 @@ import (
 	"github.com/calaba/calaba/server/internal/db/sqlc"
 	"github.com/calaba/calaba/server/internal/events"
 	"github.com/calaba/calaba/server/internal/httpx"
+	"github.com/calaba/calaba/server/internal/pbconv"
 	"github.com/calaba/calaba/server/internal/perm"
 	"github.com/calaba/calaba/server/internal/unfurl"
 )
 
 // Webhooks (ADR-0031 §4). Events a bot would get from the gateway — messages and reactions
-// of rooms it can view, and of its DMs — are also queued for bots with a webhook, as rows
+// of rooms it can view and of its DMs, task events of boards it views, meetings, member
+// updates (ADR-0051, workspaceView) — are also queued for bots with a webhook, as rows
 // of bot_webhook_deliveries, after the change committed (Publisher). One worker in the
 // cluster (Valkey lock) POSTs them with an HMAC signature; failures are retried with
 // backoff 1 min → 1 h for up to a day; a webhook failing for a day is disabled and the bot's
@@ -196,9 +198,110 @@ func queueCtx(ctx context.Context) (context.Context, context.CancelFunc) {
 	return context.WithTimeout(context.WithoutCancel(ctx), 3*time.Second)
 }
 
+// botView decides what one bot gets of a workspace event: the event (maybe reduced), or nil.
+type botView func(ctx context.Context, res *perm.Resolver, bot uuid.UUID) *v1.DispatchEvent
+
+// workspaceView: the workspace events bots get by webhook, with the gateway's visibility
+// (ADR-0031 §4, ADR-0051): messages and reactions by VIEW_ROOM (not their own), task events by
+// VIEW_BOARD, meetings as calendar.viewer / gateway.routeCalendar see them, member updates for
+// all. nil = not delivered by webhook.
+func workspaceView(wsID uuid.UUID, ev *v1.DispatchEvent) botView {
+	if room, actor, ok := deliverable(ev); ok {
+		return func(ctx context.Context, res *perm.Resolver, bot uuid.UUID) *v1.DispatchEvent {
+			if bot == actor {
+				return nil // its own messages and reactions
+			}
+			if acc, err := res.Room(ctx, room, bot); err == nil && acc.Bits.Has(perm.ViewRoom) {
+				return ev
+			}
+			return nil
+		}
+	}
+	parse := func(s string) uuid.UUID { id, _ := uuid.Parse(s); return id }
+	var board uuid.UUID
+	switch e := ev.GetEvent().(type) {
+	case *v1.DispatchEvent_WorkspaceMemberUpdate:
+		return func(context.Context, *perm.Resolver, uuid.UUID) *v1.DispatchEvent { return ev }
+	case *v1.DispatchEvent_TaskCreate:
+		board = parse(e.TaskCreate.GetTask().GetBoardId())
+	case *v1.DispatchEvent_TaskUpdate:
+		board = parse(e.TaskUpdate.GetTask().GetBoardId())
+	case *v1.DispatchEvent_TaskDelete:
+		board = parse(e.TaskDelete.GetBoardId())
+	case *v1.DispatchEvent_TaskActivity:
+		board = parse(e.TaskActivity.GetActivity().GetBoardId())
+	case *v1.DispatchEvent_EventCreate, *v1.DispatchEvent_EventUpdate, *v1.DispatchEvent_EventDelete, *v1.DispatchEvent_EventRsvp:
+		return calendarView(wsID, ev)
+	default:
+		return nil
+	}
+	return func(ctx context.Context, res *perm.Resolver, bot uuid.UUID) *v1.DispatchEvent {
+		if acc, err := res.Board(ctx, board, bot); err == nil && acc.Bits.Has(perm.ViewBoard) {
+			return ev
+		}
+		return nil
+	}
+}
+
+// calendarView: a meeting goes to the bot that organizes it and to the viewers of its room;
+// external addresses only to those who may change it (calendar.viewer.canEdit), removed for the
+// others (ADR-0051, as gateway.routeCalendar).
+func calendarView(wsID uuid.UUID, ev *v1.DispatchEvent) botView {
+	e := ev.GetEventCreate().GetEvent()
+	switch {
+	case ev.GetEventUpdate() != nil:
+		e = ev.GetEventUpdate().GetEvent()
+	case ev.GetEventDelete() != nil:
+		e = ev.GetEventDelete().GetEvent()
+	case ev.GetEventRsvp() != nil:
+		e = ev.GetEventRsvp().GetEvent()
+	}
+	organizer, _ := uuid.Parse(e.GetOrganizerId())
+	room, roomErr := uuid.Parse(e.GetRoomId())
+	return func(ctx context.Context, res *perm.Resolver, bot uuid.UUID) *v1.DispatchEvent {
+		if bot == organizer {
+			return ev
+		}
+		if roomErr != nil {
+			return nil // a meeting without a room: its organizer and attendees only
+		}
+		acc, err := res.Room(ctx, room, bot)
+		if err != nil || !acc.Bits.Has(perm.ViewRoom) {
+			return nil
+		}
+		if acc.Bits.Has(perm.ManageRoom) {
+			return ev
+		}
+		if ws, _, err := res.Workspace(ctx, wsID, bot); err == nil && ws.Has(perm.ManageEvents) {
+			return ev
+		}
+		return eventWithoutEmails(ev)
+	}
+}
+
+// eventWithoutEmails returns a calendar event without external attendees' addresses (a copy
+// when there are any).
+func eventWithoutEmails(ev *v1.DispatchEvent) *v1.DispatchEvent {
+	strip := func(c *v1.CalendarEvent) *v1.CalendarEvent { return pbconv.EventForViewer(c, pbconv.EmailsNone) }
+	switch x := ev.GetEvent().(type) {
+	case *v1.DispatchEvent_EventCreate:
+		return &v1.DispatchEvent{Event: &v1.DispatchEvent_EventCreate{EventCreate: &v1.CalendarEventCreate{Event: strip(x.EventCreate.GetEvent())}}}
+	case *v1.DispatchEvent_EventUpdate:
+		return &v1.DispatchEvent{Event: &v1.DispatchEvent_EventUpdate{EventUpdate: &v1.CalendarEventUpdate{Event: strip(x.EventUpdate.GetEvent())}}}
+	case *v1.DispatchEvent_EventDelete:
+		return &v1.DispatchEvent{Event: &v1.DispatchEvent_EventDelete{EventDelete: &v1.CalendarEventDelete{Event: strip(x.EventDelete.GetEvent())}}}
+	case *v1.DispatchEvent_EventRsvp:
+		r := x.EventRsvp
+		a := strip(&v1.CalendarEvent{Attendees: []*v1.CalendarEventAttendee{r.GetAttendee()}}).GetAttendees()[0]
+		return &v1.DispatchEvent{Event: &v1.DispatchEvent_EventRsvp{EventRsvp: &v1.CalendarEventRsvp{
+			WorkspaceId: r.GetWorkspaceId(), EventId: r.GetEventId(), Attendee: a, Counts: r.GetCounts(), Event: strip(r.GetEvent())}}}
+	}
+	return ev
+}
+
 func (s *Service) onWorkspaceEvent(ctx context.Context, wsID uuid.UUID, ev *v1.DispatchEvent) {
-	room, actor, ok := deliverable(ev)
-	if !ok {
+	view := workspaceView(wsID, ev)
+	if view == nil {
 		return
 	}
 	ctx, cancel := queueCtx(ctx)
@@ -209,16 +312,13 @@ func (s *Service) onWorkspaceEvent(ctx context.Context, wsID uuid.UUID, ev *v1.D
 		return
 	}
 	res := perm.NewResolver(s.db.Q)
-	var targets []uuid.UUID
+	var targets []botEvent
 	for _, b := range cands {
-		if b == actor {
-			continue // its own messages and reactions
-		}
-		if acc, err := res.Room(ctx, room, b); err == nil && acc.Bits.Has(perm.ViewRoom) {
-			targets = append(targets, b)
+		if out := view(ctx, res, b); out != nil {
+			targets = append(targets, botEvent{b, out})
 		}
 	}
-	s.enqueue(ctx, targets, ev)
+	s.enqueue(ctx, targets)
 }
 
 // onUserEvent: events of a DM come on the participants' user channels.
@@ -232,7 +332,13 @@ func (s *Service) onUserEvent(ctx context.Context, userID uuid.UUID, ev *v1.Disp
 	if _, bots := s.webhookBots(ctx); !bots[userID] {
 		return
 	}
-	s.enqueue(ctx, []uuid.UUID{userID}, ev)
+	s.enqueue(ctx, []botEvent{{userID, ev}})
+}
+
+// botEvent is an event as one bot gets it.
+type botEvent struct {
+	bot uuid.UUID
+	ev  *v1.DispatchEvent
 }
 
 // ForBot returns ev as bot should get it: a MESSAGE_CREATE command addressed to another bot
@@ -255,18 +361,19 @@ func WithoutCommand(ev *v1.DispatchEvent) *v1.DispatchEvent {
 
 var payloadJSON = protojson.MarshalOptions{EmitDefaultValues: true}
 
-func (s *Service) enqueue(ctx context.Context, bots []uuid.UUID, ev *v1.DispatchEvent) {
-	if len(bots) == 0 {
+func (s *Service) enqueue(ctx context.Context, targets []botEvent) {
+	if len(targets) == 0 {
 		return
 	}
 	p := sqlc.EnqueueWebhookDeliveriesParams{}
-	for _, b := range bots {
+	for _, t := range targets {
+		b := t.bot
 		id, err := uuid.NewV7()
 		if err != nil {
 			continue
 		}
 		body, err := payloadJSON.Marshal(&v1.BotWebhookUpdate{
-			Id: id.String(), BotUserId: b.String(), CreatedAt: timestamppb.New(now()), Event: ForBot(ev, b.String()),
+			Id: id.String(), BotUserId: b.String(), CreatedAt: timestamppb.New(now()), Event: ForBot(t.ev, b.String()),
 		})
 		if err != nil {
 			slog.ErrorContext(ctx, "bot webhook: encode", "err", err)

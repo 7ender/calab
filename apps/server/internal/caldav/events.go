@@ -37,7 +37,7 @@ func shareLevelProto(s string) v1.CalDavShareLevel {
 // setShare: PATCH /api/me/caldav {share_level} — only the account's own user (the route is /me).
 func (s *Service) setShare(w http.ResponseWriter, r *http.Request) error {
 	ctx := r.Context()
-	me, err := s.person(r)
+	me, err := s.paidPerson(r)
 	if err != nil {
 		return err
 	}
@@ -71,7 +71,7 @@ func (s *Service) setShare(w http.ResponseWriter, r *http.Request) error {
 // events with their details; with workspace, attendees who are members of it get their id.
 func (s *Service) externalEvents(w http.ResponseWriter, r *http.Request) error {
 	ctx := r.Context()
-	me, err := s.person(r)
+	me, err := s.paidPerson(r)
 	if err != nil {
 		return err
 	}

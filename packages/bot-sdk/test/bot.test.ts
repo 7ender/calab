@@ -278,6 +278,83 @@ describe('webhook', () => {
   });
 });
 
+describe('extended API (ADR-0051)', () => {
+  it('calendar: list / create / update / delete / freebusy / suggest', async () => {
+    const ev = { event: { id: 'e1', workspaceId: WS_ID, title: 'Sync', organizerId: BOT_ID } };
+    srv.route(`GET /api/workspaces/${WS_ID}/events`, { json: { events: [ev.event] } });
+    srv.route(`POST /api/workspaces/${WS_ID}/events`, { status: 201, json: ev });
+    srv.route('GET /api/events/e1', { json: ev });
+    srv.route('PATCH /api/events/e1', { json: { event: { ...ev.event, title: 'Moved' } } });
+    srv.route('DELETE /api/events/e1', { status: 204 });
+    srv.route(`GET /api/workspaces/${WS_ID}/freebusy`, { json: { users: [{ userId: 'u-1', timezone: 'UTC', busy: [] }] } });
+    srv.route(`POST /api/workspaces/${WS_ID}/freebusy/suggest`, { json: { slots: [{ startsAt: '2026-10-01T10:00:00Z', endsAt: '2026-10-01T10:30:00Z' }] } });
+    const bot = newBot();
+    const from = new Date('2026-10-01T00:00:00Z');
+    const to = new Date('2026-10-02T00:00:00Z');
+    expect((await bot.calendar.list(WS_ID, from, to)).map((e) => e.id)).toEqual(['e1']);
+    expect(srv.requests.at(-1)?.query.get('from')).toBe(from.toISOString());
+    const created = await bot.calendar.create(WS_ID, { title: 'Sync', attendees: [{ userId: 'u-1', required: true }] });
+    expect(created.organizerId).toBe(BOT_ID);
+    expect(srv.requests.at(-1)?.json).toEqual({ title: 'Sync', attendees: [{ userId: 'u-1', required: true }] });
+    expect((await bot.calendar.get('e1')).title).toBe('Sync');
+    expect((await bot.calendar.update('e1', { title: 'Moved' })).title).toBe('Moved');
+    await bot.calendar.delete('e1', from);
+    expect(srv.requests.at(-1)?.query.get('occurrence')).toBe(from.toISOString());
+    const fb = await bot.calendar.freebusy(WS_ID, ['u-1', 'u-2'], from, to);
+    expect(fb[0]?.userId).toBe('u-1');
+    expect(srv.requests.at(-1)?.query.get('users')).toBe('u-1,u-2');
+    const slots = await bot.calendar.suggest(WS_ID, { users: ['u-1'], durationMin: 30 });
+    expect(slots).toHaveLength(1);
+    expect(srv.requests.at(-1)?.json).toEqual({ users: ['u-1'], durationMin: 30 });
+  });
+
+  it('members: the list stays callable; get and setNickname', async () => {
+    srv.route(`GET /api/rooms/${TEXT_ROOM}`, { json: { room: { id: TEXT_ROOM, workspaceId: WS_ID } } });
+    srv.route(`GET /api/workspaces/${WS_ID}/members`, { json: { members: [{ user: { id: 'u-1' } }] } });
+    srv.route(`GET /api/workspaces/${WS_ID}/members/u-1`, { json: { member: { user: { id: 'u-1' } }, openTasks: [{ id: 't-1' }] } });
+    srv.route(`PATCH /api/workspaces/${WS_ID}/members/u-1`, { json: { member: { user: { id: 'u-1' }, nickname: 'Bob' } } });
+    const bot = newBot();
+    expect((await bot.members(TEXT_ROOM)).map((m) => m.user?.id)).toEqual(['u-1']);
+    const p = await bot.members.get(WS_ID, 'u-1');
+    expect(p.openTasks.map((t) => t.id)).toEqual(['t-1']);
+    expect((await bot.members.setNickname(WS_ID, 'u-1', 'Bob')).nickname).toBe('Bob');
+    expect(srv.requests.at(-1)?.json).toEqual({ nickname: 'Bob' });
+  });
+
+  it('invites, badges and recording', async () => {
+    srv.route(`POST /api/workspaces/${WS_ID}/invites`, { status: 201, json: { invite: { id: 'i-1', code: 'abc' } } });
+    srv.route(`GET /api/workspaces/${WS_ID}/invites`, { json: { invites: [{ id: 'i-1' }] } });
+    srv.route(`DELETE /api/workspaces/${WS_ID}/invites/i-1`, { status: 204 });
+    srv.route(`POST /api/workspaces/${WS_ID}/invites/email`, { status: 201, json: { invite: { id: 'ei-1', email: 'x@outside.org' } } });
+    srv.route(`GET /api/workspaces/${WS_ID}/invites/email`, { json: { invites: [] } });
+    srv.route(`DELETE /api/workspaces/${WS_ID}/invites/email/ei-1`, { status: 204 });
+    srv.route(`POST /api/workspaces/${WS_ID}/files`, { status: 201, json: { file: { id: 'f-1' } } });
+    srv.route(`POST /api/workspaces/${WS_ID}/badges`, { status: 201, json: { badge: { id: 'b-1', name: 'Partner', fileId: 'f-1' } } });
+    srv.route(`PATCH /api/workspaces/${WS_ID}/badges/b-1`, { json: { badge: { id: 'b-1', name: 'Partner+' } } });
+    srv.route(`PUT /api/workspaces/${WS_ID}/members/u-1/badge`, { json: { member: { user: { id: 'u-1' }, badgeId: 'b-1' } } });
+    srv.route(`DELETE /api/workspaces/${WS_ID}/badges/b-1`, { status: 204 });
+    srv.route(`POST /api/rooms/${VOICE_ROOM}/recording/start`, { json: { recording: { recordingId: 'r-1', byUserId: BOT_ID } } });
+    srv.route(`POST /api/rooms/${VOICE_ROOM}/recording/stop`, { json: { recording: { recordingId: 'r-1' } } });
+    const bot = newBot();
+    expect((await bot.invites.create(WS_ID, { maxUses: 1 })).code).toBe('abc');
+    expect(srv.requests.at(-1)?.json).toEqual({ maxUses: 1 });
+    expect(await bot.invites.list(WS_ID)).toHaveLength(1);
+    await bot.invites.delete(WS_ID, 'i-1');
+    expect((await bot.invites.email(WS_ID, 'x@outside.org')).id).toBe('ei-1');
+    expect(await bot.invites.listEmail(WS_ID)).toEqual([]);
+    await bot.invites.deleteEmail(WS_ID, 'ei-1');
+    const badge = await bot.badges.create(WS_ID, 'Partner', { name: 'p.png', data: new Uint8Array([1, 2, 3]), type: 'image/png' });
+    expect(badge.fileId).toBe('f-1');
+    expect(srv.requests.at(-1)?.json).toEqual({ name: 'Partner', fileId: 'f-1' });
+    expect((await bot.badges.update(WS_ID, 'b-1', { name: 'Partner+' })).name).toBe('Partner+');
+    expect((await bot.badges.set(WS_ID, 'u-1', 'b-1')).badgeId).toBe('b-1');
+    await bot.badges.delete(WS_ID, 'b-1');
+    expect((await bot.recording.start(VOICE_ROOM)).byUserId).toBe(BOT_ID);
+    expect((await bot.recording.stop(VOICE_ROOM)).recordingId).toBe('r-1');
+    expect(srv.requests.map((r) => `${r.method} ${r.path}`)).toContain(`DELETE /api/workspaces/${WS_ID}/badges/b-1`);
+  });
+});
+
 describe('inline callbacks', () => {
   it('sends and replaces or removes keyboards without erasing omitted text', async () => {
     const keyboard = { rows: [{ buttons: [{ id: 'approve', label: 'Approve', data: 'draft:1' }] }], allowedUserIds: ['actor'] };

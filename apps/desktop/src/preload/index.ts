@@ -31,6 +31,7 @@ const api: CalabaApi = {
     takeDeepLink: () => ipcRenderer.invoke(IPC.appTakeDeepLink),
     onDeepLink: (cb) => on(IPC.appDeepLink, cb),
     onPower: (cb) => on(IPC.appPower, cb),
+    onApiReset: (cb) => on(IPC.appApiReset, cb),
     checkUpdates: () => ipcRenderer.invoke(IPC.appCheckUpdates),
     onUpdateStatus: (cb) => on(IPC.appUpdateStatus, cb),
     updateStatus: () => ipcRenderer.invoke(IPC.appGetUpdateStatus),

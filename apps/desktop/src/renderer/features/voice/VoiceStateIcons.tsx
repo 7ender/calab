@@ -1,4 +1,4 @@
-import { HeadphoneOff, MicOff } from 'lucide-react';
+import { Guitar, HeadphoneOff, MicOff } from 'lucide-react';
 import type { ReactNode } from 'react';
 import { cx } from '../../components/ui';
 import { t } from '../../i18n';
@@ -47,5 +47,17 @@ export function VoiceStateIcons({
         ),
       )}
     </>
+  );
+}
+
+/**
+ * «Режим музыканта» of a participant (ADR-0052, VoiceState.musician): a guitar by the name, so
+ * others know why they hear raw sound. The tooltip is native (no popover per row).
+ */
+export function MusicianIcon({ className }: { className?: string }): ReactNode {
+  return (
+    <span className="inline-flex shrink-0" title={t('music.badgeHint')} data-voice-icon="musician">
+      <Guitar className={cx('size-4 shrink-0 text-muted', className)} aria-label={t('music.badgeHint')} role="img" />
+    </span>
   );
 }

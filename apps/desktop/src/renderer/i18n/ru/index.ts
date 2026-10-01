@@ -4,6 +4,7 @@ import { ruDm } from './dm';
 import { ruNotes } from './notes';
 import { ruCall } from './call';
 import { ruEcho } from './echo';
+import { ruMusic } from './music';
 import { ruMedia } from './media';
 import { ruMail } from './mail';
 import { ruRecording } from './recording';
@@ -43,6 +44,7 @@ export const ru = {
   ...ruNotes,
   ...ruCall,
   ...ruEcho,
+  ...ruMusic,
   ...ruMedia,
   ...ruPlan,
   ...ruModeration,

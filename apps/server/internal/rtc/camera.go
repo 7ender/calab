@@ -13,6 +13,7 @@ import (
 	"github.com/calaba/calaba/server/internal/auth"
 	"github.com/calaba/calaba/server/internal/httpx"
 	"github.com/calaba/calaba/server/internal/perm"
+	"github.com/calaba/calaba/server/internal/plans"
 	"github.com/calaba/calaba/server/internal/rooms"
 	"github.com/calaba/calaba/server/internal/voice"
 )
@@ -137,6 +138,9 @@ func (s *Service) requestCamera(w http.ResponseWriter, r *http.Request) error {
 		return err
 	}
 	if !free {
+		if p := room.Plan.CamerasPerRoom; p > 0 && media.GetCameraLimit() >= p { // the plan cap is what binds
+			return plans.LimitError("cameras in a room", uint64(p), uint64(p))
+		}
 		return httpx.Conflict("camera limit of the room is reached")
 	}
 	if err := s.voice.ReserveCamera(r.Context(), identity); err != nil {

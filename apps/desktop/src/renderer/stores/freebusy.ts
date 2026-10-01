@@ -38,6 +38,8 @@ interface FreeBusyState {
   find: FindState | null;
   /** undefined = not loaded; null = none. */
   caldav: CalDavAccount | null | undefined;
+  /** No plan of mine includes CalDAV (Free): the account is kept, nothing syncs (ADR-0024, 30.09). */
+  caldavLocked: boolean;
   /**
    * My external events by local day (`YYYY-MM-DD`; a day of a loaded window is there even when
    * empty), of `externalWs` (attendees are matched to its members) — cleared on a workspace or
@@ -66,6 +68,7 @@ export const useFreeBusy = create<FreeBusyState>()(
       mine: {},
       find: null,
       caldav: undefined,
+      caldavLocked: false,
       external: {},
       externalWs: '',
       externalChunks: {},
@@ -83,7 +86,7 @@ export const useFreeBusy = create<FreeBusyState>()(
         }),
       setFind: (find) => set({ find }),
       patchFind: (p) => set((s) => (s.find ? { find: { ...s.find, ...p } } : s)),
-      reset: () => set({ entries: {}, chunks: {}, find: null, caldav: undefined, external: {}, externalWs: '', externalChunks: {} }),
+      reset: () => set({ entries: {}, chunks: {}, find: null, caldav: undefined, caldavLocked: false, external: {}, externalWs: '', externalChunks: {} }),
     }),
     {
       name: 'calaba-cal-people',

@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { ScreenSharePreset } from './gen/calaba/v1/media_pb.js';
-import { AUDIO_TIERS_KBPS, SCREEN_SHARE_PRESETS, audioTierKbps, clampStreamPreset } from './media.js';
+import { AUDIO_TIERS_KBPS, SCREEN_SHARE_PRESETS, audioCaptureConstraints, audioTierKbps, clampStreamPreset, micCaptureConstraints } from './media.js';
 
 describe('clampStreamPreset', () => {
   it('keeps presets at or below the max', () => {
@@ -25,5 +25,24 @@ describe('audioTierKbps', () => {
   it('falls back to the default for nothing / nonsense', () => {
     expect(audioTierKbps(0)).toBe(32);
     expect(audioTierKbps(Number.NaN)).toBe(32);
+  });
+});
+
+describe('micCaptureConstraints (ADR-0052)', () => {
+  it('keeps the speech path unchanged when musician mode is off', () => {
+    expect(micCaptureConstraints({ rnnoise: false, musician: false })).toEqual(audioCaptureConstraints(false));
+    expect(micCaptureConstraints({ rnnoise: true, musician: false })).toEqual({ echoCancellation: true, noiseSuppression: false, autoGainControl: true, channelCount: 1 });
+  });
+  it('turns every speech stage off in musician mode, whatever RNNoise says', () => {
+    for (const rnnoise of [false, true]) {
+      expect(micCaptureConstraints({ rnnoise, musician: true })).toEqual({
+        echoCancellation: false,
+        noiseSuppression: false,
+        autoGainControl: false,
+        voiceIsolation: false,
+        channelCount: { ideal: 2 },
+        sampleRate: { ideal: 48000 },
+      });
+    }
   });
 });

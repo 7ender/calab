@@ -13,7 +13,7 @@ import (
 // the meeting's room, never to guests; ROOM_EVENT_* to the room's viewers, guests included
 // (without attendees, ADR-0038 «Диплинки для приглашённых»). External attendees'
 // addresses are in full for those involved and those who may edit the meeting, masked for other
-// viewers and removed for bots.
+// viewers and removed for other bots (a bot that organizes or may edit sees them, ADR-0051).
 func (h *Hub) routeCalendar(st *wsState, sessions []*Session, view func(rid, uid uuid.UUID) bool, id uuid.UUID, ev *v1.DispatchEvent) {
 	var e *v1.CalendarEvent
 	roomOnly := false
@@ -66,7 +66,8 @@ func (h *Hub) routeCalendar(st *wsState, sessions []*Session, view func(rid, uid
 		return guestEnc
 	}
 	rid := parseID(e.GetRoomId())
-	involved := map[uuid.UUID]bool{parseID(e.GetOrganizerId()): true}
+	organizer := parseID(e.GetOrganizerId())
+	involved := map[uuid.UUID]bool{organizer: true}
 	for _, a := range e.GetAttendees() {
 		if a.GetUserId() != "" {
 			involved[parseID(a.GetUserId())] = true
@@ -90,22 +91,22 @@ func (h *Hub) routeCalendar(st *wsState, sessions []*Session, view func(rid, uid
 			}
 			continue
 		}
-		inv := involved[s.user] && !s.bot
+		// A bot is never an attendee; it is involved in the meetings it organizes (ADR-0051).
+		inv := involved[s.user] && (!s.bot || s.user == organizer)
 		sees := rid != uuid.Nil && view(rid, s.user)
 		if !sees && (roomOnly || !inv) {
 			continue
 		}
+		// calendar.viewer.canEdit (ADR-0048): the organizer, MANAGE_ROOM in the room, or
+		// MANAGE_EVENTS where the room is visible.
+		edit := s.user == organizer || (rid != uuid.Nil && st.bits(rid, s.user).Has(perm.ManageRoom)) ||
+			((rid == uuid.Nil || sees) && st.members[s.user].Workspace().Has(perm.ManageEvents))
 		v := pbconv.EmailsMasked
 		switch {
+		case inv || edit:
+			v = pbconv.EmailsFull
 		case s.bot:
 			v = pbconv.EmailsNone
-		case inv:
-			v = pbconv.EmailsFull
-		case rid != uuid.Nil && st.bits(rid, s.user).Has(perm.ManageRoom):
-			v = pbconv.EmailsFull
-		case (rid == uuid.Nil || sees) && st.members[s.user].Workspace().Has(perm.ManageEvents):
-			// calendar.viewer.canEdit (ADR-0048): MANAGE_EVENTS where the room is visible.
-			v = pbconv.EmailsFull
 		}
 		s.dispatchEnc(id, enc(v))
 	}

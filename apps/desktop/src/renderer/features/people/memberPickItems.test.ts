@@ -1,8 +1,8 @@
 import { create } from '@bufbuild/protobuf';
 import { UserSchema, WorkspaceMemberSchema, WorkspaceRole, type WorkspaceMember } from '@calaba/protocol';
 import { describe, expect, it } from 'vitest';
-import { filterItems } from '../../components/picker/pickerModel';
-import { memberItems, userItems } from './memberPickItems';
+import { buildRows, filterItems } from '../../components/picker/pickerModel';
+import { memberItems, splitGuests, userItems } from './memberPickItems';
 
 const m = (id: string, name: string, role: WorkspaceRole, nickname = ''): WorkspaceMember =>
   create(WorkspaceMemberSchema, { workspaceId: 'w', role, nickname, user: create(UserSchema, { id, displayName: name }) });
@@ -49,5 +49,27 @@ describe('userItems', () => {
   it('maps server candidates with the shared role', () => {
     const users = [create(UserSchema, { id: 'boris', displayName: 'Борис' })];
     expect(userItems(users, () => WorkspaceRole.ADMIN)[0]).toMatchObject({ userId: 'boris', role: WorkspaceRole.ADMIN, guest: false });
+  });
+});
+
+describe('splitGuests', () => {
+  it('moves guest accounts out of the member list, keeping order', () => {
+    const { members, guests } = splitGuests(memberItems(team));
+    expect(members.map((i) => i.userId)).toEqual(['anna', 'boris', 'vera', 'grigory']);
+    expect(guests.map((i) => i.userId)).toEqual(['dina']);
+  });
+
+  it('no guests: everything stays in the main list', () => {
+    const { members, guests } = splitGuests(memberItems(team.filter((x) => x.role !== WorkspaceRole.GUEST)));
+    expect(members).toHaveLength(4);
+    expect(guests).toEqual([]);
+  });
+
+  it('a search still finds a guest, and a collapsible group shows its items then', () => {
+    const { guests } = splitGuests(memberItems(team));
+    const groups = [{ id: 'guests', label: 'G', items: guests, collapsible: true }];
+    expect(buildRows(groups, '', { alwaysHeaders: true }).map((r) => r.kind)).toEqual(['header']);
+    expect(buildRows(groups, '', { alwaysHeaders: true, open: new Set(['guests']) }).map((r) => r.kind)).toEqual(['header', 'item']);
+    expect(buildRows(groups, 'дин', { alwaysHeaders: true }).map((r) => r.kind)).toEqual(['header', 'item']);
   });
 });

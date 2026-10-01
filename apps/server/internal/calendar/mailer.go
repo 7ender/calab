@@ -72,6 +72,23 @@ func (s *Service) sendMails(ctx context.Context, b *bundle, tmpl mail.Template, 
 		users[u.ID] = u
 	}
 	org := users[b.ev.OrganizerID]
+	orgName := func(string) string { return org.DisplayName }
+	icsOrg := org
+	if org.IsBot {
+		// ADR-0051: the workspace sends on behalf of the bot (the system address, no Reply-To);
+		// outside recipients get the language of the bot's owner.
+		wsName, bot := "", org.DisplayName
+		if ws, err := s.db.Q.GetWorkspace(ctx, b.ev.WorkspaceID); err == nil {
+			wsName = ws.Name
+		}
+		if row, err := s.db.Q.GetBot(ctx, org.ID); err == nil {
+			if owner, err := s.db.Q.GetUser(ctx, row.OwnerUserID); err == nil {
+				org.Locale = owner.Locale
+			}
+		}
+		orgName = func(locale string) string { return mail.OnBehalfOfBot(locale, wsName, bot) }
+		icsOrg.DisplayName = wsName
+	}
 	roomName := ""
 	if b.ev.RoomID != nil {
 		if r, err := s.db.Q.GetRoom(ctx, *b.ev.RoomID); err == nil {
@@ -82,7 +99,7 @@ func (s *Service) sendMails(ctx context.Context, b *bundle, tmpl mail.Template, 
 	if !ok {
 		occ = Occurrence{b.series.Start, b.series.End}
 	}
-	ics := BuildICS(s.icsEvent(b, method, users, org, roomName, "", s.eventURL(b.ev.ID)))
+	ics := BuildICS(s.icsEvent(b, method, users, icsOrg, roomName, "", s.eventURL(b.ev.ID)))
 	var names, members []string
 	for _, a := range b.att {
 		if a.UserID != nil {
@@ -121,11 +138,11 @@ func (s *Service) sendMails(ctx context.Context, b *bundle, tmpl mail.Template, 
 			own := deref(a.Email)
 			attendees = strings.Join(append(slices.Clone(members), own), ", ")
 			link = s.viewURL(b, own)
-			invite = BuildICS(s.icsEvent(b, method, users, org, roomName, own, link))
+			invite = BuildICS(s.icsEvent(b, method, users, icsOrg, roomName, own, link))
 		}
 		date, when := formatWhen(locale, occ, b.ev.AllDay, loc)
 		p := mail.Params{
-			"title": b.ev.Title, "date": date, "when": when, "organizer": org.DisplayName, "url": link,
+			"title": b.ev.Title, "date": date, "when": when, "organizer": orgName(locale), "url": link,
 			"room": roomName, "repeat": repeatText(locale, b.series.Rule.Repeat), "attendees": attendees,
 			mail.ParamICS: invite, mail.ParamICSMethod: method,
 		}

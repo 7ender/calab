@@ -9,6 +9,7 @@ export const enPicker: DictShape<typeof ruPicker> = {
   'picker.searchRooms': "Find a room",
   'picker.roles': "Roles",
   'picker.members': "Members",
+  'picker.guests': "Guests · {n}",
   'picker.rooms': "Rooms",
   'picker.fullAccess': "full access",
   'picker.alwaysFull': "Always full access: room settings don’t apply to this role",

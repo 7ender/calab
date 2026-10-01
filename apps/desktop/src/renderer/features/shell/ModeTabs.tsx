@@ -1,13 +1,14 @@
 import { CalendarDays, SquareKanban, Volume2, type LucideIcon } from 'lucide-react';
-import { memo, useCallback, type KeyboardEvent, type ReactNode } from 'react';
+import { memo, useCallback, useLayoutEffect, useRef, type KeyboardEvent, type ReactNode } from 'react';
 import { Tip, cx } from '../../components/ui';
-import { plural, t } from '../../i18n';
+import { plural, t, useLocale } from '../../i18n';
 import { dayKey } from '../../lib/calendar/time';
 import { unreadCount, useBoards } from '../../stores/boards';
 import { useBoardsUi } from '../../stores/boardsUi';
 import { useCalendar } from '../../stores/calendar';
 import { useFreeBusy } from '../../stores/freebusy';
 import { useUi } from '../../stores/ui';
+import { pillBox, pillStyle } from './modePill';
 
 export type Mode = 'voice' | 'calendar' | 'boards';
 const MODES: readonly Mode[] = ['voice', 'calendar', 'boards'];
@@ -51,9 +52,45 @@ const useMode = (): Mode => {
  * not the room list.
  */
 export const ModeTabs = memo(function ModeTabs({ workspaceId }: { workspaceId: string }): ReactNode {
+  // memo + props without the language: subscribe, or a live language switch leaves the old labels.
+  useLocale();
   const mode = useMode();
   const today = useCalendar((s) => s.todayCount);
   const unread = useBoards((s) => unreadCount(s, workspaceId));
+  const trackRef = useRef<HTMLDivElement>(null);
+  const pillRef = useRef<HTMLDivElement>(null);
+  // The pill is moved straight on the DOM (no state): a switch re-renders only this strip's tabs.
+  // The first measure and every resize are instant; a change of the mode glides (data-glide).
+  useLayoutEffect(() => {
+    const track = trackRef.current;
+    const pill = pillRef.current;
+    if (!track || !pill) return;
+    const place = (glide: boolean): void => {
+      const seg = track.querySelector<HTMLElement>(`[data-mode="${mode}"]`);
+      if (!seg) return;
+      const tr = track.getBoundingClientRect();
+      const box = pillBox({ left: tr.left, borderLeft: track.clientLeft }, seg.getBoundingClientRect(), window.devicePixelRatio || 1);
+      if (!box) return;
+      const first = pill.dataset.ready !== 'true';
+      pill.dataset.glide = String(glide && !first);
+      const st = pillStyle(box);
+      pill.style.transform = st.transform;
+      pill.style.width = st.width;
+      pill.dataset.ready = 'true';
+      pill.style.visibility = 'visible';
+    };
+    place(true);
+    // A resize of the column moves the segment without a user switch: follow it instantly. It
+    // fires on real size changes only, never on a timer.
+    let observed = false;
+    const ro = new ResizeObserver(() => {
+      // The first callback is the initial observation, not a resize: it must not cut the glide.
+      if (observed) place(false);
+      observed = true;
+    });
+    ro.observe(track);
+    return () => ro.disconnect();
+  }, [mode]);
   const onKeyDown = useCallback((e: KeyboardEvent<HTMLDivElement>) => {
     const at = MODES.indexOf((e.target as HTMLElement).dataset.mode as Mode);
     if (at < 0) return;
@@ -71,7 +108,15 @@ export const ModeTabs = memo(function ModeTabs({ workspaceId }: { workspaceId: s
     }, 0);
   }, []);
   return (
-    <div role="tablist" aria-label={t('shell.modes')} onKeyDown={onKeyDown} className="flex h-8 min-w-0 flex-1 items-center gap-0.5 rounded-[var(--radius-control)] bg-hover p-0.5" data-testid="mode-tabs">
+    <div
+      ref={trackRef}
+      role="tablist"
+      aria-label={t('shell.modes')}
+      onKeyDown={onKeyDown}
+      className="relative flex h-8 min-w-0 flex-1 items-center gap-0.5 rounded-[var(--radius-control)] bg-[var(--color-mode-track)] p-0.5 shadow-[inset_0_0_0_1px_var(--color-mode-track-line)]"
+      data-testid="mode-tabs"
+    >
+      <div ref={pillRef} aria-hidden className="mode-pill" style={{ visibility: 'hidden' }} data-testid="mode-pill" />
       <ModeTab mode="voice" selected={mode === 'voice'} icon={Volume2} label={t('shell.modeVoice')} count={0} countLabel="" testId="mode-voice" />
       <ModeTab
         mode="calendar"
@@ -133,12 +178,13 @@ function ModeTab({
       onClick={() => showMode(mode)}
       className={cx(
         // Focus ring at offset 0: it fills the track's 2 px padding (as the segmented control).
-        'relative flex h-7 shrink-0 items-center justify-center gap-1.5 rounded-[calc(var(--radius-control)-2px)] text-control font-medium transition-colors duration-[var(--motion-fast)] focus-visible:outline-offset-0',
-        selected ? 'min-w-0 flex-1 bg-[var(--color-segment-on)] px-2 text-fg shadow-[var(--shadow-segment)]' : 'w-8 text-muted hover:bg-[var(--color-fill)] hover:text-fg',
+        // The pill (behind, see .mode-pill) carries the selected look; the tab itself is flat.
+        'relative z-10 flex h-7 shrink-0 items-center justify-center gap-1.5 rounded-[calc(var(--radius-control)-2px)] text-control font-medium transition-colors duration-[var(--motion-fast)] focus-visible:outline-offset-0',
+        selected ? 'min-w-0 flex-1 px-2 font-semibold text-fg' : 'w-8 text-[var(--color-mode-idle)] hover:bg-[var(--color-mode-hover)] hover:text-fg',
       )}
     >
       <Icon className="size-4 shrink-0" aria-hidden />
-      {selected ? <span className="min-w-0 truncate">{label}</span> : null}
+      {selected ? <span className="mode-label min-w-0 truncate">{label}</span> : null}
       {count > 0 ? (
         <span
           aria-hidden

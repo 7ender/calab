@@ -54,8 +54,8 @@ describe('transmitDecision', () => {
   const base = { muted: false, deafened: false, canSpeak: true, mode: 'voice' as const, gateOpen: false, pttDown: false };
 
   it('VAD gate closed: audio off but NOT a LiveKit mute (no signalling on pauses)', () => {
-    expect(transmitDecision(base)).toEqual({ livekitMuted: false, audioEnabled: false, transmitting: false });
-    expect(transmitDecision({ ...base, gateOpen: true })).toEqual({ livekitMuted: false, audioEnabled: true, transmitting: true });
+    expect(transmitDecision(base)).toEqual({ livekitMuted: false, audioEnabled: false, transmitting: false, speaking: false });
+    expect(transmitDecision({ ...base, gateOpen: true })).toEqual({ livekitMuted: false, audioEnabled: true, transmitting: true, speaking: true });
   });
 
   it('PTT follows the key, ignores the gate', () => {
@@ -69,6 +69,16 @@ describe('transmitDecision', () => {
       expect(d.livekitMuted).toBe(true);
       expect(d.transmitting).toBe(false);
     }
+  });
+
+  it('musician mode (ADR-0052): voice activation leaves the mic open, the gate only drives the ring', () => {
+    const m = { ...base, musician: true };
+    expect(transmitDecision(m)).toEqual({ livekitMuted: false, audioEnabled: true, transmitting: true, speaking: false });
+    expect(transmitDecision({ ...m, gateOpen: true })).toEqual({ livekitMuted: false, audioEnabled: true, transmitting: true, speaking: true });
+    // PTT stays PTT; an explicit mute still mutes.
+    expect(transmitDecision({ ...m, mode: 'ptt' }).audioEnabled).toBe(false);
+    expect(transmitDecision({ ...m, mode: 'ptt', pttDown: true }).transmitting).toBe(true);
+    expect(transmitDecision({ ...m, muted: true })).toMatchObject({ livekitMuted: true, transmitting: false, speaking: false });
   });
 });
 

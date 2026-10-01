@@ -26,6 +26,8 @@ export const IPC = {
   appDeepLink: 'app:deep-link',
   /** main → renderer: power events (resume after sleep → force gateway reconnect). */
   appPower: 'app:power',
+  /** main → renderer: the API connections were reset after a stall — retry failed loads (docs/09 #146). */
+  appApiReset: 'app:api-reset',
   appCheckUpdates: 'app:check-updates',
   /** The current update status (a reloaded renderer does not miss a downloaded update). */
   appGetUpdateStatus: 'app:get-update-status',

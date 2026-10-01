@@ -92,3 +92,14 @@ export function userItems(users: readonly User[], roleOf: (userId: string) => Wo
     search: [u.displayName],
   }));
 }
+
+/**
+ * Permanent members vs guest accounts (ADR-0040): the room permissions list shows guests apart
+ * (a collapsed «Гости · N» group) so they don't clutter the member list. Order is kept.
+ */
+export function splitGuests<T extends { guest: boolean }>(items: readonly T[]): { members: T[]; guests: T[] } {
+  const members: T[] = [];
+  const guests: T[] = [];
+  for (const i of items) (i.guest ? guests : members).push(i);
+  return { members, guests };
+}

@@ -38,21 +38,37 @@ import { isNewerVersion } from '../shared/version';
  * same hourly (± jitter) tick as when idle (with several releases a day a 6 h cadence still left
  * «1.1.0 готово» on screen while 1.3.0 was out — owner, 30.09), on wake / unlock / back online
  * (throttled like any nudge) and right before «Перезапустить» (unless the last check is fresh); a
- * newer version replaces the pending download (electron-updater drops the older file from its
- * cache) and «Перезапустить» installs it once ready. A feed offering a version not newer than the
- * running one is ignored (stale mirror).
+ * newer version replaces the pending download and «Перезапустить» installs it once ready. A feed
+ * offering a version not newer than the running one is ignored (stale mirror).
  *
- * Install on quit (beforeQuit, wired to `will-quit`): the pending download is installed by
- * electron-updater's own `quit` handler (Windows NSIS / Linux AppImage — BaseUpdater.addQuitHandler,
- * which reads `autoInstallOnAppQuit` live at `quit`). Without a look at the feed that installed a
- * stale file, and the next start found the newest — the second update. So a quit with a pending
- * download re-checks the feed first when the last check is older than QUIT_FRESH_MS (the quit is
- * held at most QUIT_RECHECK_TIMEOUT_MS); a feed newer than the downloaded file → no install on this
- * quit (`autoInstallOnAppQuit` off; the next start downloads the newest — one update); same / older
- * feed, a timeout or an error → install as before. At OS shutdown / logout nothing is awaited: the
- * last known feed version decides. macOS is exempt: Squirrel.Mac stages the update as soon as it is
- * downloaded (MacUpdater feeds it at download time) and installs it on quit by itself, the flag is
- * not consulted at quit — there the hourly re-check (which re-stages a newer version) is the fix.
+ * One update, to the newest (owner, 30.09: several releases a day, people restart late). Facts of
+ * electron-updater 6.8.9 this relies on (read in node_modules, docs/12 «двойное обновление»):
+ * - All platforms keep ONE downloaded file (`<cache>/pending`). Starting the download of a newer
+ *   version deletes the older one (DownloadedUpdateHelper.getValidCachedUpdateFile: sha512 of the
+ *   cached file ≠ the new one → emptyDir(pending)); a failed download clears it too
+ *   (executeDownload → removeFileIfAny → clear()). So once a replacement download starts there is
+ *   nothing installable until it ends: `downloadedVersion` is reset, «Перезапустить» waits for the
+ *   newer one (installWhenReady), a quit installs nothing (the next start fetches the newest).
+ * - Windows NSIS / AppImage install `downloadedUpdateHelper.file` — always the newest downloaded —
+ *   from BaseUpdater's `quit` handler, which reads `autoInstallOnAppQuit` live.
+ * - macOS: MacUpdater serves the newest downloaded zip to Squirrel.Mac through a local proxy (a new
+ *   one per download, setFeedURL) but, with `autoInstallOnAppQuit` on, also makes Squirrel fetch and
+ *   STAGE it at download time — and Squirrel installs what it staged on any quit. A newer download
+ *   re-feeds Squirrel, but `quitAndInstall()` goes straight to Squirrel once anything was staged
+ *   (`squirrelDownloadedUpdate` stays true from the first one), and a quit while the newer one
+ *   downloads installs the older staged one: two updates in a row. So on macOS the flow keeps
+ *   `autoInstallOnAppQuit` OFF (nothing is staged at download time) and stages itself (env.stage,
+ *   Squirrel's own check against MacUpdater's proxy = the newest downloaded file) right before
+ *   «Перезапустить» quits and, for install-on-quit, in `will-quit` — the only moments it matters.
+ *
+ * Install on quit (beforeQuit, wired to `will-quit`): a quit with a pending download re-checks the
+ * feed first when the last check is older than QUIT_FRESH_MS (the quit is held at most
+ * QUIT_RECHECK_TIMEOUT_MS); a feed newer than the downloaded file → no install on this quit (the next
+ * start downloads the newest — one update); same / older feed, a timeout or an error → install:
+ * Windows / AppImage through electron-updater's `quit` handler, macOS by staging now (the windows are
+ * already closed; ≤ QUIT_STAGE_TIMEOUT_MS). At OS shutdown / logout nothing is awaited: Windows /
+ * AppImage decide by the last known feed version, macOS installs nothing (the next start offers the
+ * already downloaded update again — no re-download).
  */
 
 /** The part of electron-updater's AppUpdater the flow uses. */
@@ -112,6 +128,13 @@ export interface UpdateFlowEnv {
    * bounded and never reject. Not called for install-on-quit (no relaunch).
    */
   prepareRestart?: () => Promise<void>;
+  /**
+   * macOS only: have Squirrel.Mac fetch and stage the newest downloaded update (from MacUpdater's
+   * local proxy); resolves once staged (Squirrel's `update-downloaded`), rejects on its error.
+   * Called right before «Перезапустить» quits and at install-on-quit — see the file docblock.
+   * Absent on macOS → treated as staged (tests).
+   */
+  stage?: () => Promise<void>;
 }
 
 export const FIRST_CHECK_MS = 10_000;
@@ -130,8 +153,12 @@ export const QUIT_RECHECK_TIMEOUT_MS = 3_000;
 export const INSTALL_FRESH_MS = 2 * 60 * 1000;
 /** «Перезапустить» waits at most this long for that re-check before installing what it has. */
 export const INSTALL_RECHECK_TIMEOUT_MS = 8_000;
+/** macOS «Перезапустить»: how long Squirrel.Mac may take to stage the update (local copy + signature check). */
+export const INSTALL_STAGE_TIMEOUT_MS = 60_000;
+/** macOS install-on-quit: the quit (windows already closed) waits at most this long for the staging. */
+export const QUIT_STAGE_TIMEOUT_MS = 20_000;
 
-export type NudgeReason = 'resume' | 'unlock' | 'online';
+export type NudgeReason = 'resume' | 'unlock' | 'online' | 'focus';
 
 export interface AutoInstallInput {
   platform: string;
@@ -165,16 +192,17 @@ export interface UpdateFlow {
   /** Stops all timers (tests / shutdown). */
   stop(): void;
   /**
-   * Wake / unlock / back online: a debounced check (once started, automatic checks on, not while
-   * downloading / downloaded, and not within NUDGE_MIN_GAP_MS of the last check).
+   * Wake / unlock / back online / window focus: a debounced check (once started, automatic checks
+   * on, not while downloading, and not within NUDGE_MIN_GAP_MS of the last check).
    */
   nudge(reason: NudgeReason): void;
   /** A check now (startup timer, periodic timer, «Проверить»). Concurrent calls share one check. */
   check(): Promise<UpdateStatus>;
   /**
    * «Перезапустить» (also during a call — the relaunched app rejoins it): re-check the feed (a
-   * newer version replaces the pending download and installs once ready), then quit and install.
-   * false when nothing is downloaded.
+   * newer version replaces the pending download and installs once ready), then quit and install
+   * (macOS: after staging the newest download). During a download: install it once downloaded.
+   * false when nothing is downloaded or downloading.
    */
   install(): boolean;
   /**
@@ -207,6 +235,23 @@ function bounded(p: Promise<unknown>, ms: number): Promise<void> {
   });
 }
 
+/** true when `p` resolves within `ms`; false when it rejects or times out. Never rejects. */
+function succeeds(p: Promise<unknown>, ms: number): Promise<boolean> {
+  return new Promise((resolve) => {
+    const timer = setTimeout(() => resolve(false), ms);
+    p.then(
+      () => {
+        clearTimeout(timer);
+        resolve(true);
+      },
+      () => {
+        clearTimeout(timer);
+        resolve(false);
+      },
+    );
+  });
+}
+
 interface VersionInfo {
   version: string;
 }
@@ -236,8 +281,17 @@ export function createUpdateFlow(updater: UpdaterLike, env: UpdateFlowEnv): Upda
   let replacing = false;
   /** «Перезапустить» found a newer version: install as soon as it is downloaded. */
   let installWhenReady = false;
-  /** Version of the file electron-updater holds for install-on-quit ('' = none downloaded yet). */
+  /**
+   * Version of the file electron-updater holds, i.e. what a restart / quit would install — always
+   * the newest downloaded. '' = nothing installable (none yet, or a replacement / failed download
+   * deleted it — see the file docblock).
+   */
   let downloadedVersion = '';
+  /** Squirrel.Mac stages the update (install / quit on macOS): no checks, no new downloads meanwhile. */
+  let staging = false;
+  /** The pending download should be installed on quit (what `autoInstallOnAppQuit` means off macOS). */
+  let installOnQuit = false;
+  const mac = env.platform === 'darwin';
   /** Newest version the feed offered at the last check ('' = nothing newer than the app). */
   let feedVersion = '';
   /** beforeQuit() ran: no new downloads, and its install decision is not undone by applyFlags(). */
@@ -304,6 +358,8 @@ export function createUpdateFlow(updater: UpdaterLike, env: UpdateFlowEnv): Upda
     if (quitting) return;
     if (status.state === 'available' && (updater.autoDownload || replacing)) {
       env.log.info('[update] download', status.version);
+      // electron-updater deletes the older downloaded file when this download starts.
+      if (replacing) downloadedVersion = '';
       replacing = false;
       publish({ state: 'downloading', version: status.version, percent: 0 });
       startDownload();
@@ -313,7 +369,27 @@ export function createUpdateFlow(updater: UpdaterLike, env: UpdateFlowEnv): Upda
   const applyFlags = (): void => {
     const on = feed !== '' && autoFor(feed);
     updater.autoDownload = on;
-    updater.autoInstallOnAppQuit = !skipQuitInstall && (on || (requested && feed !== '' && installableFrom(feed)));
+    installOnQuit = !skipQuitInstall && (on || (requested && feed !== '' && installableFrom(feed)));
+    // macOS: never let MacUpdater stage at download time (the flow stages the newest itself).
+    updater.autoInstallOnAppQuit = !mac && installOnQuit;
+  };
+
+  /** Install-on-quit is off for this quit (Windows / AppImage: electron-updater's `quit` handler skips it). */
+  const skipOnQuit = (): void => {
+    skipQuitInstall = true;
+    installOnQuit = false;
+    updater.autoInstallOnAppQuit = false;
+  };
+
+  /** macOS: Squirrel.Mac stages the newest download (true when staged within `ms`); elsewhere true. */
+  const stageNewest = async (ms: number): Promise<boolean> => {
+    if (!mac || !env.stage) return true;
+    staging = true;
+    try {
+      return await succeeds(env.stage(), ms);
+    } finally {
+      staging = false;
+    }
   };
 
   const startDownload = (): void => {
@@ -360,7 +436,9 @@ export function createUpdateFlow(updater: UpdaterLike, env: UpdateFlowEnv): Upda
     }
     pendingVersion = version;
     if (updater.autoDownload) {
-      // electron-updater starts the download itself (autoDownload).
+      // electron-updater starts the download itself (autoDownload); another version replaces
+      // (deletes) a file still held from before (e.g. after a failed staging → 'error').
+      if (version !== downloadedVersion) downloadedVersion = '';
       publish({ state: 'downloading', version, percent: 0 });
       return;
     }
@@ -393,14 +471,16 @@ export function createUpdateFlow(updater: UpdaterLike, env: UpdateFlowEnv): Upda
   });
   on('error', (e) => {
     env.log.warn('[update] failed', e);
+    // A failed download leaves nothing installable (electron-updater clears its cache).
+    if (status.state === 'downloading') downloadedVersion = '';
     if (status.state !== 'downloaded') installWhenReady = false;
     // A failure after the download (e.g. a later check) must not hide «Перезапустить».
     if (status.state !== 'downloaded') publish({ state: 'error', message: 'update failed' });
   });
 
   const run = async (): Promise<UpdateStatus> => {
-    // Downloading: nothing new to learn until it ends.
-    if (busy()) return status;
+    // Downloading: nothing new to learn until it ends. Staging: the file must stay as it is.
+    if (busy() || staging) return status;
     // Downloaded: the check only asks whether the pending version is still the latest.
     const pending = status.state === 'downloaded';
     const url = nextFeed();
@@ -454,8 +534,28 @@ export function createUpdateFlow(updater: UpdaterLike, env: UpdateFlowEnv): Upda
         // Not silent (Windows shows the installer progress), relaunch after install.
         updater.quitAndInstall(false, true);
       };
-      if (env.prepareRestart) void env.prepareRestart().catch(() => undefined).then(quit);
-      else quit();
+      const restart = (): void => {
+        if (env.prepareRestart) void env.prepareRestart().catch(() => undefined).then(quit);
+        else quit();
+      };
+      if (!mac) {
+        restart();
+        return;
+      }
+      // macOS: Squirrel.Mac stages exactly this (newest) download now; quitAndInstall() then
+      // installs it (MacUpdater: staged → Squirrel's quitAndInstall at once). Staged before
+      // prepareRestart, so a failure leaves the call untouched.
+      env.log.info('[update] staging', version);
+      void stageNewest(INSTALL_STAGE_TIMEOUT_MS).then((ok) => {
+        if (ok) {
+          restart();
+          return;
+        }
+        env.log.warn('[update] staging', version, 'failed — not installing');
+        installing = false;
+        // Recovers on the next check (the downloaded file is still cached, nothing re-downloaded).
+        publish({ state: 'error', message: 'update install failed' });
+      });
     };
     const fresh = !recheck || Date.now() - lastCheckAt < INSTALL_FRESH_MS;
     const waits: Array<Promise<unknown>> = [];
@@ -480,30 +580,44 @@ export function createUpdateFlow(updater: UpdaterLike, env: UpdateFlowEnv): Upda
   /** The feed has a version newer than the downloaded file: installing it now means a second update. */
   const staleDownload = (): boolean => feedVersion !== '' && isNewerVersion(feedVersion, downloadedVersion);
 
-  /** Final install-on-quit decision (see the file docblock). */
-  const decideQuitInstall = (): void => {
+  /**
+   * Final install-on-quit decision (see the file docblock). null → decided; a promise → macOS
+   * stages the update, the quit waits for it (never rejects).
+   */
+  const decideQuitInstall = (): Promise<void> | null => {
     if (staleDownload()) {
       env.log.info('[update] quit: feed has', feedVersion, '— not installing the downloaded', downloadedVersion, '(the next start downloads it)');
-      skipQuitInstall = true;
-      updater.autoInstallOnAppQuit = false;
-    } else {
-      env.log.info('[update] quit: installing', downloadedVersion);
+      skipOnQuit();
+      return null;
     }
+    env.log.info('[update] quit: installing', downloadedVersion);
+    if (!mac) return null;
+    // Squirrel.Mac installs what it staged once the app has exited.
+    return stageNewest(QUIT_STAGE_TIMEOUT_MS).then((ok) => {
+      if (!ok) env.log.warn('[update] quit: staging', downloadedVersion, 'failed / timed out — installs on a later restart');
+    });
   };
 
   const beforeQuit = (sessionEnding: boolean): Promise<void> | null => {
     if (quitting) return null;
     quitting = true;
-    // «Перезапустить» is under way (quitAndInstall), or nothing would be installed on this quit.
-    if (installing || downloadedVersion === '' || !updater.autoInstallOnAppQuit) return null;
-    // Squirrel.Mac already staged the file at download time and installs it on quit by itself.
-    if (env.platform === 'darwin') return null;
-    if (sessionEnding || staleDownload() || Date.now() - lastCheckAt < QUIT_FRESH_MS) {
-      decideQuitInstall();
+    // «Перезапустить» is under way (quitAndInstall).
+    if (installing) return null;
+    // Nothing installable (none, or a newer one still downloading), or install-on-quit is off.
+    if (downloadedVersion === '' || !installOnQuit) {
+      skipOnQuit();
       return null;
     }
+    // OS shutdown / logout: never wait. macOS would have to stage first — the next start offers
+    // the downloaded update again instead.
+    if (sessionEnding && mac) {
+      env.log.info('[update] quit: session ends — not staging', downloadedVersion);
+      skipOnQuit();
+      return null;
+    }
+    if (sessionEnding || staleDownload() || Date.now() - lastCheckAt < QUIT_FRESH_MS) return decideQuitInstall();
     env.log.info('[update] quit: re-checking the feed before installing', downloadedVersion);
-    return bounded(check(), QUIT_RECHECK_TIMEOUT_MS).then(decideQuitInstall);
+    return bounded(check(), QUIT_RECHECK_TIMEOUT_MS).then(() => decideQuitInstall() ?? undefined);
   };
 
   return {
@@ -527,6 +641,13 @@ export function createUpdateFlow(updater: UpdaterLike, env: UpdateFlowEnv): Upda
     nudge,
     check,
     install() {
+      if (status.state === 'downloading' && !quitting) {
+        // Pressed as a newer version started replacing the pending one (its file is already gone):
+        // install that one once downloaded — the renderer shows the progress meanwhile.
+        env.log.info('[update] install when', status.version, 'is downloaded');
+        installWhenReady = true;
+        return true;
+      }
       return installNow(true);
     },
     download() {

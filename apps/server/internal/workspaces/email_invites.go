@@ -216,6 +216,21 @@ func localeOf(u sqlc.User) string {
 	return mail.LocaleEN
 }
 
+// mailSender is the inviter's name and language in an invitation mail. A bot (ADR-0051) sends
+// as the workspace on its behalf, in the language of its owner.
+func mailSender(ctx context.Context, q *sqlc.Queries, actor sqlc.User, ws sqlc.Workspace) (name, locale string) {
+	if !actor.IsBot {
+		return actor.DisplayName, localeOf(actor)
+	}
+	locale = mail.LocaleEN
+	if b, err := q.GetBot(ctx, actor.ID); err == nil {
+		if owner, err := q.GetUser(ctx, b.OwnerUserID); err == nil {
+			locale = localeOf(owner)
+		}
+	}
+	return mail.OnBehalfOfBot(locale, ws.Name, actor.DisplayName), locale
+}
+
 func emailInvitePB(e sqlc.EmailInvite) *v1.EmailInvite {
 	return &v1.EmailInvite{
 		Id: e.ID.String(), WorkspaceId: e.WorkspaceID.String(), Email: e.Email, Role: perm.Role(e.Role).Proto(),
@@ -327,12 +342,13 @@ func (h *Handlers) createEmailInvite(w http.ResponseWriter, r *http.Request) err
 				return err
 			}
 		}
+		inviter, locale := mailSender(r.Context(), q, actor, ws)
 		return h.email.Mail.Enqueue(r.Context(), q, mail.Mail{
 			// The invitee has no account (or its language is unknown to the inviter's
 			// workspace): the inviter's language is the best guess.
-			To: email, Template: mail.TemplateWorkspaceInvite, Locale: localeOf(actor), Priority: mail.PriorityNotice, TTL: mail.MaxRetry,
+			To: email, Template: mail.TemplateWorkspaceInvite, Locale: locale, Priority: mail.PriorityNotice, TTL: mail.MaxRetry,
 			Params: mail.Params{
-				"workspace": ws.Name, "inviter": actor.DisplayName, "days": "7", "code": code,
+				"workspace": ws.Name, "inviter": inviter, "days": "7", "code": code,
 				"url": strings.TrimRight(h.email.PublicURL, "/") + "/join/" + code,
 			},
 		})

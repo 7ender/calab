@@ -1,5 +1,22 @@
 import { describe, expect, it } from 'vitest';
-import { appDropAt, appInitial, coversContent, moveApp, visibleViewRect, type OverlayNode } from './webApps';
+import { appDropAt, appInitial, coversContent, moveApp, showBottomIsland, titleSlot, visibleViewRect, type OverlayNode } from './webApps';
+
+describe('showBottomIsland', () => {
+  it('is hidden under an app view unless a voice call is on', () => {
+    expect(showBottomIsland(false, false)).toBe(true);
+    expect(showBottomIsland(false, true)).toBe(true);
+    expect(showBottomIsland(true, false)).toBe(false);
+    expect(showBottomIsland(true, true)).toBe(true);
+  });
+});
+
+describe('titleSlot', () => {
+  it('shows the app name while an app is open, else the workspace switcher', () => {
+    expect(titleSlot('GPTunneL')).toEqual({ kind: 'app', text: 'GPTunneL' });
+    expect(titleSlot(undefined)).toEqual({ kind: 'workspace' });
+    expect(titleSlot('')).toEqual({ kind: 'workspace' });
+  });
+});
 
 describe('appInitial', () => {
   it('takes the first letter or digit', () => {

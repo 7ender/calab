@@ -94,6 +94,7 @@ func (h *Handlers) Routes(mux httpx.Router, wrap func(http.Handler) http.Handler
 	handle("POST /api/workspaces/{id}/invites", h.createInvite)
 	handle("DELETE /api/workspaces/{id}/invites/{inviteId}", h.deleteInvite)
 	handle("GET /api/workspaces/{id}/members", h.listMembers)
+	handle("GET /api/workspaces/{id}/members/{userId}", h.getMember)
 	handle("PATCH /api/workspaces/{id}/members/{userId}", h.updateMember)
 	handle("DELETE /api/workspaces/{id}/members/{userId}", h.removeMember)
 	handle("POST /api/workspaces/{id}/members/{userId}/promote", h.promote)
@@ -950,6 +951,53 @@ func (h *Handlers) listMembers(w http.ResponseWriter, r *http.Request) error {
 		}
 	}
 	httpx.Write(w, http.StatusOK, out)
+	return nil
+}
+
+// getMember: GET /api/workspaces/{id}/members/{userId} — one member's profile with their open
+// tasks on the boards the caller sees (ADR-0051). A guest sees only the members visible to it.
+func (h *Handlers) getMember(w http.ResponseWriter, r *http.Request) error {
+	wsID, _, role, err := access(r)
+	if err != nil {
+		return err
+	}
+	target, err := targetUser(r)
+	if err != nil {
+		return err
+	}
+	if role == perm.RoleGuest {
+		allowed, err := guestVisibleUsers(r.Context(), h.db.Q, wsID, uid(r))
+		if err != nil {
+			return err
+		}
+		if !allowed[target] {
+			return httpx.NotFound("member")
+		}
+	}
+	m, err := h.db.Q.GetMember(r.Context(), sqlc.GetMemberParams{WorkspaceID: wsID, UserID: target})
+	if db.IsNotFound(err) {
+		return httpx.NotFound("member")
+	}
+	if err != nil {
+		return err
+	}
+	u, err := h.db.Q.GetUser(r.Context(), target)
+	if err != nil {
+		return err
+	}
+	pb, err := MemberPB(r.Context(), h.db.Q, m, u)
+	if err != nil {
+		return err
+	}
+	me, err := perm.FromContext(r.Context()).Member(r.Context(), wsID, uid(r))
+	if err != nil {
+		return err
+	}
+	tasks, err := boards.OpenTasksOf(r.Context(), h.db.Pool, h.db.Q, wsID, me, uid(r), target)
+	if err != nil {
+		return err
+	}
+	httpx.Write(w, http.StatusOK, &v1.GetMemberResponse{Member: pb, OpenTasks: tasks})
 	return nil
 }
 

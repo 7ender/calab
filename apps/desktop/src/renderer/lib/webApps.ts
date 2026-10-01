@@ -112,3 +112,20 @@ export function visibleViewRect(view: ViewRect, overlays: readonly ViewRect[], g
   }
   return r.width >= MIN_VIEW_WIDTH && r.height >= MIN_VIEW_HEIGHT ? r : null;
 }
+
+/**
+ * The bottom island (profile, mic, voice bar) while a web app fills the screen: gone, so the
+ * site reaches the window's bottom — unless I am in a voice call, then it stays for the call
+ * controls (ADR-0050 «Уточнение»).
+ */
+export function showBottomIsland(appOpen: boolean, inVoice: boolean): boolean {
+  return !appOpen || inVoice;
+}
+
+/**
+ * What the title bar's left slot shows: the open web app's name as plain text (no chevron, not a
+ * menu) while the app view is active, otherwise the workspace switcher.
+ */
+export function titleSlot(appName: string | undefined): { kind: 'app'; text: string } | { kind: 'workspace' } {
+  return appName ? { kind: 'app', text: appName } : { kind: 'workspace' };
+}

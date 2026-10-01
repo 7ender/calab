@@ -1,7 +1,7 @@
 import { existsSync, readFileSync, renameSync, rmSync, writeFileSync } from 'node:fs';
 import { hostname } from 'node:os';
 import { join } from 'node:path';
-import { app, BrowserWindow, net, safeStorage, session, type Session } from 'electron';
+import { app, BrowserWindow, safeStorage, session, type Session } from 'electron';
 import log from 'electron-log/main';
 import {
   IPC,
@@ -14,6 +14,7 @@ import {
 } from '../shared/ipc';
 import { INSECURE_SERVER_CODE, serverUrlProblem } from '../shared/serverUrl';
 import { AUTH_TIMEOUT_MS } from '../shared/refreshGate';
+import { apiSession } from './apiTransport';
 import { getSettings, normalizeServerUrl, updateSettings } from './settings';
 import { TokenBroker, toTokens, type Tokens, type TokensJson } from './tokenBroker';
 
@@ -128,7 +129,8 @@ function networkError(err: unknown): ApiErrorJson {
  * per-request "new connection" switch, so the retry goes through a separate in-memory session
  * (own network context, own pool; system proxy / VPN settings as the default one) whose pooled
  * connections are closed first: it always opens a new TCP/TLS connection. Only the auth POST
- * uses it; the default session (gateway socket, LiveKit, API calls) is left alone.
+ * uses it; the API session (apiTransport.ts: API calls, the first refresh try, `/api/me`) is left
+ * alone — its own stall detector resets it.
  */
 let authRetrySession: Session | null = null;
 async function freshSession(): Promise<Session> {
@@ -138,7 +140,7 @@ async function freshSession(): Promise<Session> {
 }
 
 async function postJson(base: string, path: string, body: unknown, access?: string, via?: Session): Promise<Response> {
-  return (via ?? net).fetch(`${base}${path}`, {
+  return (via ?? apiSession()).fetch(`${base}${path}`, {
     method: 'POST',
     // Bounded: a black-holed refresh would otherwise hang every API call behind the broker (review N3).
     signal: AbortSignal.timeout(AUTH_TIMEOUT_MS),
@@ -153,7 +155,7 @@ async function postJson(base: string, path: string, body: unknown, access?: stri
 async function fetchMe(): Promise<unknown> {
   const t = await getAccessToken();
   if (!t) throw new Error('not authenticated');
-  const res = await net.fetch(`${broker.serverUrl}/api/me`, {
+  const res = await apiSession().fetch(`${broker.serverUrl}/api/me`, {
     headers: { Authorization: `Bearer ${t}` },
     signal: AbortSignal.timeout(AUTH_TIMEOUT_MS),
   });

@@ -5,6 +5,7 @@ import { Features } from '@/components/features';
 import { Footer } from '@/components/footer';
 import { Header } from '@/components/header';
 import { Hero } from '@/components/hero';
+import { Performance } from '@/components/performance';
 import { Pricing } from '@/components/pricing';
 import { Why } from '@/components/why';
 import { getDict, isLocale, LOCALE_INFO, localePath } from '@/i18n';
@@ -45,6 +46,7 @@ export default async function Home({ params }: { params: Promise<{ locale: strin
         <Hero t={t.hero} locale={locale} />
         <Why t={t.why} />
         <Features t={t.features} locale={locale} />
+        <Performance t={t.perf} locale={locale} />
         <Pricing t={t.pricing} />
         <Downloads t={t.downloads} />
         <Faq t={t.faq} />

@@ -496,6 +496,7 @@ export function createWebPlatform(): Platform {
         window.addEventListener('online', online);
         return () => window.removeEventListener('online', online);
       },
+      onApiReset: noop,
       checkUpdates: () => Promise.resolve({ state: 'disabled' }),
       onUpdateStatus: noop,
       updateStatus: () => Promise.resolve({ state: 'disabled' }),

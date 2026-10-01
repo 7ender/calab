@@ -60,6 +60,8 @@ export interface CalabaApi {
     takeDeepLink(): Promise<string | null>;
     onDeepLink(cb: (url: string) => void): Unsubscribe;
     onPower(cb: (ev: PowerEvent) => void): Unsubscribe;
+    /** Main closed the API connections after a stall / wake (docs/09 #146): retry failed loads. Web: never. */
+    onApiReset(cb: () => void): Unsubscribe;
     checkUpdates(): Promise<UpdateStatus>;
     onUpdateStatus(cb: (s: UpdateStatus) => void): Unsubscribe;
     /** Current update status (after a renderer reload). */

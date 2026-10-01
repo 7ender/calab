@@ -1,8 +1,7 @@
-import { ArrowLeft, ArrowRight, ExternalLink, Globe, RotateCw } from 'lucide-react';
+import { ExternalLink } from 'lucide-react';
 import { memo, useEffect, useLayoutEffect, useRef, useState, type ReactNode } from 'react';
-import { hostOf } from '../../../shared/appUrl';
 import type { WebAppBounds } from '../../../shared/ipc';
-import { Button, IconButton, Spinner } from '../../components/ui';
+import { Button } from '../../components/ui';
 import { t } from '../../i18n';
 import { coversContent, visibleViewRect } from '../../lib/webApps';
 import { platform } from '../../platform';
@@ -11,14 +10,14 @@ import { useWebApps } from '../../stores/webApps';
 import { useToasts } from '../../stores/toasts';
 import { useCall } from '../../stores/call';
 import { useAdmissions } from '../guests/stores/admissions';
-import { AppGlyph } from './AppGlyph';
 
 /**
- * The open web app (ADR-0050 §3) in place of the room column and the chat, as one island like
- * them: a 32 px strip (icon + name, ◀ ▶ ⟳, the current page's host, «Открыть в браузере») over
- * the site. The rail, the bottom island and the voice bar stay; the call goes on. The site keeps
- * clear of the bottom island's band (`--island-height`): on the desktop it is a native view that
- * nothing in the page can overlap.
+ * The open web app (ADR-0050 §3 + «Уточнение») in place of the room column and the chat, as one
+ * island like them: no toolbar — just the site, with a 2 px load line above it while it loads
+ * (the name is in the title bar; ⌘/Ctrl+[ ] R and the rail tile's menu navigate). The site goes
+ * down to the window's bottom; only while a voice call is on does the bottom island stay and the
+ * site keeps clear of its band (`--island-height`, unset = 0 → `-16px + 16px`): on the desktop it
+ * is a native view that nothing in the page can overlap.
  */
 export function AppScreen({ appId }: { appId: string }): ReactNode {
   const url = useWebApps((s) => s.byId[appId]?.url ?? '');
@@ -26,87 +25,28 @@ export function AppScreen({ appId }: { appId: string }): ReactNode {
   return (
     <div
       className="mat-content flex min-w-0 flex-1 flex-col overflow-hidden rounded-tl-[var(--radius-panel)] border-l border-t border-line"
-      style={{ paddingBottom: 'calc(var(--island-height, 0px) + 16px)' }}
+      style={{ paddingBottom: 'calc(var(--island-height, -16px) + 16px)' }}
       data-testid="app-screen"
     >
-      <NavStrip appId={appId} url={url} />
+      <LoadLine appId={appId} />
       {platform.webApps ? <DesktopView appId={appId} url={url} /> : <WebFrame appId={appId} url={url} />}
     </div>
   );
 }
 
-const NavStrip = memo(function NavStrip({ appId, url }: { appId: string; url: string }): ReactNode {
-  const name = useWebApps((s) => s.byId[appId]?.name ?? '');
-  const iconFileId = useWebApps((s) => s.byId[appId]?.iconFileId ?? '');
-  const desktop = !!platform.webApps;
+/**
+ * The 2 px line above the site while it loads (the native view cannot be drawn over, so it is a
+ * row of its own). Finite: one CSS animation to 85 % per load (mounted only while loading —
+ * nothing runs at rest), gone when the page stops loading. Desktop only: the web frame has no state.
+ */
+const LoadLine = memo(function LoadLine({ appId }: { appId: string }): ReactNode {
+  const loading = useWebApps((s) => s.nav[appId]?.loading ?? false);
   return (
-    <div className="flex h-8 shrink-0 items-center gap-1 border-b border-line px-2" data-testid="app-strip">
-      <div className="size-4 shrink-0 overflow-hidden rounded-[5px]">
-        <AppGlyph id={appId} name={name} iconFileId={iconFileId} size={16} />
-      </div>
-      <span className="ml-1 max-w-[200px] truncate text-caption font-semibold text-fg">{name}</span>
-      <div className="mx-1 h-4 w-px bg-line" aria-hidden />
-      {desktop ? <DesktopNav appId={appId} /> : <WebNav />}
-      <CurrentHost appId={appId} url={url} />
-      <IconButton
-        label={desktop ? t('wapp.openInBrowser') : t('wapp.openInNewTab')}
-        size="sm"
-        tip={!desktop}
-        onClick={() => {
-          if (platform.webApps) void platform.webApps.openExternal();
-          else openAppInBrowser(url);
-        }}
-        data-testid="app-open-external"
-      >
-        <ExternalLink className="size-3.5" />
-      </IconButton>
+    <div className="h-0.5 shrink-0" aria-hidden data-testid="app-load-line">
+      {loading ? <div className="wapp-load h-full bg-accent" /> : null}
     </div>
   );
 });
-
-/**
- * ◀ ▶ ⟳ of the desktop view, enabled by its state (pushed by main on navigation, no polling). No
- * tooltips on the desktop strip: they would open under the native view.
- */
-function DesktopNav({ appId }: { appId: string }): ReactNode {
-  const back = useWebApps((s) => s.nav[appId]?.canGoBack ?? false);
-  const fwd = useWebApps((s) => s.nav[appId]?.canGoForward ?? false);
-  const loading = useWebApps((s) => s.nav[appId]?.loading ?? false);
-  const nav = platform.webApps;
-  return (
-    <>
-      <IconButton label={t('wapp.back')} size="sm" tip={false} disabled={!back} onClick={() => void nav?.navigate('back')}>
-        <ArrowLeft className="size-3.5" />
-      </IconButton>
-      <IconButton label={t('wapp.forward')} size="sm" tip={false} disabled={!fwd} onClick={() => void nav?.navigate('forward')}>
-        <ArrowRight className="size-3.5" />
-      </IconButton>
-      <IconButton label={t('wapp.reload')} size="sm" tip={false} onClick={() => void nav?.navigate('reload')}>
-        {loading ? <Spinner className="size-3.5" /> : <RotateCw className="size-3.5" />}
-      </IconButton>
-    </>
-  );
-}
-
-/** The web client cannot drive a cross-origin frame's history: only ⟳ (the frame is created again). */
-function WebNav(): ReactNode {
-  return (
-    <IconButton label={t('wapp.reload')} size="sm" onClick={() => useWebApps.getState().bumpReload()}>
-      <RotateCw className="size-3.5" />
-    </IconButton>
-  );
-}
-
-function CurrentHost({ appId, url }: { appId: string; url: string }): ReactNode {
-  const current = useWebApps((s) => s.nav[appId]?.url ?? '');
-  const host = hostOf(current) || hostOf(url);
-  return (
-    <span className="ml-1 flex min-w-0 flex-1 items-center gap-1 text-caption text-muted" data-testid="app-host">
-      <Globe className="size-3 shrink-0" aria-hidden />
-      <span className="truncate">{host}</span>
-    </span>
-  );
-}
 
 // ---------------------------------------------------------------- desktop: a main-process view
 

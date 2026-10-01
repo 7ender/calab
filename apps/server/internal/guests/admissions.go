@@ -353,11 +353,9 @@ func guestName(s string) (string, error) {
 	return s, nil
 }
 
-// decide: POST /api/rooms/{id}/admissions/{userId}.
+// decide: POST /api/rooms/{id}/admissions/{userId}. Bots decide like people, by INVITE_GUESTS
+// in the room (ADR-0051; they author no links).
 func (s *Service) decide(w http.ResponseWriter, r *http.Request) error {
-	if auth.IsBotRequest(r) {
-		return auth.ErrBotNotAllowed
-	}
 	roomID, err := httpx.PathUUID(r, "id", "room")
 	if err != nil {
 		return err
@@ -385,6 +383,9 @@ func (s *Service) decide(w http.ResponseWriter, r *http.Request) error {
 	d, err := loadDecider(r, roomID)
 	if err != nil {
 		return err
+	}
+	if !d.acc.Bits.Has(perm.ViewRoom) { // a room the caller cannot see (restricted, ADR-0048): 404
+		return httpx.NotFound("room")
 	}
 	wsID := d.acc.WorkspaceID
 	var badge *uuid.UUID

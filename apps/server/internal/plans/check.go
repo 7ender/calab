@@ -128,3 +128,11 @@ func (s *Service) CheckAudio(ctx context.Context, wsID uuid.UUID, kbps, stored u
 	}
 	return LimitError("kbps of voice quality", uint64(kbps), uint64(lim.AudioMaxKbps))
 }
+
+// FeatureError is the refusal of a feature the plan does not include (CalDAV on Free): the same
+// 409 PLAN_LIMIT as the counted limits, with used = limit = 0; the client tells the feature
+// apart by the message.
+func FeatureError(feature string) *httpx.Error {
+	return httpx.Coded(http.StatusConflict, v1.ErrorCode_ERROR_CODE_CONFLICT, feature+" is not included in the plan").
+		WithDetails(httpx.ReasonPlanLimit, 0, 0)
+}

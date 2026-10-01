@@ -1,6 +1,7 @@
 import { ChevronRight, RefreshCw, TriangleAlert } from 'lucide-react';
 import { useEffect, useId, useMemo, useState, type ReactNode } from 'react';
 import { confirmAction } from '../../components/Confirm';
+import { PlanLock } from '../../components/PlanLock';
 import { useSettingsNav } from '../../components/SettingsWindow';
 import { Button, Card, Field, Input, PasswordInput, Row, Segmented, Select, Spinner, Toggle, cx } from '../../components/ui';
 import { t, useLocale } from '../../i18n';
@@ -112,6 +113,7 @@ function RemindersLink(): ReactNode {
 
 function CalDavCard(): ReactNode {
   const account = useFreeBusy((s) => s.caldav);
+  const locked = useFreeBusy((s) => s.caldavLocked);
   useEffect(() => {
     void loadCalDav();
   }, []);
@@ -121,12 +123,33 @@ function CalDavCard(): ReactNode {
         <div className="grid h-16 place-items-center">
           <Spinner />
         </div>
+      ) : locked ? (
+        <CalDavLocked account={account} />
       ) : account ? (
         <CalDavConnected account={account} />
       ) : (
         <CalDavConnect />
       )}
     </Card>
+  );
+}
+
+/** No plan of mine includes CalDAV (Free): the form stays visible under a lock (PlanLock); a stored account is kept, not shown as working. */
+function CalDavLocked({ account }: { account: CalDavAccount | null }): ReactNode {
+  return (
+    <>
+      {account ? (
+        <div className="flex flex-wrap items-center justify-between gap-2 px-3 pt-3" data-testid="caldav-locked">
+          <span className="text-caption text-faint">{t('fb.dav.lockedStopped', { host: hostOf(account.url) })}</span>
+          <Button variant="destructive" size="sm" onClick={() => void freebusyApi.caldav.remove().then(() => setCalDav(null))} data-testid="caldav-disconnect">
+            {t('fb.dav.disconnect')}
+          </Button>
+        </div>
+      ) : null}
+      <PlanLock plan="team" testId="caldav-locked-lock">
+        <CalDavConnect />
+      </PlanLock>
+    </>
   );
 }
 

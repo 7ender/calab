@@ -59,6 +59,8 @@ export interface TransmitInput extends SelfState {
   mode: 'voice' | 'ptt';
   gateOpen: boolean;
   pttDown: boolean;
+  /** Musician mode (ADR-0052): voice activation does not gate the mic (quiet notes, tails). */
+  musician?: boolean;
 }
 
 export interface TransmitDecision {
@@ -68,12 +70,16 @@ export interface TransmitDecision {
   audioEnabled: boolean;
   /** UI "on air" indicator. */
   transmitting: boolean;
+  /** My «speaking» ring: on air and loud enough (the gate still judges the level in musician mode). */
+  speaking: boolean;
 }
 
 export function transmitDecision(i: TransmitInput): TransmitDecision {
   const livekitMuted = i.muted || i.deafened || !i.canSpeak;
   const gate = i.mode === 'voice' ? i.gateOpen : i.pttDown;
-  return { livekitMuted, audioEnabled: gate, transmitting: !livekitMuted && gate };
+  // Musician + voice activation: an open mic; the gate only drives the ring. PTT stays PTT.
+  const open = i.musician === true && i.mode === 'voice' ? true : gate;
+  return { livekitMuted, audioEnabled: open, transmitting: !livekitMuted && open, speaking: !livekitMuted && gate };
 }
 
 export type LinkQuality = 'good' | 'fair' | 'poor' | 'unknown';

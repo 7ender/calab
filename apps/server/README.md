@@ -93,7 +93,7 @@ KV-хранилище — **Valkey (совместим с Redis)**, ADR-0017. В
 | `CALDAV_SYNC_INTERVAL` | `15m` | как часто импортируется занятость подключённого CalDAV-календаря пользователя (ADR-0041), 1m..24h |
 | `GPTUNNEL_API_URL` | `https://gptunnel.ai` | запись встреч (ADR-0025): API устройств GPTunneL (pairing, загрузка, статус) |
 | `RECORDING_MAX_CONCURRENT` | `3` | одновременных записей на сервер (egress ≈ 0.5 CPU на запись) |
-| `RECORDINGS_PATH` / `RECORDING_EGRESS_DIR` | `./data/recordings` / `/out` | том записей глазами API и контейнера egress (один volume) |
+| `RECORDINGS_PATH` / `RECORDING_EGRESS_DIR` | `./data/recordings` / `/out` | том записей глазами API и контейнера egress (один volume); при `STORAGE_DRIVER=s3` не нужны: egress загружает записи в бакет файлов (docs/06 «Записи встреч в S3») |
 | `GATEWAY_HEARTBEAT_INTERVAL` | `41s` | интервал heartbeat (presence TTL = 2×) |
 | `GATEWAY_MAX_SESSIONS_PER_USER` | `5` | лимит устройств с активным gateway |
 

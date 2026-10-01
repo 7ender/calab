@@ -155,6 +155,40 @@ export const ROLE_PERM_GROUPS: ReadonlyArray<{ id: PermGroupId; perms: readonly 
   { id: 'journals', perms: ['VIEW_JOURNALS'] },
 ];
 
+/**
+ * Administrative bits (ADR-0051): a bot token whose roles carry any of them acts as an admin
+ * through the Bot API, so the role card warns when such a role is held by bots. MANAGE_BOTS is
+ * not one: it gives a bot nothing.
+ */
+export const ADMIN_LEVEL_BITS: PermissionBits =
+  PERMISSION_BITS.MANAGE_WORKSPACE |
+  PERMISSION_BITS.MANAGE_ROLES |
+  PERMISSION_BITS.MANAGE_MEMBERS |
+  PERMISSION_BITS.MANAGE_NICKNAMES |
+  PERMISSION_BITS.MANAGE_ROOM |
+  PERMISSION_BITS.MANAGE_MESSAGES |
+  PERMISSION_BITS.MANAGE_EVENTS |
+  PERMISSION_BITS.MANAGE_RECORDINGS |
+  PERMISSION_BITS.MANAGE_INTEGRATIONS |
+  PERMISSION_BITS.MANAGE_BOARD |
+  PERMISSION_BITS.INVITE_MEMBERS |
+  PERMISSION_BITS.INVITE_GUESTS |
+  PERMISSION_BITS.VIEW_JOURNALS;
+
+/** Bots holding `roleId` (built-ins implied as in rolesOfMember). */
+export function botsWithRole(
+  all: readonly Role[],
+  members: Iterable<{ role: WorkspaceRole; roleIds: readonly string[]; user?: { isBot: boolean } | undefined }>,
+  roleId: string,
+): number {
+  let n = 0;
+  for (const m of members) if (m.user?.isBot && rolesOfMember(all, m).some((r) => r.id === roleId)) n++;
+  return n;
+}
+
+/** The role card's warning (ADR-0051): administrative bits on a role that bots hold. */
+export const warnBotsAdmin = (bits: PermissionBits, bots: number): boolean => bots > 0 && (bits & ADMIN_LEVEL_BITS) !== 0n;
+
 /** Who holds a bit by default (the second half of each bit's hint): guests too, members, or admins only. */
 export type PermDefault = 'guests' | 'members' | 'admins';
 

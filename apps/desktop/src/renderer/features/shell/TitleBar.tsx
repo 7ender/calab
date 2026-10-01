@@ -1,28 +1,21 @@
 import * as Popover from '@radix-ui/react-popover';
-import { AtSign, CircleHelp, Hash, Inbox, Search, Settings, Volume2 } from 'lucide-react';
-import type { Message } from '@calaba/protocol';
-import { useEffect, useMemo, type ReactNode } from 'react';
-import { Avatar } from '../../components/Avatar';
-import { Empty, IconButton, Spinner, Tip, cx } from '../../components/ui';
+import { CircleHelp, Search, Settings } from 'lucide-react';
+import type { ReactNode } from 'react';
+import { IconButton, Tip, cx } from '../../components/ui';
 import { t } from '../../i18n';
-import { api } from '../../lib/api/endpoints';
-import { fmt, toDate } from '../../lib/format';
-import { loadMentions } from '../../services/mentions';
 import { shortcutHelp, useHotkeyLabel } from '../../services/hotkeys';
 import { platform } from '../../platform';
 import { usePrefs } from '../../stores/prefs';
-import { HOME, isDm } from '../../stores/dms';
-import { useInbox } from '../../stores/inbox';
-import { idAfter, isVoice, useRooms } from '../../stores/rooms';
+import { HOME } from '../../stores/dms';
 import { selectUpdatePending, useSession } from '../../stores/session';
 import { useUi } from '../../stores/ui';
-import { useMemberName, useWorkspaces } from '../../stores/workspaces';
-import { useChatView } from '../chat/chatView';
-import { usePreviewText } from '../chat/mentionText';
+import { useWorkspaces } from '../../stores/workspaces';
+import { titleSlot } from '../../lib/webApps';
+import { useOpenApp, useWebApps } from '../../stores/webApps';
 import { bindingLabel } from '../settings/PttBinder';
 import { popoverBox } from './menu';
-import { systemPreview } from '../../lib/recording';
 import { AppSettingsWindow } from './lazyWindows';
+import { InboxButton } from './InboxPopover';
 import { WorkspaceMenu } from './WorkspaceMenu';
 
 /**
@@ -92,6 +85,17 @@ export function TitleBar(): ReactNode {
 function TitleBarWorkspace(): ReactNode {
   const wsId = useUi((s) => s.activeWorkspaceId);
   const known = useWorkspaces((s) => !!wsId && wsId !== HOME && !!s.byId[wsId]);
+  // A web app fills the screen (ADR-0050 «Уточнение»): its name, plain text, no menu.
+  const openId = useOpenApp(wsId && wsId !== HOME ? wsId : null);
+  const appName = useWebApps((s) => (openId ? s.byId[openId]?.name : undefined));
+  const slot = titleSlot(appName);
+  if (slot.kind === 'app') {
+    return (
+      <div className="max-w-[220px] truncate px-2 text-body font-semibold text-fg" title={slot.text} data-testid="titlebar-title" data-app="">
+        {slot.text}
+      </div>
+    );
+  }
   if (!known || !wsId) {
     return (
       <div className="px-2 text-body font-semibold text-fg" data-testid="titlebar-title">
@@ -121,176 +125,6 @@ function SettingsButton(): ReactNode {
       <Settings className="size-[18px]" />
       {update ? <span className="absolute right-0.5 top-0.5 size-2 rounded-full bg-accent ring-2 ring-[var(--color-rail)]" data-testid="settings-update-dot" aria-hidden /> : null}
     </IconButton>
-  );
-}
-
-// ---------------------------------------------------------------- mentions inbox
-
-/**
- * Mentions inbox (docs/09 #1): history from GET /api/me/mentions (all workspaces, newest
- * first) merged with live mentions. The badge counts unread mentions; a click opens the room
- * and jumps to the message.
- */
-function InboxButton(): ReactNode {
-  const mentions = useRooms((s) => s.mentions);
-  const roomsById = useRooms((s) => s.byId);
-  const ready = useSession((s) => s.ready);
-  // The room badges summed: server-counted in READY (mention_count), then kept live — the same
-  // numbers the sidebar and rail show.
-  const total = useMemo(
-    // DMs have their own badge on «Личные» and are never in the inbox (ADR-0020).
-    () => Object.entries(mentions).reduce((a, [id, n]) => (roomsById[id] && !isDm(roomsById[id]) ? a + n : a), 0),
-    [mentions, roomsById],
-  );
-  // History mentions (from before this session) belong in the badge from the start.
-  useEffect(() => {
-    if (ready && !useInbox.getState().loaded) void loadMentions();
-  }, [ready]);
-  return (
-    <Popover.Root
-      onOpenChange={(open) => {
-        if (open) void loadMentions();
-      }}
-    >
-      <Tip label={t('shell.inbox')}>
-        <Popover.Trigger asChild>
-          <button
-            type="button"
-            aria-label={total ? `${t('shell.inbox')}: ${total}` : t('shell.inbox')}
-            className="relative grid size-7 place-items-center rounded-[var(--radius-icon)] text-muted transition-colors duration-[var(--motion-fast)] hover:bg-hover hover:text-fg data-[state=open]:bg-active data-[state=open]:text-fg"
-          >
-            <Inbox className="size-[18px]" aria-hidden />
-            {total > 0 ? (
-              <span className="absolute -right-0.5 -top-0.5 min-w-4 rounded-full bg-danger-fill px-1 text-center text-[10px] font-semibold leading-4 text-white" aria-hidden>
-                {total > 99 ? '99+' : total}
-              </span>
-            ) : null}
-          </button>
-        </Popover.Trigger>
-      </Tip>
-      <Popover.Portal>
-        <Popover.Content align="end" sideOffset={6} collisionPadding={16} aria-label={t('shell.inbox')} className={cx(popoverBox, 'w-[380px] p-0')}>
-          <InboxList />
-        </Popover.Content>
-      </Popover.Portal>
-    </Popover.Root>
-  );
-}
-
-function InboxList(): ReactNode {
-  const mentions = useRooms((s) => s.mentions);
-  const roomsById = useRooms((s) => s.byId);
-  const workspaces = useWorkspaces((s) => s.byId);
-  const all = useInbox((s) => s.items);
-  const loaded = useInbox((s) => s.loaded);
-  const loading = useInbox((s) => s.loading);
-  const hasMore = useInbox((s) => s.hasMore);
-  // Only rooms (and workspaces) this client still knows: access may have changed.
-  const items = useMemo(() => all.filter((m) => !!roomsById[m.roomId] && !!workspaces[roomsById[m.roomId]?.workspaceId ?? '']), [all, roomsById, workspaces]);
-  const unreadRooms = Object.entries(mentions).filter(([id, n]) => n > 0 && roomsById[id] && !isDm(roomsById[id]));
-  const markAll = (): void => {
-    const rooms = useRooms.getState();
-    for (const [roomId] of unreadRooms) {
-      const last = rooms.lastMessage[roomId];
-      if (!last) continue;
-      rooms.setRead(roomId, last);
-      void api.messages.markRead(roomId, last).catch(() => undefined);
-    }
-  };
-  return (
-    <div className="flex max-h-[min(520px,70vh)] flex-col">
-      <div className="flex h-10 shrink-0 items-center justify-between gap-2 border-b border-line px-3">
-        <span className="flex items-center gap-1.5 text-body font-semibold">
-          <AtSign className="size-4 text-muted" aria-hidden />
-          {t('shell.inbox')}
-        </span>
-        {unreadRooms.length ? (
-          <button type="button" onClick={markAll} className="rounded-[var(--radius-control)] px-1.5 py-0.5 text-caption text-accent-text hover:bg-hover">
-            {t('shell.inboxMarkRead')}
-          </button>
-        ) : null}
-      </div>
-      {items.length === 0 ? (
-        !loaded && loading ? (
-          <div className="grid place-items-center py-8">
-            <Spinner />
-          </div>
-        ) : (
-          <Empty>
-            <div className="font-semibold text-fg">{t('shell.inboxEmpty')}</div>
-            <div className="mt-1 text-caption">{t('shell.inboxHint')}</div>
-          </Empty>
-        )
-      ) : (
-        <ul className="min-h-0 flex-1 overflow-y-auto p-1">
-          {items.map((m) => (
-            <InboxItem key={m.id} m={m} />
-          ))}
-          {hasMore ? (
-            <li className="flex justify-center py-1">
-              <button
-                type="button"
-                disabled={loading}
-                onClick={() => void loadMentions(true)}
-                className="rounded-[var(--radius-control)] px-2 py-1 text-caption text-accent-text hover:bg-hover disabled:opacity-40"
-              >
-                {t('chat.inboxLoadMore')}
-              </button>
-            </li>
-          ) : null}
-        </ul>
-      )}
-    </div>
-  );
-}
-
-function InboxItem({ m }: { m: Message }): ReactNode {
-  const room = useRooms((s) => s.byId[m.roomId]);
-  const unread = useRooms((s) => idAfter(m.id, s.readState[m.roomId]));
-  const wsId = room?.workspaceId ?? null;
-  const wsName = useWorkspaces((s) => (wsId ? s.byId[wsId]?.ws.name : undefined));
-  const author = useMemberName(wsId, m.authorId);
-  const avatar = useWorkspaces((s) => s.users[m.authorId]?.avatarFileId);
-  // Re-renders on nickname changes of mentioned people only.
-  const preview = usePreviewText(wsId, m.content);
-  const text = systemPreview(m) || preview || t('chat.attachment');
-  const openRoom = useUi((s) => s.openRoom);
-  if (!room) return null;
-  const Icon = isVoice(room) ? Volume2 : Hash;
-  const d = toDate(m.createdAt);
-  return (
-    <li>
-      <Popover.Close asChild>
-        <button
-          type="button"
-          onClick={() => {
-            openRoom(room.workspaceId, room.id);
-            useChatView.getState().requestJump(room.id, m.id);
-          }}
-          className="flex w-full items-start gap-2.5 rounded-[var(--radius-row)] px-2 py-2 text-left hover:bg-hover"
-        >
-          <Avatar userId={m.authorId} name={author} fileId={avatar || undefined} size={28} />
-          <span className="min-w-0 flex-1">
-            <span className="flex items-baseline gap-1.5">
-              <span className="min-w-0 truncate text-body font-semibold" title={author}>
-                {author}
-              </span>
-              <span className="ml-auto shrink-0 text-micro text-muted">
-                {fmt.dayLabel(d)}, {fmt.time(d)}
-              </span>
-            </span>
-            <span className="flex min-w-0 items-center gap-1 text-caption text-muted">
-              <Icon className="size-3 shrink-0" aria-hidden />
-              <span className="truncate" title={`${room.name} · ${wsName ?? ''}`}>
-                {room.name} · {wsName}
-              </span>
-            </span>
-            <span className="mt-0.5 line-clamp-2 break-words text-body text-fg">{text}</span>
-          </span>
-          {unread ? <span className="mt-1.5 size-2 shrink-0 rounded-full bg-accent" role="img" aria-label={t('chat.inboxUnread')} /> : null}
-        </button>
-      </Popover.Close>
-    </li>
   );
 }
 

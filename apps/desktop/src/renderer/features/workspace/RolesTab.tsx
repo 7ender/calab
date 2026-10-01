@@ -10,7 +10,7 @@ import {
   type DragEndEvent,
 } from '@dnd-kit/core';
 import { PERMISSION_BITS, WorkspaceRole, type PermissionBits, type PermissionName, type Role, type WorkspaceMember } from '@calaba/protocol';
-import { AtSign, Check, ChevronDown, ChevronLeft, ChevronRight, Crown, GripVertical, Plus, ShieldCheck, Trash2, UserRound, X } from 'lucide-react';
+import { AtSign, Check, ChevronDown, ChevronLeft, ChevronRight, Crown, GripVertical, Plus, ShieldCheck, Trash2, TriangleAlert, UserRound, X } from 'lucide-react';
 import { memo, useId, useMemo, useState, type ReactNode } from 'react';
 import { Avatar } from '../../components/Avatar';
 import { confirmAction } from '../../components/Confirm';
@@ -24,6 +24,7 @@ import {
   ROLE_PALETTE,
   ROLE_PERM_GROUPS,
   ROLE_TEMPLATES,
+  botsWithRole,
   canAssignRole,
   canCreateRole,
   canDeleteRole,
@@ -45,6 +46,7 @@ import {
   templateClipped,
   topRole,
   uniqueRoleName,
+  warnBotsAdmin,
   type PermDefault,
   type PermGroupId,
   type RoleActor,
@@ -358,6 +360,7 @@ function RoleCard({ workspaceId, role, onBack }: { workspaceId: string; role: Ro
         </Card>
       ) : (
         <>
+          <BotsAdminWarning workspaceId={workspaceId} roleId={role.id} bits={role.permissions} />
           <PermissionMatrix
             idPrefix={role.id}
             bits={role.permissions}
@@ -382,6 +385,26 @@ function RoleCard({ workspaceId, role, onBack }: { workspaceId: string; role: Ro
     </>
   );
 }
+
+/**
+ * ADR-0051: a bot acts through the API with its roles' bits — administrative bits on a role that
+ * bots hold make their tokens admin keys. A yellow note above the matrix (docs/08: yellow =
+ * warning); the bot count is a primitive selector, so member traffic re-renders it only when the
+ * count moves.
+ */
+const BotsAdminWarning = memo(function BotsAdminWarning({ workspaceId, roleId, bits }: { workspaceId: string; roleId: string; bits: PermissionBits }): ReactNode {
+  const bots = useWorkspaces((s) => {
+    const e = s.byId[workspaceId];
+    return e ? botsWithRole(e.roles, Object.values(e.members), roleId) : 0;
+  });
+  if (!warnBotsAdmin(bits, bots)) return null;
+  return (
+    <div className="flex items-start gap-2 rounded-[var(--radius-row)] bg-mention px-2.5 py-2 text-caption text-fg" role="note" data-testid="role-bots-admin">
+      <TriangleAlert className="mt-px size-4 shrink-0 text-warn" aria-hidden />
+      {plural('roles.botsAdmin', bots)}
+    </div>
+  );
+});
 
 /** Name field: commits on Enter / blur; the name rules (lib/roles roleNameError) inline, Esc restores. */
 function RoleNameInput({ role, roles, disabled, onCommit }: { role: Role; roles: readonly Role[]; disabled: boolean; onCommit: (v: string) => Promise<void> }): ReactNode {

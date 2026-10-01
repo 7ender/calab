@@ -263,7 +263,7 @@ func (s *Service) join(w http.ResponseWriter, r *http.Request) error {
 // (with the occupancy check when adm is active) and publishes the new state. A device already
 // recorded in the room is left as it is: pending reports whether it still waits for its
 // LiveKit connection, joinedAt identifies that wait (expectConnect). A device recorded in
-// another room (switching rooms) moves here and keeps its mute / deafen.
+// another room (switching rooms) moves here and keeps its mute / deafen / musician mode.
 func (s *Service) recordPending(ctx context.Context, room wsRoom, uid, sid uuid.UUID, adm admission) (pending bool, joinedAt int64, err error) {
 	var c voice.Change
 	err = s.voice.WithLock(ctx, room.WorkspaceID, func() error {
@@ -280,7 +280,7 @@ func (s *Service) recordPending(ctx context.Context, room wsRoom, uid, sid uuid.
 			}
 			n := voice.SessionState{RoomID: room.ID, Pending: true, JoinedAt: time.Now().UnixMilli()}
 			if cur != nil {
-				n.Muted, n.Deafened = cur.Muted, cur.Deafened
+				n.Muted, n.Deafened, n.Musician = cur.Muted, cur.Deafened, cur.Musician
 			}
 			pending, joinedAt = true, n.JoinedAt
 			return &n
@@ -334,6 +334,9 @@ func (s *Service) requestStream(w http.ResponseWriter, r *http.Request) error {
 		return err
 	}
 	if !free {
+		if p := room.Plan.StreamsPerRoom; p > 0 && media.GetMaxStreams() >= p { // the plan cap is what binds
+			return plans.LimitError("streams in a room", uint64(p), uint64(p))
+		}
 		return httpx.Conflict("stream limit of the room is reached")
 	}
 	preset := ClampPreset(req.GetPreset(), media.GetMaxStreamPreset()) // media is capped by the plan
@@ -480,12 +483,22 @@ func (s *Service) voiceSelf(w http.ResponseWriter, r *http.Request) error {
 		return err
 	}
 	id := auth.MustFromContext(r.Context())
-	wsID, _, ok, err := s.voice.Location(r.Context(), id.SessionID)
+	wsID, roomID, ok, err := s.voice.Location(r.Context(), id.SessionID)
 	if err != nil {
 		return err
 	}
 	if !ok {
 		return httpx.Conflict("not connected to a voice room")
+	}
+	// Musician mode (ADR-0052) is a plan feature: Team and above (409 PLAN_LIMIT on Free).
+	if req.GetMusician() {
+		allowed, err := s.Plans.AllowsMusician(r.Context(), wsID, voice.IsDM(wsID, roomID), id.UserID)
+		if err != nil {
+			return err
+		}
+		if !allowed {
+			return plans.FeatureError("musician mode")
+		}
 	}
 	// The server-mute check runs inside the update, under the workspace voice lock that
 	// SetServerMuted also takes: a concurrent mute cannot slip between check and write (L2).
@@ -504,6 +517,9 @@ func (s *Service) voiceSelf(w http.ResponseWriter, r *http.Request) error {
 		}
 		if req.Deafened != nil {
 			n.Deafened = req.GetDeafened()
+		}
+		if req.Musician != nil {
+			n.Musician = req.GetMusician()
 		}
 		return &n
 	})

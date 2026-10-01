@@ -1,9 +1,11 @@
-import { Plan, PlanLimitsSchema, ScreenSharePreset } from '@calaba/protocol';
-import { create } from '@bufbuild/protobuf';
+import { Plan, PlanLimitsSchema, ScreenSharePreset, WorkspacePlanSchema } from '@calaba/protocol';
+import { create, type MessageInitShape } from '@bufbuild/protobuf';
 import { describe, expect, it, vi } from 'vitest';
+import { t } from '../i18n';
 import { ApiError, toApiError } from './api/client';
 import {
   FREE_LIMITS,
+  PLAN_LABEL,
   allowedCameraPreset,
   atLimit,
   audioTierLocked,
@@ -15,6 +17,7 @@ import {
   limitsFormFrom,
   limitsFromForm,
   planErrorNotice,
+  planHas,
   planUsage,
   setPlanBody,
   streamPresetLock,
@@ -111,9 +114,38 @@ describe('planErrorNotice (toasts on API errors)', () => {
 
   it('409 CONFLICT PLAN_LIMIT about members / voice quality (owner 28.09)', () => {
     const members = new ApiError('ERROR_CODE_CONFLICT', 'the workspace plan allows 50 members', 409, undefined, { reason: 'PLAN_LIMIT', used: 50, limit: 50 });
-    expect(planErrorNotice(members, Plan.FREE)).toEqual({ text: 'Достигнут лимит участников (50) — свяжитесь с нами', contact: true });
+    expect(planErrorNotice(members, Plan.FREE)).toEqual({ text: 'Лимит тарифа Free: 50 участников — свяжитесь с нами', contact: true });
+    expect(planErrorNotice(members, Plan.ENTERPRISE)?.text).toBe('Лимит тарифа Business: 50 участников — свяжитесь с нами');
     const voice = new ApiError('ERROR_CODE_CONFLICT', 'the workspace plan allows 16 kbps of voice quality', 409, undefined, { reason: 'PLAN_LIMIT', used: 32, limit: 16 });
     expect(planErrorNotice(voice, Plan.FREE)).toEqual({ text: 'Доступно в платном тарифе', contact: true });
+  });
+});
+
+describe('30.09 lineup: Business naming, features by plan', () => {
+  it('PLAN_ENTERPRISE is shown as Business; Team and Business name their plan in the room toast', () => {
+    expect(t(PLAN_LABEL[Plan.ENTERPRISE])).toBe('Business');
+    const roomFull = new ApiError('ERROR_CODE_ROOM_FULL', 'full', 409, undefined, { reason: 'PLAN_LIMIT', used: 15, limit: 15 });
+    expect(planErrorNotice(roomFull, Plan.TEAM)?.text).toBe('На тарифе Team — до 15 человек в комнате');
+    expect(planErrorNotice(roomFull, Plan.ENTERPRISE)?.text).toBe('На тарифе Business — до 15 человек в комнате');
+  });
+
+  it('CalDAV is a feature, not a count: its refusal says Team and above', () => {
+    const e = new ApiError('ERROR_CODE_CONFLICT', 'CalDAV is not included in the plan', 409, undefined, { reason: 'PLAN_LIMIT', used: 0, limit: 0 });
+    expect(planErrorNotice(e, Plan.FREE)).toEqual({ text: 'CalDAV доступен на тарифах Team и выше', contact: true });
+  });
+
+  it('boards over the plan get their own text', () => {
+    const e = new ApiError('ERROR_CODE_CONFLICT', 'the workspace plan allows 30 boards', 409, undefined, { reason: 'PLAN_LIMIT', used: 30, limit: 30 });
+    expect(planErrorNotice(e, Plan.TEAM)?.text).toBe('Лимит тарифа Team: 30 досок');
+  });
+
+  it('planHas: a missing plan or flag allows; the disabled flags lock', () => {
+    const p = (limits: MessageInitShape<typeof PlanLimitsSchema>) => create(WorkspacePlanSchema, { plan: Plan.FREE, limits: create(PlanLimitsSchema, limits) });
+    expect(planHas(undefined, 'caldav')).toBe(true);
+    expect(planHas(p({}), 'caldav')).toBe(true);
+    expect(planHas(p({ caldavDisabled: true }), 'caldav')).toBe(false);
+    expect(planHas(p({ caldavDisabled: true }), 'musician')).toBe(true);
+    expect(planHas(p({ musicianDisabled: true }), 'musician')).toBe(false);
   });
 });
 

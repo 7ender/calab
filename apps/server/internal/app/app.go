@@ -83,6 +83,15 @@ type Deps struct {
 	SIPOptions sip.Options
 }
 
+// BlobConfig is the file store of the configuration (STORAGE_*, ADR-0011).
+func BlobConfig(c *config.Config) blob.Config {
+	return blob.Config{Driver: c.StorageDriver, Path: c.StoragePath, S3: blob.S3Config{
+		Endpoint: c.StorageS3Endpoint, Region: c.StorageS3Region, Bucket: c.StorageS3Bucket,
+		AccessKeyID: c.StorageS3AccessKeyID, SecretAccessKey: c.StorageS3SecretAccessKey,
+		KeyPrefix: c.StorageS3KeyPrefix, ForcePathStyle: c.StorageS3ForcePathStyle,
+	}}
+}
+
 // App is the assembled server.
 type App struct {
 	Handler http.Handler
@@ -170,11 +179,11 @@ func unfurlPolicy(d Deps) func(netip.Addr) bool {
 func New(d Deps) *App {
 	superadmin.Configure(d.Config.SuperadminEmails)
 	redisx.SetKeyPrefix(d.Config.RedisKeyPrefix) // before any key or channel name is built
-	free, team, err := plans.Defaults(d.Config.PlanFreeLimits, d.Config.PlanTeamLimits)
+	free, team, biz, err := plans.Defaults(d.Config.PlanFreeLimits, d.Config.PlanTeamLimits, d.Config.PlanBusinessLimits)
 	if err != nil {
 		panic(err) // validated by config.Validate
 	}
-	planSvc := plans.New(d.DB, d.Redis, free, team)
+	planSvc := plans.New(d.DB, d.Redis, free, team, biz)
 	base := d.Events
 	if base == nil {
 		base = events.Redis{C: d.Redis}
@@ -235,10 +244,15 @@ func New(d Deps) *App {
 			egress = rtc.NewEgress(d.Config.LiveKitInternalURL, d.Config.LiveKitAPIKey, d.Config.LiveKitAPISecret)
 		}
 	}
-	recSvc := recording.New(recording.Config{
+	recCfg := recording.Config{
 		Dir: d.Config.RecordingsPath, EgressDir: d.Config.RecordingEgressDir,
 		MaxConcurrent: d.Config.RecordingMaxConcurrent, Secret: []byte(d.Config.JWTSecret), WebURL: d.Config.GPTunnelWebURL,
-	}, d.DB, d.Redis, egress, gptunnel.New(d.Config.GPTunnelAPIURL), pub)
+	}
+	if bc := BlobConfig(d.Config); bc.Driver == blob.DriverS3 {
+		// The API and the egress may share no disk: the egress uploads into the files bucket.
+		recCfg.Bucket = &recording.Bucket{Store: d.Blob, S3: bc.S3}
+	}
+	recSvc := recording.New(recCfg, d.DB, d.Redis, egress, gptunnel.New(d.Config.GPTunnelAPIURL), pub)
 	recSvc.KeepAudio = time.Duration(d.Config.RecordingKeepDays) * 24 * time.Hour
 	if rtcSvc != nil {
 		rtcSvc.OnEgress = recSvc.HandleEgress
@@ -280,7 +294,7 @@ func New(d Deps) *App {
 	guard := moderation.Guard(d.DB.Q, func(ctx context.Context) uuid.UUID { return auth.MustFromContext(ctx).UserID })
 	private := func(h http.Handler) http.Handler {
 		g := guard(h)
-		return authSvc.Require(botGate(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		return authSvc.Require(botGate(d.DB.Q, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			g.ServeHTTP(w, r.WithContext(perm.WithResolver(r.Context(), d.DB.Q)))
 		})))
 	}
@@ -366,6 +380,7 @@ func New(d Deps) *App {
 		redisx.NewRateLimiter(d.Redis, "rl:caldav-connect:", 5, 5.0/60), // 5 per hour
 		redisx.NewRateLimiter(d.Redis, "rl:caldav-sync:", 1, 1))         // once per minute
 	calSvc.Changed = cdSvc.EventChanged
+	cdSvc.AllowsCalDAV, calSvc.AllowsCalDAV = planSvc.AllowsCalDAV, planSvc.AllowsCalDAV // Free has no CalDAV (ADR-0024)
 	cdSvc.Routes(mux, private)
 	// Telephony (ADR-0046): phone lines join rooms through the LiveKit SIP API.
 	var lkSIP rtc.SIP

@@ -158,9 +158,9 @@ func TestGuestAdmissionAdmit(t *testing.T) {
 	bob.must(403, "GET", "/api/rooms/"+rid+"/admissions", nil, nil)
 	bob.must(403, "POST", "/api/rooms/"+rid+"/admissions/"+guest.id, admit, nil)
 	b := createBot(t, o, wid, "Doorman")
-	b.must(403, "GET", "/api/rooms/"+rid+"/admissions", nil, nil) // no MANAGE_ROOM
+	b.must(403, "GET", "/api/rooms/"+rid+"/admissions", nil, nil) // no INVITE_GUESTS
 	b.must(403, "POST", "/api/rooms/"+rid+"/admissions/"+guest.id, admit, nil)
-	if r, _ := errReason(b.client); r != "BOT_NOT_ALLOWED" {
+	if r, _ := errReason(b.client); r == "BOT_NOT_ALLOWED" { // ADR-0051: the bit decides, as for people
 		t.Fatalf("bot decide: %q", r)
 	}
 	o.must(422, "POST", "/api/rooms/"+rid+"/admissions/"+guest.id, &v1.DecideRoomAdmissionRequest{}, nil)

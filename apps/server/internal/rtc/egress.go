@@ -12,8 +12,9 @@ import (
 
 // A minimal LiveKit Egress client (ADR-0013 applies: twirp JSON over net/http, no
 // livekit/protocol). Only what meeting recording needs (ADR-0025): an audio-only room
-// composite into an MP4 file on the shared recordings volume, stop, and list. Compatibility
-// with the generated twirp server of livekit/protocol is checked in the integration tests.
+// composite into an MP4 file — on the recordings volume shared with the API, or uploaded by the
+// egress into an S3 bucket — stop, and list. Compatibility with the generated twirp server of
+// livekit/protocol is checked in the tests.
 
 // Egress statuses (livekit.EgressStatus) as they appear in JSON.
 const (
@@ -144,11 +145,29 @@ func jsonInt(raw json.RawMessage) int64 {
 	return -1
 }
 
+// S3Upload is livekit.S3Upload (subset): the bucket an egress uploads its file to, with a
+// static key. LiveKit Egress redacts the key and secret in the EgressInfo it reports.
+type S3Upload struct {
+	Endpoint       string
+	Region         string
+	Bucket         string
+	AccessKey      string
+	Secret         string
+	ForcePathStyle bool
+}
+
+// FileOutput is where an egress puts its file (livekit.EncodedFileOutput subset).
+type FileOutput struct {
+	// Filepath is a path in the egress container; with S3, the object key in the bucket (the
+	// egress records into a temporary file of its own and uploads it when the recording ends).
+	Filepath string
+	S3       *S3Upload
+}
+
 // Egress is the subset of the LiveKit Egress service the server uses (mockable in tests).
 type Egress interface {
-	// StartAudioRecording records the mixed audio of a room into an MP4 (AAC) file at
-	// filepath, a path in the egress container.
-	StartAudioRecording(ctx context.Context, room, filepath string) (*EgressInfo, error)
+	// StartAudioRecording records the mixed audio of a room into an MP4 (AAC) file at out.
+	StartAudioRecording(ctx context.Context, room string, out FileOutput) (*EgressInfo, error)
 	StopEgress(ctx context.Context, egressID string) (*EgressInfo, error)
 	// ListEgress lists egresses: of one room ("" = all), or only one egress (egressID), and
 	// only active ones if active.
@@ -168,17 +187,27 @@ func (e *egressClient) call(ctx context.Context, method string, in, out any) err
 	return e.c.callService(ctx, "livekit.Egress", method, &videoGrant{RoomRecord: true}, in, out)
 }
 
-func (e *egressClient) StartAudioRecording(ctx context.Context, room, filepath string) (*EgressInfo, error) {
-	var out EgressInfo
+func (e *egressClient) StartAudioRecording(ctx context.Context, room string, out FileOutput) (*EgressInfo, error) {
+	file := map[string]any{"file_type": "MP4", "filepath": out.Filepath}
+	if u := out.S3; u != nil {
+		file["s3"] = map[string]any{
+			"access_key": u.AccessKey, "secret": u.Secret, "region": u.Region, "endpoint": u.Endpoint,
+			"bucket": u.Bucket, "force_path_style": u.ForcePathStyle,
+		}
+		// No manifest (<egress id>.json next to the recording): nothing would ever remove it
+		// from the bucket.
+		file["disable_manifest"] = true
+	}
+	var info EgressInfo
 	err := e.call(ctx, "StartRoomCompositeEgress", map[string]any{
 		"room_name":    room,
 		"audio_only":   true,
-		"file_outputs": []map[string]any{{"file_type": "MP4", "filepath": filepath}},
-	}, &out)
+		"file_outputs": []map[string]any{file},
+	}, &info)
 	if err != nil {
 		return nil, err
 	}
-	return &out, nil
+	return &info, nil
 }
 
 func (e *egressClient) StopEgress(ctx context.Context, egressID string) (*EgressInfo, error) {

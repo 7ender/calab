@@ -62,6 +62,12 @@ console.log(`${ready.me?.user?.displayName} is online in ${ready.workspaces.leng
 | `webhook.get()`, `webhook.set(url, secret)`, `webhook.delete()` | https webhook instead of (or with) the gateway |
 | `handleWebhook(rawBody, headers)` | verifies `X-Calab-Signature`, dedupes by delivery id, emits the same events |
 | `stickers.list(wsId)`, `stickers.createPack(wsId, { name, shortName })`, `stickers.addStickers(packId, [{ emoji, data }])`, `stickers.remove(id)` | packs need `MANAGE_STICKERS` |
+| `boards.list(wsId)`, `boards.get(id)`, `tasks.list/search/get/create/update/setAssignees/comment` | within the board bits of the bot's roles (ADR-0042) |
+| `members.get(wsId, userId)`, `members.setNickname(wsId, userId, nick)` | profile with open tasks of visible boards; nickname needs `MANAGE_NICKNAMES` (ADR-0051) |
+| `calendar.list(wsId, from, to)`, `calendar.get/create/update/delete`, `calendar.freebusy(wsId, users, from, to)`, `calendar.suggest(wsId, q)` | the bot organizes, never attends; others' meetings need `MANAGE_EVENTS`; busy time only (ADR-0051) |
+| `invites.list/create/delete(wsId, …)`, `invites.email(wsId, address)`, `invites.listEmail/deleteEmail` | `INVITE_MEMBERS`; mail goes «on behalf of bot X» |
+| `badges.list/create/update/delete(wsId, …)`, `badges.set(wsId, userId, badgeId)` | library: `MANAGE_MEMBERS`; a member's badge: `MANAGE_NICKNAMES` |
+| `recording.start(roomId)`, `recording.stop(roomId)` | `MANAGE_RECORDINGS` for bots, plus the room's `allow_recording` |
 | `fetchMe()`, `updateProfile({ displayName?, description? })` | `/api/bots/me` |
 | `rest.request(method, path, { json?, query?, form? })`, `rest.call(Schema, …)` | any other endpoint the bot may use |
 

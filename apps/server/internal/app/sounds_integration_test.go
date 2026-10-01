@@ -86,7 +86,8 @@ func TestSoundsLibrary(t *testing.T) {
 	o.must(422, "POST", base, create(strings.Repeat("x", 33), "🥁", src), nil)
 	o.must(422, "POST", base, create("Tss", "ab", src), nil)
 
-	// Rights: a member, a guest and a bot (even with MANAGE_STICKERS) cannot manage; a bot lists.
+	// Rights: a member and a guest cannot manage; a bot with MANAGE_STICKERS manages like a
+	// person (ADR-0051) but only from its own upload; a bot lists.
 	bob.must(403, "POST", base, create("Tss", "🥁", bobClip), nil)
 	g := register(t, invite(t, o, wid))
 	guest := v1.WorkspaceRole_WORKSPACE_ROLE_GUEST
@@ -97,7 +98,7 @@ func TestSoundsLibrary(t *testing.T) {
 	if st, _ := setMemberRoles(o, wid, b.id, role.GetId()); st != 200 {
 		t.Fatalf("bot role: %d", st)
 	}
-	b.must(403, "POST", base, create("Tss", "🥁", src), nil)
+	b.must(422, "POST", base, create("Tss", "🥁", src), nil) // the owner's upload, not the bot's
 	b.must(200, "GET", base, nil, nil)
 
 	gb := dialGW(t)

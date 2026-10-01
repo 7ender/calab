@@ -1,6 +1,7 @@
 package mail
 
 import (
+	"fmt"
 	"sort"
 	"strconv"
 	"strings"
@@ -72,4 +73,18 @@ func FromAcceptLanguage(h string) string {
 		}
 	}
 	return ""
+}
+
+// onBehalfOfBot: "<workspace> (on behalf of bot <name>)" by locale (ADR-0051).
+var onBehalfOfBot = map[string]string{
+	LocaleEN:   "%s (on behalf of bot %s)",
+	LocaleRU:   "%s (от имени бота %s)",
+	LocaleES:   "%s (en nombre del bot %s)",
+	LocaleZhCN: "%s（代表机器人 %s）",
+}
+
+// OnBehalfOfBot names the sender of a mail a bot caused (ADR-0051): the workspace, on behalf
+// of the bot. Used where a person's name would stand (a meeting's organizer, the inviter).
+func OnBehalfOfBot(locale, workspace, bot string) string {
+	return fmt.Sprintf(onBehalfOfBot[Locale(locale)], workspace, bot)
 }

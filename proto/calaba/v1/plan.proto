@@ -22,7 +22,7 @@ message PlanLimits {
   uint32 stream_max_fps = 3;               // screen share frame rate cap
   ScreenSharePreset camera_max_preset = 4; // highest webcam resolution (H720 = 720p, H1080 = 1080p)
   uint32 camera_max_fps = 5;               // webcam frame rate cap
-  uint32 streams_per_room = 6;             // screen shares at once in one room
+  uint32 streams_per_room = 6;             // screen shares at once in one room (caps max_streams of the room / workspace)
   uint64 storage_mb = 7;                   // file storage of the workspace, MiB
   uint32 members = 8;                      // workspace members: bots count, guests do not (invites and joins stop at it)
   uint32 sticker_packs = 9;                // live sticker packs of the workspace (ADR-0030)
@@ -30,6 +30,9 @@ message PlanLimits {
   uint32 bots = 20;                        // bots that are members of the workspace (ADR-0031)
   uint32 audio_tier_max_kbps = 21;         // highest voice quality tier, kbps (8 | 16 | 32 | 64; docs/02 «Битрейт»)
   uint32 boards = 22;                      // live task boards of the workspace (ADR-0042); 0 = no plan limit (≤ 50 always)
+  uint32 cameras_per_room = 27;            // webcams at once in one voice room (caps camera_limit of the room / workspace); 0 = no plan limit
+  bool caldav_disabled = 23;               // CalDAV sync is not part of the plan (Free); per user it works if any of their workspaces allows it
+  bool musician_disabled = 28;             // musician mode (ADR-0052) is not part of the plan (Free): VoiceState.musician refused
 }
 
 // The plan of a workspace as members see it (Workspace.plan).

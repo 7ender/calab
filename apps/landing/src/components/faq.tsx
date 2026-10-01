@@ -7,6 +7,7 @@ import { Section, SectionHeading } from './ui';
 const ORDER = [
   'server',
   'recording',
+  'sip',
   'traffic',
   'updates',
   'whatsNew',

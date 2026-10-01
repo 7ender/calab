@@ -1,4 +1,4 @@
-import { app, BrowserWindow, Notification, powerMonitor, shell } from 'electron';
+import { app, autoUpdater as nativeUpdater, BrowserWindow, Notification, powerMonitor, shell } from 'electron';
 import log from 'electron-log/main';
 import electronUpdater from 'electron-updater';
 import { IPC, type UpdateStatus } from '../shared/ipc';
@@ -21,18 +21,20 @@ import { createUpdateFlow, type NudgeReason, type UpdateFlow } from './updateFlo
  *   (dev / self-built) the feed derived from the server (`https://app.X` → `https://releases.X/`,
  *   else `https://<host>/download/`) is used for notify-only. CALABA_UPDATE_URL (runtime) is a
  *   notify-only override: it replaces the feed and disables auto-install.
- * - Checks: 10 s after start, then hourly (± 5 min), «Проверить» in «О программе», and — at most
- *   once per 10 min — after wake from sleep, screen unlock and when the network returns (the
- *   renderer's `online` event). «Проверять обновления автоматически» off → only «Проверить».
+ * - Checks: 10 s after start, then hourly (± 5 min) — also while an update waits —, «Проверить» in
+ *   «О программе», and — at most once per 10 min — after wake from sleep, screen unlock, window
+ *   focus and when the network returns (the renderer's `online` event). «Проверять обновления
+ *   автоматически» off → only «Проверить».
  * - A call / stream defers nothing: the update downloads, and «Перезапустить» restarts at once —
  *   the relaunched app rejoins the same room / 1:1 call (prepareRestart, main/resumeVoice.ts).
  * - Auto (build feed + «Автоматически обновлять» on + Windows / Linux AppImage / macOS built with
  *   MAIN_VITE_UPDATES_SIGNED=1): background download with progress, an accent bar under the
  *   title bar («Доступна версия X — обновление уже загружено · Перезапустить и обновить», docs/09
- *   #125) and a tray item, install on restart or on quit (autoInstallOnAppQuit). A pending
- *   download is re-validated against the feed hourly, before «Перезапустить» and — Windows /
- *   AppImage — before install-on-quit (`will-quit` held ≤ 3 s; a newer feed → the stale file is not
- *   installed, the next start fetches the newest; updateFlow.ts).
+ *   #125) and a tray item, install on restart or on quit. A pending download is re-validated
+ *   against the feed hourly, before «Перезапустить» and before install-on-quit (`will-quit` held
+ *   ≤ 3 s; a newer feed → nothing installed, the next start fetches the newest); a newer version
+ *   replaces it. macOS stages the newest download in Squirrel.Mac only right before installing
+ *   (stageSquirrel) — one update, to the newest (updateFlow.ts).
  * - Otherwise notify only — «Доступна версия X — Скачать» opens `<server>/download/`. When the
  *   update is `installable` (build feed + a platform able to apply it, only the setting is off)
  *   «О программе» offers «Скачать и установить» — the same flow, on request.
@@ -93,8 +95,47 @@ function getFlow(): UpdateFlow {
     settle: () => refreshSettled(INSTALL_SETTLE_MS),
     // Back into the same room / call after the relaunch (docs/09 #126, main/resumeVoice.ts).
     prepareRestart,
+    // macOS: the flow stages the newest download itself (autoInstallOnAppQuit stays off there).
+    ...(process.platform === 'darwin' ? { stage: stageSquirrel } : {}),
   });
   return flow;
+}
+
+/**
+ * macOS: Squirrel.Mac fetches the update from electron-updater's local proxy (MacUpdater sets
+ * the native feed URL to it on every download — the newest downloaded zip) and stages it; it
+ * installs on quit, or at once via quitAndInstall(). Resolves on Squirrel's `update-downloaded`
+ * (MacUpdater's own listener sets `squirrelDownloadedUpdate` on the same event), rejects on its
+ * `error` / `update-not-available`. The flow bounds the wait.
+ */
+function stageSquirrel(): Promise<void> {
+  return new Promise((resolve, reject) => {
+    const done = (): void => {
+      nativeUpdater.removeListener('update-downloaded', ok);
+      nativeUpdater.removeListener('update-not-available', none);
+      nativeUpdater.removeListener('error', fail);
+    };
+    const ok = (): void => {
+      done();
+      resolve();
+    };
+    const none = (): void => {
+      done();
+      reject(new Error('Squirrel.Mac: update not available'));
+    };
+    const fail = (e: Error): void => {
+      done();
+      reject(e);
+    };
+    nativeUpdater.on('update-downloaded', ok);
+    nativeUpdater.on('update-not-available', none);
+    nativeUpdater.on('error', fail);
+    try {
+      nativeUpdater.checkForUpdates();
+    } catch (e) {
+      fail(e instanceof Error ? e : new Error(String(e)));
+    }
+  });
 }
 
 /** OS shutdown / reboot / logout is under way: the quit must not wait for a feed re-check. */
@@ -115,11 +156,14 @@ export function startUpdates(): void {
   powerMonitor.on('resume', () => f.nudge('resume'));
   powerMonitor.on('unlock-screen', () => f.nudge('unlock'));
   powerMonitor.on('shutdown', updatesSessionEnding);
+  // Several releases a day: a window brought back after a while re-checks too (≤ once per 10 min).
+  app.on('browser-window-focus', () => f.nudge('focus'));
   // Install-on-quit of a pending download: re-check the feed first (≤ 3 s) so a stale file is not
-  // installed when a newer version is out (docs/09 #125). `will-quit` comes after the lifecycle's
-  // `before-quit` (in-call question, tray «Выход», ⌘Q, forceQuit) and after the windows closed, and
-  // before electron-updater's `quit` handler reads autoInstallOnAppQuit. beforeQuit() acts once:
-  // the app.quit() re-issued below passes through (before-quit is then a no-op — already quitting).
+  // installed when a newer version is out (docs/09 #125); macOS then stages the newest (≤ 20 s).
+  // `will-quit` comes after the lifecycle's `before-quit` (in-call question, tray «Выход», ⌘Q,
+  // forceQuit) and after the windows closed, and before electron-updater's `quit` handler reads
+  // autoInstallOnAppQuit. beforeQuit() acts once: the app.quit() re-issued below passes through
+  // (before-quit is then a no-op — already quitting).
   app.on('will-quit', (e) => {
     const wait = f.beforeQuit(sessionEnding);
     if (!wait) return;

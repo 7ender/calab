@@ -28,6 +28,7 @@ import { approvedCount, blockedStatusIds, quorumOf, rejecters } from '../lib/boa
 import { draftsOf, type AssigneeDraft } from '../lib/boards/assignees';
 import { toTaskFilter, type FilterState } from '../lib/boards/filter';
 import { between, byPosition } from '../lib/boards/position';
+import { countsUnread } from '../lib/boards/reducers';
 import { log } from '../lib/log';
 import { platform } from '../platform';
 import { useBoards } from '../stores/boards';
@@ -116,6 +117,17 @@ export function onBoardsReady(): void {
   takePendingLink();
 }
 
+/**
+ * After main reset the API connections (docs/09 #146): boards whose tasks failed to load and the
+ * open task (its detail / comments room) load again, without a click.
+ */
+export function retryFailedBoardLoads(): void {
+  const { load } = useBoards.getState();
+  for (const [boardId, st] of Object.entries(load)) if (st === 'error' && useBoards.getState().boards[boardId]) void ensureBoardTasks(boardId, true);
+  const open = useBoardsUi.getState().taskId;
+  if (open && !useTaskDetails.getState().byTask[open]?.loaded) void loadTask(open);
+}
+
 export function dropWorkspaceBoards(workspaceId: string): void {
   const s = useBoards.getState();
   for (const b of Object.values(s.boards)) if (b.workspaceId === workspaceId) s.removeBoard(b.id);
@@ -158,7 +170,9 @@ function onTask(task: Task): void {
   // Tasks of boards not loaded are kept only when something shows them (panel, my tasks, a
   // subtask list): otherwise the store would grow with every event of every board.
   if (s.load[task.boardId] !== 'ready' && !s.tasks[task.id]) {
-    if (task.viewerState && task.unread) s.setUnread(task.workspaceId, [...Object.entries(s.unread).filter(([, ws]) => ws === task.workspaceId).map(([id]) => id), task.id]);
+    const ids = Object.entries(s.unread).filter(([, ws]) => ws === task.workspaceId).map(([id]) => id);
+    if (task.viewerState && countsUnread(task)) s.setUnread(task.workspaceId, [...ids, task.id]);
+    else if (task.completedAt && s.unread[task.id]) s.setUnread(task.workspaceId, ids.filter((id) => id !== task.id));
     return;
   }
   s.upsertTask(task);

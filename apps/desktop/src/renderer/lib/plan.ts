@@ -44,6 +44,22 @@ export const PLAN_LABEL: Record<Plan, MessageKey> = {
   [Plan.ENTERPRISE]: 'plan.name.enterprise',
 };
 
+/** Plan features that are not part of every plan (CalDAV, musician mode — ADR-0052: Team and above). */
+export type PlanFeature = 'caldav' | 'musician';
+
+/** The «disabled» flag of PlanLimits behind each feature. */
+const DISABLED_FLAG = { caldav: 'caldavDisabled', musician: 'musicianDisabled' } as const satisfies Record<PlanFeature, keyof PlanLimits>;
+
+/**
+ * Is the feature part of the plan? PlanLimits carries «disabled» flags, so an absent plan (an older
+ * server) or a plan without the flag allows it. The server enforces (409 PLAN_LIMIT); the client
+ * shows the feature locked (PlanLock), never hides it.
+ */
+export function planHas(p: WorkspacePlan | undefined, f: PlanFeature): boolean {
+  const l = p?.limits;
+  return !l || !l[DISABLED_FLAG[f]];
+}
+
 /** The stored plan (UNSPECIFIED reads as FREE: the server's default when none was ever set). */
 export const planKind = (p: WorkspacePlan | undefined): Plan => (!p || p.plan === Plan.UNSPECIFIED ? Plan.FREE : p.plan);
 
@@ -154,8 +170,11 @@ export function planErrorNotice(err: unknown, plan: Plan): PlanNotice | null {
   const byPlan = x.reason === 'PLAN_LIMIT';
   if (e.code === 'ERROR_CODE_ROOM_FULL' && byPlan) {
     const n = x.limit ?? 0;
+    if (n <= 0) return { text: t('plan.toast.roomAny'), contact: true };
+    // Team / Business name their plan; Free has its own wording; CUSTOM is «по тарифу пространства».
+    if (plan === Plan.TEAM || plan === Plan.ENTERPRISE) return { text: t('plan.toast.roomPlan', { plan: t(PLAN_LABEL[plan]), n }), contact: true };
     const key: MessageKey = plan === Plan.FREE || plan === Plan.UNSPECIFIED ? 'plan.toast.roomFree' : 'plan.toast.room';
-    return { text: n > 0 ? t(key, { n }) : t('plan.toast.roomAny'), contact: true };
+    return { text: t(key, { n }), contact: true };
   }
   // Members, voice quality (owner 28.09), sticker packs / stickers (ADR-0030) and bots
   // (ADR-0031) over the plan: 409 CONFLICT, reason PLAN_LIMIT; the message tells which limit.
@@ -163,13 +182,11 @@ export function planErrorNotice(err: unknown, plan: Plan): PlanNotice | null {
     const n = x.limit ?? 0;
     const msg = e.message ?? '';
     if (/\bvoice\b/i.test(msg)) return { text: t('plan.paidOnly'), contact: true };
-    const key: MessageKey = /\bmembers?\b/i.test(msg)
-      ? 'plan.membersFull'
-      : /\bbots?\b/i.test(msg)
-        ? 'bots.planLimit'
-        : /pack/i.test(msg)
-          ? 'stk.planPacks'
-          : 'stk.planStickers';
+    // CalDAV is a feature, not a count (ADR-0024, 30.09): used = limit = 0.
+    if (/caldav/i.test(msg)) return { text: t('plan.caldavLocked'), contact: true };
+    if (/\bmembers?\b/i.test(msg)) return { text: t('plan.membersFull', { plan: t(PLAN_LABEL[plan]), n }), contact: true };
+    if (/\bboards?\b/i.test(msg)) return { text: t('plan.boardsFull', { plan: t(PLAN_LABEL[plan]), n }), contact: true };
+    const key: MessageKey = /\bbots?\b/i.test(msg) ? 'bots.planLimit' : /pack/i.test(msg) ? 'stk.planPacks' : 'stk.planStickers';
     return { text: t(key, { n }), contact: true };
   }
   // A notes shelf over the uploader's personal quota (ADR-0039 §5): nothing to buy, no «Связаться».

@@ -1,6 +1,6 @@
 import * as Popover from '@radix-ui/react-popover';
-import { Search } from 'lucide-react';
-import { useEffect, useId, useMemo, useRef, useState, type KeyboardEvent, type ReactNode, type RefObject } from 'react';
+import { ChevronRight, Search } from 'lucide-react';
+import { useCallback, useEffect, useId, useMemo, useRef, useState, type KeyboardEvent, type ReactNode, type RefObject } from 'react';
 import { Virtuoso, type VirtuosoHandle } from 'react-virtuoso';
 import { t } from '../../i18n';
 import { autoFocusAllowed, useMobile } from '../../lib/mobile';
@@ -109,7 +109,16 @@ export function PickerPanel<T extends PickerItem>({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [query]);
 
-  const rows = useMemo(() => buildRows(groups, query, { alwaysHeaders, serverFiltered: !!onQuery }), [groups, query, alwaysHeaders, onQuery]);
+  // Collapsible groups (e.g. «Гости · N») are folded until the user opens them.
+  const [open, setOpen] = useState<ReadonlySet<string>>(() => new Set());
+  const toggle = useCallback((id: string): void => {
+    setOpen((o) => {
+      const n = new Set(o);
+      if (!n.delete(id)) n.add(id);
+      return n;
+    });
+  }, []);
+  const rows = useMemo(() => buildRows(groups, query, { alwaysHeaders, serverFiltered: !!onQuery, open }), [groups, query, alwaysHeaders, onQuery, open]);
   const count = navCount(rows);
   // The highlight restarts at the top for every new query (derived, no effect round trip).
   const [act, setAct] = useState({ q: '', i: 0 });
@@ -145,7 +154,7 @@ export function PickerPanel<T extends PickerItem>({
       e.stopPropagation();
       // Enter right after typing: pick from what the debounced list will show.
       if (text.trim() !== query) {
-        const now = buildRows(groups, text.trim(), { alwaysHeaders, serverFiltered: !!onQuery });
+        const now = buildRows(groups, text.trim(), { alwaysHeaders, serverFiltered: !!onQuery, open });
         const first = now.find((r) => r.kind === 'item' && r.nav === 0);
         if (first?.kind === 'item' && !onQuery) onSelect(first.item);
         return;
@@ -162,6 +171,26 @@ export function PickerPanel<T extends PickerItem>({
   };
 
   const renderRow = (i: number, row: PickerRow<T>): ReactNode => {
+    if (row.kind === 'header' && row.toggle) {
+      const { id, open: isOpen } = row.toggle;
+      return (
+        <button
+          type="button"
+          role="presentation"
+          data-row={i}
+          data-testid="picker-group-toggle"
+          aria-expanded={isOpen}
+          // Keep the focus in the field.
+          onMouseDown={(e) => e.preventDefault()}
+          onClick={() => toggle(id)}
+          className="flex w-full items-end gap-1 px-2 pb-1 text-left text-micro font-semibold text-muted hover:text-fg"
+          style={{ height: i === 0 ? 24 : 28 }}
+        >
+          <ChevronRight className={cx('mb-px size-3 shrink-0', isOpen && 'rotate-90')} aria-hidden />
+          {row.label}
+        </button>
+      );
+    }
     if (row.kind === 'header') {
       return (
         <div role="presentation" data-row={i} className="flex items-end px-2 pb-1 text-micro font-semibold text-muted" style={{ height: i === 0 ? 24 : 28 }}>

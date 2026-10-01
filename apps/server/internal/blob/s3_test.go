@@ -185,6 +185,31 @@ func TestS3ContractFake(t *testing.T) {
 	}
 }
 
+// An object written into the bucket past the driver (the egress uploads recordings) under
+// ObjectKey(key) is the one the driver reads, stats and deletes as key.
+func TestS3ObjectKey(t *testing.T) {
+	ctx := context.Background()
+	for prefix, under := range map[string]string{"": "", "calab": "calab/", "/calab/files/": "calab/files/"} {
+		f := newFakeS3()
+		cfg := S3Config{Bucket: "b", KeyPrefix: prefix}
+		s := newS3(f, cfg)
+		key := newKey() + ".mp4"
+		if got, want := cfg.ObjectKey(key), under+key; got != want {
+			t.Fatalf("prefix %q: ObjectKey = %q, want %q", prefix, got, want)
+		}
+		f.store(cfg.ObjectKey(key), []byte("recorded"), "video/mp4")
+		if m, err := s.Stat(ctx, key); err != nil || m.Size != 8 {
+			t.Fatalf("prefix %q: stat %+v %v", prefix, m, err)
+		}
+		if got := readAll(t, s, key); string(got) != "recorded" {
+			t.Fatalf("prefix %q: read %q", prefix, got)
+		}
+		if err := s.Delete(ctx, key); err != nil || len(f.objects) != 0 {
+			t.Fatalf("prefix %q: delete %v, left %d", prefix, err, len(f.objects))
+		}
+	}
+}
+
 func TestS3ContentType(t *testing.T) {
 	s := newS3(newFakeS3(), S3Config{Bucket: "b"})
 	ctx := context.Background()

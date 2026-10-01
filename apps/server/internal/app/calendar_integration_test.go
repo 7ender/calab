@@ -580,7 +580,9 @@ func TestEventRemindersAndRoomBadge(t *testing.T) {
 	ng.wait("ROOM_EVENT_ENDED on cancel", func(e *v1.DispatchEvent) bool { return e.GetRoomEventEnded().GetEventId() == now.GetId() })
 }
 
-func TestEventBotsReadOnly(t *testing.T) {
+// A bot without MANAGE_EVENTS reads others' meetings without external addresses and cannot
+// change them; answers and "today" are for people (ADR-0051; creating: bot_api_v2 tests).
+func TestEventBotsReadOthers(t *testing.T) {
 	c := calSetup(t)
 	wsID := c.ws.GetId()
 	b := createBot(t, c.o, wsID, "calbot")
@@ -605,8 +607,8 @@ func TestEventBotsReadOnly(t *testing.T) {
 		}
 	}
 	for _, call := range []struct{ method, path string }{
-		{"POST", "/api/workspaces/" + wsID + "/events"}, {"PATCH", "/api/events/" + ev.GetId()},
-		{"DELETE", "/api/events/" + ev.GetId()}, {"PUT", "/api/events/" + ev.GetId() + "/rsvp"}, {"GET", "/api/me/events/today"},
+		{"PATCH", "/api/events/" + ev.GetId()}, {"DELETE", "/api/events/" + ev.GetId()},
+		{"PUT", "/api/events/" + ev.GetId() + "/rsvp"}, {"GET", "/api/me/events/today"},
 	} {
 		if st := b.do(call.method, call.path, &v1.RsvpCalendarEventRequest{}, nil); st != 403 {
 			t.Errorf("bot %s %s: %d", call.method, call.path, st)

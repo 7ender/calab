@@ -17,6 +17,8 @@ import { usePrefs } from '../../stores/prefs';
 import { useSession } from '../../stores/session';
 import { useMediaQuery } from '../../lib/useMediaQuery';
 import { useMobile } from '../../lib/mobile';
+import { showBottomIsland } from '../../lib/webApps';
+import { useVoice } from '../../stores/voice';
 import { MobileShell } from './MobileShell';
 import { MEMBERS_COLUMN_MIN, useUi } from '../../stores/ui';
 import { useMemberRoles, useWorkspaces } from '../../stores/workspaces';
@@ -201,11 +203,20 @@ export function AppShell(): ReactNode {
         ) : (
           <Welcome />
         )}
-        {ready && (home || (hasWs && wsId)) ? <BottomIsland /> : null}
+        {ready && (home || (hasWs && wsId)) ? <IslandSlot appOpen={!!appId} /> : null}
         {ready ? <CreateTaskDialog /> : null}
       </div>
     </div>
   );
+}
+
+/**
+ * The bottom island, except under a full-screen web app without a voice call (ADR-0050
+ * «Уточнение»). Its own leaf: the voice phase re-renders this slot only.
+ */
+function IslandSlot({ appOpen }: { appOpen: boolean }): ReactNode {
+  const inVoice = useVoice((s) => s.phase !== 'idle');
+  return showBottomIsland(appOpen, inVoice) ? <BottomIsland /> : null;
 }
 
 /**

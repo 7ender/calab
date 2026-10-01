@@ -16,7 +16,7 @@ export const zhShell: DictShape<typeof enShell> = {
   'shell.back': '后退',
   'shell.search': '搜索',
   'shell.inbox': '提及',
-  'shell.inboxEmpty': '暂无新提及',
+  'shell.inboxEmpty': '暂无未读提及',
   'shell.inboxHint': '提及你的消息会显示在这里。',
   'shell.inboxCount': { other: '{n}条提及' },
   'shell.inboxMarkRead': '标为已读',

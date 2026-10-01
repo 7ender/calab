@@ -207,6 +207,7 @@ export const ruCalendar = {
   'fb.open': "Открыть",
   'fb.dav.title': "Внешний календарь (CalDAV)",
   'fb.dav.google': "Google Календарь не поддерживается: приглашения из Calab приходят в Google письмом с файлом .ics.",
+  'fb.dav.lockedStopped': 'Синхронизация с {host} остановлена, настройки сохранены. Она заработает снова на тарифе Team или выше.',
   'fb.dav.intro': "Подключите iCloud, Яндекс, Fastmail или Nextcloud: занятость оттуда увидят коллеги, а ваши встречи Calab появятся там.",
   'fb.dav.url': "Адрес сервера",
   'fb.dav.urlHint': "iCloud — https://caldav.icloud.com, Яндекс — https://caldav.yandex.ru, Fastmail — https://caldav.fastmail.com, Nextcloud — https://<сервер>/remote.php/dav",

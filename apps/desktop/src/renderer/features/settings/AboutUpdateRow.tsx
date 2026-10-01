@@ -19,6 +19,13 @@ export function AboutUpdateRow({ version }: { version: string }): ReactNode {
   const [checking, setChecking] = useState(false);
   const [installing, setInstalling] = useState(false);
   const action = updateAction(update, checking);
+  // The install did not happen (macOS staging / a download failed): main reports 'error'.
+  const failed = update.state === 'error';
+  const [wasFailed, setWasFailed] = useState(failed);
+  if (failed !== wasFailed) {
+    setWasFailed(failed);
+    if (failed) setInstalling(false);
+  }
 
   const check = async (): Promise<void> => {
     setChecking(true);

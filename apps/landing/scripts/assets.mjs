@@ -43,7 +43,20 @@ export const CROPS = {
   notes: { left: 70, top: 30, width: 1370, height: 560 },
   // the guest's waiting card
   guest: { left: 420, top: 220, width: 600, height: 460 },
+  // landing v4 (e2e-marketing/landing-v4.spec.ts): SIP dialer popover over the room header and the members
+  sipdial: { left: 330, top: 30, width: 1110, height: 300 },
+  // the phone line in the room list («В разговоре 02:14») + the members column
+  siproom: { left: 0, top: 30, width: 1440, height: 500 },
+  // workspace settings → Телефония: the provider card / the connection test and the call journal
+  sipsettings: { left: 250, top: 120, width: 940, height: 660 },
+  siplog: { left: 250, top: 120, width: 940, height: 660 },
+  // a workspace web app (the test dashboard) open in the window, the call island kept
+  webapps: { left: 0, top: 30, width: 1440, height: 870 },
 };
+
+// `--only=sipdial,siproom` regenerates just those images (raw captures of the other scenes are not needed,
+// the existing files and the OpenGraph cards stay untouched).
+const only = process.argv.find((a) => a.startsWith('--only='))?.slice(7).split(',');
 
 const scaled = (c) => Object.fromEntries(Object.entries(c).map(([k, v]) => [k, Math.round(v * SCALE)]));
 
@@ -61,9 +74,10 @@ async function webp(pipeline, file) {
 let total = 0;
 for (const [short, lang] of Object.entries(LOCALES)) {
   const dir = join(out, lang);
-  await rm(dir, { recursive: true, force: true });
+  if (!only) await rm(dir, { recursive: true, force: true });
   await mkdir(dir, { recursive: true });
   for (const [name, crop] of Object.entries(CROPS)) {
+    if (only && !only.includes(name)) continue;
     const path = join(src, `${name}-${short}@2x.png`);
     if (!existsSync(path)) throw new Error(`missing ${path}: run the landing captures first`);
     const base = crop ? sharp(path).extract(scaled(crop)) : sharp(path);
@@ -76,6 +90,7 @@ for (const [short, lang] of Object.entries(LOCALES)) {
     console.log(`${lang}/${name}: @2x ${(big / 1000).toFixed(0)} KB, 1x ${(small / 1000).toFixed(0)} KB${phone ? `, 720 ${(phone / 1000).toFixed(0)} KB` : ''}`);
   }
 
+  if (only) continue;
   // OpenGraph: the hero window (top part) on a dark brand gradient, 1200×630.
   await mkdir(og, { recursive: true });
   const shot = await sharp(join(src, `voice-${short}@2x.png`))

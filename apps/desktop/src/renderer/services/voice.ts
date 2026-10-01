@@ -1,4 +1,4 @@
-import { AUDIO_PUBLISH_DEFAULTS, SCREEN_SHARE_PRESETS, type ConcreteScreenSharePreset, type ScreenShareContentHint, type VoiceDisconnected, type VoiceMoved, VoiceDisconnectReason } from '@calaba/protocol';
+import { SCREEN_SHARE_PRESETS, type ConcreteScreenSharePreset, type ScreenShareContentHint, type VoiceDisconnected, type VoiceMoved, VoiceDisconnectReason } from '@calaba/protocol';
 import {
   ConnectionState,
   DisconnectReason,
@@ -34,7 +34,7 @@ import {
 import { pickPublishCodec } from '../lib/media/codecSelect';
 import { hasOddH264Layer } from '../lib/media/h264';
 import { installH264ProfileHook } from '../lib/media/h264Publish';
-import { micTier, type OpusTier } from '../lib/media/opusTier';
+import { micTier, musicTier, type OpusTier } from '../lib/media/opusTier';
 import { applyMicTier, installOpusTierHook } from '../lib/media/opusTierPublish';
 import { ECHO, EchoRiskDetector, RemoteActivity, duckWanted, duckable } from '../lib/media/echo';
 import { RateTracker, audioSourceEcho, candidatePair, inboundAudio, inboundVideo, outboundAudio, outboundVideo, transportBytes } from '../lib/media/stats';
@@ -67,6 +67,7 @@ import { annot } from './annot';
 import { ANNOT_TOPIC } from '../lib/annot/codec';
 import { CameraController, cameraGrantMissing } from './camera';
 import { announceDeviceSwitch } from './deviceToast';
+import { musicianAllowed, musicianLockedToast } from './musician';
 import { humanMediaError, reportMediaError } from './mediaErrors';
 import { reportPlanError } from './plan';
 import { capAudioKbps, capFps } from '../lib/plan';
@@ -297,6 +298,15 @@ class VoiceEngine {
     document.addEventListener('securitypolicyviolation', (ev) => this.onCspViolation(ev));
     this.gate.configure({ thresholdDb: prefs().thresholdDb });
     usePrefs.subscribe((s, p) => this.onPrefs(s, p));
+    // Musician mode (ADR-0052) ends with the call and cannot stay on in a room whose plan lacks it.
+    // A room switch passes «no room» with `joining` set: only no room and no join is a leave.
+    useVoice.subscribe((s, p) => {
+      if (s.roomId === p.roomId && s.workspaceId === p.workspaceId && s.joining === p.joining) return;
+      this.guardMusician(s.roomId === null && s.joining === null);
+    });
+    useWorkspaces.subscribe((s, p) => {
+      if (s.byId !== p.byId) this.guardMusician(false);
+    });
     void this.syncPttBinding();
   }
 
@@ -322,6 +332,7 @@ class VoiceEngine {
     if (s.echoMode !== p.echoMode) this.applyDuck();
     if (s.red !== p.red && this.micTrack && this.room) void this.republishMic();
     if (s.personalBitrateKbps !== p.personalBitrateKbps) this.applyMicTier();
+    if (s.musicianMode !== p.musicianMode) this.onMusicianMode(s.musicianMode);
     if (s.userVolumes !== p.userVolumes || s.mutedUsers !== p.mutedUsers || s.deafUsers !== p.deafUsers || s.outputVolume !== p.outputVolume) this.applyVolumes();
     if (s.hiddenVideo !== p.hiddenVideo || s.saveTraffic !== p.saveTraffic) this.applyCameras();
     if (s.cameraDeviceId !== p.cameraDeviceId) void this.camera.setDevice(s.cameraDeviceId);
@@ -522,7 +533,8 @@ class VoiceEngine {
       // deafen now, so the others' pending row is right before LiveKit connects.
       if ('pending' in res && res.pending) {
         const { muted, deafened } = useVoice.getState();
-        if (muted || deafened) void api.voice.updateSelf({ muted, deafened }).catch((e: unknown) => log.warn('voice/self failed', e));
+        const musician = prefs().musicianMode;
+        if (muted || deafened || musician) void api.voice.updateSelf({ muted, deafened, musician }).catch((e: unknown) => log.warn('voice/self failed', e));
       }
       this.lastJoin = { url: res.url, token: res.token };
       setLink({ rtcHost: hostOfUrl(res.url) });
@@ -975,7 +987,8 @@ class VoiceEngine {
     // The server had lost this device: recorded again with default flags — my mute / deafen.
     log.info('voice: the server had lost this device, seat restored');
     const { muted, deafened } = useVoice.getState();
-    if (muted || deafened) void api.voice.updateSelf({ muted, deafened }).catch((e: unknown) => log.warn('voice/self failed', e));
+    const musician = prefs().musicianMode;
+    if (muted || deafened || musician) void api.voice.updateSelf({ muted, deafened, musician }).catch((e: unknown) => log.warn('voice/self failed', e));
   }
 
   /**
@@ -1789,6 +1802,7 @@ class VoiceEngine {
     let built: MicPipeline | null = null;
     const opts = {
       rnnoise: p.rnnoise,
+      musician: p.musicianMode,
       duckable: duckable(p.echoMode),
       onReport: (r: MicReport) => this.onMicReport(r),
       // Capture ended by the OS (device unplugged): rebuild, falling back to the default device.
@@ -1887,7 +1901,43 @@ class VoiceEngine {
 
   /** The tier the mic publishes at: the room's, capped by the personal limit (UserSettings.audio_bitrate_kbps). */
   private micTier(): OpusTier {
+    if (prefs().musicianMode) {
+      const ws = useVoice.getState().workspaceId;
+      const planMax = ws ? useWorkspaces.getState().byId[ws]?.ws.plan?.limits?.audioTierMaxKbps : undefined;
+      return musicTier(this.mic?.channels ?? 1, planMax);
+    }
     return micTier(this.audioBitrateKbps, prefs().personalBitrateKbps);
+  }
+
+  /**
+   * Musician mode off when the call ends (`left`) or the voice room's plan does not include it
+   * (joined / moved into a Free workspace's room, the plan changed). Free when the mode is off.
+   */
+  private guardMusician(left: boolean): void {
+    if (!prefs().musicianMode) return;
+    if (left) {
+      usePrefs.getState().setPrefs({ musicianMode: false });
+      return;
+    }
+    if (!useVoice.getState().roomId || musicianAllowed()) return;
+    usePrefs.getState().setPrefs({ musicianMode: false });
+    musicianLockedToast();
+  }
+
+  /**
+   * Musician mode flipped (ADR-0052), live: the capture is rebuilt without / with speech
+   * processing and swapped in place (restartMic → replaceTrack), then the Opus profile follows
+   * (applyMicTier: bitrate, and DTX / stereo / bandwidth through a renegotiation) — both queued in
+   * this order, so the profile reads the new capture's channels. The gate, the others' indicator
+   * and the echo judgement follow at once.
+   */
+  private onMusicianMode(on: boolean): void {
+    if (this.mic) void this.restartMic();
+    this.applyMicTier();
+    this.resetEcho(); // no AEC now (or again): the acoustic path changed
+    if (on) this.echoToasted = false; // echo without AEC deserves its own warning
+    this.applyTransmit();
+    this.pushSelfState();
   }
 
   /**
@@ -1911,7 +1961,9 @@ class VoiceEngine {
   private micPublishOptions(): TrackPublishOptions {
     return {
       source: Track.Source.Microphone,
-      dtx: AUDIO_PUBLISH_DEFAULTS.dtx,
+      // AUDIO_PUBLISH_DEFAULTS.dtx for voice; musician mode publishes without DTX (the answer's
+      // `usedtx` follows the tier too, opusTier.ts).
+      dtx: this.micTier().dtx,
       red: prefs().red,
       forceStereo: false,
       // The tier's bitrate; its bandwidth / FEC come with the answer (installOpusTierHook).
@@ -1971,6 +2023,7 @@ class VoiceEngine {
       mode: this.micMode(),
       gateOpen: this.gate.open,
       pttDown: v.pttDown,
+      musician: prefs().musicianMode,
     });
   }
 
@@ -2000,7 +2053,7 @@ class VoiceEngine {
     this.applyDenoise(d);
     this.applyDuck(); // PTT pressed / deafen: the duck follows at once, not at the next level tick
     setVoice({ transmitting: d.transmitting && t !== null });
-    this.setSelfSpeaking(d.transmitting && t !== null);
+    this.setSelfSpeaking(d.speaking && t !== null);
     if (!t) return;
     // `isMuted` flips only after LiveKit's async mute lock: while a mute/unmute is in flight,
     // wait for it and re-evaluate, so mute→unmute in quick succession ends in the state the
@@ -2255,11 +2308,20 @@ class VoiceEngine {
   private pushSelfState(): void {
     if (!this.room) return;
     const v = useVoice.getState();
-    void api.voice.updateSelf({ muted: v.muted, deafened: v.deafened }).catch((e: unknown) => log.warn('voice/self failed', e));
+    const musician = prefs().musicianMode;
+    void api.voice.updateSelf({ muted: v.muted, deafened: v.deafened, musician }).catch((e: unknown) => {
+      // The plan does not include musician mode (ADR-0052, 409 PLAN_LIMIT): back to the processed mic.
+      if (musician && e instanceof ApiError && e.reason === 'PLAN_LIMIT' && prefs().musicianMode) {
+        usePrefs.getState().setPrefs({ musicianMode: false });
+        musicianLockedToast();
+        return;
+      }
+      log.warn('voice/self failed', e);
+    });
   }
 
   /** Server view of our voice state differs from local (e.g. PATCH raced the join) → push again. */
-  reconcileSelfState(s: { roomId: string; muted: boolean; deafened: boolean; serverMuted?: boolean }): void {
+  reconcileSelfState(s: { roomId: string; muted: boolean; deafened: boolean; serverMuted?: boolean; musician?: boolean }): void {
     const v = useVoice.getState();
     if (!this.room || s.roomId !== this.roomId) {
       // Not where I am connected (docs/09 #71): the server may have lost this device.
@@ -2279,7 +2341,7 @@ class VoiceEngine {
       this.syncTray();
       return;
     }
-    if (s.muted !== v.muted || s.deafened !== v.deafened) this.pushSelfState();
+    if (s.muted !== v.muted || s.deafened !== v.deafened || (s.musician ?? false) !== prefs().musicianMode) this.pushSelfState();
   }
 
   /** e2e / visual tests (docs/09 #71): what LiveKit is really connected to, to compare with the stores. */
@@ -2556,7 +2618,10 @@ class VoiceEngine {
     if (this.echoToasted) return;
     this.echoToasted = true;
     const mode = prefs().echoMode;
-    if (mode === 'headphones') {
+    if (prefs().musicianMode) {
+      // No AEC by choice (ADR-0052): headphones, or back to the processed mic.
+      useToasts.getState().push('info', t('music.echoRisk'), { label: t('music.turnOff'), run: () => usePrefs.getState().setPrefs({ musicianMode: false }) }, 12_000);
+    } else if (mode === 'headphones') {
       useToasts.getState().push('info', t('echo.risk'), { label: t('echo.riskAction'), run: () => usePrefs.getState().setPrefs({ echoMode: 'speakers' }) }, 12_000);
     } else {
       toast.info(t(mode === 'auto' ? 'echo.riskAuto' : 'echo.riskSpeakers'));

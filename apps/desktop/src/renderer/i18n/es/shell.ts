@@ -16,7 +16,7 @@ export const esShell: DictShape<typeof enShell> = {
   'shell.back': 'Atrás',
   'shell.search': 'Buscar',
   'shell.inbox': 'Menciones',
-  'shell.inboxEmpty': 'No hay menciones nuevas',
+  'shell.inboxEmpty': 'No hay menciones sin leer',
   'shell.inboxHint': 'Aquí aparecerán los mensajes que te mencionen.',
   'shell.inboxCount': { one: '{n} mención', many: '{n} menciones', other: '{n} menciones' },
   'shell.inboxMarkRead': 'Marcar como leído',

@@ -64,6 +64,29 @@ func TestAggregatePending(t *testing.T) {
 	}
 }
 
+// Musician mode (ADR-0052): any device of the user in their room; a flip is a change.
+func TestAggregateMusician(t *testing.T) {
+	ws, u, r1, r2 := uuid.New(), uuid.New(), uuid.New(), uuid.New()
+	sessions := []SessionState{
+		{UserID: u, SessionID: uuid.New(), RoomID: r1, JoinedAt: 100},
+		{UserID: u, SessionID: uuid.New(), RoomID: r1, Musician: true, JoinedAt: 200},
+	}
+	on := Aggregate(ws, u, sessions)
+	if !on.GetMusician() {
+		t.Fatalf("one device in musician mode: %v", on)
+	}
+	sessions[1].Musician = false
+	off := Aggregate(ws, u, sessions)
+	if off.GetMusician() || Equal(on, off) {
+		t.Fatalf("musician flip must be a change: %v", off)
+	}
+	// A device in musician mode in another (older) room does not mark the current one.
+	sessions = append(sessions, SessionState{UserID: u, SessionID: uuid.New(), RoomID: r2, Musician: true, JoinedAt: 50})
+	if Aggregate(ws, u, sessions).GetMusician() {
+		t.Fatal("musician from another room")
+	}
+}
+
 func TestNames(t *testing.T) {
 	w, r, u, s := uuid.New(), uuid.New(), uuid.New(), uuid.New()
 	gw, gr, ok := ParseRoomName(RoomName(w, r))

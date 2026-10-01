@@ -183,8 +183,11 @@ export const freebusyApi = {
   /** PATCH /api/me {work_hours}: the updated Me. */
   saveWorkHours: (wh: WorkHours) => api.me.update({ workHours: { startMin: wh.startMin, endMin: wh.endMin, days: [...wh.days] } }),
   caldav: {
-    /** null = no account. */
-    get: async (): Promise<CalDavAccount | null> => accountOf(await call('GET', '/api/me/caldav', CalDavAccountResponseSchema)),
+    /** account null = none; planLocked: no plan of mine includes CalDAV, sync is stopped (ADR-0024, 30.09). */
+    get: async (): Promise<{ account: CalDavAccount | null; planLocked: boolean }> => {
+      const r = await call('GET', '/api/me/caldav', CalDavAccountResponseSchema);
+      return { account: accountOf(r), planLocked: r.planLocked };
+    },
     /** Connects (the server discovers the calendars); 422 url / password when it cannot be used. */
     connect: async (url: string, username: string, password: string): Promise<CalDavAccount | null> =>
       accountOf(await call('POST', '/api/me/caldav', CalDavAccountResponseSchema, body(ConnectCalDavRequestSchema, { url, username, password }))),

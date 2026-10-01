@@ -202,6 +202,7 @@ export const enCalendar: DictShape<typeof ruCalendar> = {
   'fb.open': "Open",
   'fb.dav.title': "External calendar (CalDAV)",
   'fb.dav.google': "Google Calendar is not supported: Calab invitations reach Google by email with an .ics file.",
+  'fb.dav.lockedStopped': "Sync with {host} is stopped, your settings are kept. It works again on Team or above.",
   'fb.dav.intro': "Connect iCloud, Yandex, Fastmail or Nextcloud: colleagues see your busy time from there, and your Calab meetings appear there.",
   'fb.dav.url': "Server address",
   'fb.dav.urlHint': "iCloud — https://caldav.icloud.com, Yandex — https://caldav.yandex.ru, Fastmail — https://caldav.fastmail.com, Nextcloud — https://<server>/remote.php/dav",

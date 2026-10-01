@@ -1300,7 +1300,7 @@ test('shell-mentions', async ({ open, win, mock, shot }) => {
   await mainWindow(win, mock);
   await win.getByRole('button', { name: /^Упоминания/ }).click();
   // The same text is also in the feed behind the popover: look inside the popover.
-  await expect(win.getByRole('dialog').getByText(/посмотришь макет настроек/)).toBeVisible();
+  await expect(win.getByRole('dialog').getByText(/глянь, пожалуйста, ревью/)).toBeVisible();
   await checkpoint(shot, 'shell-mentions');
 });
 

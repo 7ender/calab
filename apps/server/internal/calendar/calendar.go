@@ -75,6 +75,9 @@ type Service struct {
 	// Changed is told after a meeting changed for the users involved before or after the change
 	// (their CalDAV push, ADR-0041 §4); nil = nobody listens.
 	Changed func(ctx context.Context, eventID uuid.UUID, users []uuid.UUID)
+	// AllowsCalDAV tells whether the plans of a user's workspaces include CalDAV; the external
+	// busy time of a user without it is not shown (ADR-0024, 30.09). nil = always.
+	AllowsCalDAV func(ctx context.Context, user uuid.UUID) (bool, error)
 }
 
 // New creates the service. m may be disabled (no SMTP): no mail is sent then.
@@ -240,8 +243,10 @@ func requestViewer(r *http.Request, wsID uuid.UUID, q *sqlc.Queries) (*viewer, e
 	return viewerOf(r.Context(), q, wsID, id.UserID, id.IsBot)
 }
 
+// sees: the organizer, an attendee, or a viewer of the meeting's room. A bot is never an
+// attendee (ADR-0051): it sees the meetings it organizes and those of the rooms it views.
 func (v *viewer) sees(b *bundle) bool {
-	if b.involves(v.user) && !v.bot {
+	if b.ev.OrganizerID == v.user || (b.involves(v.user) && !v.bot) {
 		return true
 	}
 	return b.ev.RoomID != nil && v.rooms[*b.ev.RoomID].Has(perm.ViewRoom)
@@ -249,11 +254,9 @@ func (v *viewer) sees(b *bundle) bool {
 
 // canEdit: the organizer; else MANAGE_ROOM in the meeting's room, or MANAGE_EVENTS (ADR-0048)
 // for a meeting without a room or in a room the viewer sees (ADR-0038 §2; a closed room stays
-// closed). Never a bot.
+// closed). Bots by the same rules (ADR-0051).
 func (v *viewer) canEdit(b *bundle) bool {
 	switch {
-	case v.bot:
-		return false
 	case b.ev.OrganizerID == v.user:
 		return true
 	case b.ev.RoomID != nil:
@@ -267,10 +270,10 @@ func (v *viewer) emails(b *bundle) pbconv.EmailView {
 	switch {
 	case v == nil:
 		return pbconv.EmailsFull
-	case v.bot:
-		return pbconv.EmailsNone
-	case b.involves(v.user) || v.canEdit(b):
+	case v.canEdit(b) || (b.involves(v.user) && !v.bot):
 		return pbconv.EmailsFull
+	case v.bot: // ADR-0051: addresses only to a bot that may change the meeting
+		return pbconv.EmailsNone
 	}
 	return pbconv.EmailsMasked
 }

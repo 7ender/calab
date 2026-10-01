@@ -1,9 +1,11 @@
 package app
 
 import (
+	"log/slog"
 	"net/http"
 
 	"github.com/calaba/calaba/server/internal/auth"
+	"github.com/calaba/calaba/server/internal/db/sqlc"
 )
 
 // botAccess says whether a bot token (ADR-0031) may call a route.
@@ -20,8 +22,10 @@ const (
 )
 
 // botRoutes classifies every route of the server for bots (ADR-0031 §2: bots have no
-// password, email, sessions or devices, do not create workspaces, invite, pay or administer
-// the product, and change only their name, avatar and description). Every pattern New
+// password, email, sessions or devices, do not create workspaces, pay or administer the
+// product, and change only their name, avatar and description; ADR-0051: within a workspace
+// they act by the bits of their roles like people — calendar, invitations, badges, sounds,
+// guest admission, recording — except where a decision is a person's). Every pattern New
 // registers must be listed: TestBotRouteTable fails on an unlisted route, so a new route
 // needs an explicit decision; an unlisted pattern is denied to bots at run time.
 var botRoutes = map[string]botAccess{
@@ -67,25 +71,26 @@ var botRoutes = map[string]botAccess{
 	"DELETE /api/workspaces/{id}":                          botDeny,  // owner only; a bot is never the owner
 	"POST /api/workspaces/{id}/join":                       botDeny,
 	"PUT /api/workspaces/{id}/notifications":               botDeny,
-	"GET /api/workspaces/{id}/invites":                     botDeny,
-	"POST /api/workspaces/{id}/invites":                    botDeny,
-	"DELETE /api/workspaces/{id}/invites/{inviteId}":       botDeny,
+	"GET /api/workspaces/{id}/invites":                     botAllow, // INVITE_MEMBERS (ADR-0051)
+	"POST /api/workspaces/{id}/invites":                    botAllow,
+	"DELETE /api/workspaces/{id}/invites/{inviteId}":       botAllow,
 	"POST /api/invites/{code}/join":                        botDeny,
-	"POST /api/workspaces/{id}/invites/lookup":             botDeny,
-	"POST /api/workspaces/{id}/members":                    botDeny,
-	"POST /api/workspaces/{id}/invites/email":              botDeny,
-	"GET /api/workspaces/{id}/invites/email":               botDeny,
-	"DELETE /api/workspaces/{id}/invites/email/{inviteId}": botDeny,
+	"POST /api/workspaces/{id}/invites/lookup":             botDeny,  // ADR-0051: no account lookup by address
+	"POST /api/workspaces/{id}/members":                    botDeny,  // ADR-0051: no adding an account without its consent
+	"POST /api/workspaces/{id}/invites/email":              botAllow, // INVITE_MEMBERS; mail "on behalf of bot X"
+	"GET /api/workspaces/{id}/invites/email":               botAllow,
+	"DELETE /api/workspaces/{id}/invites/email/{inviteId}": botAllow,
 	"GET /api/workspaces/{id}/members":                     botAllow,
+	"GET /api/workspaces/{id}/members/{userId}":            botAllow, // ADR-0051: a member's profile
 	"GET /api/workspaces/{id}/birthdays":                   botAllow, // docs/09 #76
 	"GET /api/workspaces/{id}/members/birthdays":           botDeny,  // docs/09 #77: bots have no birthday
 	"PATCH /api/workspaces/{id}/members/{userId}/birthday": botDeny,
 	"GET /api/workspaces/{id}/badges":                      botAllow, // docs/09 #82: the library, read-only
-	"POST /api/workspaces/{id}/badges":                     botDeny,
-	"PATCH /api/workspaces/{id}/badges/{badgeId}":          botDeny,
-	"DELETE /api/workspaces/{id}/badges/{badgeId}":         botDeny,
-	"PUT /api/workspaces/{id}/members/{userId}/badge":      botDeny,
-	"GET /api/workspaces/{id}/apps":                        botDeny, // ADR-0050: web apps are for people
+	"POST /api/workspaces/{id}/badges":                     botAllow, // MANAGE_MEMBERS (ADR-0051)
+	"PATCH /api/workspaces/{id}/badges/{badgeId}":          botAllow,
+	"DELETE /api/workspaces/{id}/badges/{badgeId}":         botAllow,
+	"PUT /api/workspaces/{id}/members/{userId}/badge":      botAllow, // MANAGE_NICKNAMES
+	"GET /api/workspaces/{id}/apps":                        botDeny,  // ADR-0050: web apps are for people
 	"POST /api/workspaces/{id}/apps":                       botDeny,
 	"PATCH /api/workspace-apps/{appId}":                    botDeny,
 	"DELETE /api/workspace-apps/{appId}":                   botDeny,
@@ -95,9 +100,9 @@ var botRoutes = map[string]botAccess{
 	"PATCH /api/workspaces/{id}/backgrounds/{bgId}":        botDeny,
 	"DELETE /api/workspaces/{id}/backgrounds/{bgId}":       botDeny,
 	"GET /api/workspaces/{id}/sounds":                      botAllow, // ADR-0036: a bot in a call may play sounds
-	"POST /api/workspaces/{id}/sounds":                     botDeny,  // the library is managed by people
-	"PATCH /api/workspaces/{id}/sounds/{soundId}":          botDeny,
-	"DELETE /api/workspaces/{id}/sounds/{soundId}":         botDeny,
+	"POST /api/workspaces/{id}/sounds":                     botAllow, // MANAGE_STICKERS (ADR-0051)
+	"PATCH /api/workspaces/{id}/sounds/{soundId}":          botAllow,
+	"DELETE /api/workspaces/{id}/sounds/{soundId}":         botAllow,
 	"PATCH /api/workspaces/{id}/members/{userId}":          botAllow, // role: MANAGE_MEMBERS (ADR-0048)
 	"DELETE /api/workspaces/{id}/members/{userId}":         botAllow, // MANAGE_MEMBERS
 	"POST /api/workspaces/{id}/members/{userId}/promote":   botAllow, // MANAGE_MEMBERS
@@ -181,9 +186,10 @@ var botRoutes = map[string]botAccess{
 	"GET /api/rooms/{id}/invites":               botDeny,
 	"DELETE /api/rooms/{id}/invites/{inviteId}": botDeny,
 	"PATCH /api/rooms/{id}/invites/{inviteId}":  botDeny,
-	// Guest admission (ADR-0040): bots may read the waiting list, not decide.
+	// Guest admission (ADR-0040): bots read the waiting list and decide with INVITE_GUESTS
+	// (ADR-0051); waiting is for guests.
 	"GET /api/rooms/{id}/admissions":           botAllow,
-	"POST /api/rooms/{id}/admissions/{userId}": botDeny,
+	"POST /api/rooms/{id}/admissions/{userId}": botAllow,
 	"DELETE /api/rooms/{id}/admissions/me":     botDeny,
 	// superadmin, link previews, meeting recording
 	"GET /api/admin/workspaces":                         botDeny,
@@ -198,8 +204,8 @@ var botRoutes = map[string]botAccess{
 	"GET /api/workspaces/{id}/integrations/gptunnel":    botDeny,
 	"POST /api/workspaces/{id}/integrations/gptunnel":   botDeny,
 	"DELETE /api/workspaces/{id}/integrations/gptunnel": botDeny,
-	"POST /api/rooms/{id}/recording/start":              botDeny,
-	"POST /api/rooms/{id}/recording/stop":               botDeny,
+	"POST /api/rooms/{id}/recording/start":              botAllow, // ADR-0051: + MANAGE_RECORDINGS for bots
+	"POST /api/rooms/{id}/recording/stop":               botAllow,
 	"POST /api/rooms/{id}/recordings/{rid}/recheck":     botDeny,
 	"POST /api/rooms/{id}/recordings/{rid}/reupload":    botDeny,
 	"GET /api/rooms/{id}/recordings/{rid}/transcript":   botAllow,
@@ -238,16 +244,18 @@ var botRoutes = map[string]botAccess{
 	"PUT /api/bots/me/webhook":                        botAllow,
 	"DELETE /api/bots/me/webhook":                     botAllow,
 	"GET /api/rooms/{id}/bot-commands":                botAllow,
-	// calendar (ADR-0038): bots read meetings (no external addresses), people change them
+	// calendar (ADR-0038, ADR-0051): a bot organizes meetings (never an attendee) and changes
+	// others' by MANAGE_ROOM / MANAGE_EVENTS like people; it sees free / busy without external
+	// details; answers, "today" and external calendars are for people
 	"GET /api/workspaces/{id}/events":            botAllow,
-	"POST /api/workspaces/{id}/events":           botDeny,
+	"POST /api/workspaces/{id}/events":           botAllow,
 	"GET /api/events/{id}":                       botAllow,
-	"PATCH /api/events/{id}":                     botDeny,
-	"DELETE /api/events/{id}":                    botDeny,
+	"PATCH /api/events/{id}":                     botAllow,
+	"DELETE /api/events/{id}":                    botAllow,
 	"PUT /api/events/{id}/rsvp":                  botDeny, // bots are never attendees
 	"GET /api/me/events/today":                   botDeny,
-	"GET /api/workspaces/{id}/freebusy":          botDeny, // ADR-0041 §5: people only
-	"POST /api/workspaces/{id}/freebusy/suggest": botDeny,
+	"GET /api/workspaces/{id}/freebusy":          botAllow,
+	"POST /api/workspaces/{id}/freebusy/suggest": botAllow,
 	"GET /api/me/caldav":                         botDeny,
 	"POST /api/me/caldav":                        botDeny,
 	"PUT /api/me/caldav":                         botDeny,
@@ -313,18 +321,95 @@ var botRoutes = map[string]botAccess{
 	"DELETE /api/rooms/{id}/calls/{cid}": botAllow,
 }
 
+// botAudited: administrative routes whose bot calls are logged as "bot action" with the
+// bot's owner (ADR-0051: a token with admin bits acts as an admin; the log says whose bot).
+var botAudited = map[string]bool{
+	"PATCH /api/workspaces/{id}":                           true,
+	"PATCH /api/workspaces/{id}/members/{userId}":          true,
+	"DELETE /api/workspaces/{id}/members/{userId}":         true,
+	"POST /api/workspaces/{id}/members/{userId}/promote":   true,
+	"PUT /api/workspaces/{id}/members/{userId}/roles":      true,
+	"PUT /api/workspaces/{id}/members/{userId}/badge":      true,
+	"POST /api/workspaces/{id}/roles":                      true,
+	"PATCH /api/workspaces/{id}/roles/{roleId}":            true,
+	"DELETE /api/workspaces/{id}/roles/{roleId}":           true,
+	"PUT /api/workspaces/{id}/roles/order":                 true,
+	"POST /api/workspaces/{id}/bans":                       true,
+	"DELETE /api/workspaces/{id}/bans/{userId}":            true,
+	"POST /api/workspaces/{id}/invites":                    true,
+	"DELETE /api/workspaces/{id}/invites/{inviteId}":       true,
+	"POST /api/workspaces/{id}/invites/email":              true,
+	"DELETE /api/workspaces/{id}/invites/email/{inviteId}": true,
+	"POST /api/workspaces/{id}/badges":                     true,
+	"PATCH /api/workspaces/{id}/badges/{badgeId}":          true,
+	"DELETE /api/workspaces/{id}/badges/{badgeId}":         true,
+	"POST /api/workspaces/{id}/sounds":                     true,
+	"PATCH /api/workspaces/{id}/sounds/{soundId}":          true,
+	"DELETE /api/workspaces/{id}/sounds/{soundId}":         true,
+	"POST /api/workspaces/{id}/events":                     true,
+	"PATCH /api/events/{id}":                               true,
+	"DELETE /api/events/{id}":                              true,
+	"POST /api/rooms/{id}/admissions/{userId}":             true,
+	"POST /api/rooms/{id}/recording/start":                 true,
+	"POST /api/rooms/{id}/recording/stop":                  true,
+	"PUT /api/rooms/{id}/permissions":                      true,
+	"DELETE /api/rooms/{id}":                               true,
+}
+
 // botGate lets bot identities through only on botAllow routes (by the matched pattern).
-// It runs inside auth.Require.
-func botGate(next http.Handler) http.Handler {
+// It runs inside auth.Require. Bot calls of botAudited routes are logged with the bot's owner.
+func botGate(q *sqlc.Queries, next http.Handler) http.Handler {
 	deny := auth.NoBots(next)
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if botRoutes[r.Pattern] == botAllow {
+		if botRoutes[r.Pattern] != botAllow {
+			deny.ServeHTTP(w, r)
+			return
+		}
+		id, ok := auth.FromContext(r.Context())
+		if !ok || !id.IsBot || !botAudited[r.Pattern] {
 			next.ServeHTTP(w, r)
 			return
 		}
-		deny.ServeHTTP(w, r)
+		sw := &auditWriter{ResponseWriter: w}
+		next.ServeHTTP(sw, r)
+		owner := ""
+		if b, err := q.GetBot(r.Context(), id.UserID); err == nil {
+			owner = b.OwnerUserID.String()
+		}
+		slog.InfoContext(r.Context(), "bot action", "route", r.Pattern, "path", r.URL.Path, "status", sw.code(),
+			"bot_id", id.UserID, "bot_owner", owner)
 	})
 }
+
+// auditWriter remembers the status of a response.
+type auditWriter struct {
+	http.ResponseWriter
+	status int
+}
+
+func (a *auditWriter) WriteHeader(code int) {
+	if a.status == 0 {
+		a.status = code
+	}
+	a.ResponseWriter.WriteHeader(code)
+}
+
+func (a *auditWriter) Write(b []byte) (int, error) {
+	if a.status == 0 {
+		a.status = http.StatusOK
+	}
+	return a.ResponseWriter.Write(b)
+}
+
+func (a *auditWriter) code() int {
+	if a.status == 0 {
+		return http.StatusOK
+	}
+	return a.status
+}
+
+// Unwrap lets http.ResponseController reach the underlying writer.
+func (a *auditWriter) Unwrap() http.ResponseWriter { return a.ResponseWriter }
 
 // routeRecorder records every pattern registered on the mux (App.Routes).
 type routeRecorder struct {
@@ -354,6 +439,16 @@ func BotRouteAccess(pattern string) string {
 		return "deny"
 	}
 	return ""
+}
+
+// BotAuditedPatterns lists the routes whose bot calls are logged with the bot's owner (tests:
+// each is a bot route).
+func BotAuditedPatterns() []string {
+	out := make([]string, 0, len(botAudited))
+	for p := range botAudited {
+		out = append(out, p)
+	}
+	return out
 }
 
 // BotRoutePatterns lists the patterns of the table (tests: no stale entries).

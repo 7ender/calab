@@ -35,6 +35,7 @@ Preview the export: `npx -y serve apps/landing/out` (or `python3 -m http.server 
 - Screenshots follow the page: `Screen` (`components/ui.tsx`) loads `public/screens/<lang>/<name>` — the app UI *and*
   its team (names, rooms, chat, meetings, board) in that language, dark theme in both page themes. OpenGraph image per
   locale: `public/og/<lang>.png`. The home page carries schema.org `SoftwareApplication` JSON-LD in its language.
+- `public/llms.txt` (summary + links, llmstxt.org format) and `public/llms-full.txt` (full text) are served at the site root as-is; keep their plan table, limits and feature list in sync with `src/i18n/en.ts` and the README, and mark unreleased features as planned.
 
 ## Where it is served
 
@@ -50,7 +51,10 @@ Follows `docs/08-design.md`: system font stack, one accent (`#0A84FF`/`#007AFF`,
 `#0071e3`), 4 px grid, solid materials only (no `backdrop-filter`, the sticky header too), light/dark
 via `prefers-color-scheme` only, motion only under `prefers-reduced-motion: no-preference`, no infinite animations.
 Tokens live in `src/app/globals.css`. Landing v3 (docs/09 #139): hero with the whole app window, then sections in
-the order voice/video → chat → calendar → boards → notes → guests → bots → self-hosted → pricing → download → FAQ.
+the order voice/video → sound quality → phone calls (SIP) → chat → calendar → boards → notes → guests → web apps → bots → self-hosted →
+performance (measured numbers only, docs/14-energy.md / docs/18) → pricing (Free · Team · Business · Enterprise = your own server) → download → FAQ.
+Landing v4 added the SIP, sound, web-apps and performance blocks and the four-plan table; plan limits live in `src/i18n/*.ts`
+(`pricing.table.cells`), keep them equal to the server's plans (ADR-0024) and to the `README*.md` tables.
 Screenshots sit in a solid dark `.shot-frame` (the app is dark in every shot). All components are server components
 except `download-primary.tsx` (OS detection + `latest/VERSION`) and the language switcher; the FAQ uses native
 `<details>`, so the page works without JS (the Next runtime chunk still ships, ~100 kB).
@@ -76,9 +80,13 @@ Every scene is captured per language with that language's team (docs/09 #139).
    `CALABA_LANDING_LOCALES=ru,en` narrows the languages, `-g "landing kanban"` one scene. Raw PNGs land in
    `apps/landing/shots/<scene>-<locale>@2x.png` (git-ignored). Scenes: `voice` (hero: stream + cameras), `chat`,
    `call`, `calendar`, `findtime`, `kanban`, `timeline`, `task`, `notes`, `guest`.
+   Landing v4 scenes (`sipdial`, `siproom`, `sipsettings`, `siplog`, `webapps`) are in `e2e-marketing/landing-v4.spec.ts`
+   (`... playwright test --config playwright.marketing.config.ts landing-v4`): the mock's SIP account and calls
+   (`setSip`, `placeSipCall`), the rail apps via `mock.dispatch(workspaceAppUpsert)` and a local dashboard page as the "site".
 2. `pnpm -F @calaba/landing assets` — `scripts/assets.mjs` crops (CSS px at the top of the script, equal to
    `src/lib/screens.ts`), writes `public/screens/<lang>/<name>@2x.webp`, `<name>.webp` (1x) and `<name>-720.webp`
-   (phones), each ≤ 300 KB, and `public/og/<lang>.png` (1200×630). The READMEs (`README*.md`) use the same files.
+   (phones), each ≤ 300 KB, and `public/og/<lang>.png` (1200×630). `node scripts/assets.mjs --only=sipdial,webapps` regenerates
+   just those images (no other raw captures needed, OpenGraph untouched). The READMEs (`README*.md`) use the same files.
 3. Rebuild and commit `public/screens` and `public/og`.
 
 ## TODO

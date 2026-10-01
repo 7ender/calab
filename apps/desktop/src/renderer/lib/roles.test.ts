@@ -2,6 +2,8 @@ import { create } from '@bufbuild/protobuf';
 import { PERMISSION_BITS, RoleSchema, WorkspaceRole, type Role } from '@calaba/protocol';
 import { describe, expect, it } from 'vitest';
 import {
+  ADMIN_LEVEL_BITS,
+  botsWithRole,
   canAssignRole,
   canCreateRole,
   canDeleteRole,
@@ -21,6 +23,7 @@ import {
   sortRoles,
   topRole,
   uniqueRoleName,
+  warnBotsAdmin,
   withRole,
 } from './roles';
 
@@ -156,5 +159,26 @@ describe('the role form', () => {
     expect(c.get('member')).toBe(3);
     expect(c.get('owner')).toBe(1);
     expect(c.get('plain')).toBeUndefined();
+  });
+});
+
+describe('bots holding administrative roles (ADR-0051)', () => {
+  const all = [...builtins, custom('ops', 5, 0, MANAGE_ROOM)];
+  const bot = (roleIds: string[]) => ({ role: WorkspaceRole.MEMBER, roleIds, user: { isBot: true } });
+  const person = (roleIds: string[]) => ({ role: WorkspaceRole.MEMBER, roleIds, user: { isBot: false } });
+
+  it('counts the bots of a role, built-ins implied', () => {
+    const members = [bot(['member', 'ops']), bot(['member']), person(['member', 'ops'])];
+    expect(botsWithRole(all, members, 'ops')).toBe(1);
+    expect(botsWithRole(all, members, 'member')).toBe(2);
+    expect(botsWithRole(all, [bot([])], 'member')).toBe(1);
+  });
+
+  it('warns on administrative bits only, and only with bots', () => {
+    expect(warnBotsAdmin(MANAGE_ROOM, 1)).toBe(true);
+    expect(warnBotsAdmin(PERMISSION_BITS.INVITE_MEMBERS | STREAM, 2)).toBe(true);
+    expect(warnBotsAdmin(MANAGE_ROOM, 0)).toBe(false);
+    expect(warnBotsAdmin(STREAM | PERMISSION_BITS.SEND_MESSAGES | PERMISSION_BITS.MANAGE_BOTS, 3)).toBe(false);
+    expect(ADMIN_LEVEL_BITS & ADMINISTRATOR).toBe(0n);
   });
 });

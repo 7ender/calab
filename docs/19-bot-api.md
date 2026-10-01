@@ -60,13 +60,16 @@ await bot.start();
 - Один токен — одно «устройство» gateway: второй процесс с тем же токеном вытесняет первый (сокет первого
   закрывается с `4000 replaced by a new session`). Запускайте один процесс на токен.
 - Боту **закрыты** пользовательские эндпоинты (`403 FORBIDDEN`, `reason: "BOT_NOT_ALLOWED"`): сессии, пароль, почта,
-  подтверждение, статус и настройки профиля, заметки, создание/поиск/вступление в пространства, все инвайты и
-  гостевые ссылки, уведомления, архив DM, превью ссылок, управление записью (старт/стоп/повтор/удаление), суперадминка, управление ботами,
-  фоны камеры пространства (`/api/workspaces/{id}/backgrounds…`, ADR-0035 — у бота нет камеры).
+  подтверждение, статус и настройки профиля, заметки, создание/поиск/вступление в пространства, поиск аккаунта по
+  почте и прямое добавление, гостевые ссылки комнат, уведомления, архив DM, превью ссылок, повтор/удаление записей,
+  суперадминка, управление ботами, фоны камеры пространства (`/api/workspaces/{id}/backgrounds…`, ADR-0035 — у бота
+  нет камеры). Приглашения в пространство, календарь, бейджи, звуки, решение по гостям и старт/стоп записи с
+  ADR-0051 открыты по тем же битам, что людям (см. таблицу ниже).
 - Бот видит только то, что разрешает `VIEW_ROOM` / `VIEW_BOARD`; закрытые комнаты и доски (ADR-0029, ADR-0048) действуют и на ботов:
   бот попадает в них только по переопределению на самом объекте (лично или через роль), иначе — 404, как людям.
 - Биты пространства из ADR-0048 бот получает, как человек, через свои роли: `MANAGE_MEMBERS` — исключать и банить,
-  `CREATE_BOARDS` — создавать доски, `VIEW_JOURNALS` — журнал доски; управление ботами, настройки телефонии,
+  `CREATE_BOARDS` — создавать доски, `VIEW_JOURNALS` — журнал доски, `MANAGE_EVENTS` — чужие встречи,
+  `MANAGE_RECORDINGS` — запись встреч; управление ботами, настройки телефонии,
   GPTunneL и журнал звонков боту закрыты (`403 BOT_NOT_ALLOWED`), даже с `MANAGE_BOTS` / `MANAGE_INTEGRATIONS` /
   `VIEW_JOURNALS`.
 - Человек может «Заблокировать бота» — тогда бот не может писать ему в DM (`403 BOT_BLOCKED`).
@@ -110,7 +113,13 @@ curl -s $CALAB/api/bots/me -H "Authorization: Bearer $TOKEN"
 | `GET · PUT · DELETE /api/bots/me/webhook` | webhook `{url, secret}` | только боты |
 | `GET /api/workspaces` · `GET /api/workspaces/{id}` | пространства бота | участник |
 | `GET /api/workspaces/{id}/members` | участники (`WorkspaceMember`, у ботов `user.isBot`) | участник |
-| `GET /api/workspaces/{id}/badges` | бейджи участников (docs/09 #82): `WorkspaceMember.badge_id` ссылается на них; только чтение — управлять бейджами бот не может | участник |
+| `GET /api/workspaces/{id}/members/{userId}` | профиль участника (ADR-0051; `@me` — сам бот) → `{member, openTasks}`: имя, ник, роли, бейдж, статус, часовой пояс, день рождения (скрытый не отдаётся), открытые задачи, где он исполнитель, — только с досок, которые видит бот (≤ 50). SDK `bot.members.get` | участник |
+| `PATCH /api/workspaces/{id}/members/{userId} {nickname}` | переименовать участника (ник в пространстве; `""` — снять). SDK `bot.members.setNickname` | `MANAGE_NICKNAMES` |
+| `GET /api/workspaces/{id}/badges` | бейджи участников (docs/09 #82): `WorkspaceMember.badge_id` ссылается на них | участник |
+| `POST /api/workspaces/{id}/badges {name, fileId}` · `PATCH · DELETE …/badges/{badgeId}` | библиотека бейджей; картинка — своя загрузка бота в это пространство (PNG/WebP/JPEG ≤ 128 КБ). SDK `bot.badges.create/update/delete` | `MANAGE_MEMBERS` |
+| `PUT /api/workspaces/{id}/members/{userId}/badge {badgeId}` | выдать / снять (`""`) бейдж; цель — не бот и ниже старшей роли бота. SDK `bot.badges.set` | `MANAGE_NICKNAMES` |
+| `GET · POST /api/workspaces/{id}/invites` · `DELETE …/invites/{inviteId}` | ссылки-приглашения в пространство `{maxUses, expiresInSeconds}`. SDK `bot.invites.list/create/delete` | `INVITE_MEMBERS` |
+| `GET · POST /api/workspaces/{id}/invites/email` · `DELETE …/invites/email/{inviteId}` | приглашение по почте `{email}`: письмо «Пространство (от имени бота X)», тот же адрес — не чаще раза в сутки; пригласить админом — только владелец. SDK `bot.invites.email/listEmail/deleteEmail` | `INVITE_MEMBERS` |
 | `GET /api/workspaces/{id}/rooms` · `GET /api/rooms/{id}` | комнаты, которые бот видит | `VIEW_ROOM` |
 | `GET /api/workspaces/{id}/categories` | категории комнат | участник |
 | `GET /api/rooms/{id}/messages?before=&after=&limit=` | история (новые первыми, `limit ≤ 100`) | `VIEW_ROOM` |
@@ -131,13 +140,31 @@ curl -s $CALAB/api/bots/me -H "Authorization: Bearer $TOKEN"
 | `POST /api/rooms/{id}/stream/request` · `…/camera/request` · `…/camera/stop` | стрим экрана, камера | `STREAM` / `VIDEO` |
 | `PATCH /api/voice/self` · `PATCH /api/rooms/{id}/voice-status` | своё mute/deafen, статус звонка | в звонке |
 | `POST /api/rooms/{id}/voice/{userId}/mute · unmute · disconnect · move · stop-stream · stop-camera · allow-camera` | модерация голоса | `MUTE_MEMBERS` / `MOVE_MEMBERS` |
-| `GET /api/rooms/{id}/admissions` | гости, ожидающие подтверждения входа (ADR-0040); пустить/отклонить — 403 `BOT_NOT_ALLOWED` | `MANAGE_ROOM` |
+| `GET /api/rooms/{id}/admissions` · `POST /api/rooms/{id}/admissions/{userId} {status, displayName?, badgeId?}` | гости, ожидающие подтверждения входа (ADR-0040), и решение по ним: `ROOM_ADMISSION_STATUS_ADMITTED` / `…_DECLINED` (ADR-0051) | `INVITE_GUESTS` в комнате |
+| `POST /api/rooms/{id}/recording/start` · `…/recording/stop` | запись встречи (ADR-0025): в звонке комнаты кто-то есть, `allowRecording`, пространство подключено к GPTunneL. SDK `bot.recording.start/stop` | `VIEW_ROOM` + `CONNECT` и **`MANAGE_RECORDINGS`** (для ботов, ADR-0051) |
 | `POST /api/rooms/{id}/calls {number}` · `DELETE /api/rooms/{id}/calls/{callId}` | телефония (ADR-0046): позвонить на номер из звонка комнаты — абонент входит в комнату участником `sip:<callId>`; положить свою линию (чужую — с `MUTE_MEMBERS`). Статусы — событие `sipCallUpdate`. Лимит — 20 звонков в час на пространство (`429 SIP_RATE_LIMITED`). Настройки SIP и журнал — 403 `BOT_NOT_ALLOWED` | `PLACE_CALLS`, бот в звонке комнаты, телефония включена |
-| `GET /api/workspaces/{id}/events?from=&to=` · `GET /api/events/{id}` | календарь (ADR-0038): встречи в видимых боту комнатах; только чтение (создавать, менять, отвечать — 403 `BOT_NOT_ALLOWED`), адреса внешних участников боту не показываются; свободно/занято, подбор времени и CalDAV (ADR-0041) — 403 `BOT_NOT_ALLOWED` | `VIEW_ROOM` |
+| `GET /api/workspaces/{id}/events?from=&to=` · `GET /api/events/{id}` | календарь (ADR-0038): встречи, которые бот организует, и встречи видимых ему комнат; адреса внешних участников — только если бот может править встречу. SDK `bot.calendar.list/get` | `VIEW_ROOM` |
+| `POST /api/workspaces/{id}/events` | создать встречу (ADR-0051): **бот — организатор, но не участник** (себя в `attendees` — 422); письма и `invite.ics` участникам уходят от системного адреса «Пространство (от имени бота X)», без `Reply-To` и без гостевых ссылок комнаты — внешние получают ссылку на страницу встречи. SDK `bot.calendar.create` | не гость; комната — видимая голосовая |
+| `PATCH · DELETE /api/events/{id}[?occurrence=]` | изменить / отменить встречу (или одно вхождение серии). SDK `bot.calendar.update/delete` | свою; чужую — `MANAGE_ROOM` в её комнате или `MANAGE_EVENTS` (внешние адреса в чужую встречу — 403) |
+| `GET /api/workspaces/{id}/freebusy?users=&from=&to=` · `POST …/freebusy/suggest` | свободно/занято и подбор времени (ADR-0041): боту — только «занято» (без названий и участников внешних событий). SDK `bot.calendar.freebusy/suggest` | не гость |
+| `PUT /api/events/{id}/rsvp`, `GET /api/me/events/today`, CalDAV (`/api/me/caldav…`, `/api/me/external-events`) | 403 `BOT_NOT_ALLOWED`: бот не участник встреч и не держит внешний календарь | — |
 | доски задач (ADR-0042): `GET /api/workspaces/{id}/boards`, `GET /api/boards/{id}`, `GET/POST /api/boards/{id}/tasks`, `GET/PATCH /api/tasks/{id}`, `PUT /api/tasks/{id}/assignees`, `GET /api/workspaces/{id}/tasks/search?q=`, `GET /api/t/{KEY-N}`, `GET /api/me/tasks`, статусы/лейблы/вехи/виды, архив задач | бот работает как человек — по битам доски своих ролей и переопределений (бота можно назначить исполнителем и дать ему доступ к приватной доске лично); комментарий — сообщение в `task.roomId`. Доступ к доске (`PUT …/permissions`) и удаление навсегда (`DELETE …?purge=1`) — 403 `BOT_NOT_ALLOWED`. SDK: `bot.boards.list/get`, `bot.tasks.list/search/get/create/update/setAssignees/comment` | `VIEW_BOARD` / `CREATE_TASKS` / `EDIT_TASKS` / `MANAGE_BOARD` |
-| `GET /api/workspaces/{id}/sounds` · `POST /api/rooms/{id}/sounds/play {soundId}` | саундборд (ADR-0036): список звуков; проиграть звук всем в звонке (`builtin:<имя>` или id звука; 1 в 2 с на бота, 5 в 10 с на комнату) | бот в звонке комнаты; управление звуками — 403 |
+| `GET /api/workspaces/{id}/sounds` · `POST /api/rooms/{id}/sounds/play {soundId}` | саундборд (ADR-0036): список звуков; проиграть звук всем в звонке (`builtin:<имя>` или id звука; 1 в 2 с на бота, 5 в 10 с на комнату) | бот в звонке комнаты |
+| `POST /api/workspaces/{id}/sounds` · `PATCH · DELETE …/sounds/{soundId}` | библиотека звуков (ADR-0051): клип — своя загрузка бота в это пространство | `MANAGE_STICKERS` |
 | стикеры: `GET/POST /api/workspaces/{id}/sticker-packs`, `/api/sticker-packs/{id}…`, `/api/stickers/{id}`, `/api/me/sticker-packs…` | см. [Стикеры](#стикеры-по-api) | участник / `MANAGE_STICKERS` |
 | комнаты, категории, роли, участники, баны (`POST/PATCH/DELETE …`) | управление пространством | `MANAGE_ROOM`, `MANAGE_ROLES`, `MANAGE_MEMBERS` (исключить, бан, встроенная роль, назначить роли — ADR-0048), `MANAGE_WORKSPACE` (настройки), … |
+
+**Остаются только для людей** (403 `BOT_NOT_ALLOWED`, ADR-0051): удаление пространства; управление ботами (создать, токены,
+аватар — какой бы бит ни был у бота); настройки SIP, GPTunneL, веб-приложения пространства; суперадминка; голос в
+согласовании задач; RSVP, CalDAV, «сегодня»; поиск аккаунта по почте и прямое добавление аккаунта
+(`invites/lookup`, `POST …/members`); гостевые ссылки комнат; таблица и правка дней рождения; доступ к доске;
+удаление и перезагрузка записей; фоны камеры, заметки, звонки DM, пароль, почта, сессии.
+
+**Бот с административными правами — это администратор.** Токен бота, роли которого дают `MANAGE_*`, `INVITE_*` или
+`VIEW_JOURNALS`, действует как администратор с этими правами: храните его как пароль администратора, при подозрении
+на утечку — «Перевыпустить токен». Редактор ролей предупреждает, если такие права получает роль, которая есть у
+ботов. Каждое административное действие бота сервер пишет в журнал (`bot action`: маршрут, статус, бот и его
+владелец). Закрытые комнаты и доски (ADR-0048 «без администраторов») бот видит только по переопределению на них.
 
 ### Ответы на сообщения и транскрипты встреч
 
@@ -166,7 +193,8 @@ curl -s $CALAB/api/bots/me -H "Authorization: Bearer $TOKEN"
 ни самой записи, ни живой пересланной копии её карточки (ADR-0033). В URL используйте `roomId`
 видимой карточки, в том числе пересланной. Удаление последней копии отзывает доступ к транскрипту
 через неё. Право `VIEW_ROOM` открывает боту **весь** сохранённый транскрипт, доступный через эту
-комнату, с учётом ограниченных комнат. Управление записью это право боту не открывает.
+комнату, с учётом ограниченных комнат. Управление записью это право боту не открывает (старт/стоп — с
+`MANAGE_RECORDINGS`, ADR-0051).
 
 ### Примеры
 
@@ -207,6 +235,31 @@ curl -s -X POST $CALAB/api/dms -H "Authorization: Bearer $TOKEN" -H 'Content-Typ
 curl -s $CALAB/api/workspaces -H "Authorization: Bearer $TOKEN"              # {"workspaces": [{"id", "name", …}]}
 curl -s $CALAB/api/workspaces/$WS/rooms -H "Authorization: Bearer $TOKEN"    # {"rooms": [{"id", "type": "ROOM_TYPE_TEXT", "name", …}]}
 curl -s $CALAB/api/workspaces/$WS/members -H "Authorization: Bearer $TOKEN"  # {"members": [{"user": {…}, "role": "WORKSPACE_ROLE_MEMBER", "roleIds": […]}]}
+curl -s $CALAB/api/workspaces/$WS/members/$USER -H "Authorization: Bearer $TOKEN"  # {"member": {…}, "openTasks": [{"key": "FNG-12", …}]}
+curl -s -X PATCH $CALAB/api/workspaces/$WS/members/$USER -H "Authorization: Bearer $TOKEN" \
+  -H 'Content-Type: application/json' -d '{"nickname": "Боря (продажи)"}'      # MANAGE_NICKNAMES → {"member": {…}}
+```
+
+Календарь и приглашения (ADR-0051):
+
+```sh
+# встреча в голосовой комнате: бот — организатор, Боб и внешний адрес — участники
+curl -s -X POST $CALAB/api/workspaces/$WS/events -H "Authorization: Bearer $TOKEN" -H 'Content-Type: application/json' \
+  -d "{\"title\": \"Планёрка\", \"roomId\": \"$VOICE\", \"startsAt\": \"2026-10-02T09:00:00Z\", \"endsAt\": \"2026-10-02T09:30:00Z\",
+       \"tz\": \"Europe/Moscow\", \"attendees\": [{\"userId\": \"$USER\", \"required\": true}, {\"email\": \"partner@example.com\"}]}"
+# → 201 {"event": {"id": "…", "organizerId": "<id бота>", "canEdit": true, "attendees": [...], …}}
+curl -s "$CALAB/api/workspaces/$WS/freebusy?users=$USER&from=2026-10-02T00:00:00Z&to=2026-10-03T00:00:00Z" \
+  -H "Authorization: Bearer $TOKEN"   # {"users": [{"userId", "timezone", "workHours", "busy": [{"startsAt", "endsAt", "kind"}]}]}
+curl -s -X POST $CALAB/api/workspaces/$WS/invites -H "Authorization: Bearer $TOKEN" -H 'Content-Type: application/json' \
+  -d '{"maxUses": 1, "expiresInSeconds": 86400}'   # INVITE_MEMBERS → 201 {"invite": {"code": "…"}}; ссылка https://<APP_HOST>/join/<code>
+```
+
+```js
+const ev = await bot.calendar.create(wsId, { title: 'Планёрка', roomId, startsAt: timestampFromDate(start), endsAt: timestampFromDate(end),
+  attendees: [{ userId, required: true }] });          // import { timestampFromDate } from '@bufbuild/protobuf/wkt'
+const { member, openTasks } = await bot.members.get(wsId, userId);
+await bot.members.setNickname(wsId, userId, 'Боря');
+const invite = await bot.invites.create(wsId, { maxUses: 1 });
 ```
 
 ## Gateway: события в реальном времени
@@ -247,6 +300,8 @@ JSON-кадры (`?encoding=json`):
 | `soundCreate/Update/Delete` · `soundPlay` | саундборд пространства; `soundPlay` — только пока бот в звонке комнаты |
 | `botCreate/Update/Delete` | боты пространства — только при `MANAGE_BOTS` (ADR-0048) |
 | `sipCallUpdate` | телефонный звонок комнаты начат или сменил статус (ADR-0046) |
+| `eventCreate/Update/Delete` · `eventRsvp` | встречи: свои (бот — организатор) и встречи видимых комнат; адреса внешних — только если бот может править встречу |
+| `boardCreate/Update/Delete` · `taskCreate/Update/Delete` · `taskActivity` | доски и задачи — по `VIEW_BOARD` бота |
 
 Боту доступны и исходящие опкоды `TYPING { roomId }` («печатает», не чаще раза в 3 с на комнату),
 `SUBSCRIBE { roomIds }` (≤ 100) и `PRESENCE_UPDATE`.
@@ -298,7 +353,9 @@ bot.on('command', async (c) => {
   { webhook: {url, enabled, disabledAt, failingSince, lastOkAt, lastError, pending} }`; `GET` — текущее состояние,
   `DELETE` → 204 (очередь сбрасывается).
 - Что доставляется: `messageCreate/Update/Delete` и `messageReactionAdd/Remove` комнат, которые бот видит, и его DM —
-  кроме его собственных сообщений и реакций. Команды — так же, как в gateway (`message.command`).
+  кроме его собственных сообщений и реакций. Команды — так же, как в gateway (`message.command`). С ADR-0051 ещё
+  `taskCreate/Update/Delete` и `taskActivity` видимых досок, `eventCreate/Update/Delete` и `eventRsvp` (как в gateway,
+  адреса внешних — только боту, который может править встречу) и `workspaceMemberUpdate`.
 - Запрос: `POST <url>`, `Content-Type: application/json`, `User-Agent: CalabBot-Webhook/1.0`, тело —
   `BotWebhookUpdate { id, botUserId, createdAt, event: DispatchEvent }` (protojson), заголовки
   `X-Calab-Delivery: <id>` и `X-Calab-Signature: sha256=<hex HMAC-SHA256(secret, тело)>`.

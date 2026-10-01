@@ -22,6 +22,10 @@ export const enRoles: DictShape<typeof ruRoles> = {
   'roles.perms': 'Permissions',
   'roles.fullAccess': 'Full access: this role has every permission, it cannot be changed.',
   'roles.guestNote': 'Guests can only get room and voice permissions.',
+  'roles.botsAdmin': {
+    one: '{n} bot has this role: with admin permissions its token acts as an admin. Give bots such permissions deliberately.',
+    other: '{n} bots have this role: with admin permissions their tokens act as an admin. Give bots such permissions deliberately.',
+  },
   'roles.group.workspace': 'Workspace',
   'roles.group.members': 'Members',
   'roles.group.rooms': 'Rooms',

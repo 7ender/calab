@@ -89,8 +89,8 @@ func migrate(ctx context.Context, cfg *config.Config, args []string) error {
 }
 
 func serve(ctx context.Context, cfg *config.Config) error {
-	if _, _, err := plans.Defaults(cfg.PlanFreeLimits, cfg.PlanTeamLimits); err != nil {
-		return fmt.Errorf("config: PLAN_FREE_LIMITS / PLAN_TEAM_LIMITS: %w", err)
+	if _, _, _, err := plans.Defaults(cfg.PlanFreeLimits, cfg.PlanTeamLimits, cfg.PlanBusinessLimits); err != nil {
+		return fmt.Errorf("config: PLAN_FREE_LIMITS / PLAN_TEAM_LIMITS / PLAN_BUSINESS_LIMITS: %w", err)
 	}
 	d, err := db.Connect(ctx, cfg.DatabaseURL)
 	if err != nil {
@@ -108,11 +108,7 @@ func serve(ctx context.Context, cfg *config.Config) error {
 	}
 	defer rc.Close()
 
-	store, err := blob.Open(ctx, blob.Config{Driver: cfg.StorageDriver, Path: cfg.StoragePath, S3: blob.S3Config{
-		Endpoint: cfg.StorageS3Endpoint, Region: cfg.StorageS3Region, Bucket: cfg.StorageS3Bucket,
-		AccessKeyID: cfg.StorageS3AccessKeyID, SecretAccessKey: cfg.StorageS3SecretAccessKey,
-		KeyPrefix: cfg.StorageS3KeyPrefix, ForcePathStyle: cfg.StorageS3ForcePathStyle,
-	}})
+	store, err := blob.Open(ctx, app.BlobConfig(cfg))
 	if err != nil {
 		return err
 	}
