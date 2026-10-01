@@ -270,7 +270,12 @@ workspace immutable. HTTPS exact registered redirects; no wildcards, fragments,
 userinfo, prefix match. Для native loopback только 127.0.0.1 или [::1], переменный port
 по RFC8252, фактическая полная строка привязана к code/token; private scheme reverse-domain
 допускается административной регистрацией + PKCE, не как доказательство OS ownership.
-SPA CORS только registered exact origins, no credentials/wildcard. Token/revoke endpoint
+SPA CORS только registered exact origins, no credentials/wildcard. Для публичных
+discovery/JWKS допускается Origin действующего `public_spa` клиента этого workspace;
+запрос без Origin остаётся публичным. Metadata явно содержит
+`request_uri_parameter_supported=false` и
+`authorization_response_iss_parameter_supported=true`.
+Token/revoke endpoint
 не принимает cookie; redirect/exchange не может изменить workspace/client/scopes.
 
 Authorize сохраняет server request, browser-binding HttpOnly cookie и отправляет на
@@ -285,6 +290,11 @@ POST `/api/oauth/requests/{id}/decision` принимает allow/deny + одн�
 Code bound к issuer/workspace/client/user/session/grant/redirect/S256/config versions,
 хэш в БД, consume вместе с выдачей token family в одной транзакции. Access/refresh opaque
 с разными type prefix, хэши в БД; token parser не имеет fallback на Calaba JWT.
+Повтор уже использованного code от корректно аутентифицированного того же client
+с совпадающими workspace, redirect и PKCE возвращает `invalid_grant` и отзывает
+выданный по этому code grant/token family; отзыв коммитится до ответа с ошибкой.
+Это выбранное для релиза выполнение SHOULD из RFC6749 §4.1.2. Неверные credentials,
+client, workspace, redirect или verifier не могут отозвать чужой grant.
 Refresh rotation атомарная: повтор использованного refresh от аутентифицированного
 владельца client отзывает его family; неверный client/secret не может вызвать такой DoS.
 Потеря ответа требует нового входа, replay grace в provider v1 нет. Scopes только сужаются.
