@@ -1296,6 +1296,37 @@ func (q *Queries) ListUserOAuthGrants(ctx context.Context, arg ListUserOAuthGran
 	return items, nil
 }
 
+const lockOAuthWorkspace = `-- name: LockOAuthWorkspace :one
+SELECT id, slug, name, icon_file_id, visibility, owner_id, created_at, default_audio_bitrate_kbps, default_max_stream_preset, default_max_streams, storage_quota_bytes, storage_used_bytes, allow_self_nickname, default_camera_limit, suspended_at, suspended_reason, suspended_by, time_format, sip_enabled FROM workspaces WHERE id=$1 FOR UPDATE
+`
+
+func (q *Queries) LockOAuthWorkspace(ctx context.Context, id uuid.UUID) (Workspace, error) {
+	row := q.db.QueryRow(ctx, lockOAuthWorkspace, id)
+	var i Workspace
+	err := row.Scan(
+		&i.ID,
+		&i.Slug,
+		&i.Name,
+		&i.IconFileID,
+		&i.Visibility,
+		&i.OwnerID,
+		&i.CreatedAt,
+		&i.DefaultAudioBitrateKbps,
+		&i.DefaultMaxStreamPreset,
+		&i.DefaultMaxStreams,
+		&i.StorageQuotaBytes,
+		&i.StorageUsedBytes,
+		&i.AllowSelfNickname,
+		&i.DefaultCameraLimit,
+		&i.SuspendedAt,
+		&i.SuspendedReason,
+		&i.SuspendedBy,
+		&i.TimeFormat,
+		&i.SipEnabled,
+	)
+	return i, err
+}
+
 const revokeOAuthClientSecrets = `-- name: RevokeOAuthClientSecrets :execrows
 UPDATE oauth_client_secrets SET revoked_at=clock_timestamp() WHERE workspace_id=$1 AND client_id=$2 AND revoked_at IS NULL
 `
@@ -1503,6 +1534,45 @@ func (q *Queries) UpdateOAuthClient(ctx context.Context, arg UpdateOAuthClientPa
 		arg.Scopes,
 		arg.RefreshEnabled,
 		arg.AllowedOrigins,
+		arg.WorkspaceID,
+		arg.ID,
+		arg.ExpectedVersion,
+	)
+	var i OauthClient
+	err := row.Scan(
+		&i.ID,
+		&i.WorkspaceID,
+		&i.ClientID,
+		&i.Name,
+		&i.ClientType,
+		&i.RefreshEnabled,
+		&i.AllowedOrigins,
+		&i.AuthMethod,
+		&i.Scopes,
+		&i.Version,
+		&i.DisabledAt,
+		&i.CreatedBy,
+		&i.CreatedAt,
+	)
+	return i, err
+}
+
+const updateOAuthClientName = `-- name: UpdateOAuthClientName :one
+UPDATE oauth_clients SET name=$1
+WHERE workspace_id=$2 AND id=$3 AND version=$4
+RETURNING id, workspace_id, client_id, name, client_type, refresh_enabled, allowed_origins, auth_method, scopes, version, disabled_at, created_by, created_at
+`
+
+type UpdateOAuthClientNameParams struct {
+	Name            string
+	WorkspaceID     uuid.UUID
+	ID              uuid.UUID
+	ExpectedVersion int64
+}
+
+func (q *Queries) UpdateOAuthClientName(ctx context.Context, arg UpdateOAuthClientNameParams) (OauthClient, error) {
+	row := q.db.QueryRow(ctx, updateOAuthClientName,
+		arg.Name,
 		arg.WorkspaceID,
 		arg.ID,
 		arg.ExpectedVersion,
