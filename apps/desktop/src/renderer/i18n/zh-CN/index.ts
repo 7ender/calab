@@ -1,3 +1,4 @@
+import { zhIdentity } from './identity';
 import type { Dict } from '../types';
 import { zhApp } from './app';
 import { zhChat } from './chat';
@@ -29,6 +30,7 @@ import { zhWebApps } from './webapps';
 
 /** Simplified Chinese UI strings (ADR-0022): same keys and placeholders as `ru`/`en`; glossary docs/i18n-glossary.md. */
 export const zhCN: Dict = {
+  ...zhIdentity,
   ...zhShell,
   ...zhChat,
   ...zhPeople,

@@ -7,6 +7,11 @@ import type { PttMode } from './pttGate';
  */
 export const IPC = {
   // ---- auth (main is the token broker; the refresh token never leaves main) ----
+  authIdentityClearCache: 'auth:identity-clear-cache',
+  authIdentityRecover: 'auth:identity-recover',
+  authSsoBegin: 'auth:sso-begin',
+  authSsoCancel: 'auth:sso-cancel',
+  authSsoResult: 'auth:sso-result',
   authRestore: 'auth:restore',
   authLogin: 'auth:login',
   authRegister: 'auth:register',
@@ -198,6 +203,8 @@ export interface AuthSession {
   sessionId: string;
   /** calaba.v1.Me as protojson; the renderer decodes it with MeSchema. */
   me: unknown;
+  /** Public session authority, encoded using the generated schema. */
+  authority?: unknown;
 }
 
 export interface LoginArgs {
@@ -608,4 +615,19 @@ export interface ProcessMetrics {
   gpuCpu: number | null;
   mainCpu: number | null;
   rendererPid: number;
+}
+
+/** Public local handoff capability. No verifier, ticket or tokens cross IPC. */
+export interface SsoStart {
+  workspaceId: string;
+  purpose: 'login' | 'step_up' | 'link' | 'test';
+}
+export interface SsoResult {
+  /** Validated public same-session web navigation context, never credentials. */
+  returnTo?: string;
+  workspaceId: string;
+  purpose: SsoStart['purpose'];
+  ok: boolean;
+  session?: AuthSession;
+  error?: ApiErrorJson;
 }

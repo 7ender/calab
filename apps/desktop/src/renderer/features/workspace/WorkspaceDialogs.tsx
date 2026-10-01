@@ -1,3 +1,4 @@
+import { applyIdentityAccess } from '../../services/identity';
 import { WorkspaceVisibility } from '@calaba/protocol';
 import { useMutation, useQuery } from '@tanstack/react-query';
 import { useState, type ReactNode } from 'react';
@@ -56,12 +57,16 @@ export function useInviteJoin(input: string, onJoined: () => void) {
   const join = useMutation({
     mutationFn: (arg: { code?: string; id?: string }) => (arg.code ? api.invites.join(arg.code) : api.workspaces.joinOpen(arg.id ?? '')),
     onSuccess: (r) => {
-      if (r.workspace) setWs(r.workspace.id);
+      if (r.identityAccess) {
+        applyIdentityAccess(r.identityAccess);
+        setWs(r.identityAccess.workspaceId);
+      } else if (r.workspace) setWs(r.workspace.id);
       onJoined();
     },
   });
   // Enabled only for a well-formed invite (parseInviteCode) that the server resolved to a workspace.
-  const canJoin = !!code && !!preview.data?.workspace;
+  const canJoin =
+    !!code && (!!preview.data?.workspace || (preview.error instanceof ApiError && preview.error.is('ERROR_CODE_SSO_REQUIRED')));
   const error = preview.error ? errText(preview.error) : join.error ? errText(join.error) : null;
   return { code, preview, join, canJoin, error };
 }

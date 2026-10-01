@@ -1,8 +1,9 @@
 import { protocol } from 'electron';
 import { readBodyUpTo } from '../shared/bodyBuffer';
+import { identityOriginPath } from '../shared/identityOrigin';
 import { API_SCHEME } from '../shared/ipc';
 import { apiSession, resetApiTransport, stall } from './apiTransport';
-import { currentServerUrl, forceRefresh, getAccessToken } from './auth';
+import { currentServerUrl, forceRefresh, identityAccessToken } from './auth';
 import { log } from './logging';
 
 /**
@@ -84,10 +85,11 @@ async function forward(
   const headers = new Headers(req.headers);
   headers.delete('origin');
   headers.delete('referer');
+  if (identityOriginPath(new URL(target).pathname)) headers.set('Origin', new URL(currentServerUrl()).origin);
   if (token) headers.set('Authorization', `Bearer ${token}`);
   const init: RequestInit & { duplex?: 'half' } = { method: req.method, headers, redirect: 'manual', signal };
   if (body instanceof Uint8Array) {
-    init.body = body;
+    init.body = new Uint8Array(body).buffer;
   } else if (body) {
     init.body = body;
     init.duplex = 'half'; // streamed request body (uploads)
@@ -254,9 +256,7 @@ export function handleApiScheme(): void {
       // Small bodies (JSON) are buffered so a POST/PATCH/DELETE can be replayed once after a 401
       // (clock skew / expired token → spurious send failures, review L6). A 401 means the server
       // did nothing, so the replay is safe. Big bodies (uploads) stream and are never replayed.
-      const read = idempotent
-        ? null
-        : await readBodyUpTo(req.body ? watchBody(req.body as ReadableStream<Uint8Array>, bodySignal, { onChunk: onRequestChunk }) : null);
+      const read = idempotent ? null : await readBodyUpTo(req.body ? watchBody(req.body, bodySignal, { onChunk: onRequestChunk }) : null);
       const streamed = read?.kind === 'stream';
       const body = read ? (read.kind === 'bytes' ? read.bytes : read.stream) : null;
       const replayable = !read || read.kind === 'bytes';
@@ -265,7 +265,7 @@ export function handleApiScheme(): void {
       // upload is already covered end to end by the idle timer above.
       if (!streamed) headersTimer = setTimeout(() => headersController.abort(timeoutError('connect/headers timeout')), deadline.headers);
 
-      let res = await forward(req, target, await getAccessToken(), body, fetchSignal);
+      let res = await forward(req, target, await identityAccessToken(new URL(target).pathname), body, fetchSignal);
       if (res.status === 401 && replayable) {
         const t = await forceRefresh();
         if (t) {
@@ -294,7 +294,7 @@ export function handleApiScheme(): void {
         streaming = readRes.kind === 'stream';
         finalRes =
           readRes.kind === 'bytes'
-            ? new Response(readRes.bytes, { status: res.status, statusText: res.statusText, headers: res.headers })
+            ? new Response(new Uint8Array(readRes.bytes).buffer, { status: res.status, statusText: res.statusText, headers: res.headers })
             : new Response(readRes.stream, { status: res.status, statusText: res.statusText, headers: res.headers });
       }
       if (!streaming) disarmAll();

@@ -1,5 +1,8 @@
+import { installIdentityDenials } from './identity';
+import { useIdentity } from '../stores/identity';
+import { resetIdentityGate } from '../lib/api/identityGate';
 import { fromJson, type JsonValue } from '@bufbuild/protobuf';
-import { MeSchema } from '@calaba/protocol';
+import { MeSchema, SessionAuthoritySchema } from '@calaba/protocol';
 import type { AuthSession, LogoutReason } from '../../shared/ipc';
 import { log } from '../lib/log';
 import { useDms } from '../stores/dms';
@@ -92,6 +95,7 @@ export async function bootstrap(): Promise<void> {
   const nagNow = nagOnStart(nag, appInfo.version);
   if (nagNow !== nag) usePrefs.getState().setPrefs({ updateNag: nagNow });
 
+  installIdentityDenials();
   voice.init();
   watchSyncedPrefs();
   startMessageRetention();
@@ -138,6 +142,7 @@ function watchOffline(): void {
 export function beginSession(s: AuthSession): void {
   const me = fromJson(MeSchema, s.me as JsonValue, { ignoreUnknownFields: true });
   useSession.getState().set({
+    authority: s.authority ? fromJson(SessionAuthoritySchema, s.authority as JsonValue) : null,
     status: 'authed',
     serverUrl: s.serverUrl,
     sessionId: s.sessionId,
@@ -196,6 +201,8 @@ export async function logout(allSessions = false): Promise<void> {
 
 async function endSession(reason: LogoutReason): Promise<void> {
   if (useSession.getState().status === 'anon') return;
+  useIdentity.getState().reset();
+  resetIdentityGate();
   stopGateway();
   resetGatewaySubscriptions();
   await voice.leave(false);
@@ -220,7 +227,9 @@ async function endSession(reason: LogoutReason): Promise<void> {
   queryClient.clear();
   useRoomLink.setState({ code: null, preferLogin: false });
   useUi.getState().openDialog(null);
-  useSession.getState().set({ status: 'anon', me: null, sessionId: '', ready: false, gateway: 'idle', loggedOutReason: reason });
+  useSession
+    .getState()
+    .set({ status: 'anon', authority: null, me: null, sessionId: '', ready: false, gateway: 'idle', loggedOutReason: reason });
   const notice = logoutToastKey(reason);
   if (notice) toast.info(t(notice));
 }

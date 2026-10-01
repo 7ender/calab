@@ -1,3 +1,4 @@
+import { CorporateLogin } from '../identity/SignIn';
 import { useEffect, useState, type ReactNode } from 'react';
 import { TriangleAlert } from 'lucide-react';
 import { SIMILAR_ACCOUNT_CODE, type ApiErrorJson } from '../../../shared/ipc';
@@ -344,6 +345,9 @@ function LoginScreen(): ReactNode {
             </button>
           </div>
         ) : null}
+        <div className="mt-6">
+          <CorporateLogin serverUrl={serverUrl} />
+        </div>
       </form>
       {/* NOTICE: the «Powered by GPTunneL» attribution is required in the UI (BUSL-1.1 grant). */}
       <AuthLegalFooter />

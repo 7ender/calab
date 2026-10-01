@@ -1,9 +1,7 @@
-import {
-  audioTierKbps,
-  WorkspaceRole,
-  WorkspaceVisibility,
-  type Invite,
-} from '@calaba/protocol';
+import { IdentitySettings } from '../identity/IdentitySettings';
+import { OAuthClients } from '../identity/OAuth';
+import { localAuthority } from '../identity/model';
+import { audioTierKbps, WorkspaceRole, WorkspaceVisibility, type Invite } from '@calaba/protocol';
 import { timestampDate } from '@bufbuild/protobuf/wkt';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Award, AudioLines, Ban, Music, Bot as BotIcon, Cake, CircleDot, Copy, Gem, Phone, Search, Settings2, Shield, Sticker, Trash2, TriangleAlert, Upload, UserPlus, Users, Wallpaper } from 'lucide-react';
@@ -73,6 +71,7 @@ export function WorkspaceSettingsDialog({
   roomId?: string | undefined;
   onClose: () => void;
 }): ReactNode {
+  const local = useSession((s) => localAuthority(s.authority));
   const entry = useWorkspaces((s) => s.byId[workspaceId]);
   const me = useSession((s) => s.me?.user?.id ?? '');
   const myRoles = useMemberRoles(workspaceId, me);
@@ -88,6 +87,15 @@ export function WorkspaceSettingsDialog({
   const manageStickers = access.stickers;
   const inviter = access.invites;
   const sections: SettingsSection[] = [
+    {
+      id: 'identity',
+      label: t('identity.title'),
+      icon: Shield,
+      content: <IdentitySettings workspaceId={workspaceId} owner={owner && local} />,
+    },
+    ...(local && (owner || entry.role === WorkspaceRole.ADMIN)
+      ? [{ id: 'oauth', label: t('identity.oauth'), icon: CircleDot, content: <OAuthClients workspaceId={workspaceId} /> }]
+      : []),
     ...(admin
       ? [
           {
@@ -149,7 +157,15 @@ function WorkspaceGlyph({ name, iconFileId, size }: { name: string; iconFileId: 
   );
 }
 
-function GeneralTab({ workspaceId, manageRoles, manageRooms }: { workspaceId: string; manageRoles: boolean; manageRooms: boolean }): ReactNode {
+function GeneralTab({
+  workspaceId,
+  manageRoles,
+  manageRooms,
+}: {
+  workspaceId: string;
+  manageRoles: boolean;
+  manageRooms: boolean;
+}): ReactNode {
   const ws = useWorkspaces((s) => s.byId[workspaceId]?.ws);
   const [uploading, setUploading] = useState(false);
   const input = useRef<HTMLInputElement>(null);
@@ -446,7 +462,12 @@ function InvitesTab({ workspaceId, roomId }: { workspaceId: string; roomId: stri
     <>
       {/* docs/09 #55: from a room, a guest without an account first (the card hides itself without MANAGE_ROOM). */}
       {roomId ? <RoomGuestInviteCard roomId={roomId} /> : null}
-      {cap.full ? <PlanFullNote text={t('plan.membersFull', { plan: t(PLAN_LABEL[planKind(workspacePlan(workspaceId))]), n: cap.limit })} testId="invite-plan-full" /> : null}
+      {cap.full ? (
+        <PlanFullNote
+          text={t('plan.membersFull', { plan: t(PLAN_LABEL[planKind(workspacePlan(workspaceId))]), n: cap.limit })}
+          testId="invite-plan-full"
+        />
+      ) : null}
       {/* ADR-0023: by an exact address first; the links below stay for everyone else. */}
       <EmailInviteCard workspaceId={workspaceId} full={cap.full} />
       <EmailInvitesList workspaceId={workspaceId} />

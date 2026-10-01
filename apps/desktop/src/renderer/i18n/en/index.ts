@@ -1,3 +1,4 @@
+import { enIdentity } from './identity';
 import type { Dict } from '../types';
 import { enApp } from './app';
 import { enChat } from './chat';
@@ -29,6 +30,7 @@ import { enWebApps } from './webapps';
 
 /** English UI strings (ADR-0022): same keys and placeholders as `ru`; glossary docs/i18n-glossary.md. */
 export const en: Dict = {
+  ...enIdentity,
   ...enShell,
   ...enChat,
   ...enPeople,

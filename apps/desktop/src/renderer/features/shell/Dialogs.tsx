@@ -1,3 +1,4 @@
+import { localAuthority } from '../identity/model';
 import type { ReactNode } from 'react';
 import { ConfirmHost } from '../../components/Confirm';
 import { Lightbox } from '../chat/Lightbox';
@@ -19,10 +20,12 @@ import { AppDialog } from '../webapps/AppDialog';
 
 export function Dialogs(): ReactNode {
   const d = useUi((s) => s.dialog);
+  const local = useSession((s) => localAuthority(s.authority));
   const superadmin = useSession((s) => s.me?.isSuperadmin === true);
   const close = (): void => useUi.getState().openDialog(null);
   let node: ReactNode = null;
   if (d) {
+    if (!local && ['create-workspace', 'join-workspace', 'profile', 'admin', 'new-dm'].includes(d.kind)) return null;
     switch (d.kind) {
       case 'create-workspace':
         node = <CreateWorkspaceDialog onClose={close} />;
@@ -74,7 +77,15 @@ export function Dialogs(): ReactNode {
         node = superadmin ? <AdminWindowLazy.Component onClose={close} workspaceId={d.workspaceId} /> : null;
         break;
       case 'event':
-        node = <EventDialog key={d.eventKey ?? 'new'} workspaceId={d.workspaceId} {...(d.eventKey ? { eventKey: d.eventKey } : {})} {...(d.draft ? { draft: d.draft } : {})} onClose={close} />;
+        node = (
+          <EventDialog
+            key={d.eventKey ?? 'new'}
+            workspaceId={d.workspaceId}
+            {...(d.eventKey ? { eventKey: d.eventKey } : {})}
+            {...(d.draft ? { draft: d.draft } : {})}
+            onClose={close}
+          />
+        );
         break;
       case 'web-app':
         node = <AppDialog key={d.appId ?? 'new'} workspaceId={d.workspaceId} appId={d.appId} onClose={close} />;

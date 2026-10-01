@@ -512,3 +512,18 @@ export function resetChatCaches(): void {
   for (const t of readTimers.values()) window.clearTimeout(t);
   readTimers.clear();
 }
+
+/** Drop only the revoked workspace room windows and their pending read/typing work. */
+export function clearChatRooms(ids: ReadonlySet<string>): void {
+  for (const id of ids) {
+    loads.delete(id);
+    newerLoading.delete(id);
+    pinsLoading.delete(id);
+    sentRead.delete(id);
+    lastTyping.delete(id);
+    const timer = readTimers.get(id);
+    if (timer) window.clearTimeout(timer);
+    readTimers.delete(id);
+  }
+  unfurlCache.clear();
+}
