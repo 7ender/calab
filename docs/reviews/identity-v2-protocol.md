@@ -2,7 +2,7 @@
 
 Reviewed source: `479d99c8f42ffe3c5f9be47d4dbb298fcbc2707a` against `99a60fc54cb1989c26c1a114a77631ea3380ecde`, 2026-10-01. Independent pass completed without reading another review. ADR-0054, ADR-0055, release contract including section 13, implementation, SQL, root wiring, native/web clients, proxy routes and official standards were inspected. Only this report is committed; reproduction tests use Go overlays outside the checkout.
 
-**Verdict: REJECT this source for release: four confirmed major findings, no confirmed blocker.** This is an initial exact-SHA assessment; subsequent fixes and integrated final SHA require delta review. Coordinator has assigned a provider correction and explicitly chosen same-client/exact-redirect/PKCE code-replay revocation in specification commit `3e576cf4`.
+**Verdict: REJECT this source for release: six confirmed major findings, no confirmed blocker.** This is an initial exact-SHA assessment; subsequent fixes and integrated final SHA require delta review. Coordinator has assigned a provider correction and explicitly chosen same-client/exact-redirect/PKCE code-replay revocation in specification commit `3e576cf4`.
 
 ## Confirmed findings
 
@@ -32,6 +32,18 @@ Reproduction: `TestProtocolReviewCodeReplayRevocation` below: incorrect client c
 
 Reproduction: `TestProtocolReviewAuthorizationPOST` below, Go1.26.5/own PG18, `/tmp/identity-v2-protocol-post.log`. Required correction: register POST, parse bounded single-valued form body, reject query/body ambiguity, preserve exact redirect/PKCE/prompt rules and identity quotas. Review root recorder/resolver assumptions about method/query as part of integration. Form navigation must retain 303 redirects without forwarding the form body to the client.
 
+### P5 — Major: all-OP minimum `acr_values` support returns an error
+
+`parseAuthorize` explicitly rejects `acr_values`. OIDC Core §15.1 applies to **all** OPs, including statically registered ones: the minimum support for this optional preference is that using it does not cause an error. Valid authorization with `acr_values=urn:example:unsupported-acr` currently redirects `invalid_request`; the same wire probe accepts `display`, `ui_locales` and `claims_locales`. [OIDC Core §15.1](https://openid.net/specs/openid-connect-core-1_0.html#MandatoryToImplement).
+
+Reproduction: `TestProtocolReviewMinimumUIAndACRParameters`; `/tmp/identity-v2-protocol-minimum.log`. Required correction accepted in lead spec `e1685b30`: accept/ignore unsupported optional ACR preferences, retain malformed/duplicate checks, and do not fabricate `acr`, `amr` or MFA evidence. Dynamic-OP requirements in §15.2 do not apply to this static-client profile; this finding does not require implicit flow, dynamic registration or Request URI support.
+
+### P6 — Major: invalid `id_token_hint` is silently ignored
+
+`parseAuthorize` accepts `id_token_hint=not-a-jwt` and starts a normal consent request. OIDC Core §3.1.2.2 steps 4–5 require issuer validation when a hint is supplied and prohibit a positive response for another hinted subject. Silently dropping a recognized subject hint bypasses those checks. The confirmed wire failure is malformed-hint acceptance; no cross-account exploit or token forgery is claimed. [OIDC Core §3.1.2.2](https://openid.net/specs/openid-connect-core-1_0.html#AuthRequestValidation).
+
+Reproduction: `TestProtocolReviewIDTokenHintValidation`; `/tmp/identity-v2-protocol-hint.log`. Required narrow correction: explicitly reject unsupported hints before creating a request/code; full validation/subject selection is unnecessary for this release. Continue rejecting unsupported claims/request/request_uri inputs without fetching remote data.
+
 ## Independent assessment of the remaining protocol boundaries
 
 - Path issuer discovery uses the OIDC suffix and RFC 8414 prefix correctly, with the exact trusted origin/workspace issuer in both documents. Caddy proxies both before SPA fallback; Host/forwarded input does not construct issuer. Maintained `coreos/go-oidc/v3` RP successfully discovered, fetched JWKS, and verified RS256/issuer/audience/expiry plus the original nonce. [OIDC Discovery §4.1](https://openid.net/specs/openid-connect-discovery-1_0.html#ProviderConfigurationRequest), [RFC 8414 §3](https://www.rfc-editor.org/rfc/rfc8414.html#section-3).
@@ -51,11 +63,11 @@ Final review runs use Go **1.26.5 darwin/arm64**, PostgreSQL **18** in the origi
 |---|---|
 | `go test -race -tags integration -count=1 -json ./internal/oauthprovider/... ./internal/sso/... ./internal/identitynet/... ./internal/identitycrypto/...` | PASS; identitycrypto: 3 passing cases, oauthprovider/signing: 48 passing cases, identitynet: 65 passing cases, sso: 74 passing cases, oauthprovider: 71 passing cases. Default live Keycloak case skipped, separately executed below. |
 | `go test -race -tags integration -count=1 -json -run 'TestIdentityHTTP\|TestIdentityAuthorityAndStepUp\|TestIdentityRouteInventoryAndCrossWorkspace\|TestIdentityRefreshAndRecoveryScope\|TestIdentityNoGrantAndLostRedisRevocation\|TestIdentityGatewayPerSessionFanoutAndStaleReplay' ./internal/app` | PASS, 238 cases including route subtests. |
-| Independent provider overlay, `-run TestProtocolReview` | maintained RP PASS; four finding probes FAIL as expected; no race report. |
+| Independent provider overlay, `-run TestProtocolReview` | maintained RP PASS; six finding probes FAIL as expected; no race report. |
 | Keycloak26.4.7 TLS live RP, `CALABA_KEYCLOAK_LIVE=1`, `-run TestKeycloakLiveRP` | PASS, eight subtests; only overlay alteration is fixture DB admission from `identity_keycloak` to own `identity_protocol`. |
 | `pnpm -F @calaba/desktop test src/main/auth.identity.test.ts src/main/ssoHandoff.test.ts src/main/deeplink.test.ts src/renderer/platform/web.identity.test.ts src/shared/ssoReturn.test.ts src/shared/identityOrigin.test.ts src/renderer/services/identity.test.ts` | PASS, 7 files / 136 tests; installed frozen lockfile with scripts disabled. |
 
-Raw local evidence: `/tmp/identity-v2-protocol-final.json`, `/tmp/identity-v2-protocol-app-final.json`, `/tmp/identity-v2-protocol-probes-final.log`, `/tmp/identity-v2-protocol-post.log`, `/tmp/identity-v2-protocol-keycloak-final.log`, `/tmp/identity-v2-protocol-desktop.log`. These paths are ephemeral, so executable finding probes are included below. Report-only changes do not justify rerunning common lint/full integration; no visual suites, media or production mutations were run.
+Raw local evidence: `/tmp/identity-v2-protocol-final.json`, `/tmp/identity-v2-protocol-app-final.json`, `/tmp/identity-v2-protocol-probes-final.log`, `/tmp/identity-v2-protocol-post.log`, `/tmp/identity-v2-protocol-minimum.log`, `/tmp/identity-v2-protocol-hint.log`, `/tmp/identity-v2-protocol-keycloak-final.log`, `/tmp/identity-v2-protocol-desktop.log`. These paths are ephemeral, so executable finding probes are included below. Report-only changes do not justify rerunning common lint/full integration; no visual suites, media or production mutations were run.
 
 Not verified here: Entra, AD FS2019+, Windows AD/LDAPS interoperability, actual external browser consent render/navigation, production proxy/key/secret/backup setup, PG17, full server integration and legacy application binaries. Positive Keycloak evidence proves generic local OIDC interoperability only. Coordinator must ensure two independent final-SHA reviews and QA gates; this report is one independent review.
 
@@ -134,5 +146,26 @@ func TestProtocolReviewAuthorizationPOST(t *testing.T) {
  status,h,b:=f.wire("POST","/oidc/workspaces/"+f.ws.String()+"/authorize","application/x-www-form-urlencoded",[]byte(form.Encode()),"","")
  if status!=303 {t.Fatalf("valid OIDC POST authorization rejected: %d allow=%q body=%s",status,h.Get("Allow"),b)}
  u,err:=url.Parse(h.Get("Location")); if err!=nil || u.Path!="/oauth/consent" || u.Query().Get("request")=="" {t.Fatal("missing POST consent request")}
+}
+
+func TestProtocolReviewMinimumUIAndACRParameters(t *testing.T) {
+ for _,parameter:=range []string{"display","ui_locales","claims_locales","acr_values"} {
+  t.Run(parameter,func(t *testing.T) {
+   f:=fixture(t); c:=f.client(v1.OAuthClientType_OAUTH_CLIENT_TYPE_CONFIDENTIAL_WEB,false)
+   req:=f.begin(c.Client,nil)
+   q:=url.Values{"response_type":{"code"},"client_id":{c.Client.ClientId},"redirect_uri":{req.redirect},"scope":{"openid"},"state":{req.state},"nonce":{req.nonce},"code_challenge_method":{"S256"},"code_challenge":{base64.RawURLEncoding.EncodeToString(hash(req.verifier))}}
+   q.Set(parameter,map[string]string{"display":"popup","ui_locales":"de","claims_locales":"de","acr_values":"urn:example:unsupported-acr"}[parameter])
+   status,h,b:=f.wire("GET","/oidc/workspaces/"+f.ws.String()+"/authorize?"+q.Encode(),"",nil,"","")
+   u,err:=url.Parse(h.Get("Location")); if status!=303 || err!=nil || u.Path!="/oauth/consent" || u.Query().Get("request")=="" {t.Fatalf("mandatory minimum parameter support failed: status=%d location=%s body=%s",status,h.Get("Location"),b)}
+  })
+ }
+}
+
+func TestProtocolReviewIDTokenHintValidation(t *testing.T) {
+ f:=fixture(t); c:=f.client(v1.OAuthClientType_OAUTH_CLIENT_TYPE_CONFIDENTIAL_WEB,false)
+ req:=f.begin(c.Client,nil)
+ q:=url.Values{"response_type":{"code"},"client_id":{c.Client.ClientId},"redirect_uri":{req.redirect},"scope":{"openid"},"state":{req.state},"nonce":{req.nonce},"code_challenge_method":{"S256"},"code_challenge":{base64.RawURLEncoding.EncodeToString(hash(req.verifier))},"id_token_hint":{"not-a-jwt"}}
+ status,h,b:=f.wire("GET","/oidc/workspaces/"+f.ws.String()+"/authorize?"+q.Encode(),"",nil,"","")
+ u,err:=url.Parse(h.Get("Location")); if status==303 && err==nil && u.Path=="/oauth/consent" {t.Fatalf("invalid ID-token hint ignored, request accepted: status=%d body=%s",status,b)}
 }
 ```
