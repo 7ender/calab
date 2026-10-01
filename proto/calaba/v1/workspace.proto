@@ -163,6 +163,7 @@ message UpdateWorkspaceResponse {
 message JoinWorkspaceResponse {
   Workspace workspace = 1;
   WorkspaceMember member = 2;
+  WorkspaceIdentityAccess identity_access = 3;
 }
 
 // POST /api/workspaces/{id}/invites (INVITE_MEMBERS, ADR-0043)

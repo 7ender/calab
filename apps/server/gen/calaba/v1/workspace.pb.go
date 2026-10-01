@@ -1185,11 +1185,12 @@ func (x *UpdateWorkspaceResponse) GetWorkspace() *Workspace {
 
 // POST /api/workspaces/{id}/join (open workspaces) and POST /api/workspaces/join/{code} (invites).
 type JoinWorkspaceResponse struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	Workspace     *Workspace             `protobuf:"bytes,1,opt,name=workspace,proto3" json:"workspace,omitempty"`
-	Member        *WorkspaceMember       `protobuf:"bytes,2,opt,name=member,proto3" json:"member,omitempty"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
+	state          protoimpl.MessageState   `protogen:"open.v1"`
+	Workspace      *Workspace               `protobuf:"bytes,1,opt,name=workspace,proto3" json:"workspace,omitempty"`
+	Member         *WorkspaceMember         `protobuf:"bytes,2,opt,name=member,proto3" json:"member,omitempty"`
+	IdentityAccess *WorkspaceIdentityAccess `protobuf:"bytes,3,opt,name=identity_access,json=identityAccess,proto3" json:"identity_access,omitempty"`
+	unknownFields  protoimpl.UnknownFields
+	sizeCache      protoimpl.SizeCache
 }
 
 func (x *JoinWorkspaceResponse) Reset() {
@@ -1232,6 +1233,13 @@ func (x *JoinWorkspaceResponse) GetWorkspace() *Workspace {
 func (x *JoinWorkspaceResponse) GetMember() *WorkspaceMember {
 	if x != nil {
 		return x.Member
+	}
+	return nil
+}
+
+func (x *JoinWorkspaceResponse) GetIdentityAccess() *WorkspaceIdentityAccess {
+	if x != nil {
+		return x.IdentityAccess
 	}
 	return nil
 }
@@ -3872,10 +3880,11 @@ const file_calaba_v1_workspace_proto_rawDesc = "" +
 	"\x15_default_camera_limitB\x0e\n" +
 	"\f_time_format\"M\n" +
 	"\x17UpdateWorkspaceResponse\x122\n" +
-	"\tworkspace\x18\x01 \x01(\v2\x14.calaba.v1.WorkspaceR\tworkspace\"\x7f\n" +
+	"\tworkspace\x18\x01 \x01(\v2\x14.calaba.v1.WorkspaceR\tworkspace\"\xcc\x01\n" +
 	"\x15JoinWorkspaceResponse\x122\n" +
 	"\tworkspace\x18\x01 \x01(\v2\x14.calaba.v1.WorkspaceR\tworkspace\x122\n" +
-	"\x06member\x18\x02 \x01(\v2\x1a.calaba.v1.WorkspaceMemberR\x06member\"^\n" +
+	"\x06member\x18\x02 \x01(\v2\x1a.calaba.v1.WorkspaceMemberR\x06member\x12K\n" +
+	"\x0fidentity_access\x18\x03 \x01(\v2\".calaba.v1.WorkspaceIdentityAccessR\x0eidentityAccess\"^\n" +
 	"\x13CreateInviteRequest\x12\x19\n" +
 	"\bmax_uses\x18\x01 \x01(\rR\amaxUses\x12,\n" +
 	"\x12expires_in_seconds\x18\x02 \x01(\rR\x10expiresInSeconds\"A\n" +
@@ -4174,49 +4183,50 @@ var file_calaba_v1_workspace_proto_depIdxs = []int32{
 	2,  // 24: calaba.v1.UpdateWorkspaceResponse.workspace:type_name -> calaba.v1.Workspace
 	2,  // 25: calaba.v1.JoinWorkspaceResponse.workspace:type_name -> calaba.v1.Workspace
 	5,  // 26: calaba.v1.JoinWorkspaceResponse.member:type_name -> calaba.v1.WorkspaceMember
-	8,  // 27: calaba.v1.CreateInviteResponse.invite:type_name -> calaba.v1.Invite
-	8,  // 28: calaba.v1.ListInvitesResponse.invites:type_name -> calaba.v1.Invite
-	5,  // 29: calaba.v1.ListMembersResponse.members:type_name -> calaba.v1.WorkspaceMember
-	5,  // 30: calaba.v1.GetMemberResponse.member:type_name -> calaba.v1.WorkspaceMember
-	72, // 31: calaba.v1.GetMemberResponse.open_tasks:type_name -> calaba.v1.Task
-	70, // 32: calaba.v1.UpdateMemberRequest.role:type_name -> calaba.v1.WorkspaceRole
-	5,  // 33: calaba.v1.UpdateMemberResponse.member:type_name -> calaba.v1.WorkspaceMember
-	2,  // 34: calaba.v1.GetInviteResponse.workspace:type_name -> calaba.v1.Workspace
-	65, // 35: calaba.v1.GetInviteResponse.expires_at:type_name -> google.protobuf.Timestamp
-	69, // 36: calaba.v1.InviteLookupResponse.user:type_name -> calaba.v1.User
-	5,  // 37: calaba.v1.AddMemberResponse.member:type_name -> calaba.v1.WorkspaceMember
-	70, // 38: calaba.v1.EmailInvite.role:type_name -> calaba.v1.WorkspaceRole
-	65, // 39: calaba.v1.EmailInvite.created_at:type_name -> google.protobuf.Timestamp
-	65, // 40: calaba.v1.EmailInvite.expires_at:type_name -> google.protobuf.Timestamp
-	65, // 41: calaba.v1.EmailInvite.last_sent_at:type_name -> google.protobuf.Timestamp
-	70, // 42: calaba.v1.CreateEmailInviteRequest.role:type_name -> calaba.v1.WorkspaceRole
-	29, // 43: calaba.v1.CreateEmailInviteResponse.invite:type_name -> calaba.v1.EmailInvite
-	29, // 44: calaba.v1.ListEmailInvitesResponse.invites:type_name -> calaba.v1.EmailInvite
-	4,  // 45: calaba.v1.CreateBanResponse.ban:type_name -> calaba.v1.WorkspaceBan
-	4,  // 46: calaba.v1.ListBansResponse.bans:type_name -> calaba.v1.WorkspaceBan
-	73, // 47: calaba.v1.ListRolesResponse.roles:type_name -> calaba.v1.Role
-	73, // 48: calaba.v1.CreateRoleResponse.role:type_name -> calaba.v1.Role
-	73, // 49: calaba.v1.UpdateRoleResponse.role:type_name -> calaba.v1.Role
-	73, // 50: calaba.v1.SetRoleOrderResponse.roles:type_name -> calaba.v1.Role
-	5,  // 51: calaba.v1.SetMemberRolesResponse.member:type_name -> calaba.v1.WorkspaceMember
-	6,  // 52: calaba.v1.ListBadgesResponse.badges:type_name -> calaba.v1.Badge
-	6,  // 53: calaba.v1.CreateBadgeResponse.badge:type_name -> calaba.v1.Badge
-	6,  // 54: calaba.v1.UpdateBadgeResponse.badge:type_name -> calaba.v1.Badge
-	5,  // 55: calaba.v1.SetMemberBadgeResponse.member:type_name -> calaba.v1.WorkspaceMember
-	7,  // 56: calaba.v1.ListBackgroundsResponse.backgrounds:type_name -> calaba.v1.WorkspaceBackground
-	7,  // 57: calaba.v1.CreateBackgroundResponse.background:type_name -> calaba.v1.WorkspaceBackground
-	7,  // 58: calaba.v1.UpdateBackgroundResponse.background:type_name -> calaba.v1.WorkspaceBackground
-	65, // 59: calaba.v1.WorkspaceApp.created_at:type_name -> google.protobuf.Timestamp
-	65, // 60: calaba.v1.WorkspaceApp.updated_at:type_name -> google.protobuf.Timestamp
-	57, // 61: calaba.v1.ListWorkspaceAppsResponse.apps:type_name -> calaba.v1.WorkspaceApp
-	57, // 62: calaba.v1.CreateWorkspaceAppResponse.app:type_name -> calaba.v1.WorkspaceApp
-	57, // 63: calaba.v1.UpdateWorkspaceAppResponse.app:type_name -> calaba.v1.WorkspaceApp
-	57, // 64: calaba.v1.SetWorkspaceAppPositionResponse.apps:type_name -> calaba.v1.WorkspaceApp
-	65, // [65:65] is the sub-list for method output_type
-	65, // [65:65] is the sub-list for method input_type
-	65, // [65:65] is the sub-list for extension type_name
-	65, // [65:65] is the sub-list for extension extendee
-	0,  // [0:65] is the sub-list for field type_name
+	68, // 27: calaba.v1.JoinWorkspaceResponse.identity_access:type_name -> calaba.v1.WorkspaceIdentityAccess
+	8,  // 28: calaba.v1.CreateInviteResponse.invite:type_name -> calaba.v1.Invite
+	8,  // 29: calaba.v1.ListInvitesResponse.invites:type_name -> calaba.v1.Invite
+	5,  // 30: calaba.v1.ListMembersResponse.members:type_name -> calaba.v1.WorkspaceMember
+	5,  // 31: calaba.v1.GetMemberResponse.member:type_name -> calaba.v1.WorkspaceMember
+	72, // 32: calaba.v1.GetMemberResponse.open_tasks:type_name -> calaba.v1.Task
+	70, // 33: calaba.v1.UpdateMemberRequest.role:type_name -> calaba.v1.WorkspaceRole
+	5,  // 34: calaba.v1.UpdateMemberResponse.member:type_name -> calaba.v1.WorkspaceMember
+	2,  // 35: calaba.v1.GetInviteResponse.workspace:type_name -> calaba.v1.Workspace
+	65, // 36: calaba.v1.GetInviteResponse.expires_at:type_name -> google.protobuf.Timestamp
+	69, // 37: calaba.v1.InviteLookupResponse.user:type_name -> calaba.v1.User
+	5,  // 38: calaba.v1.AddMemberResponse.member:type_name -> calaba.v1.WorkspaceMember
+	70, // 39: calaba.v1.EmailInvite.role:type_name -> calaba.v1.WorkspaceRole
+	65, // 40: calaba.v1.EmailInvite.created_at:type_name -> google.protobuf.Timestamp
+	65, // 41: calaba.v1.EmailInvite.expires_at:type_name -> google.protobuf.Timestamp
+	65, // 42: calaba.v1.EmailInvite.last_sent_at:type_name -> google.protobuf.Timestamp
+	70, // 43: calaba.v1.CreateEmailInviteRequest.role:type_name -> calaba.v1.WorkspaceRole
+	29, // 44: calaba.v1.CreateEmailInviteResponse.invite:type_name -> calaba.v1.EmailInvite
+	29, // 45: calaba.v1.ListEmailInvitesResponse.invites:type_name -> calaba.v1.EmailInvite
+	4,  // 46: calaba.v1.CreateBanResponse.ban:type_name -> calaba.v1.WorkspaceBan
+	4,  // 47: calaba.v1.ListBansResponse.bans:type_name -> calaba.v1.WorkspaceBan
+	73, // 48: calaba.v1.ListRolesResponse.roles:type_name -> calaba.v1.Role
+	73, // 49: calaba.v1.CreateRoleResponse.role:type_name -> calaba.v1.Role
+	73, // 50: calaba.v1.UpdateRoleResponse.role:type_name -> calaba.v1.Role
+	73, // 51: calaba.v1.SetRoleOrderResponse.roles:type_name -> calaba.v1.Role
+	5,  // 52: calaba.v1.SetMemberRolesResponse.member:type_name -> calaba.v1.WorkspaceMember
+	6,  // 53: calaba.v1.ListBadgesResponse.badges:type_name -> calaba.v1.Badge
+	6,  // 54: calaba.v1.CreateBadgeResponse.badge:type_name -> calaba.v1.Badge
+	6,  // 55: calaba.v1.UpdateBadgeResponse.badge:type_name -> calaba.v1.Badge
+	5,  // 56: calaba.v1.SetMemberBadgeResponse.member:type_name -> calaba.v1.WorkspaceMember
+	7,  // 57: calaba.v1.ListBackgroundsResponse.backgrounds:type_name -> calaba.v1.WorkspaceBackground
+	7,  // 58: calaba.v1.CreateBackgroundResponse.background:type_name -> calaba.v1.WorkspaceBackground
+	7,  // 59: calaba.v1.UpdateBackgroundResponse.background:type_name -> calaba.v1.WorkspaceBackground
+	65, // 60: calaba.v1.WorkspaceApp.created_at:type_name -> google.protobuf.Timestamp
+	65, // 61: calaba.v1.WorkspaceApp.updated_at:type_name -> google.protobuf.Timestamp
+	57, // 62: calaba.v1.ListWorkspaceAppsResponse.apps:type_name -> calaba.v1.WorkspaceApp
+	57, // 63: calaba.v1.CreateWorkspaceAppResponse.app:type_name -> calaba.v1.WorkspaceApp
+	57, // 64: calaba.v1.UpdateWorkspaceAppResponse.app:type_name -> calaba.v1.WorkspaceApp
+	57, // 65: calaba.v1.SetWorkspaceAppPositionResponse.apps:type_name -> calaba.v1.WorkspaceApp
+	66, // [66:66] is the sub-list for method output_type
+	66, // [66:66] is the sub-list for method input_type
+	66, // [66:66] is the sub-list for extension type_name
+	66, // [66:66] is the sub-list for extension extendee
+	0,  // [0:66] is the sub-list for field type_name
 }
 
 func init() { file_calaba_v1_workspace_proto_init() }

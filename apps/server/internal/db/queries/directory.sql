@@ -72,7 +72,8 @@ WHERE id=$1 AND status='running' RETURNING *;
 UPDATE workspace_directories d SET last_success_at=clock_timestamp(),generation=sqlc.arg('generation'),cursor_box=sqlc.narg('cursor_box'),last_error=''
 WHERE d.workspace_id=sqlc.arg('workspace_id') AND d.id=sqlc.arg('directory_id') AND d.version=sqlc.arg('config_version')
 AND EXISTS(SELECT FROM directory_sync_runs r WHERE r.id=sqlc.arg('run_id') AND r.directory_id=d.id AND r.config_version=d.version
-AND r.status='succeeded' AND r.complete AND r.full_scan AND r.generation=sqlc.arg('generation') AND r.generation>d.generation)
+AND r.status='succeeded' AND r.complete AND r.full_scan AND r.generation=sqlc.arg('generation') AND r.generation>d.generation
+AND r.lease_until>clock_timestamp())
 RETURNING d.*;
 
 -- name: SetDirectoryError :exec

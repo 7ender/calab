@@ -631,7 +631,8 @@ const publishDirectorySuccess = `-- name: PublishDirectorySuccess :one
 UPDATE workspace_directories d SET last_success_at=clock_timestamp(),generation=$1,cursor_box=$2,last_error=''
 WHERE d.workspace_id=$3 AND d.id=$4 AND d.version=$5
 AND EXISTS(SELECT FROM directory_sync_runs r WHERE r.id=$6 AND r.directory_id=d.id AND r.config_version=d.version
-AND r.status='succeeded' AND r.complete AND r.full_scan AND r.generation=$1 AND r.generation>d.generation)
+AND r.status='succeeded' AND r.complete AND r.full_scan AND r.generation=$1 AND r.generation>d.generation
+AND r.lease_until>clock_timestamp())
 RETURNING d.id, d.workspace_id, d.name, d.host, d.url, d.allowed_group_dns, d.generation, d.port, d.base_dn, d.bind_dn, d.bind_secret_box, d.ca_pem, d.sync_interval_seconds, d.max_staleness_seconds, d.version, d.last_success_at, d.cursor_box, d.last_error, d.disabled_at, d.created_at
 `
 
