@@ -224,7 +224,9 @@ func (h *Handlers) updateApp(w http.ResponseWriter, r *http.Request) error {
 		}
 		p.SetIcon, p.IconFileID = true, icon
 	}
-	updated, err := h.db.Q.UpdateWorkspaceApp(r.Context(), p)
+	updated, err := db.GuardValue(r.Context(), h.db, func(guarded *sqlc.Queries) (sqlc.WorkspaceApp, error) {
+		return guarded.UpdateWorkspaceApp(r.Context(), p)
+	})
 	if db.IsNotFound(err) {
 		return httpx.NotFound("app")
 	}
@@ -246,7 +248,7 @@ func (h *Handlers) deleteApp(w http.ResponseWriter, r *http.Request) error {
 	if err != nil {
 		return err
 	}
-	n, err := h.db.Q.DeleteWorkspaceApp(r.Context(), cur.ID)
+	n, err := db.GuardValue(r.Context(), h.db, func(guarded *sqlc.Queries) (int64, error) { return guarded.DeleteWorkspaceApp(r.Context(), cur.ID) })
 	if err != nil {
 		return err
 	}

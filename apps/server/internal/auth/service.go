@@ -337,6 +337,9 @@ func (s *Service) Register(ctx context.Context, req *v1.RegisterRequest, c Clien
 			if err != nil {
 				return err
 			}
+			if _, err := q.LockOAuthWorkspace(ctx, i.WorkspaceID); err != nil {
+				return err
+			}
 			ei, err := q.GetEmailInviteByInvite(ctx, i.ID)
 			switch {
 			case err == nil:
@@ -522,6 +525,25 @@ func (s *Service) refreshAuthority(ctx context.Context, req *v1.RefreshRequest, 
 				return errInvalidRefresh
 			}
 		}
+		before, err := q.GetSession(ctx, sid)
+		if err != nil {
+			if db.IsNotFound(err) {
+				return errInvalidRefresh
+			}
+			return err
+		}
+		beforeUser, err := q.GetUser(ctx, before.UserID)
+		if err != nil {
+			return err
+		}
+		if beforeUser.IsGuest {
+			_, err = q.LockIdentityUserExclusive(ctx, before.UserID)
+		} else {
+			_, err = q.LockIdentityUserShared(ctx, before.UserID)
+		}
+		if err != nil {
+			return err
+		}
 		sess, err := q.GetSessionForUpdate(ctx, sid)
 		if db.IsNotFound(err) {
 			return errInvalidRefresh
@@ -529,7 +551,14 @@ func (s *Service) refreshAuthority(ctx context.Context, req *v1.RefreshRequest, 
 		if err != nil {
 			return err
 		}
+		databaseNow, err := q.IdentityDatabaseNow(ctx)
+		if err != nil {
+			return err
+		}
 		now := s.now()
+		if databaseNow.After(now) {
+			now = databaseNow
+		}
 		p := SessionPrincipal(sess)
 		if p.Authority != authority || p.WorkspaceID != ws {
 			return errInvalidRefresh
@@ -604,6 +633,12 @@ func (s *Service) refreshAuthority(ctx context.Context, req *v1.RefreshRequest, 
 			return err
 		}
 		expires := now.Add(ttl)
+		if hostUntil := s.now().Add(ttl); hostUntil.Before(expires) {
+			expires = hostUntil
+		}
+		if dbUntil := databaseNow.Add(ttl); dbUntil.Before(expires) {
+			expires = dbUntil
+		}
 		if authority != identitypolicy.LocalAccount && sess.ExpiresAt.Before(expires) {
 			expires = sess.ExpiresAt // corporate session has an absolute RP deadline
 		}
@@ -647,14 +682,18 @@ func (s *Service) Logout(ctx context.Context, id Identity, all bool) error {
 		if err := s.CheckGlobal(ctx, id, identitypolicy.GlobalWrite); err != nil {
 			return err
 		}
-		ids, err := s.db.Q.RevokeAllUserSessions(ctx, sqlc.RevokeAllUserSessionsParams{UserID: id.UserID, Reason: RevokeLogoutAll})
+		ids, err := db.GuardValue(ctx, s.db, func(guarded *sqlc.Queries) ([]uuid.UUID, error) {
+			return guarded.RevokeAllUserSessions(ctx, sqlc.RevokeAllUserSessionsParams{UserID: id.UserID, Reason: RevokeLogoutAll})
+		})
 		if err != nil {
 			return err
 		}
 		s.afterRevokeMany(ctx, ids, RevokeLogoutAll)
 		return nil
 	}
-	if _, err := s.db.Q.RevokeSession(ctx, sqlc.RevokeSessionParams{ID: id.SessionID, Reason: RevokeLogout}); err != nil {
+	if _, err := db.GuardValue(ctx, s.db, func(guarded *sqlc.Queries) (int64, error) {
+		return guarded.RevokeSession(ctx, sqlc.RevokeSessionParams{ID: id.SessionID, Reason: RevokeLogout})
+	}); err != nil {
 		return err
 	}
 	s.afterRevoke(ctx, id.SessionID, RevokeLogout)
@@ -693,7 +732,9 @@ func (s *Service) LogoutByRefresh(ctx context.Context, token string, all bool) e
 
 // RevokeSession revokes one of the user's own sessions.
 func (s *Service) RevokeSession(ctx context.Context, userID, sessionID uuid.UUID) error {
-	n, err := s.db.Q.RevokeUserSession(ctx, sqlc.RevokeUserSessionParams{ID: sessionID, UserID: userID, Reason: RevokeOtherDevice})
+	n, err := db.GuardValue(ctx, s.db, func(guarded *sqlc.Queries) (int64, error) {
+		return guarded.RevokeUserSession(ctx, sqlc.RevokeUserSessionParams{ID: sessionID, UserID: userID, Reason: RevokeOtherDevice})
+	})
 	if err != nil {
 		return err
 	}

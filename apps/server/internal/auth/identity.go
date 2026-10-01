@@ -154,6 +154,9 @@ func (s *Service) CheckGlobal(ctx context.Context, id Identity, op identitypolic
 		now = host
 	}
 	d := identitypolicy.CheckGlobal(now, p, op, granted)
+	if op == identitypolicy.ProductAdmin && p.Authority == identitypolicy.LocalAccount && d.Reason == identitypolicy.RoleRequired {
+		return httpx.NotFound("route")
+	}
 	return IdentityError(p, d, nil)
 }
 
@@ -161,6 +164,9 @@ func (s *Service) CheckGlobal(ctx context.Context, id Identity, op identitypolic
 func (s *Service) WithPolicy(ctx context.Context, id Identity, op identitypolicy.Operation) context.Context {
 	return perm.WithAccessGuard(ctx, func(ctx context.Context, ws, _ uuid.UUID) error {
 		// A handler may resolve another member's permissions; authority still belongs to caller.
+		if err := RecordMutationWorkspace(ctx, ws); err != nil {
+			return err
+		}
 		if ws == uuid.Nil {
 			if id.IsBot {
 				return nil
@@ -195,6 +201,13 @@ func (s *Service) LocalReauthenticate(ctx context.Context, id Identity, password
 		}
 		if current == nil || u.PasswordHash == nil || *current != *u.PasswordHash {
 			return httpx.Unauthenticated("credentials changed")
+		}
+		fresh, err := q.GetUser(ctx, u.ID)
+		if err != nil {
+			return err
+		}
+		if fresh.DisabledAt != nil || fresh.IsGuest || fresh.IsBot {
+			return httpx.Unauthenticated("local credentials unavailable")
 		}
 		row, err := q.GetSessionForUpdate(ctx, id.SessionID)
 		if err != nil {
@@ -288,7 +301,7 @@ func InvalidateIdentity(ctx context.Context, q *sqlc.Queries, ws uuid.UUID, user
 	if _, err = q.RevokeWorkspaceOAuthGrants(ctx, sqlc.RevokeWorkspaceOAuthGrantsParams{WorkspaceID: ws, UserID: user, Reason: &reason}); err != nil {
 		return err
 	}
-	if _, err = q.CreateIdentityAudit(ctx, sqlc.CreateIdentityAuditParams{WorkspaceID: ws, ActorID: actor, TargetID: user, Action: reason, Outcome: "revoked"}); err != nil {
+	if _, err = q.CreateIdentityAudit(ctx, sqlc.CreateIdentityAuditParams{WorkspaceID: ws, ActorID: actor, TargetID: user, Action: reason, Outcome: "changed"}); err != nil {
 		return err
 	}
 	_, err = q.CreateIdentityInvalidation(ctx, sqlc.CreateIdentityInvalidationParams{WorkspaceID: ws, UserID: user, PolicyVersion: policy.Version, AccessVersion: accessVersion, Reason: reason})
@@ -337,6 +350,18 @@ func (s *Service) CheckWorkspaceDecision(ctx context.Context, id Identity, ws uu
 func (s *Service) checkWorkspaceDecision(ctx context.Context, q *sqlc.Queries, id Identity, ws uuid.UUID, op identitypolicy.Operation) (identitypolicy.Decision, error) {
 	state, err := identitypolicy.NewSQLLoader(q, s.entitlements).LoadIdentityState(ctx, id.SessionID, id.UserID, ws)
 	if err != nil {
+		if db.IsNotFound(err) {
+			if session, e := q.GetSession(ctx, id.SessionID); db.IsNotFound(e) || e == nil && session.UserID != id.UserID {
+				return identitypolicy.Decision{Reason: identitypolicy.InvalidSession}, identitypolicy.ErrDenied
+			} else if e != nil {
+				return identitypolicy.Decision{Reason: identitypolicy.StateUnavailable}, e
+			}
+			if _, e := q.GetWorkspace(ctx, ws); db.IsNotFound(e) {
+				return identitypolicy.Decision{Reason: identitypolicy.MembershipRequired}, identitypolicy.ErrDenied
+			} else if e != nil {
+				return identitypolicy.Decision{Reason: identitypolicy.StateUnavailable}, e
+			}
+		}
 		return identitypolicy.Decision{Reason: identitypolicy.StateUnavailable}, err
 	}
 	if state.Principal.SessionID != id.SessionID || state.Principal.UserID != id.UserID || state.WorkspaceID != ws {

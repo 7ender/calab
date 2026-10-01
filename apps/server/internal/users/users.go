@@ -174,7 +174,7 @@ func (h *Handlers) update(w http.ResponseWriter, r *http.Request) error {
 			return err
 		}
 	}
-	u, err := h.db.Q.UpdateUser(r.Context(), p)
+	u, err := db.GuardValue(r.Context(), h.db, func(guarded *sqlc.Queries) (sqlc.User, error) { return guarded.UpdateUser(r.Context(), p) })
 	if db.IsForeignKeyViolation(err) {
 		return httpx.Validation("avatarFileId", "file not found")
 	}
@@ -182,15 +182,19 @@ func (h *Handlers) update(w http.ResponseWriter, r *http.Request) error {
 		return err
 	}
 	if er := req.GetEventReminders(); er != nil {
-		if u, err = h.db.Q.SetUserEventReminders(r.Context(), sqlc.SetUserEventRemindersParams{
-			ID: id.UserID, EventReminders: reminders, EventRemindersDnd: er.GetDnd(),
+		if u, err = db.GuardValue(r.Context(), h.db, func(guarded *sqlc.Queries) (sqlc.User, error) {
+			return guarded.SetUserEventReminders(r.Context(), sqlc.SetUserEventRemindersParams{
+				ID: id.UserID, EventReminders: reminders, EventRemindersDnd: er.GetDnd(),
+			})
 		}); err != nil {
 			return err
 		}
 	}
 	if req.GetWorkHours() != nil {
-		if u, err = h.db.Q.SetUserWorkHours(r.Context(), sqlc.SetUserWorkHoursParams{
-			ID: id.UserID, WorkStartMin: workStart, WorkEndMin: workEnd, WorkDays: workDays,
+		if u, err = db.GuardValue(r.Context(), h.db, func(guarded *sqlc.Queries) (sqlc.User, error) {
+			return guarded.SetUserWorkHours(r.Context(), sqlc.SetUserWorkHoursParams{
+				ID: id.UserID, WorkStartMin: workStart, WorkEndMin: workEnd, WorkDays: workDays,
+			})
 		}); err != nil {
 			return err
 		}
@@ -256,7 +260,9 @@ func (h *Handlers) updateStatus(w http.ResponseWriter, r *http.Request) error {
 	if text == "" && emoji == "" {
 		expires = nil
 	}
-	u, err := h.db.Q.UpdateStatus(r.Context(), sqlc.UpdateStatusParams{ID: id.UserID, StatusText: text, StatusEmoji: emoji, StatusExpiresAt: expires})
+	u, err := db.GuardValue(r.Context(), h.db, func(guarded *sqlc.Queries) (sqlc.User, error) {
+		return guarded.UpdateStatus(r.Context(), sqlc.UpdateStatusParams{ID: id.UserID, StatusText: text, StatusEmoji: emoji, StatusExpiresAt: expires})
+	})
 	if err != nil {
 		return err
 	}

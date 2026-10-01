@@ -201,10 +201,12 @@ func (s *Service) create(w http.ResponseWriter, r *http.Request) error {
 		if err != nil {
 			return err
 		}
-		inv, err := s.db.Q.CreateRoomInvite(r.Context(), sqlc.CreateRoomInviteParams{
-			RoomID: roomID, Code: code, CreatedBy: uid, ExpiresAt: expires,
-			MaxUses: int32(req.GetMaxUses()), AllowGuests: !membersOnly && orDefault(req.AllowGuests, true), AllowBits: int64(bits), //nolint:gosec // bounded
-			RequireApproval: req.RequireApproval, MembersOnly: membersOnly,
+		inv, err := db.GuardValue(r.Context(), s.db, func(guarded *sqlc.Queries) (sqlc.RoomInvite, error) {
+			return guarded.CreateRoomInvite(r.Context(), sqlc.CreateRoomInviteParams{
+				RoomID: roomID, Code: code, CreatedBy: uid, ExpiresAt: expires,
+				MaxUses: int32(req.GetMaxUses()), AllowGuests: !membersOnly && orDefault(req.AllowGuests, true), AllowBits: int64(bits), //nolint:gosec // bounded
+				RequireApproval: req.RequireApproval, MembersOnly: membersOnly,
+			})
 		})
 		if db.UniqueViolation(err) != "" {
 			continue
@@ -260,7 +262,9 @@ func (s *Service) update(w http.ResponseWriter, r *http.Request) error {
 	if !req.GetInheritApproval() && req.RequireApproval == nil {
 		return httpx.Validation("requireApproval", "nothing to change")
 	}
-	inv, err := s.db.Q.SetRoomInviteApproval(r.Context(), sqlc.SetRoomInviteApprovalParams{ID: invID, RoomID: roomID, RequireApproval: req.RequireApproval})
+	inv, err := db.GuardValue(r.Context(), s.db, func(guarded *sqlc.Queries) (sqlc.RoomInvite, error) {
+		return guarded.SetRoomInviteApproval(r.Context(), sqlc.SetRoomInviteApprovalParams{ID: invID, RoomID: roomID, RequireApproval: req.RequireApproval})
+	})
 	if db.IsNotFound(err) {
 		return httpx.NotFound("invite")
 	}
@@ -281,7 +285,9 @@ func (s *Service) revoke(w http.ResponseWriter, r *http.Request) error {
 		return err
 	}
 	// INVITE_MEMBERS alone revokes members-only links only; others answer 404 as if absent.
-	n, err := s.db.Q.RevokeRoomInvite(r.Context(), sqlc.RevokeRoomInviteParams{ID: invID, RoomID: roomID, OnlyMembersOnly: !rights.guests})
+	n, err := db.GuardValue(r.Context(), s.db, func(guarded *sqlc.Queries) (int64, error) {
+		return guarded.RevokeRoomInvite(r.Context(), sqlc.RevokeRoomInviteParams{ID: invID, RoomID: roomID, OnlyMembersOnly: !rights.guests})
+	})
 	if err != nil {
 		return err
 	}

@@ -9,6 +9,7 @@ import (
 	"github.com/calaba/calaba/server/internal/identitypolicy"
 	"github.com/google/uuid"
 	"net/http"
+	"strings"
 )
 
 type identityScope uint8
@@ -364,22 +365,32 @@ func identityGate(q *sqlc.Queries, a *auth.Service, next http.Handler) http.Hand
 		ctx := a.WithPolicy(r.Context(), id, op)
 		r = r.WithContext(ctx)
 		var err error
+		mutation := auth.MutationOptions{}
 		switch scope {
 		case scopeGlobal:
+			mutation.Global, mutation.ExclusiveUser = true, true
 			if !id.IsBot {
 				err = a.CheckGlobal(ctx, id, identitypolicy.GlobalRead)
 			}
 		case scopeAdmin:
+			mutation.Admin, mutation.Global, mutation.ExclusiveUser = true, true, true
+			mutation.ExclusiveWorkspace = true
+			if strings.Contains(r.Pattern, "/workspaces/{id}") {
+				mutation.Workspace, _ = httpx.PathUUID(r, "id", "workspace") // handler validates the ID after authority
+			}
 			err = a.CheckGlobal(ctx, id, identitypolicy.ProductAdmin)
 		case scopeProfile, scopeAggregate:
 			if id.Principal.Authority == identitypolicy.Recovery {
 				err = httpx.Coded(403, v1.ErrorCode_ERROR_CODE_RECOVERY_ONLY, "recovery only")
 			}
 		case scopeMachine:
+			mutation.Global, mutation.ExclusiveUser = true, true
 			if !id.IsBot {
 				err = auth.ErrBotNotAllowed
 			}
 		case scopeAdmission:
+			mutation.Admission, mutation.ExclusiveWorkspace = true, true
+			mutation.OpenAdmission = r.PathValue("code") == ""
 			var ws uuid.UUID
 			if r.PathValue("code") != "" {
 				row, e := q.GetInviteByCode(ctx, r.PathValue("code"))
@@ -391,6 +402,7 @@ func identityGate(q *sqlc.Queries, a *auth.Service, next http.Handler) http.Hand
 				ws, err = httpx.PathUUID(r, "id", "workspace")
 			}
 			if err == nil {
+				mutation.Workspace = ws
 				if r.PathValue("code") != "" {
 					err = a.CheckGlobal(ctx, id, identitypolicy.GlobalWrite)
 				} else {
@@ -405,6 +417,16 @@ func identityGate(q *sqlc.Queries, a *auth.Service, next http.Handler) http.Hand
 		default:
 			var ws uuid.UUID
 			ws, err = identityTarget(r, q, scope)
+			mutation.Workspace = ws
+			mutation.Global = ws == uuid.Nil
+			mutation.ExclusiveUser = ws == uuid.Nil
+			mutation.ExclusiveWorkspace = scope == scopeWorkspace
+			if strings.HasSuffix(r.Pattern, "/members/{userId}/birthday") {
+				mutation.TargetUser, err = httpx.PathUUID(r, "userId", "user")
+			}
+			if r.PathValue("botId") != "" {
+				mutation.TargetUser, err = httpx.PathUUID(r, "botId", "bot")
+			}
 			if db.IsNotFound(err) {
 				err = httpx.NotFound("resource")
 			}
@@ -434,6 +456,9 @@ func identityGate(q *sqlc.Queries, a *auth.Service, next http.Handler) http.Hand
 		if err != nil {
 			httpx.WriteError(w, r, err)
 			return
+		}
+		if r.Method != http.MethodGet && r.Method != http.MethodHead && r.Method != http.MethodOptions && scope != scopePublic {
+			r = r.WithContext(a.WithMutation(ctx, id, mutation))
 		}
 		next.ServeHTTP(w, r)
 	})

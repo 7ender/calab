@@ -358,6 +358,37 @@ SELECT * FROM workspaces WHERE slug=$1;
 -- name: IdentityDatabaseNow :one
 SELECT clock_timestamp()::timestamptz AS database_now;
 
+-- Admission locks are shared for ordinary resource writes. Revokers already
+-- take LockOAuthWorkspace (FOR UPDATE); UPDATE of user/member/session rows also
+-- conflicts with these locks. Acquire sorted workspaces, users, members, sessions.
+-- Boundary-row mutations choose the exclusive mode before reading any source.
+-- name: LockIdentityWorkspaceShared :one
+SELECT id FROM workspaces WHERE id=$1 FOR SHARE;
+
+-- name: LockIdentityUserShared :one
+SELECT id FROM users WHERE id=$1 FOR SHARE;
+
+-- name: LockIdentityUserExclusive :one
+SELECT id FROM users WHERE id=$1 FOR UPDATE;
+
+-- name: LockIdentityMemberShared :one
+SELECT user_id FROM workspace_members WHERE workspace_id=$1 AND user_id=$2 FOR SHARE;
+
+-- name: LockIdentityMemberExclusive :one
+SELECT user_id FROM workspace_members WHERE workspace_id=$1 AND user_id=$2 FOR UPDATE;
+
+-- name: LockIdentitySessionShared :one
+SELECT id FROM sessions WHERE id=$1 AND user_id=$2 FOR SHARE;
+
+-- name: LockIdentitySessionExclusive :one
+SELECT id FROM sessions WHERE id=$1 AND user_id=$2 FOR UPDATE;
+
+-- name: LockProductAdminGrantShared :many
+SELECT user_id FROM product_admin_grants WHERE user_id=$1 FOR SHARE;
+
+-- name: LockIdentityBotShared :one
+SELECT * FROM bots WHERE user_id=$1 FOR SHARE;
+
 -- name: IsIdentityWorkspaceProfileImage :one
 SELECT EXISTS (
     SELECT 1 FROM workspaces w

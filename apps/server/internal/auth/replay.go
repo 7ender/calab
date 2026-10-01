@@ -15,6 +15,7 @@ import (
 
 	"github.com/google/uuid"
 
+	"github.com/calaba/calaba/server/internal/db"
 	"github.com/calaba/calaba/server/internal/db/sqlc"
 )
 
@@ -149,7 +150,9 @@ func (s *Service) markGenUsed(ctx context.Context, id Identity) {
 	}
 	mctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), markBudget)
 	defer cancel()
-	if err := s.db.Q.MarkRefreshGenUsed(mctx, sqlc.MarkRefreshGenUsedParams{ID: id.SessionID, RefreshGen: id.RefreshGen}); err != nil {
+	if err := db.GuardExec(mctx, s.db, func(guarded *sqlc.Queries) error {
+		return guarded.MarkRefreshGenUsed(mctx, sqlc.MarkRefreshGenUsedParams{ID: id.SessionID, RefreshGen: id.RefreshGen})
+	}); err != nil {
 		slog.WarnContext(ctx, "mark refresh generation used failed", "session_id", id.SessionID, "err", err)
 		return
 	}

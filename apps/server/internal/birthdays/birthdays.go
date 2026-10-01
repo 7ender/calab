@@ -102,7 +102,9 @@ func (s *Service) Greet(ctx context.Context, now time.Time) (int, error) {
 		}
 	}
 	// The dedup needs only the last days (a zone is at most a day away from UTC).
-	if _, err := s.db.Q.DeleteOldBirthdayGreetings(ctx, pgtype.Date{Time: now.UTC().AddDate(0, 0, -3), Valid: true}); err != nil {
+	if _, err := db.GuardValue(ctx, s.db, func(guarded *sqlc.Queries) (int64, error) {
+		return guarded.DeleteOldBirthdayGreetings(ctx, pgtype.Date{Time: now.UTC().AddDate(0, 0, -3), Valid: true})
+	}); err != nil {
 		errs = append(errs, err)
 	}
 	return posted, errors.Join(errs...)

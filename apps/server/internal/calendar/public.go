@@ -143,7 +143,9 @@ func (s *Service) publicAnswer(w http.ResponseWriter, r *http.Request) error {
 		return errEventOver
 	}
 	if a.Status != c.Status {
-		upd, err := s.db.Q.SetExternalAttendeeStatus(r.Context(), sqlc.SetExternalAttendeeStatusParams{EventID: b.ev.ID, Email: a.Email, Status: c.Status})
+		upd, err := db.GuardValue(r.Context(), s.db, func(guarded *sqlc.Queries) (sqlc.EventAttendee, error) {
+			return guarded.SetExternalAttendeeStatus(r.Context(), sqlc.SetExternalAttendeeStatusParams{EventID: b.ev.ID, Email: a.Email, Status: c.Status})
+		})
 		if err != nil {
 			return err
 		}

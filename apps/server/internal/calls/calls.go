@@ -303,7 +303,9 @@ func (s *Service) postCard(ctx context.Context, r Record) {
 	if !missed {
 		return
 	}
-	states, err := s.db.Q.UnarchiveDMForRecipients(ctx, sqlc.UnarchiveDMForRecipientsParams{RoomID: r.DM, AuthorID: r.Caller})
+	states, err := db.GuardValue(ctx, s.db, func(guarded *sqlc.Queries) ([]sqlc.DmState, error) {
+		return guarded.UnarchiveDMForRecipients(ctx, sqlc.UnarchiveDMForRecipientsParams{RoomID: r.DM, AuthorID: r.Caller})
+	})
 	if err != nil {
 		slog.WarnContext(ctx, "unarchive DM after a missed call", "call", r.ID, "err", err)
 		return
