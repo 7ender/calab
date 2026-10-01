@@ -626,6 +626,84 @@ func (q *Queries) ListPins(ctx context.Context, roomID uuid.UUID) ([]Message, er
 	return items, nil
 }
 
+const listReactionUsers = `-- name: ListReactionUsers :many
+SELECT u.id, u.email, u.password_hash, u.display_name, u.avatar_file_id, u.status_text, u.settings, u.created_at, u.disabled_at, u.status_emoji, u.status_expires_at, u.is_guest, u.guest_expires_at, u.timezone, u.email_verified_at, u.pending_email, u.locale, u.presence_status, u.presence_until, u.is_bot, u.birthday_day, u.birthday_month, u.birthday_year, u.birthday_hidden, u.event_reminders, u.event_reminders_dnd, u.storage_quota_bytes, u.work_start_min, u.work_end_min, u.work_days
+FROM message_reactions mr JOIN users u ON u.id = mr.user_id
+WHERE mr.message_id = $1 AND mr.emoji = $2
+  AND ($3::uuid IS NULL OR mr.user_id > $3::uuid)
+ORDER BY mr.user_id
+LIMIT $4
+`
+
+type ListReactionUsersParams struct {
+	MessageID uuid.UUID
+	Emoji     string
+	After     *uuid.UUID
+	Lim       int32
+}
+
+type ListReactionUsersRow struct {
+	User User
+}
+
+// Who reacted with an emoji, by user id — a stable keyset for the `after` cursor (the PK
+// order, index-only for the reaction rows; ≤ lim lookups of users).
+func (q *Queries) ListReactionUsers(ctx context.Context, arg ListReactionUsersParams) ([]ListReactionUsersRow, error) {
+	rows, err := q.db.Query(ctx, listReactionUsers,
+		arg.MessageID,
+		arg.Emoji,
+		arg.After,
+		arg.Lim,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []ListReactionUsersRow{}
+	for rows.Next() {
+		var i ListReactionUsersRow
+		if err := rows.Scan(
+			&i.User.ID,
+			&i.User.Email,
+			&i.User.PasswordHash,
+			&i.User.DisplayName,
+			&i.User.AvatarFileID,
+			&i.User.StatusText,
+			&i.User.Settings,
+			&i.User.CreatedAt,
+			&i.User.DisabledAt,
+			&i.User.StatusEmoji,
+			&i.User.StatusExpiresAt,
+			&i.User.IsGuest,
+			&i.User.GuestExpiresAt,
+			&i.User.Timezone,
+			&i.User.EmailVerifiedAt,
+			&i.User.PendingEmail,
+			&i.User.Locale,
+			&i.User.PresenceStatus,
+			&i.User.PresenceUntil,
+			&i.User.IsBot,
+			&i.User.BirthdayDay,
+			&i.User.BirthdayMonth,
+			&i.User.BirthdayYear,
+			&i.User.BirthdayHidden,
+			&i.User.EventReminders,
+			&i.User.EventRemindersDnd,
+			&i.User.StorageQuotaBytes,
+			&i.User.WorkStartMin,
+			&i.User.WorkEndMin,
+			&i.User.WorkDays,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const listReactions = `-- name: ListReactions :many
 SELECT message_id, emoji, count(*)::integer AS count,
        bool_or(user_id = $1)::boolean AS me, min(created_at)::timestamptz AS first_at

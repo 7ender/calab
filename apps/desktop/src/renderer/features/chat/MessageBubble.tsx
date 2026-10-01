@@ -22,6 +22,7 @@ import { toast } from '../../stores/toasts';
 import { useUi } from '../../stores/ui';
 import { memberName, useWorkspaces } from '../../stores/workspaces';
 import { useChatView } from './chatView';
+import { ReactionTip } from './ReactionTip';
 import { userColorIndex, type RowMeta } from './grouping';
 import { LinkPreview } from './LinkPreview';
 import { MessageActions, hasMessageActions } from './MessageActions';
@@ -291,7 +292,7 @@ function Bubble({
         )}
         <div className="pointer-events-none absolute bottom-1.5 right-1.5 flex max-w-[calc(100%-12px)] flex-wrap items-center justify-end gap-1">
           {m.reactions.map((re) => (
-            <ReactionChip key={re.emoji} roomId={roomId} m={m} emoji={re.emoji} count={re.count} me={re.me} canReact={c.status === 'sent'} onMedia />
+            <ReactionChip key={re.emoji} roomId={roomId} workspaceId={workspaceId} m={m} emoji={re.emoji} count={re.count} me={re.me} canReact={c.status === 'sent'} onMedia />
           ))}
           <span className="rounded-full bg-[rgb(0_0_0/50%)] px-1.5 py-1 [--bubble-meta:var(--color-on-accent)]" data-testid="sticker-meta">
             {metaNode}
@@ -376,7 +377,7 @@ function Bubble({
         {m.reactions.length ? (
           <div className="flex flex-wrap items-end gap-1 px-2.5 pb-1.5 pt-0.5">
             {m.reactions.map((re) => (
-              <ReactionChip key={re.emoji} roomId={roomId} m={m} emoji={re.emoji} count={re.count} me={re.me} canReact={c.status === 'sent'} />
+              <ReactionChip key={re.emoji} roomId={roomId} workspaceId={workspaceId} m={m} emoji={re.emoji} count={re.count} me={re.me} canReact={c.status === 'sent'} />
             ))}
             <span className="ml-auto pl-2">{metaNode}</span>
           </div>
@@ -682,30 +683,35 @@ function Ticks({ roomId, messageId }: { roomId: string; messageId: string }): Re
   );
 }
 
-/** `onMedia`: over a sticker — a dark translucent pill like the time next to it. */
-function ReactionChip({ roomId, m, emoji, count, me, canReact, onMedia = false }: { roomId: string; m: Message; emoji: string; count: number; me: boolean; canReact: boolean; onMedia?: boolean }): ReactNode {
+/**
+ * `onMedia`: over a sticker — a dark translucent pill like the time next to it.
+ * The Tip shows who reacted (issue #32); it wakes lazily and the names load only while open.
+ */
+function ReactionChip({ roomId, workspaceId, m, emoji, count, me, canReact, onMedia = false }: { roomId: string; workspaceId: string; m: Message; emoji: string; count: number; me: boolean; canReact: boolean; onMedia?: boolean }): ReactNode {
   return (
-    <button
-      type="button"
-      disabled={!canReact}
-      aria-pressed={me}
-      aria-label={t('chat.reactionLabel', { emoji, count })}
-      onClick={() => void toggleReaction(roomId, m, emoji)}
-      className={cx(
-        'inline-flex items-center gap-1 rounded-full leading-none transition-colors duration-[var(--motion-fast)]',
-        onMedia ? 'pointer-events-auto h-6 px-1.5 text-caption' : 'h-7 px-2 text-body',
-        onMedia
-          ? me
-            ? 'bg-accent-strong text-accent-fg'
-            : 'bg-[rgb(0_0_0/50%)] text-[color:var(--color-on-accent)] hover:bg-[rgb(0_0_0/62%)]'
-          : me
-            ? 'bg-[var(--bubble-chip-bg)] text-[color:var(--bubble-chip-fg)]'
-            : 'bg-[color-mix(in_srgb,var(--bubble-accent)_14%,transparent)] text-fg hover:bg-[color-mix(in_srgb,var(--bubble-accent)_22%,transparent)]',
-      )}
-    >
-      <span className={onMedia ? 'text-body' : 'text-headline'}>{emoji}</span>
-      <span className={cx('font-semibold tabular-nums', onMedia ? 'text-caption' : 'text-body')}>{count}</span>
-    </button>
+    <Tip label={<ReactionTip workspaceId={workspaceId} messageId={m.id} emoji={emoji} count={count} />}>
+      <button
+        type="button"
+        disabled={!canReact}
+        aria-pressed={me}
+        aria-label={t('chat.reactionLabel', { emoji, count })}
+        onClick={() => void toggleReaction(roomId, m, emoji)}
+        className={cx(
+          'inline-flex items-center gap-1 rounded-full leading-none transition-colors duration-[var(--motion-fast)]',
+          onMedia ? 'pointer-events-auto h-6 px-1.5 text-caption' : 'h-7 px-2 text-body',
+          onMedia
+            ? me
+              ? 'bg-accent-strong text-accent-fg'
+              : 'bg-[rgb(0_0_0/50%)] text-[color:var(--color-on-accent)] hover:bg-[rgb(0_0_0/62%)]'
+            : me
+              ? 'bg-[var(--bubble-chip-bg)] text-[color:var(--bubble-chip-fg)]'
+              : 'bg-[color-mix(in_srgb,var(--bubble-accent)_14%,transparent)] text-fg hover:bg-[color-mix(in_srgb,var(--bubble-accent)_22%,transparent)]',
+        )}
+      >
+        <span className={onMedia ? 'text-body' : 'text-headline'}>{emoji}</span>
+        <span className={cx('font-semibold tabular-nums', onMedia ? 'text-caption' : 'text-body')}>{count}</span>
+      </button>
+    </Tip>
   );
 }
 

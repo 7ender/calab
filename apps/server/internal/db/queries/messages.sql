@@ -180,6 +180,16 @@ WHERE message_id = ANY(sqlc.arg('ids')::uuid[])
 GROUP BY message_id, emoji
 ORDER BY message_id, first_at;
 
+-- name: ListReactionUsers :many
+-- Who reacted with an emoji, by user id — a stable keyset for the `after` cursor (the PK
+-- order, index-only for the reaction rows; ≤ lim lookups of users).
+SELECT sqlc.embed(u)
+FROM message_reactions mr JOIN users u ON u.id = mr.user_id
+WHERE mr.message_id = sqlc.arg('message_id') AND mr.emoji = sqlc.arg('emoji')
+  AND (sqlc.narg('after')::uuid IS NULL OR mr.user_id > sqlc.narg('after')::uuid)
+ORDER BY mr.user_id
+LIMIT sqlc.arg('lim');
+
 -- name: PinMessage :one
 UPDATE messages SET pinned_at = now(), pinned_by = sqlc.arg('pinned_by')
 WHERE id = sqlc.arg('id') AND deleted_at IS NULL AND pinned_at IS NULL
