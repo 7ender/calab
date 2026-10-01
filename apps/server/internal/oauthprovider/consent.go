@@ -146,7 +146,10 @@ func freshAuthentication(now, created, at time.Time, prompt string, maxAge *int3
 
 func (s *Service) authorize(w http.ResponseWriter, r *http.Request) {
 	headers(w)
-	if len(r.URL.RawQuery)>16<<10{writeError(w,oauthError("invalid_request"));return}
+	if len(r.URL.RawQuery) > 16<<10 {
+		writeError(w, oauthError("invalid_request"))
+		return
+	}
 	ws, err := pathWorkspace(r)
 	if err != nil {
 		writeError(w, err)
