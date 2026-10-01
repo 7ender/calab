@@ -116,9 +116,10 @@ async function consentJourney(workspace, client, token, proof, journeyPage = pag
  assert.equal(await page.getByRole('button', { name: 'Allow', exact: true }).count(), 0);
  await new Promise(r => setTimeout(r, 1100));
  if (proof === 'local' || !scoped) {
+  await page.getByTestId('consent-auth-repair').getByRole('button', { name: 'Confirm password', exact: true }).click();
   await page.locator('input[autocomplete=current-password]').fill(f.password);
   const reauth = page.waitForResponse(r => r.url().endsWith('/api/auth/local/reauth'));
-  await page.getByRole('button', { name: 'Confirm password', exact: true }).click();
+  await page.getByTestId('consent-auth-repair').getByRole('button', { name: 'Confirm password', exact: true }).last().click();
   authenticatedAt = (await jsonResponse(await reauth, 200, 'local reauth UI')).authenticatedAt;
   if (proof === 'local') await page.getByTestId('consent-auth-repair').getByRole('button', { name: 'Refresh', exact: true }).click();
  }
