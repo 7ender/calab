@@ -107,4 +107,12 @@ export const enIdentity: DictShape<typeof ruIdentity> = {
   'identity.redirectHelp': "Up to 10 exact HTTPS URIs, one per line. Paths and trailing slashes must match; no wildcards or fragments.",
   'identity.nativeRedirectHelp': "Up to 10 exact URIs. Native apps also support loopback 127.0.0.1 / [::1] and registered app schemes; PKCE is required.",
   'identity.originsHelp': "Up to 10 origins such as https://app.example.com, without paths, queries or wildcards. Used for browser SPA requests.",
+  'identity.oauthEmptyHelp': "Create a client so your application can offer sign-in with Calab. Access is limited to the profile in this workspace.",
+  'identity.oauthRotationHelp': "The new secret is shown once. The old secret remains valid for 10 minutes unless revoked immediately. Update your application; immediate revocation may interrupt it.",
+  'identity.passwordConfirmed': "Password confirmed",
+  'identity.reauthHelp': "Sensitive changes require a recent password confirmation. Confirm again if the server requests it.",
+  'identity.confirmAgain': "Confirm again",
+  'identity.accountStatusHelp': "Your account’s access status in this workspace. Account linking and recent SSO confirmation are separate actions below.",
+  'identity.stepUpHelp': "Sign in again in your browser to confirm SSO for sensitive actions in this workspace. This does not link a new account.",
+  'identity.unlinkHelp': "Unlinking requires confirmation. Required SSO may prevent further access to this workspace.",
 };

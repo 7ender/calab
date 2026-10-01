@@ -108,4 +108,12 @@ export const esIdentity: DictShape<typeof ruIdentity> = {
   'identity.redirectHelp': "Hasta 10 URI HTTPS exactos, uno por línea. La ruta y la barra final deben coincidir; sin comodines ni fragmentos.",
   'identity.nativeRedirectHelp': "Hasta 10 URI exactos. Las apps nativas admiten loopback 127.0.0.1 / [::1] y esquemas registrados; requieren PKCE.",
   'identity.originsHelp': "Hasta 10 origins como https://app.example.com, sin rutas, consultas ni comodines. Para solicitudes SPA del navegador.",
+  'identity.oauthEmptyHelp': "Crea un cliente para ofrecer inicio de sesión con Calab en tu aplicación. El acceso se limita al perfil de este espacio.",
+  'identity.oauthRotationHelp': "El nuevo secreto se muestra una sola vez. El anterior sigue válido 10 minutos salvo revocación inmediata. Actualiza tu aplicación; revocarlo de inmediato puede interrumpir su funcionamiento.",
+  'identity.passwordConfirmed': "Contraseña confirmada",
+  'identity.reauthHelp': "Los cambios sensibles requieren confirmar la contraseña recientemente. Confírmala de nuevo si el servidor lo solicita.",
+  'identity.confirmAgain': "Confirmar de nuevo",
+  'identity.accountStatusHelp': "Estado de acceso de tu cuenta a este espacio. Vincular la cuenta y confirmar SSO recientemente son acciones separadas abajo.",
+  'identity.stepUpHelp': "Vuelve a iniciar sesión en el navegador para confirmar SSO para acciones sensibles en este espacio. Esto no vincula una cuenta nueva.",
+  'identity.unlinkHelp': "Desvincular requiere confirmación. El SSO obligatorio puede impedir el acceso posterior a este espacio.",
 };

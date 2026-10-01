@@ -105,4 +105,12 @@ export const zhIdentity: DictShape<typeof ruIdentity> = {
   'identity.redirectHelp': "最多 10 个准确的 HTTPS URI，每行一个。路径和末尾斜杠必须一致，不允许通配符或片段。",
   'identity.nativeRedirectHelp': "最多 10 个准确 URI。原生应用也支持 127.0.0.1 / [::1] 回环地址和已注册的应用方案；必须使用 PKCE。",
   'identity.originsHelp': "最多 10 个源，例如 https://app.example.com，不包含路径、查询或通配符。用于浏览器 SPA 请求。",
+  'identity.oauthEmptyHelp': "创建客户端，让应用支持通过 Calab 登录。访问仅限于此工作空间中的个人资料。",
+  'identity.oauthRotationHelp': "新密钥仅显示一次。旧密钥仍有效 10 分钟，除非立即撤销。请更新应用中的密钥；立即撤销可能导致应用中断。",
+  'identity.passwordConfirmed': "密码已确认",
+  'identity.reauthHelp': "修改敏感设置需要近期确认密码。如果服务器要求，请再次确认。",
+  'identity.confirmAgain': "再次确认",
+  'identity.accountStatusHelp': "你的账户对此工作空间的访问状态。下方的账户关联与近期 SSO 确认是独立操作。",
+  'identity.stepUpHelp': "在浏览器中重新登录，以便在此工作空间中执行敏感操作。此操作不会关联新账户。",
+  'identity.unlinkHelp': "解除关联需要确认。如果工作空间要求 SSO，你可能会失去访问权限。",
 };

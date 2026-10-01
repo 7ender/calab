@@ -9,6 +9,7 @@ import { platform } from '../../platform';
 import { beginSession, retryConnect } from '../../services/session';
 import { queryClient } from '../../lib/queryClient';
 import { identityApi } from './api';
+import { useSession } from '../../stores/session';
 
 export function SsoButton({ workspaceId, purpose, onDone }: SsoStart & { onDone?: () => void }): ReactNode {
   const [pending, setPending] = useState<{ attemptId: string; expiresAt: number } | null>(null);
@@ -120,19 +121,27 @@ export function SsoButton({ workspaceId, purpose, onDone }: SsoStart & { onDone?
   );
 }
 
-export function LocalReauth(): ReactNode {
+export function LocalReauth({ embedded = false }: { embedded?: boolean } = {}): ReactNode {
   const [password, setPassword] = useState('');
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState('');
+  const [open, setOpen] = useState(false);
+  const sessionId = useSession((s) => s.sessionId);
+  const [confirmedSession, setConfirmedSession] = useState<string | null>(null);
+  const confirmed = confirmedSession !== null && confirmedSession === sessionId;
   const submit = async (): Promise<void> => {
     setBusy(true);
     setMessage('');
+    setConfirmedSession(null);
     try {
       await identityApi.reauth(password);
       await queryClient.invalidateQueries({
         predicate: (q) => typeof q.queryKey[0] === 'string' && (q.queryKey[0].startsWith('identity') || q.queryKey[0] === 'oauth-clients'),
       });
-      setMessage(t('identity.done'));
+      if (useSession.getState().sessionId === sessionId) {
+        setConfirmedSession(sessionId);
+        setOpen(false);
+      }
     } catch (e) {
       setMessage(errorText(e));
     } finally {
@@ -140,23 +149,37 @@ export function LocalReauth(): ReactNode {
       setBusy(false);
     }
   };
-  return (
-    <Card title={t('identity.reauth')}>
-      <div className="flex flex-col gap-3 p-4">
-        <Field label={t('identity.password')}>
-          <PasswordInput autoComplete="current-password" value={password} onChange={(e) => setPassword(e.target.value)} />
-        </Field>
-        <Button className="self-end mobile:self-stretch" busy={busy} disabled={!password} onClick={() => void submit()}>
-          {t('identity.reauth')}
-        </Button>
-        {message ? (
-          <p role="status" className="text-body text-muted">
-            {message}
+  const content = (
+    <div className="flex flex-col gap-3 p-3">
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <div className="min-w-0 flex-1">
+          <p className="text-body font-medium" role={confirmed ? 'status' : undefined}>
+            {t(confirmed ? 'identity.passwordConfirmed' : 'identity.reauth')}
           </p>
-        ) : null}
+          <p className="mt-1 text-caption text-muted">{t('identity.reauthHelp')}</p>
+        </div>
+        <Button variant="secondary" disabled={busy} aria-expanded={open} onClick={() => {
+          setOpen(!open);
+          setPassword('');
+          setMessage('');
+        }}>
+          {t(open ? 'identity.cancel' : confirmed ? 'identity.confirmAgain' : 'identity.reauth')}
+        </Button>
       </div>
-    </Card>
+      {open ? (
+        <div className="flex flex-wrap items-end gap-3">
+          <div className="min-w-0 flex-1 mobile:basis-full">
+            <Field label={t('identity.password')}>
+              <PasswordInput autoComplete="current-password" value={password} onChange={(e) => setPassword(e.target.value)} />
+            </Field>
+          </div>
+          <Button busy={busy} disabled={!password} onClick={() => void submit()}>{t('identity.reauth')}</Button>
+        </div>
+      ) : null}
+      {message ? <p role="alert" className="text-body text-danger-text">{message}</p> : null}
+    </div>
   );
+  return embedded ? content : <Card>{content}</Card>;
 }
 
 export function CorporateLogin({ serverUrl }: { serverUrl: string }): ReactNode {
