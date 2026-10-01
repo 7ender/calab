@@ -70,8 +70,8 @@ func TestIdentityProviderAuthorizationPOSTBrowserResolverAndRouteCensus(t *testi
 	challenge := sha256.Sum256([]byte(strings.Repeat("v", 43)))
 	args := url.Values{"client_id": {c.Client.ClientId}, "redirect_uri": {c.Client.RedirectUris[0]}, "response_type": {"code"}, "scope": {"openid"}, "state": {"post-cookie-state"}, "nonce": {"post-cookie-nonce"}, "code_challenge_method": {"S256"}, "code_challenge": {base64.RawURLEncoding.EncodeToString(challenge[:])}, "prompt": {"none"}}
 	path := "/oidc/workspaces/" + f.a.Id + "/authorize"
-	localCookie := &http.Cookie{Name: auth.LocalBrowserCookie, Value: f.local.refresh}
-	scopedCookie := &http.Cookie{Name: "__Host-calab-workspace-session-" + f.a.Id, Value: f.scoped.refresh}
+	localCookie := &http.Cookie{Name: auth.LocalBrowserCookie, Value: f.local.refresh, Secure: true, HttpOnly: true, SameSite: http.SameSiteLaxMode}
+	scopedCookie := &http.Cookie{Name: "__Host-calab-workspace-session-" + f.a.Id, Value: f.scoped.refresh, Secure: true, HttpOnly: true, SameSite: http.SameSiteLaxMode}
 	for _, method := range []string{"GET", "POST"} {
 		for _, tc := range []struct {
 			name, bearer, want string
@@ -80,9 +80,9 @@ func TestIdentityProviderAuthorizationPOSTBrowserResolverAndRouteCensus(t *testi
 			{"local", "", "", []*http.Cookie{localCookie}},
 			{"scoped A", "", "", []*http.Cookie{scopedCookie}},
 			{"no cookie", "", "login_required", nil},
-			{"wrong workspace cookie", "", "login_required", []*http.Cookie{{Name: "__Host-calab-workspace-session-" + f.b.Id, Value: f.scoped.refresh}}},
-			{"wrong authority cookie", "", "login_required", []*http.Cookie{{Name: auth.LocalBrowserCookie, Value: f.scoped.refresh}}},
-			{"provider token cookie", "", "login_required", []*http.Cookie{{Name: auth.LocalBrowserCookie, Value: "calab_or_" + strings.Repeat("a", 43)}}},
+			{"wrong workspace cookie", "", "login_required", []*http.Cookie{{Name: "__Host-calab-workspace-session-" + f.b.Id, Value: f.scoped.refresh, Secure: true, HttpOnly: true, SameSite: http.SameSiteLaxMode}}},
+			{"wrong authority cookie", "", "login_required", []*http.Cookie{{Name: auth.LocalBrowserCookie, Value: f.scoped.refresh, Secure: true, HttpOnly: true, SameSite: http.SameSiteLaxMode}}},
+			{"provider token cookie", "", "login_required", []*http.Cookie{{Name: auth.LocalBrowserCookie, Value: "calab_or_" + strings.Repeat("a", 43), Secure: true, HttpOnly: true, SameSite: http.SameSiteLaxMode}}},
 			{"account mismatch", owner(t).token, "login_required", []*http.Cookie{localCookie}},
 		} {
 			t.Run(method+"/"+tc.name, func(t *testing.T) {
@@ -151,7 +151,7 @@ func TestIdentityProviderAuthorizationPOSTRejectsInvalidForms(t *testing.T) {
 		{"JSON", "", "application/json", `{}`},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			st, h, raw := authorizationWire(t, base, "POST", path+tc.query, tc.media, tc.body, "", []*http.Cookie{{Name: auth.LocalBrowserCookie, Value: f.local.refresh}})
+			st, h, raw := authorizationWire(t, base, "POST", path+tc.query, tc.media, tc.body, "", []*http.Cookie{{Name: auth.LocalBrowserCookie, Value: f.local.refresh, Secure: true, HttpOnly: true, SameSite: http.SameSiteLaxMode}})
 			if st != 400 || h.Get("Location") != "" || h.Get("Access-Control-Allow-Origin") != "" || !strings.Contains(string(raw), `"error":"invalid_request"`) {
 				t.Fatalf("invalid App POST: %d %v %s", st, h, raw)
 			}

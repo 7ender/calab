@@ -13,13 +13,13 @@ import (
 	"encoding/json"
 	"encoding/pem"
 	"fmt"
+	"io/fs"
 	"net/http"
 	"net/http/httptest"
 	"net/netip"
 	"net/url"
 	"os"
 	"os/exec"
-	"path/filepath"
 	"strings"
 	"testing"
 	"time"
@@ -181,13 +181,19 @@ func TestIdentityBrowserRealAppKeycloak(t *testing.T) {
 		mux.Handle(path, application.Handler)
 	}
 	web := required("IDENTITY_BROWSER_WEB_DIR")
-	if _, err = os.Stat(filepath.Join(web, "index.html")); err != nil {
+	webRoot, err := os.OpenRoot(web)
+	if err != nil {
+		t.Fatal("open the current web bundle root")
+	}
+	defer func() { _ = webRoot.Close() }()
+	webFS := webRoot.FS()
+	if _, err = fs.Stat(webFS, "index.html"); err != nil {
 		t.Fatal("build the current web bundle first")
 	}
-	files := http.FileServer(http.Dir(web))
+	files := http.FileServerFS(webFS)
 	mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
-		if _, e := os.Stat(filepath.Join(web, filepath.Clean(r.URL.Path))); e != nil || r.URL.Path == "/" {
-			http.ServeFile(w, r, filepath.Join(web, "index.html"))
+		if _, e := fs.Stat(webFS, strings.TrimPrefix(r.URL.Path, "/")); e != nil || r.URL.Path == "/" {
+			http.ServeFileFS(w, r, webFS, "index.html")
 			return
 		}
 		files.ServeHTTP(w, r)
@@ -198,6 +204,7 @@ func TestIdentityBrowserRealAppKeycloak(t *testing.T) {
 	defer server.Close()
 	payload, _ := json.Marshal(map[string]string{"origin": origin, "workspaceA": a.String(), "workspaceB": b.String(), "slugA": "browser-" + a.String()[:18], "userID": uid.String(), "email": email, "password": password, "issuer": issuer, "runID": runID})
 	script := required("IDENTITY_BROWSER_SCRIPT")
+	// #nosec G204 -- Opt-in fixture entrypoint from the trusted runner environment, never HTTP input.
 	command := exec.CommandContext(ctx, "node", script)
 	command.Stdin = bytes.NewReader(payload)
 	command.Env = os.Environ()
@@ -211,5 +218,7 @@ func TestIdentityBrowserRealAppKeycloak(t *testing.T) {
 	t.Log(strings.TrimSpace(string(output)))
 	digest := sha256.Sum256(payload)
 	t.Logf("synthetic run=%s configuration digest=%x", runID, digest[:8])
-	fmt.Fprintln(os.Stdout, "IDENTITY_BROWSER_REQUIRED_PASS")
+	if _, err := fmt.Fprintln(os.Stdout, "IDENTITY_BROWSER_REQUIRED_PASS"); err != nil {
+		t.Fatal("write required browser pass marker")
+	}
 }

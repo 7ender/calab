@@ -4,6 +4,9 @@ modules:
 lint:
   use: [STANDARD]
   ignore_only:
+    # Preserve the normative OAuth acronym in existing JSON/wire enum names.
+    ENUM_VALUE_PREFIX:
+      - proto/calaba/v1/oauth_client.proto
     # TaskPriority: NONE is the zero value on purpose (ADR-0042, «No priority»).
     ENUM_ZERO_VALUE_SUFFIX:
       - proto/calaba/v1/boards.proto

@@ -360,7 +360,7 @@ func (s *Service) publish(ctx context.Context, c sqlc.WorkspaceDirectory, run sq
 					return sso.ErrChanged
 				}
 				o, present := snapshot[existing.ObjectGuid]
-				status := existing.Status
+				var status string
 				missing := existing.MissingFullScans
 				dn := existing.DistinguishedName
 				last := existing.LastSeenRunID
