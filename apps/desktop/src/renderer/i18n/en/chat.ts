@@ -24,6 +24,8 @@ export const enChat: DictShape<typeof ruChat> = {
   'chat.attachment': 'Attachment',
   'chat.openImage': 'Open image “{name}”',
   'chat.reactionLabel': 'Reaction {emoji}: {count}',
+  'chat.reactedWith': 'Reacted with {emoji}',
+  'chat.reactionOthers': { one: 'and {n} other', other: 'and {n} others' },
   'chat.replyOpen': 'Show original message',
   'chat.messageGone': 'Message deleted or unavailable',
   'chat.rowFailed': 'This message couldn’t be displayed',

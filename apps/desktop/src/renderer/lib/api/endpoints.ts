@@ -82,6 +82,7 @@ import {
   ListMemberBirthdaysResponseSchema,
   ListMembersResponseSchema,
   ListMessagesResponseSchema,
+  ListReactionUsersResponseSchema,
   MoveMemberRequestSchema,
   ListSessionsResponseSchema,
   RequestStreamRequestSchema,
@@ -536,6 +537,9 @@ export const api = {
       p: { q: string; room_id?: string; author_id?: string; before?: string; limit?: number },
       signal?: AbortSignal,
     ) => call('GET', `/api/workspaces/${workspaceId}/messages/search${qs(p)}`, ListMessagesResponseSchema, undefined, signal),
+    /** Who reacted with `emoji` (the chip tooltip), paged by `after` = the last user id. */
+    reactionUsers: (id: string, emoji: string, p?: { after?: string; limit?: number }, signal?: AbortSignal) =>
+      call('GET', `/api/messages/${id}/reactions/${encodeURIComponent(emoji)}${qs({ after: p?.after, limit: p?.limit })}`, ListReactionUsersResponseSchema, undefined, signal),
     addReaction: (id: string, emoji: string) => callEmpty('PUT', `/api/messages/${id}/reactions/${encodeURIComponent(emoji)}`),
     removeReaction: (id: string, emoji: string) => callEmpty('DELETE', `/api/messages/${id}/reactions/${encodeURIComponent(emoji)}`),
     pin: (id: string) => callEmpty('PUT', `/api/messages/${id}/pin`),

@@ -24,6 +24,8 @@ export const esChat: DictShape<typeof enChat> = {
   'chat.attachment': 'Adjunto',
   'chat.openImage': 'Abrir imagen «{name}»',
   'chat.reactionLabel': 'Reacción {emoji}: {count}',
+  'chat.reactedWith': 'Reaccionaron con {emoji}',
+  'chat.reactionOthers': { one: 'y {n} más', many: 'y {n} más', other: 'y {n} más' },
   'chat.replyOpen': 'Mostrar mensaje original',
   'chat.messageGone': 'Mensaje eliminado o no disponible',
   'chat.rowFailed': 'No se pudo mostrar este mensaje',
