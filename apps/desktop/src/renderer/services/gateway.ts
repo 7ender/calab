@@ -98,3 +98,7 @@ export function sendTyping(roomId: string): void {
 export function setPresence(status: PresenceStatus, untilMs?: number): void {
   client?.setPresence(status, untilMs);
 }
+
+export function pruneGatewaySubscriptions(ids: ReadonlySet<string>): void {
+  subscribeRooms(subscribed.filter((id) => !ids.has(id)));
+}

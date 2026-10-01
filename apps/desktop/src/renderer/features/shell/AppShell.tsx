@@ -1,3 +1,6 @@
+import { WorkspaceLock, LockedWorkspacePicker } from '../identity/WorkspaceLock';
+import { useIdentity } from '../../stores/identity';
+import { accessLocked, localAuthority } from '../identity/model';
 import { Compass, Plus } from 'lucide-react';
 import { MessagesSquare } from 'lucide-react';
 import { WorkspaceRole } from '@calaba/protocol';
@@ -45,7 +48,12 @@ import { useOpenApp } from '../../stores/webApps';
 import { StreamPopout } from '../voice/StreamArea';
 
 export function AppShell(): ReactNode {
-  return <><ShellLayout /><StreamPopout /></>;
+  return (
+    <>
+      <ShellLayout />
+      <StreamPopout />
+    </>
+  );
 }
 
 /**
@@ -57,7 +65,9 @@ function ShellLayout(): ReactNode {
   const ready = useSession((s) => s.ready);
   const onboarded = usePrefs((s) => s.onboarded);
   const wsId = useUi((s) => s.activeWorkspaceId);
-  const home = wsId === HOME;
+  const local = useSession((s) => localAuthority(s.authority));
+  const locked = useIdentity((s) => !!wsId && accessLocked(s.access[wsId]));
+  const home = wsId === HOME && local;
   const hasWs = useWorkspaces((s) => (wsId && !home ? !!s.byId[wsId] : false));
   const roomId = useActiveRoom(home ? null : wsId);
   const dmId = useActiveDm();
@@ -93,12 +103,12 @@ function ShellLayout(): ReactNode {
   const superadmin = useSession((s) => s.me?.isSuperadmin === true);
   useEffect(() => (ready ? whenIdle(() => preloadWindows(superadmin)) : undefined), [ready, superadmin]);
 
-  if (!onboarded) return <OnboardingLazy.Component />;
+  if (!onboarded && local) return <OnboardingLazy.Component />;
   if (mobile) {
     // Phone layout (ADR-0021): one column — the chat full screen, the rail + rooms and the members
     // list in drawers, the voice strip at the bottom.
     // «Личные» (ADR-0020): the DM list in the drawer, the open DM full screen.
-    const ws = home ? HOME : hasWs && wsId ? wsId : null;
+    const ws = home ? HOME : (hasWs || locked) && wsId ? wsId : null;
     return (
       <MobileShell workspaceId={ws} roomId={home ? dmId : ws ? roomId : undefined} showReconnect={showReconnect}>
         {!ready ? (
@@ -108,6 +118,8 @@ function ShellLayout(): ReactNode {
               {t('gateway.connecting')}
             </div>
           </div>
+        ) : locked && wsId ? (
+          <WorkspaceLock workspaceId={wsId} />
         ) : home ? (
           dmId ? (
             <ChatPane key={dmId} workspaceId="" roomId={dmId} />
@@ -132,7 +144,10 @@ function ShellLayout(): ReactNode {
             <NoRoom workspaceId={ws} />
           )
         ) : (
-          <Welcome />
+          <div className="mat-content flex flex-1 flex-col items-center justify-center gap-4">
+            <LockedWorkspacePicker />
+            <Welcome />
+          </div>
         )}
         {ready ? <CreateTaskDialog /> : null}
       </MobileShell>
@@ -163,6 +178,8 @@ function ShellLayout(): ReactNode {
               {t('gateway.connecting')}
             </div>
           </div>
+        ) : locked && wsId ? (
+          <WorkspaceLock workspaceId={wsId} />
         ) : home ? (
           // «Личные» (ADR-0020): the DM list in the room column, the DM chat without members/voice.
           <div className="flex min-w-0 flex-1 overflow-hidden rounded-tl-[var(--radius-panel)] border-l border-t border-line" data-testid="main-island">
@@ -205,7 +222,10 @@ function ShellLayout(): ReactNode {
             </div>
           </div>
         ) : (
-          <Welcome />
+          <div className="mat-content flex flex-1 flex-col items-center justify-center gap-4">
+            <LockedWorkspacePicker />
+            <Welcome />
+          </div>
         )}
         {ready && (home || (hasWs && wsId)) ? <IslandSlot appOpen={!!appId} /> : null}
         {ready ? <CreateTaskDialog /> : null}
@@ -298,10 +318,12 @@ function NoRoom({ workspaceId }: { workspaceId: string }): ReactNode {
 }
 
 function Welcome(): ReactNode {
+  const local = useSession((s) => localAuthority(s.authority));
   const open = useUi((s) => s.openDialog);
   // The create / join dialogs cover this block; hide it meanwhile so its accent button never
   // peeks out beside the (narrower) dialog.
   const covered = useUi((s) => s.dialog !== null);
+  if (!local) return <p className="max-w-md p-6 text-body text-muted">{t('identity.scope')}</p>;
   return (
     <div className="mat-content grid flex-1 place-items-center mobile:px-6">
       <div className={cx('flex max-w-sm flex-col items-center gap-2 text-center', covered && 'invisible')}>

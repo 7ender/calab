@@ -21,6 +21,15 @@ export interface HumanError {
 }
 
 const CODE: Record<string, { key: MessageKey; retry?: boolean }> = {
+  ERROR_CODE_SSO_REQUIRED: { key: 'identity.required' },
+  ERROR_CODE_IDENTITY_SCOPE_DENIED: { key: 'identity.scope' },
+  ERROR_CODE_DIRECTORY_ACCESS_DENIED: { key: 'identity.directoryDenied' },
+  ERROR_CODE_RECOVERY_ONLY: { key: 'identity.recoveryOnly' },
+  ERROR_CODE_RECENT_AUTH_REQUIRED: { key: 'identity.reauth' },
+  ERROR_CODE_IDENTITY_CONFIG_CHANGED: { key: 'identity.changed', retry: true },
+  ERROR_CODE_IDENTITY_NOT_LINKED: { key: 'identity.noLink' },
+  ERROR_CODE_IDENTITY_DEPENDENCY_UNAVAILABLE: { key: 'identity.unavailable', retry: true },
+  ERROR_CODE_PLAN_LIMIT: { key: 'identity.plan' },
   ERROR_CODE_INTERNAL: { key: 'err.internal', retry: true },
   ERROR_CODE_BAD_REQUEST: { key: 'err.badRequest' },
   ERROR_CODE_VALIDATION: { key: 'err.validation' },

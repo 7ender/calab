@@ -1,3 +1,6 @@
+import { OAuthConsent } from '../features/identity/OAuth';
+import { SsoComplete } from '../features/identity/SignIn';
+import { consentHandle } from '../features/identity/model';
 import * as TooltipP from '@radix-ui/react-tooltip';
 import { QueryClientProvider } from '@tanstack/react-query';
 import { useEffect, type ReactNode } from 'react';
@@ -12,7 +15,7 @@ import { Toasts } from '../features/shell/Toasts';
 import { KnockToasts } from '../features/guests/KnockToast';
 import { WaitingScreen } from '../features/guests/WaitingScreen';
 import { useWaiting } from '../features/guests/stores/admissions';
-import { useLocale, type Locale } from '../i18n';
+import { useLocale, t, type Locale } from '../i18n';
 import { useTimeFormat } from '../lib/format';
 import { usePrefs } from '../stores/prefs';
 import { queryClient } from '../lib/queryClient';
@@ -86,7 +89,11 @@ export function App(): ReactNode {
       </div>
     );
   // Web /e/<id>?t=…: the public meeting page of an invited address, signed in or not (ADR-0038).
-  else if (eventPage) screen = <EventPublicPage page={eventPage} />;
+  else if (platform.kind === 'web' && location.pathname === '/sso/complete') screen = <SsoComplete />;
+  else if (platform.kind === 'web' && location.pathname === '/oauth/consent') {
+    const handle = consentHandle(location.href);
+    screen = handle ? <OAuthConsent handle={handle} /> : <div className="mat-content grid h-full place-items-center p-6" role="alert">{t('identity.changed')}</div>;
+  } else if (eventPage) screen = <EventPublicPage page={eventPage} />;
   // Web /join/<code>, /r/<code>: the link card first, signed in or not (docs/09 #53).
   else if (landing) screen = <LinkLandingScreen link={landing} />;
   else if (status === 'anon') screen = <AuthScreen />;

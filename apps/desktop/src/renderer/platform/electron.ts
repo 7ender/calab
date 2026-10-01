@@ -12,6 +12,9 @@ export function createElectronPlatform(): Platform {
     authHeaders: () => Promise.resolve({}),
     mediaUrl: (path) => Promise.resolve(`${API_ORIGIN}${path}`),
     directMedia: true,
+    clearProtectedMedia: () => {
+      void c.auth.clearProtectedCache();
+    },
     // Room links (ADR-0016): the guest session is created and kept by main (keychain), like a login.
     guestJoin: (code, nickname) => c.auth.guestJoin(code, nickname),
   };
