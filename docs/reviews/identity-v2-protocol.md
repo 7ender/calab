@@ -1,10 +1,42 @@
 # Identity 2.0 independent protocol/security review
 
-Reviewed source: `479d99c8f42ffe3c5f9be47d4dbb298fcbc2707a` against `99a60fc54cb1989c26c1a114a77631ea3380ecde`, 2026-10-01. Independent pass completed without reading another review. ADR-0054, ADR-0055, release contract including section 13, implementation, SQL, root wiring, native/web clients, proxy routes and official standards were inspected. Only this report is committed; reproduction tests use Go overlays outside the checkout.
+Reviewed final integrated source: **`e0ff654c49e44fc58d603971bf274505e2d24ba4`**, against baseline `99a60fc54cb1989c26c1a114a77631ea3380ecde`, 2026-10-01. The independent full pass at `479d99c8f42ffe3c5f9be47d4dbb298fcbc2707a` was followed by inspection and focused execution of every subsequent production delta: RTC/DM, provider P1–P6 corrections and UserInfo wrapper normalization. No other review was read before completing this independent assessment. ADR-0054, ADR-0055, release contract including section 13, implementation, SQL, root wiring, native/web clients, proxy routes and official standards were inspected. Only this report is committed; reviewer-authored reproduction tests use Go overlays outside the checkout.
 
-**Verdict: REJECT this source for release: six confirmed major findings, no confirmed blocker.** This is an initial exact-SHA assessment; subsequent fixes and integrated final SHA require delta review. Coordinator has assigned a provider correction and explicitly chosen same-client/exact-redirect/PKCE code-replay revocation in specification commit `3e576cf4`.
+**Final verdict: ACCEPT the reviewed protocol/security scope at `e0ff654c`; no known blocker or major remains in this review.** The initial source was rejected for six confirmed majors, all independently confirmed resolved at `a119d174a8c887513e0cde7916f467bdc8b7cb47`. The final delta preserves those corrections and does not change their affected source. Coordinator explicitly chose exactly bound code-replay revocation in specification commit `3e576cf4`. This verdict is one independent review, not OIDC certification or a claim that the coordinator's full QA/release gates have already passed.
 
-## Confirmed findings
+## Final-SHA delta and impact confirmation
+
+`a119d174..e0ff654c` contains only seven production lines in `internal/app/identitywiring.go` and the new 255-line T12 test. Exact registered GET/POST UserInfo patterns reject bot bearer with HTTP401 `invalid_token` and `WWW-Authenticate: Bearer error="invalid_token"`; other feature routes retain HTTP403 and existing first-party errors. No handler is entered, permission widened or provider family revoked by this rejection. Existing no-store/error-security headers remain. This matches [OIDC Core §5.3.3](https://openid.net/specs/openid-connect-core-1_0.html#UserInfoError) and [RFC 6750 §3/§3.1](https://www.rfc-editor.org/rfc/rfc6750.html#section-3).
+
+At exact final production source, the new independent `TestProtocolReviewUserInfoBotWrapper` passed nine subcases, including GET/POST UserInfo and unchanged token/revoke/authorize/JWKS/management denial. It failed only the two UserInfo cases before correction at `a119d174`, confirming the intended behavioral delta. This wrapper probe uses a synthetic bot-prefix credential to isolate route behavior; real credential issuance is covered separately below.
+
+Independently inspected and ran `TestIdentityRealProviderTokenIsolationAcrossRESTGatewayRTC`: **PASS**, including access/refresh/ID subcases. Production App handlers create the RP client, authorization request, session-bound consent, code and live access/refresh/RS256 ID tokens. The test verifies a live ID token against JWKS, intended UserInfo access and refresh controls, and rejection of these provider credentials by first-party REST, WS IDENTIFY and RTC token issuance. Valid local and bot controls still work; first-party/local/bot/refresh/ID credentials fail UserInfo with protocol-shaped errors, without revoking valid provider/local sessions. RTC check is token issuance only, with no media run.
+
+Both runs used Go1.26.5 `-race`, own PG18 `identity_protocol`, Redis DB10 and the prefix below. Commands:
+
+```sh
+go test -race -tags integration -overlay /tmp/identity-v2-protocol-wrapper-overlay.json -count=1 -run '^TestProtocolReviewUserInfoBotWrapper$' -v ./internal/app
+go test -race -tags integration -count=1 -run '^TestIdentityRealProviderTokenIsolationAcrossRESTGatewayRTC$' -v ./internal/app
+```
+
+Final logs: `/tmp/identity-v2-protocol-wrapper-final.log`, `/tmp/identity-v2-protocol-t12-final.log`; expected pre-correction failure: `/tmp/identity-v2-protocol-wrapper-before.log`. The wrapper execution's filter also contained `^TestIdentityRealIssued`, which matched no test; T12 was then explicitly run with its actual function name in the second command above. No skipped or unmatched selection is counted as T12 evidence. Unchanged-layer evidence below remains applicable; complete common integration is the assigned QA runner's separate gate.
+
+## Resolution assessment at a119d174
+
+Independently inspected the integrated provider correction, root method/resolver/route census changes, SQL and generated query. Re-ran all seven reviewer-authored wire probes with the maintained go-oidc RP, own DB and Go1.26.5 race detector: **PASS**. This closes P1–P6 without new confirmed blocker/major in that delta. Findings below retain their initial-source behavior and severity as historical evidence, not current release defects.
+
+| Finding | Verified correction |
+|---|---|
+| P1 | Both discovery paths explicitly publish unsupported Request URI as false and authorization-response issuer support as true. Existing issuer success/error binding is retained. |
+| P2 | Discovery/JWKS reflect only exact active SPA origins in the issuer workspace, use `Vary: Origin`, omit credentials/wildcards, and preserve public no-Origin retrieval. Wrong, disabled, cross-workspace and malformed origins fail; token/UserInfo/revoke do not inherit public-document CORS. |
+| P3 | Consumed-code lookup locks exact workspace/client/code/redirect/S256 bindings; family revocation commits despite `invalid_grant`. Wrong client/secret/verifier/redirect/workspace cannot revoke the victim. Original and rotated access/refresh descendants fail after replay; replay/refresh race leaves no usable descendant and unrelated families survive. |
+| P4 | GET and bounded single-valued POST authorize share validators and 303 handling; query/body ambiguity, duplicate/malformed/oversize forms and unsupported media fail. Root resolver reads validated POST fields, preserves browser-only prompt=none behavior, quotas and bot denial; management still requires bearer. |
+| P5 | Optional `acr_values` preferences no longer error or synthesize ACR/AMR evidence. Duplicate/malformed parameters still fail. |
+| P6 | Unsupported `id_token_hint` is explicitly rejected before consent/code creation for both methods. No hint-based subject selection was introduced. |
+
+Additional narrow author regressions were independently executed at the same source, rather than accepted from the author's report: six provider test functions (POST positives/negatives, SPA origin boundaries, durable replay bindings, replay/refresh race and token-CORS isolation) and two root App test functions (GET/POST browser session resolver/route census and invalid forms), all **PASS** with `-race`. Commands and logs are recorded below. No common full regression was repeated because the unchanged protocol/client layers retain the original evidence and the affected integrations received focused checks.
+
+## Historical confirmed findings
 
 ### P1 — Major: discovery describes incompatible protocol capabilities
 
@@ -53,17 +85,17 @@ Reproduction: `TestProtocolReviewIDTokenHintValidation`; `/tmp/identity-v2-proto
 - Consent requires exact Origin, HttpOnly Secure per-request cookie, first-party bearer, atomic one-session bind and one-use hashed decision CSRF. Snapshot fixes client/workspace/redirect/scopes; account substitution/rebind/replay fail. Same-session return context is bounded, single-use and restricted to the consent route. Browser round-trip/manual UI QA remains a separate coordinator gate.
 - Refresh rotation locks the identified client/family, commits revocation on replay even on HTTP error, preserves absolute/idle/session/original-assurance deadlines and scope narrowing. Wrong-client refresh/revoke does not revoke the victim. Post-lock DB/application clocks constrain issuance and source policy versions; entitlement loss does not prevent user withdrawal. [RFC 9700 §4.14](https://www.rfc-editor.org/rfc/rfc9700.html#section-4.14).
 - Signing fixes RSA/RS256/kid, rejects weak/duplicate/config-confused keys, exposes only public JWK fields and pins issuer/audience. First-party HMAC, bot, provider opaque access/refresh and provider ID tokens have distinct parsing/authority paths. Rotation retains public verification keys via immutable operator snapshots; deployment must perform documented publish/activate/retire overlap. This review does not certify production key custody/rotation execution.
-- Added protobuf fields preserve prior numbers and authority comes from DB, not absent/attacker claims. Local refresh stays local, scoped refresh stays workspace-scoped, old local/bot/guest behavior with SSO off is covered only to the extent of selected App and client tests. Full historical-client builds, complete API/WS/RTC regression, PG17 and generated drift belong to the assigned QA runner and are not claimed here.
+- Added protobuf fields preserve prior numbers and authority comes from DB, not absent/attacker claims. Local refresh stays local, scoped refresh stays workspace-scoped, old local/bot/guest behavior with SSO off is covered only to the extent of selected App and client tests. Final T12 below adds actual issued-token REST/WS/RTC separation checks. Full historical-client builds, complete API/WS/RTC regression, PG17 and generated drift belong to the assigned QA runner and are not claimed here.
 
 ## Integrated RTC/DM delta assessment
 
 Source delta `479d99c8..fbaabf8a` incorporates RTC correction `7c9e0a81` and its root DM gate repair. Enumeration now streams room responses into bounded enforcement workers instead of waiting for all rooms; a serialized sweep and sorted-room cursor handle cancellation and slow prefixes. Local DM retains global local-authority/member checks and exact DM row type while requiring ViewRoom; workspace voice still requires Connect. No provider/session authority was widened by this delta.
 
-At `fbaabf8a`, with the same own DB/Redis and Go1.26.5, `go test -race -count=1 -run TestIdentity -v ./internal/rtc` passed 9 tests, and `go test -race -tags integration -count=1 -run '^TestIdentityRTCEnumerationLostRedisEvictsBeforeBarrierPreservesBAndDM$' -v ./internal/app` passed. Logs: `/tmp/identity-v2-protocol-rtc-delta.log`, `/tmp/identity-v2-protocol-rtc-app-delta.log`. This establishes the tested topology; the stated 30-second bound is measured for the supported fixture topology, not arbitrary overload. Final-SHA provider corrections and impact confirmation are still pending.
+At `fbaabf8a`, with the same own DB/Redis and Go1.26.5, `go test -race -count=1 -run TestIdentity -v ./internal/rtc` passed 9 tests, and `go test -race -tags integration -count=1 -run '^TestIdentityRTCEnumerationLostRedisEvictsBeforeBarrierPreservesBAndDM$' -v ./internal/app` passed. Logs: `/tmp/identity-v2-protocol-rtc-delta.log`, `/tmp/identity-v2-protocol-rtc-app-delta.log`. This establishes the tested topology; the stated 30-second bound is measured for the supported fixture topology, not arbitrary overload. RTC/DM production code is unchanged at `a119d174`; these targeted results remain applicable. The final `e0ff654c` delta leaves RTC/DM unchanged; final-SHA impact confirmation is recorded above.
 
 ## Evidence and reproduction
 
-Final review runs use Go **1.26.5 darwin/arm64**, PostgreSQL **18** in the original retained local harness, own `identity_protocol` DB on `127.0.0.1:57418`; App uses dedicated Redis DB10 on port57479 with `identity-protocol:review:` prefix and `TEST_RTC_REDIS_DB=10`. Provider/SSO/App fixtures create/drop unique child DBs. Initial Go1.27.1/independent disposable port59718 runs were superseded by these CI-aligned runs. Missing `identity_protocol`, absent Vitest dependencies and missing live-Keycloak env caused setup failures; each was corrected before final evidence.
+Review runs use Go **1.26.5 darwin/arm64**, PostgreSQL **18** in the original retained local harness, own `identity_protocol` DB on `127.0.0.1:57418`; App uses dedicated Redis DB10 on port57479 with `identity-protocol:review:` prefix and `TEST_RTC_REDIS_DB=10`. Provider/SSO/App fixtures create/drop unique child DBs. Initial Go1.27.1/independent disposable port59718 runs were superseded by these CI-aligned runs. Missing `identity_protocol`, absent Vitest dependencies and missing live-Keycloak env caused setup failures; each was corrected before final evidence.
 
 | SHA 479d99c8 check | Actual result |
 |---|---|
@@ -72,6 +104,16 @@ Final review runs use Go **1.26.5 darwin/arm64**, PostgreSQL **18** in the origi
 | Independent provider overlay, `-run TestProtocolReview` | maintained RP PASS; six finding probes FAIL as expected; no race report. |
 | Keycloak26.4.7 TLS live RP, `CALABA_KEYCLOAK_LIVE=1`, `-run TestKeycloakLiveRP` | PASS, eight subtests; only overlay alteration is fixture DB admission from `identity_keycloak` to own `identity_protocol`. |
 | `pnpm -F @calaba/desktop test src/main/auth.identity.test.ts src/main/ssoHandoff.test.ts src/main/deeplink.test.ts src/renderer/platform/web.identity.test.ts src/shared/ssoReturn.test.ts src/shared/identityOrigin.test.ts src/renderer/services/identity.test.ts` | PASS, 7 files / 136 tests; installed frozen lockfile with scripts disabled. |
+
+Provider correction evidence on `a119d174a8c887513e0cde7916f467bdc8b7cb47`, same environment:
+
+```sh
+go test -race -tags integration -overlay /tmp/identity-v2-protocol-overlay.json -count=1 -run TestProtocolReview -v ./internal/oauthprovider
+go test -race -tags integration -count=1 -run 'TestProviderPublicDocumentsSPACORS|TestProviderCodeReplayBindingsAndDurableRevocation|TestProviderCodeReplayRacesRefresh|TestProviderPublicDocumentRegistrationDoesNotWidenTokenCORS|TestProviderAuthorizationPOST' -v ./internal/oauthprovider
+go test -race -tags integration -count=1 -run '^TestIdentityProviderAuthorizationPOST' -v ./internal/app
+```
+
+All PASS; logs `/tmp/identity-v2-protocol-probes-accepted.log`, `/tmp/identity-v2-protocol-corrections.log`, `/tmp/identity-v2-protocol-corrections-app.log`. Overlay contains exactly the seven executable reviewer probes below; no production source is replaced.
 
 Raw local evidence: `/tmp/identity-v2-protocol-final.json`, `/tmp/identity-v2-protocol-app-final.json`, `/tmp/identity-v2-protocol-probes-final.log`, `/tmp/identity-v2-protocol-post.log`, `/tmp/identity-v2-protocol-minimum.log`, `/tmp/identity-v2-protocol-hint.log`, `/tmp/identity-v2-protocol-keycloak-final.log`, `/tmp/identity-v2-protocol-desktop.log`. These paths are ephemeral, so executable finding probes are included below. Report-only changes do not justify rerunning common lint/full integration; no visual suites, media or production mutations were run.
 
@@ -173,5 +215,49 @@ func TestProtocolReviewIDTokenHintValidation(t *testing.T) {
  q:=url.Values{"response_type":{"code"},"client_id":{c.Client.ClientId},"redirect_uri":{req.redirect},"scope":{"openid"},"state":{req.state},"nonce":{req.nonce},"code_challenge_method":{"S256"},"code_challenge":{base64.RawURLEncoding.EncodeToString(hash(req.verifier))},"id_token_hint":{"not-a-jwt"}}
  status,h,b:=f.wire("GET","/oidc/workspaces/"+f.ws.String()+"/authorize?"+q.Encode(),"",nil,"","")
  u,err:=url.Parse(h.Get("Location")); if status==303 && err==nil && u.Path=="/oauth/consent" {t.Fatalf("invalid ID-token hint ignored, request accepted: status=%d body=%s",status,b)}
+}
+```
+
+
+The additional independent wrapper probe can be reproduced by saving this as `/tmp/protocol_review_wrapper_test.go` and mapping virtual `apps/server/internal/app/protocol_review_wrapper_test.go` to it in the same overlay format above; run `-run '^TestProtocolReviewUserInfoBotWrapper$' ./internal/app` with the same dedicated database/Redis environment.
+
+```go
+//go:build integration
+package app
+
+import (
+ "encoding/json"
+ "net/http"
+ "net/http/httptest"
+ "testing"
+)
+
+func TestProtocolReviewUserInfoBotWrapper(t *testing.T) {
+ for _,tc:=range []struct{method,path,pattern string; status int; protocol bool}{
+  {"GET","/oidc/workspaces/test/userinfo","GET /oidc/workspaces/{workspace}/userinfo",401,true},
+  {"POST","/oidc/workspaces/test/userinfo","POST /oidc/workspaces/{workspace}/userinfo",401,true},
+  {"POST","/oidc/workspaces/test/token","POST /oidc/workspaces/{workspace}/token",403,true},
+  {"POST","/oidc/workspaces/test/revoke","POST /oidc/workspaces/{workspace}/revoke",403,true},
+  {"GET","/oidc/workspaces/test/authorize","GET /oidc/workspaces/{workspace}/authorize",403,true},
+  {"POST","/oidc/workspaces/test/authorize","POST /oidc/workspaces/{workspace}/authorize",403,true},
+  {"GET","/oidc/workspaces/test/jwks","GET /oidc/workspaces/{workspace}/jwks",403,true},
+  {"GET","/api/workspaces/test/oauth/clients","GET /api/workspaces/{workspace}/oauth/clients",403,false},
+  {"GET","/api/userinfo","GET /api/userinfo",403,false},
+ } {
+  t.Run(tc.method+tc.path,func(t *testing.T){
+   mux:=&routeRecorder{ServeMux:http.NewServeMux()}; reg:=identityRegistrar{mux:mux,enabled:true}
+   called:=false; reg.HandleFunc(tc.pattern,func(http.ResponseWriter,*http.Request){called=true})
+   req:=httptest.NewRequest(tc.method,tc.path,nil); req.Header.Set("Authorization","Bearer calab_bot_synthetic")
+   w:=httptest.NewRecorder(); mux.ServeHTTP(w,req)
+   if called {t.Fatal("bot reached feature handler")}; if w.Code!=tc.status {t.Fatalf("status %d want %d; %s",w.Code,tc.status,w.Body.String())}
+   if tc.protocol {
+    var body map[string]any; if err:=json.Unmarshal(w.Body.Bytes(),&body);err!=nil {t.Fatal(err)}
+    want:="access_denied"; if tc.status==401 {want="invalid_token"}
+    if body["error"]!=want || w.Header().Get("Cache-Control")!="no-store" || w.Header().Get("Pragma")!="no-cache" {t.Fatalf("protocol error/cache mismatch %v %v",body,w.Header())}
+   }
+   wantHeader:=""; if tc.status==401 {wantHeader=`Bearer error="invalid_token"`}
+   if got:=w.Header().Get("WWW-Authenticate");got!=wantHeader {t.Fatalf("WWW-Authenticate %q want %q",got,wantHeader)}
+  })
+ }
 }
 ```
