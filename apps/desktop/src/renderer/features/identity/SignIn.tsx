@@ -102,17 +102,17 @@ export function SsoButton({ workspaceId, purpose, onDone }: SsoStart & { onDone?
           <p role="status" className="text-body text-muted">
             {t('identity.waiting')}
           </p>
-          <Button variant="secondary" onClick={cancel}>
+          <Button className="self-end mobile:self-stretch" variant="secondary" onClick={cancel}>
             {t('identity.cancel')}
           </Button>
         </>
       ) : (
-        <Button busy={busy} onClick={() => void start()}>
+        <Button className={purpose === 'login' ? 'w-full' : 'self-end mobile:self-stretch'} busy={busy} onClick={() => void start()}>
           {t(label)}
         </Button>
       )}
       {busy ? (
-        <Button variant="ghost" onClick={cancel}>
+        <Button className="self-end mobile:self-stretch" variant="ghost" onClick={cancel}>
           {t('identity.cancel')}
         </Button>
       ) : null}
@@ -146,7 +146,7 @@ export function LocalReauth(): ReactNode {
         <Field label={t('identity.password')}>
           <PasswordInput autoComplete="current-password" value={password} onChange={(e) => setPassword(e.target.value)} />
         </Field>
-        <Button busy={busy} disabled={!password} onClick={() => void submit()}>
+        <Button className="self-end mobile:self-stretch" busy={busy} disabled={!password} onClick={() => void submit()}>
           {t('identity.reauth')}
         </Button>
         {message ? (
@@ -195,7 +195,7 @@ export function CorporateLogin({ serverUrl }: { serverUrl: string }): ReactNode 
             }}
           />
         </Field>
-        <Button variant="secondary" busy={busy} disabled={!slug.trim()} onClick={() => void find()}>
+        <Button className="self-end mobile:self-stretch" variant="secondary" busy={busy} disabled={!slug.trim()} onClick={() => void find()}>
           {t('identity.find')}
         </Button>
         {error ? (
@@ -244,6 +244,7 @@ export function SsoComplete(): ReactNode {
         <h1 className="text-title font-semibold">{t('identity.title')}</h1>
         <p role={error ? 'alert' : 'status'}>{error || t(complete ? 'identity.done' : 'identity.waiting')}</p>
         <Button
+          className="self-end mobile:self-stretch"
           onClick={() => {
             history.replaceState(null, '', '/');
             location.reload();
