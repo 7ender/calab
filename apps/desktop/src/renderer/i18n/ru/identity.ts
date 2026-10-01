@@ -1,4 +1,5 @@
 export const ruIdentity = {
+  'identity.settingsTitle': 'Настройка SSO',
   'identity.title': 'Корпоративный вход',
   'identity.slug': 'Адрес пространства',
   'identity.find': 'Найти пространство',

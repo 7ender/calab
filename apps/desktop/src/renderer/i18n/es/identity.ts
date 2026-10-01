@@ -1,6 +1,7 @@
 import type { ruIdentity } from '../ru/identity';
 import type { DictShape } from '../types';
 export const esIdentity: DictShape<typeof ruIdentity> = {
+  'identity.settingsTitle': 'Configuración de SSO',
   'identity.title': 'Inicio de sesión corporativo',
   'identity.slug': 'Dirección del espacio',
   'identity.find': 'Buscar espacio',

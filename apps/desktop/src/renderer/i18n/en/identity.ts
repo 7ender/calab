@@ -1,6 +1,7 @@
 import type { ruIdentity } from '../ru/identity';
 import type { DictShape } from '../types';
 export const enIdentity: DictShape<typeof ruIdentity> = {
+  'identity.settingsTitle': 'SSO settings',
   'identity.title': 'Corporate sign-in',
   'identity.slug': 'Workspace address',
   'identity.find': 'Find workspace',

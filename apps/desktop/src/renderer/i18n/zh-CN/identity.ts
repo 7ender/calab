@@ -1,6 +1,7 @@
 import type { ruIdentity } from '../ru/identity';
 import type { DictShape } from '../types';
 export const zhIdentity: DictShape<typeof ruIdentity> = {
+  'identity.settingsTitle': 'SSO 设置',
   'identity.title': '企业登录',
   'identity.slug': '工作区地址',
   'identity.find': '查找工作区',

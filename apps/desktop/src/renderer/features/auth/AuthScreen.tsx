@@ -163,7 +163,6 @@ function LoginScreen(): ReactNode {
         <div className="no-drag my-auto flex w-full max-w-[380px] shrink-0 flex-col items-stretch">
           <div className="mb-6 flex flex-col items-center text-center">
             <Logo size={72} className="mb-3" />
-            <h1 className="text-large font-semibold">Calab</h1>
           </div>
           <ForgotPassword
             initialEmail={email}
@@ -197,8 +196,7 @@ function LoginScreen(): ReactNode {
       <form onSubmit={(e) => void submit(e)} className="no-drag my-auto flex w-full max-w-[380px] shrink-0 flex-col items-stretch">
         <div className="mb-6 flex flex-col items-center text-center">
           <Logo size={72} className="mb-3" />
-          <h1 className="text-large font-semibold">Calab</h1>
-          <p className="mt-1 text-body text-muted">{mode === 'login' ? t('auth.welcomeSub') : t('auth.createSub')}</p>
+          <h1 className="text-body text-muted">{mode === 'login' ? t('auth.welcomeSub') : t('auth.createSub')}</h1>
         </div>
         <div className="mat-popover flex flex-col gap-5 rounded-[var(--radius-panel)] p-6">
           {codeFromLink ? (
