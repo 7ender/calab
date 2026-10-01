@@ -279,7 +279,7 @@ func New(d Deps) *App {
 				return httpx.Forbidden("account disabled")
 			}
 			if voice.IsDM(ws, room) {
-				if row.WorkspaceID != nil {
+				if row.WorkspaceID != nil || row.Type != "dm" {
 					return httpx.Forbidden("voice scope mismatch")
 				}
 				if err := authSvc.CheckGlobal(ctx, id, identitypolicy.GlobalRead); err != nil {
@@ -300,7 +300,11 @@ func New(d Deps) *App {
 			if err != nil {
 				return err
 			}
-			if !access.Bits.Has(perm.ViewRoom | perm.Connect) {
+			required := perm.ViewRoom
+			if !voice.IsDM(ws, room) {
+				required |= perm.Connect
+			}
+			if !access.Bits.Has(required) {
 				return httpx.Forbidden("missing voice access")
 			}
 			return nil
