@@ -127,6 +127,9 @@ func (s *Service) moveMember(w http.ResponseWriter, r *http.Request) error {
 	moved := 0
 	var apps []appMove
 	for _, st := range sess {
+		if err := s.checkIdentity(ctx, acc.WorkspaceID, dstID, st.UserID, st.SessionID); err != nil {
+			continue
+		}
 		identity := voice.Identity(st.UserID, st.SessionID)
 		prev := st
 		// Record the device in the target first: LiveKit may deliver participant_joined for

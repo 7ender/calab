@@ -343,6 +343,12 @@ type granted struct {
 // knock. It consumes one use of the link only when access or the knock actually changes.
 func (s *Service) grant(ctx context.Context, q *sqlc.Queries, row sqlc.GetRoomInviteByCodeRow, userID uuid.UUID) (granted, error) {
 	wsID, roomID := row.Workspace.ID, row.Room.ID
+	if _, err := q.LockOAuthWorkspace(ctx, wsID); err != nil {
+		return granted{}, err
+	}
+	if err := auth.CheckPublicCapability(ctx, q, wsID); err != nil {
+		return granted{}, err
+	}
 	member, err := q.GetMember(ctx, sqlc.GetMemberParams{WorkspaceID: wsID, UserID: userID})
 	isMember := err == nil
 	if err != nil && !db.IsNotFound(err) {

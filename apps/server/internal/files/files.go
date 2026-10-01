@@ -35,6 +35,7 @@ import (
 	"github.com/calaba/calaba/server/internal/db/sqlc"
 	"github.com/calaba/calaba/server/internal/events"
 	"github.com/calaba/calaba/server/internal/httpx"
+	"github.com/calaba/calaba/server/internal/identitypolicy"
 	"github.com/calaba/calaba/server/internal/notes"
 	"github.com/calaba/calaba/server/internal/pbconv"
 	"github.com/calaba/calaba/server/internal/perm"
@@ -651,7 +652,27 @@ func (s *Service) UploadAvatar(w http.ResponseWriter, r *http.Request, uid uuid.
 //   - a file attached to a live message: VIEW_ROOM in that room.
 func (s *Service) CanRead(r *http.Request, f sqlc.File) (bool, error) {
 	ctx := r.Context()
-	uid := auth.MustFromContext(ctx).UserID
+	id := auth.MustFromContext(ctx)
+	uid := id.UserID
+	if f.WorkspaceID == nil && id.Principal.Authority == identitypolicy.WorkspaceSSO && (r.Method == http.MethodGet || r.Method == http.MethodHead) {
+		image, err := s.db.Q.IsIdentityWorkspaceProfileImage(ctx, sqlc.IsIdentityWorkspaceProfileImageParams{WorkspaceID: id.Principal.WorkspaceID, FileID: &f.ID})
+		if err != nil {
+			return false, err
+		}
+		if image {
+			if err := perm.CheckAccess(ctx, id.Principal.WorkspaceID, uid); err != nil {
+				return false, err
+			}
+			return true, nil
+		}
+	}
+	ws := uuid.Nil
+	if f.WorkspaceID != nil {
+		ws = *f.WorkspaceID
+	}
+	if err := perm.CheckAccess(ctx, ws, uid); err != nil {
+		return false, err
+	}
 	if f.UploaderID == uid {
 		return true, nil
 	}

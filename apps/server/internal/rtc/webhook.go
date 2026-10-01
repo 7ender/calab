@@ -218,6 +218,9 @@ func (s *Service) participantJoined(ctx context.Context, wid, rid, uid, sid uuid
 			return nil
 		})
 	}
+	if err := s.checkIdentity(ctx, wid, rid, uid, sid); err != nil {
+		return reject("identity access denied")
+	}
 	if s.Revoked != nil {
 		if revoked, err := s.Revoked(ctx, sid); err != nil {
 			return err

@@ -139,6 +139,7 @@ func (p SyncPublisher) sync(wid uuid.UUID, ev *v1.DispatchEvent) {
 	case *v1.DispatchEvent_WorkspaceUpdate:
 		// A suspended workspace has no calls (item 32): everyone is disconnected; joining again
 		// is refused (403 WORKSPACE_SUSPENDED).
+		p.async(func(ctx context.Context) { p.S.resync(ctx, wid, func(voice.SessionState) bool { return true }) })
 		if e.WorkspaceUpdate.GetWorkspace().GetSuspension() != nil {
 			p.async(func(ctx context.Context) { p.S.disconnect(ctx, wid, func(voice.SessionState) bool { return true }) })
 		}
@@ -170,6 +171,11 @@ func (s *Service) resync(ctx context.Context, wid uuid.UUID, match func(voice.Se
 		}
 		room := voice.RoomName(wid, st.RoomID)
 		identity := voice.Identity(st.UserID, st.SessionID)
+		if err := s.checkIdentity(ctx, wid, st.RoomID, st.UserID, st.SessionID); err != nil {
+			s.removeIdentities(ctx, room, []string{identity})
+			s.dropPending(ctx, wid, st)
+			continue
+		}
 		acc, err := res.Room(ctx, st.RoomID, st.UserID)
 		if err != nil || !acc.Bits.Has(perm.ViewRoom|perm.Connect) {
 			s.removeIdentities(ctx, room, []string{identity})
@@ -214,6 +220,9 @@ func (s *Service) Reconcile(ctx context.Context) error {
 	if err := s.redis.Do(ctx, lock).Error(); err != nil {
 		return nil //nolint:nilerr // another instance holds the lock (or Redis is down)
 	}
+	if err := s.EnforceIdentity(ctx); err != nil {
+		return err
+	}
 	start := time.Now()
 	known, err := s.voice.Workspaces(ctx)
 	if err != nil {
@@ -255,6 +264,10 @@ func (s *Service) Reconcile(ctx context.Context) error {
 				present[p.Identity] = ref.rid
 				uid, sid, ok := voice.ParseIdentity(p.Identity)
 				if !ok {
+					continue
+				}
+				if err := s.checkIdentity(ctx, wid, ref.rid, uid, sid); err != nil {
+					s.removeIdentities(ctx, voice.RoomName(wid, ref.rid), []string{p.Identity})
 					continue
 				}
 				if !hasState(states, sid, ref.rid) {

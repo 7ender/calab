@@ -482,7 +482,11 @@ func (s *Service) Login(ctx context.Context, req *v1.LoginRequest, c Client) (*v
 	// Unverified (e.g. accounts from before ADR-0023): a fresh code with every sign-in,
 	// unless one was sent less than 60 s ago.
 	s.sendVerificationQuietly(ctx, user)
-	return &v1.LoginResponse{Tokens: tokens, Me: pbconv.Me(user)}, nil
+	me, err := pbconv.LocalMe(ctx, s.db.Q, user)
+	if err != nil {
+		return nil, err
+	}
+	return &v1.LoginResponse{Tokens: tokens, Me: me}, nil
 }
 
 // Refresh rotates the refresh token of a session. The previous token gets the same new pair
@@ -564,8 +568,7 @@ func (s *Service) refreshAuthority(ctx context.Context, req *v1.RefreshRequest, 
 			}
 		}
 		if authority == identitypolicy.WorkspaceSSO {
-			policy := &identitypolicy.Service{Loader: identitypolicy.NewSQLLoader(q, s.entitlements), Now: s.now}
-			d, err := policy.CheckWorkspace(ctx, p, ws, identitypolicy.WorkspaceRead)
+			d, err := s.checkWorkspaceDecision(ctx, q, Identity{UserID: p.UserID, SessionID: p.SessionID, Principal: p}, ws, identitypolicy.WorkspaceRead)
 			if err != nil {
 				return IdentityError(p, d, err)
 			}

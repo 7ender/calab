@@ -690,6 +690,12 @@ func (s *Service) today(w http.ResponseWriter, r *http.Request) error {
 	viewers := map[uuid.UUID]*viewer{}
 	var rows []occurrenceRow
 	for _, b := range bs {
+		if err := perm.CheckAccess(ctx, b.ev.WorkspaceID, id.UserID); err != nil {
+			if httpx.AsError(err).Status >= 500 {
+				return err
+			}
+			continue
+		}
 		if a, ok := b.attendee(id.UserID); ok && a.Status == StatusDeclined {
 			continue
 		}

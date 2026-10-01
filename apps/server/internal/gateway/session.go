@@ -7,6 +7,7 @@ import (
 	"sync/atomic"
 	"time"
 
+	"github.com/calaba/calaba/server/internal/identitypolicy"
 	"github.com/google/uuid"
 	"google.golang.org/protobuf/encoding/protowire"
 	"google.golang.org/protobuf/proto"
@@ -21,10 +22,11 @@ const bufferQueue = 512
 // encEvent is a DispatchEvent marshalled at most once per instance, however many sessions
 // receive it (security review M13); each session only prepends its op and seq.
 type encEvent struct {
-	ev   *v1.DispatchEvent
-	once sync.Once
-	b    []byte
-	err  error
+	workspace uuid.UUID
+	ev        *v1.DispatchEvent
+	once      sync.Once
+	b         []byte
+	err       error
 }
 
 func newEnc(ev *v1.DispatchEvent) *encEvent { return &encEvent{ev: ev} }
@@ -75,6 +77,7 @@ type pauseMark struct{ _ byte }
 // up to resumeWindow.
 type Session struct {
 	id, user, asess uuid.UUID
+	principal       identitypolicy.Principal
 	bot             bool       // a bot token (ADR-0031): no read receipts (docs/09 #92)
 	client          clientInfo // Identify.device (docs/09 #143); set before register, then read-only
 	hub             *Hub
@@ -209,6 +212,9 @@ func (s *Session) dispatch(id uuid.UUID, ev *v1.DispatchEvent) { s.dispatchEnc(i
 
 // dispatchEnc delivers a (shared) encoded event, deduplicated by event id.
 func (s *Session) dispatchEnc(id uuid.UUID, enc *encEvent) {
+	if s.hub != nil && s.hub.auth != nil && !s.allowsEvent(enc) {
+		return
+	}
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	if s.dead || s.seen(id) {
@@ -224,7 +230,7 @@ func (s *Session) dispatchEnc(id uuid.UUID, enc *encEvent) {
 // emit assigns the next seq, buffers the frame and sends it (an ephemeral event: sends only,
 // without a seq); s.mu must be held.
 func (s *Session) emit(id uuid.UUID, enc *encEvent) {
-	if s.dead {
+	if s.dead || (s.hub != nil && s.hub.auth != nil && !s.allowsEvent(enc)) {
 		return
 	}
 	payload, err := enc.bytes()
@@ -242,7 +248,7 @@ func (s *Session) emit(id uuid.UUID, enc *encEvent) {
 	}
 	s.seq++
 	bin := frameBytes(s.seq, payload)
-	if !s.enqueue(entry{id: id, seq: s.seq, frame: bin}) {
+	if !s.enqueue(entry{id: id, seq: s.seq, frame: bin, workspace: enc.workspace, identityFormat: true}) {
 		s.broken.Store(true)
 	}
 	eventsDispatched.Inc()
