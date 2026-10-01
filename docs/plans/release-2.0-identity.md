@@ -43,13 +43,20 @@ manage_directory, bootstrap_link, recover_policy`. Нулевое значени
 DB/proto владелец материализует эти поля в типизированный Go-контракт и фиксирует
 экспортируемые signatures до запуска consumers; строковые самодельные DTO запрещены.
 
-Порядок проверки: живая session → authority scope → workspace exists/not suspended →
+Порядок проверки: живая session → authority scope → workspace exists/suspension gate →
 membership/not banned → directory status/freshness для managed member → entitlement
 для feature operation → policy/assurance → существующие permissions/ACL ресурса.
 У guest/bot отдельная категория: они не проходят человеческий bootstrap/OAuth;
 боты используют прежние permissions и дополнительно workspace suspension. Guest при
 enforced не допускается независимо от приглашения. Recovery не проходит read/mutate/
 realtime/rtc/oauth; только recover_policy. При неизвестном состоянии зависимостей — отказ.
+
+Suspension gate сохраняет прежнее read-only поведение только для local_account в
+текущей off/optional policy: WorkspaceRead проходит остальные gates и ACL, включая
+member suspension и directory freshness. Passive gateway/READY/replay используют read,
+но publication (Realtime/TYPING), mutations, RTC, OAuth и identity management запрещены.
+Enforced/scoped/recovery/bot не получают исключение; GET/HEAD не подменяют mutating method.
+См. ADR-0056 и точное уточнение §13.
 
 `workspace_sso(A)` не может обратиться к B, `/api/admin/*`, глобальным credentials,
 session administration, DM, notes, созданию других workspace и агрегатам вне A.
@@ -460,6 +467,21 @@ Native redirects и системный браузер — [RFC 8252](https://www
 Остальные источники — в ADR-0054. Таблицы сроков/ACL/entitlements — выбранный профиль Calaba.
 
 ## 13. Уточнения ведущего при интеграции (2026-10-01)
+
+### Приостановленный workspace: сохранение прежнего чтения
+
+Решение лида: общий запрет suspension уточняется по ADR-0056. Только живой
+local_account в текущем off/optional workspace сохраняет чтение metadata/history/
+members и passive gateway/READY/replay по прежним ACL. Это не ранний allow: membership/
+ban, member suspension, directory status/freshness, policy/entitlement versions и все
+существующие permission checks обязательны. Enforced/workspace_sso/recovery запрещены.
+Приёмные gateway leases и READY resolver используют WorkspaceRead с прежним ≤30s
+и final socket/replay check. SUBSCRIBE только меняет receive subscription; TYPING
+отдельно требует свежего Realtime допуска вне locks. Запись, RTC, OAuth issuance/
+UserInfo, identity management и realtime publication остаются закрыты при suspension.
+HTTP exception применяется только к read classification (GET/HEAD), не к mutate.
+Это восстановление preexisting read-only suspension semantics docs/04, не ослабление
+identity/ACL или изменение утверждений legacy TestWorkspaceSuspension.
 
 ### Совместимость гостевого admission и локальных событий
 

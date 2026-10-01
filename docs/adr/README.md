@@ -59,3 +59,5 @@
 | [0053](0053-workspace-app-full-height.md) | Веб-приложение на всю доступную высоту и во время звонка: нижний островок скрыт, нативное скругление 12 px, подсказки учитываются при расчёте перекрытий; уточняет 0050 | принято |
 | [0054](0054-workspace-identity.md) | Workspace identity: корпоративный OIDC SSO, LDAPS lifecycle и OAuth/OIDC provider с общей границей доверия и отдельными токенами | решение для реализации 2.0; проверки не завершены |
 | [0055](0055-scoped-session-reauthentication.md) | Same-session повторная SSO-аутентификация для OAuth consent без расширения authority или срока сессии | принято; проверки не завершены |
+
+| [0056](0056-suspended-workspace-read-compatibility.md) | Сохранение прежнего чтения suspended workspace для local_account off/optional; passive gateway отдельно от публикации | принято лидом; проверки не завершены |
