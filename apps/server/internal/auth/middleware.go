@@ -8,6 +8,7 @@ import (
 	"strings"
 
 	"github.com/calaba/calaba/server/internal/httpx"
+	"github.com/calaba/calaba/server/internal/identitypolicy"
 )
 
 type ctxKey struct{}
@@ -111,6 +112,13 @@ func (s *Service) AuthenticateToken(ctx context.Context, tok string) (Identity, 
 	if err := s.checkSession(ctx, id.SessionID); err != nil {
 		return Identity{}, err
 	}
+	liveSessions.mu.Lock()
+	p := liveSessions.principals[id.SessionID]
+	liveSessions.mu.Unlock()
+	if p.UserID != id.UserID || !identitypolicy.CheckSession(s.now(), p).Allowed {
+		return Identity{}, ErrInvalidToken
+	}
+	id.Principal = p
 	// The pair this token came with has arrived: its previous refresh token is reuse now.
 	s.markGenUsed(ctx, id)
 	return id, nil
