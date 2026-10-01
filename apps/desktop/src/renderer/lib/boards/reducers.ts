@@ -104,6 +104,11 @@ export function setBoardTasks(d: BoardsData, boardId: string, list: readonly Tas
   return { tasks, roomTask, columns: { ...d.columns, [boardId]: cols } };
 }
 
+/** An unread task counted by the «Мои задачи» badge: open (not completed / cancelled). */
+export function countsUnread(t: Task): boolean {
+  return t.unread && !t.completedAt;
+}
+
 /** subscribed / muted / unread are meaningful only with viewer_state (boards.proto). */
 function keepViewer(prev: Task | undefined, t: Task): Task {
   if (t.viewerState || !prev) return t;
@@ -121,10 +126,9 @@ export function upsertTask(d: BoardsData, task: Task): Partial<BoardsData> {
   const next = keepViewer(prev, task);
   const out: Partial<BoardsData> = { tasks: { ...d.tasks, [task.id]: next } };
   if (next.roomId && d.roomTask[next.roomId] !== next.id) out.roomTask = { ...d.roomTask, [next.roomId]: next.id };
-  if (task.viewerState) {
-    const was = !!d.unread[task.id];
-    if (was !== next.unread) out.unread = next.unread ? { ...d.unread, [task.id]: next.workspaceId } : without(d.unread, task.id);
-  }
+  // The badge counts what «Мои задачи» lists: open tasks only (a closed one keeps its own mark).
+  const counts = countsUnread(next);
+  if ((task.viewerState || next.completedAt) && !!d.unread[task.id] !== counts) out.unread = counts ? { ...d.unread, [task.id]: next.workspaceId } : without(d.unread, task.id);
   const cols = d.columns[next.boardId];
   const moved = !prev || prev.statusId !== next.statusId || prev.position !== next.position || prev.boardId !== next.boardId;
   if (moved) {

@@ -50,4 +50,16 @@ describe('board reducers', () => {
     expect(broadcast.tasks['a']?.unread).toBe(true);
     expect(broadcast.unread['a']).toBe('w1');
   });
+
+  it('the badge counts open unread tasks only: a closed one leaves it and keeps its own mark', () => {
+    const d = loaded();
+    const mine = { ...d, ...upsertTask(d, { ...(d.tasks['a'] as Task), subscribed: true, unread: true, viewerState: true }) };
+    expect(mine.unread['a']).toBe('w1');
+    const done = { ...mine, ...upsertTask(mine, { ...(mine.tasks['a'] as Task), viewerState: false, unread: false, completedAt: timestampFromMs(1) }) };
+    expect(done.unread['a']).toBeUndefined();
+    expect(done.tasks['a']?.unread).toBe(true);
+    const notice = { ...d, ...upsertTask(d, { ...(d.tasks['b'] as Task), unread: true, viewerState: true, completedAt: timestampFromMs(1) }) };
+    expect(notice.unread['b']).toBeUndefined();
+    expect(notice.tasks['b']?.unread).toBe(true);
+  });
 });

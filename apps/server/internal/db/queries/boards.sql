@@ -426,10 +426,12 @@ WITH old AS (
 SELECT coalesce((SELECT old.unread FROM old), false)::boolean;
 
 -- name: UnreadTaskIDs :many
--- Tasks with something unseen for the user on live boards of the workspace (≤ 999); the caller
--- keeps those on boards the user sees.
+-- Open tasks with something unseen for the user on live boards of the workspace (≤ 999); the
+-- caller keeps those on boards the user sees. Closed ones are left out: the badge counts what
+-- «Мои задачи» lists (GET /api/me/tasks?open=1), a closed task keeps its own unread mark.
 SELECT t.id, t.board_id FROM task_subscribers s
 JOIN tasks t ON t.id = s.task_id AND t.archived_at IS NULL
+JOIN board_statuses st ON st.id = t.status_id AND st.type NOT IN ('completed', 'cancelled')
 JOIN boards b ON b.id = t.board_id AND b.archived_at IS NULL AND b.workspace_id = sqlc.arg('workspace_id')
 WHERE s.user_id = sqlc.arg('user_id') AND s.notified_at IS NOT NULL AND (s.seen_at IS NULL OR s.notified_at > s.seen_at)
 ORDER BY s.notified_at DESC
