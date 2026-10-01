@@ -263,7 +263,9 @@ logout/dynamic registration/pairwise/offline_access. `state` и `nonce` обяз
 в профиле Calaba, ≤512 байт. `prompt=login`/max_age требуют подтверждённой новой auth,
 не refresh; `prompt=none` возвращает login_required/consent_required/interaction_required
 при отсутствии доказательств, не открывает UI. `prompt=consent` требует нового согласия.
-Неподдерживаемые request/request_uri/claims явно отклоняются без fetch.
+Неподдерживаемые request/request_uri/claims/id_token_hint явно отклоняются без fetch.
+`id_token_hint` не используется для входа или выбора subject и не игнорируется с
+успешным продолжением: текущий профиль не реализует проверку hint по OIDC Core §3.1.2.2.
 `acr_values` принимается как необязательное предпочтение; неподдерживаемые значения
 игнорируются согласно минимальному требованию OIDC Core §15.1, без ошибки только
 из-за наличия параметра и без выдачи неподтверждённых `acr`/`amr` или обещания MFA.
