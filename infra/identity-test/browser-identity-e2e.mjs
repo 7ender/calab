@@ -1,5 +1,5 @@
-// Production web bundle + App + real TLS Keycloak. The only intercepted URL is
-// this run's synthetic downstream relying-party callback; no API is mocked.
+// Production web bundle + App + real TLS Keycloak and
+// this run's real local TLS relying-party callback; no requests or API are mocked.
 import assert from 'node:assert/strict';
 import { createHash, createPublicKey, randomBytes, verify } from 'node:crypto';
 import { createRequire } from 'node:module';
@@ -12,8 +12,10 @@ for await (const chunk of process.stdin) input += chunk;
 const f = JSON.parse(input);
 assert.equal(new URL(f.origin).hostname, '127.0.0.1');
 assert.equal(new URL(f.issuer).pathname, '/realms/identity.test');
-const callback = `https://rp.identity.test/${f.runID}/callback`;
-const callbackRoute = new RegExp(`^https://rp\\.identity\\.test/${f.runID}/callback(?:\\?.*)?$`);
+const rpOrigin = new URL(f.rpOrigin);
+assert.equal(rpOrigin.protocol, 'https:');
+assert.equal(rpOrigin.hostname, '127.0.0.1');
+const callback = `${rpOrigin.origin}/${f.runID}/callback`;
 const clientID = `calaba-browser-${f.runID}`;
 const upstreamSecret = randomBytes(32).toString('base64url');
 const kcUser = `browser-${f.runID}`;
@@ -82,7 +84,7 @@ async function ssoHTTP(purpose, token, flowPage = page, flowContext = context) {
  return result;
 }
 async function createRP(workspace, token) {
- const result = await api('POST', `/api/workspaces/${workspace}/oauth/clients`, token, { name: `Browser RP ${workspace.slice(0, 8)}`, type: 'OAUTH_CLIENT_TYPE_PUBLIC_SPA', redirectUris: [callback], allowedOrigins: ['https://rp.identity.test'], scopes: ['openid', 'profile', 'email'] }, 201);
+ const result = await api('POST', `/api/workspaces/${workspace}/oauth/clients`, token, { name: `Browser RP ${workspace.slice(0, 8)}`, type: 'OAUTH_CLIENT_TYPE_PUBLIC_SPA', redirectUris: [callback], allowedOrigins: [rpOrigin.origin], scopes: ['openid', 'profile', 'email'] }, 201);
  return result.client;
 }
 async function consentJourney(workspace, client, token, proof, journeyPage = page, journeyContext = context, scoped = false) {
@@ -95,7 +97,11 @@ async function consentJourney(workspace, client, token, proof, journeyPage = pag
  const issuer = `${f.origin}/oidc/workspaces/${workspace}`;
  const args = new URLSearchParams({ client_id: client.clientId, redirect_uri: callback, response_type: 'code', scope: 'openid profile email', state, nonce, code_challenge: createHash('sha256').update(verifier).digest('base64url'), code_challenge_method: 'S256', prompt: 'login' });
  let captured, authenticatedAt;
- await page.route(callbackRoute, async route => { captured = new URL(route.request().url()); await route.fulfill({ status: 200, contentType: 'text/plain', body: 'Synthetic relying-party callback received' }); });
+ const capture = request => {
+  const target = new URL(request.url());
+  if (request.isNavigationRequest() && target.origin === rpOrigin.origin && target.pathname === new URL(callback).pathname) captured = target;
+ };
+ page.on('request', capture);
  // prompt=login requires authentication after request creation even while the
  // ordinary workspace read summary is ALLOWED. No fixture proof timestamps change.
  await new Promise(r => setTimeout(r, 1100));
@@ -133,7 +139,7 @@ async function consentJourney(workspace, client, token, proof, journeyPage = pag
  await page.getByRole('button', { name: 'Allow', exact: true }).waitFor();
  await page.getByTestId('oauth-consent').getByText(client.name, { exact: true }).waitFor();
  await page.getByRole('button', { name: 'Allow', exact: true }).click();
- await page.waitForURL(u => u.origin === 'https://rp.identity.test');
+ await page.waitForURL(u => u.origin === rpOrigin.origin);
  assert(captured);
  assert.equal(captured.searchParams.get('state'), state);
  assert.equal(captured.searchParams.get('iss'), issuer);
@@ -144,7 +150,7 @@ async function consentJourney(workspace, client, token, proof, journeyPage = pag
  assert(tokens.access_token && tokens.id_token);
  // Fetch from the registered RP document: APIRequestContext does not enforce
  // browser CORS and cannot prove SPA discovery/JWKS interoperability.
- assert.equal(new URL(page.url()).origin, 'https://rp.identity.test');
+ assert.equal(new URL(page.url()).origin, rpOrigin.origin);
  const publicMetadata = await page.evaluate(async issuer => {
   const options = { mode: 'cors', credentials: 'omit', redirect: 'error' };
   const discovery = await fetch(`${issuer}/.well-known/openid-configuration`, options);
@@ -187,7 +193,7 @@ async function consentJourney(workspace, client, token, proof, journeyPage = pag
  await jsonResponse(await context.request.post(`${issuer}/token`, { form: exchange }), 400, 'code replay denied');
  const revoke = await context.request.post(`${issuer}/revoke`, { form: { client_id: client.clientId, token: tokens.access_token } }); assert.equal(revoke.status(), 200);
  const denied = await context.request.get(`${issuer}/userinfo`, { headers: { Authorization: `Bearer ${tokens.access_token}` } }); assert.equal(denied.status(), 401);
- await page.unroute(callbackRoute);
+ page.off('request', capture);
  checkpoint(`${proof} consent, same request, S256, browser discovery/JWKS CORS, independent JWKS verification, UserInfo and revoke`);
  return claims.sub;
 }
@@ -239,6 +245,7 @@ try {
  try {
   const scopedPage = await scopedContext.newPage();
   await scopedPage.goto(f.origin);
+  await scopedPage.getByRole('button', { name: 'Sign in with SSO', exact: true }).click();
   await scopedPage.getByLabel('Workspace address', { exact: true }).fill(f.slugA);
   await scopedPage.getByRole('button', { name: 'Find workspace', exact: true }).click();
   const installed = scopedPage.waitForResponse(r => r.url().endsWith('/api/auth/sso/finish')).then(r => jsonResponse(r, 200, 'scoped UI finish'));

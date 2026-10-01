@@ -202,7 +202,18 @@ func TestIdentityBrowserRealAppKeycloak(t *testing.T) {
 	defer cancel() // Stop background workers before fixture rows and Redis keys are removed.
 	server.StartTLS()
 	defer server.Close()
-	payload, _ := json.Marshal(map[string]string{"origin": origin, "workspaceA": a.String(), "workspaceB": b.String(), "slugA": "browser-" + a.String()[:18], "userID": uid.String(), "email": email, "password": password, "issuer": issuer, "runID": runID})
+	// A real loopback RP document preserves browser CORS checks without synthetic
+	// public-to-loopback navigation requiring a separate local-network permission.
+	rp := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/"+runID+"/callback" {
+			http.NotFound(w, r)
+			return
+		}
+		w.Header().Set("Content-Type", "text/plain")
+		_, _ = w.Write([]byte("Synthetic relying-party callback received"))
+	}))
+	defer rp.Close()
+	payload, _ := json.Marshal(map[string]string{"origin": origin, "rpOrigin": rp.URL, "workspaceA": a.String(), "workspaceB": b.String(), "slugA": "browser-" + a.String()[:18], "userID": uid.String(), "email": email, "password": password, "issuer": issuer, "runID": runID})
 	script := required("IDENTITY_BROWSER_SCRIPT")
 	// #nosec G204 -- Opt-in fixture entrypoint from the trusted runner environment, never HTTP input.
 	command := exec.CommandContext(ctx, "node", script)

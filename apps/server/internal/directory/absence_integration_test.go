@@ -32,7 +32,7 @@ func TestDirectoryFirstAbsenceRevokesManagedAccess(t *testing.T) {
 		{`UPDATE workspace_identity_policies SET mode='enforced' WHERE workspace_id=$1`, []any{f.ws}},
 		{`INSERT INTO oauth_clients(id,workspace_id,client_id,name,client_type,auth_method) VALUES($1,$2,$3,'Fixture','public_native','none')`, []any{client, f.ws, client.String()}},
 		{`INSERT INTO oauth_consents(id,workspace_id,user_id,client_id,scopes) VALUES($1,$2,$3,$4,ARRAY['openid'])`, []any{consent, f.ws, f.user, client}},
-		{`INSERT INTO oauth_grants(id,workspace_id,user_id,client_id,consent_id,session_id,scopes,issuer,client_version,consent_version,policy_version,access_version,entitlement_version,session_version,authenticated_at,expires_at,idle_expires_at) VALUES($1,$2,$3,$4,$5,$6,ARRAY['openid'],'https://directory.test',1,1,1,1,1,1,clock_timestamp(),clock_timestamp()+interval '1 hour',clock_timestamp()+interval '1 hour')`, []any{grant, f.ws, f.user, client, consent, f.session}},
+		{`WITH fixture_time AS MATERIALIZED (SELECT clock_timestamp() AS issued_at) INSERT INTO oauth_grants(id,workspace_id,user_id,client_id,consent_id,session_id,scopes,issuer,client_version,consent_version,policy_version,access_version,entitlement_version,session_version,authenticated_at,expires_at,idle_expires_at) SELECT $1,$2,$3,$4,$5,$6,ARRAY['openid'],'https://directory.test',1,1,1,1,1,1,issued_at,issued_at+interval '1 hour',issued_at+interval '1 hour' FROM fixture_time`, []any{grant, f.ws, f.user, client, consent, f.session}},
 	}
 	for _, fixture := range fixtures {
 		if _, err := d.Pool.Exec(ctx, fixture.sql, fixture.args...); err != nil {

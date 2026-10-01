@@ -211,7 +211,11 @@ func TestIdentityProviderUserInfoQuotaAcrossMethodsAndTokens(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	until := time.Now().Add(5 * time.Minute)
+	// Token rows enforce their TTL against the database clock, not the host clock.
+	var until time.Time
+	if err = testDB.Pool.QueryRow(ctx, "SELECT clock_timestamp() + interval '5 minutes'").Scan(&until); err != nil {
+		t.Fatal(err)
+	}
 	grant, err := testDB.Q.CreateOAuthGrant(ctx, sqlc.CreateOAuthGrantParams{WorkspaceID: ws, UserID: uid, ClientID: cid, ConsentID: consent.ID, SessionID: f.scopedSession.ID, Scopes: []string{"openid"}, ClientVersion: 1, ConsentVersion: consent.Version, PolicyVersion: state.Policy.Version, AccessVersion: state.AccessVersion, SessionVersion: state.Principal.Version, AuthenticatedAt: state.Assurance.AuthenticatedAt, AssuranceExpiresAt: &state.Assurance.ValidUntil, ExpiresAt: until, IdleExpiresAt: until, EntitlementVersion: state.EntitlementVersion, Issuer: "https://app.example.com/oidc/workspaces/" + ws.String()})
 	if err != nil {
 		t.Fatal(err)
