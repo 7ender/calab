@@ -4,8 +4,10 @@ This is a narrow rerunnable acceptance harness for ADR-0054 and the 2.0 contract
 including consent continuation in specification commit `ff05248f` and the
 same-session scoped reauthentication decision ADR-0055/spec `a8adc34c`. It is a
 prerequisite to final QA, not release acceptance or a substitute for two independent
-security reviews. Production source used during development:
-`1b590b855051c74924dceecdf959235d3b1103c8`.
+security reviews. Initial production source was `1b590b855051c74924dceecdf959235d3b1103c8`.
+The required composed golden passed after integrating coordinator source
+`479d99c8f42ffe3c5f9be47d4dbb298fcbc2707a`, on clean merge commit
+`abbab7f395db3506dbe0f28b51d64ca2fd338b64`.
 
 Run from a clean checkout of the exact commit under review, after installing the
 locked dependencies (`pnpm install --frozen-lockfile --ignore-scripts`) and Chromium
@@ -62,31 +64,48 @@ Evidence logs contain source SHA, environment versions, working-tree status,
 harness hashes, bundle hash, build output and browser/test output in a printed
 per-run temporary directory. They contain no upstream codes or credentials.
 
-## Development evidence and current limitation
+## Verified evidence
 
-- Web build succeeded on production source `1b590b85`; bundle index SHA256
+On 2026-10-01 the explicit runner succeeded on clean SHA
+`abbab7f395db3506dbe0f28b51d64ca2fd338b64`, PostgreSQL 18 (57418),
+Valkey (57479, DB9), real TLS Keycloak **26.4.7** (57480), Node **22.15.0**,
+pnpm **10.17.0** and Go **1.26.5**. Command:
+
+```sh
+IDENTITY_TEST_HARNESS=/Users/macbook/orca/workspaces/Calaba/identity-v2-qa-env/tools/identity-test-env.sh \
+IDENTITY_BROWSER_EXPECTED_SHA=abbab7f395db3506dbe0f28b51d64ca2fd338b64 \
+infra/identity-test/browser-identity-e2e.sh 18
+```
+
+- Current-source web build passed; index SHA256
   `976f5ac6d101eda8ce2c090eaf0bbaf085a87341c4020ab62cc538fa77b856bc`.
-- `node --check`, `bash -n`, standalone Go compile and `go vet` succeeded.
-- Opt-in absent: standalone test SKIP observed, without contacting services.
-- Targeted `-race` run on PostgreSQL 18, Valkey DB9 and real TLS Keycloak 26.4.7
-  passes local consent + S256/JWKS/UserInfo/revoke, real control-plane/enforcement,
-  independent B, actual standalone scoped UI login/cookie/refresh/denial cases,
-  and local-account consent after explicit local reauth plus actual SSO return.
-- The required golden is pending the scoped same-session reauthentication fix;
-  `/tmp/identity-browser-target.log` reproduces STEP_UP begin HTTP 403 for the
-  live scoped session on `1b590b85`. This run must not be reported as passed.
+- Required `-race` browser/App/Keycloak test passed, **14.403 seconds**, no SKIP.
+- Local consent, local-account consent with both UI proofs, and scoped SSO consent
+  each passed the same-request/S256/independent JWKS/UserInfo/revoke journey.
+- Actual linking/test/activation/recovery/enforcement passed, including an
+  independent local session's A denial and preserved B access.
+- Actual standalone scoped UI login, secure scoped cookies/refresh, same-session
+  HTTP and UI step_up, unchanged authority/local proof/absolute session deadline,
+  and B/DM/global denials passed. HTTP step_up returned no new tokens.
+- Owned Keycloak user/client deletion and absence checks passed. Dedicated DB
+  users/workspaces/sessions and the run's Redis namespace were verified empty.
+- `node --check`, `bash -n`, standalone Go compile/`go vet`, and staged diff checks
+  passed. Opt-in absent SKIP was separately observed without contacting services.
 
-The coordinator clarified that provider `auth_time` follows authority: local
-accounts must complete local reauth for `prompt=login` even when read is ALLOWED.
-SSO never substitutes that local proof. The local golden now uses both actual UI
-actions and returns to the same saved consent request successfully. This is
-contract clarification, not a production bug or a weakened freshness check.
+Full logs, clean-checkout receipt, bundle and harness hashes:
+`/var/folders/s5/vkyz575x0m57vkwlpt4mv8nr0000gn/T/calaba-browser-evidence.i8wWtR/`.
+The runner's console receipt is also saved at `/tmp/identity-browser-final-run.log`.
+The synthetic run id was `d5ae5458-7304-412c-abfc-dd4397b5a0bd`.
 
-ADR-0055 permits live scoped same-session step_up; implementation is assigned to
-another worker. The new golden additionally asserts no tokens from HTTP step_up,
-actual scoped consent navigation, unchanged session id/authority/local proof and
-absolute refresh deadline, followed by B/DM/global denials and scoped logout.
-These dependent assertions remain required and failing until that fix is merged.
-No production edits, auth injection, proof timestamp mutation or mocked API
-response is hidden in the harness. Full server integration, visuals, Microsoft
-AD/AD FS and release/deployment checks are outside this artifact's evidence.
+The initial real journey exposed the scoped consent dead end. The coordinator
+specified ADR-0055 and integrated the scoped fix before the passing run. It also
+clarified that provider `auth_time` follows authority: local accounts must perform
+local reauth for `prompt=login` even when read is ALLOWED; SSO never substitutes
+local proof. Both real UI actions now preserve the saved consent request.
+
+This evidence is for the exact tested code/harness SHA above; the subsequent
+commit updates only this evidence document. Final QA must rerun the explicit
+runner on its own clean final SHA. PostgreSQL 17, full server integration, visual
+suites, Microsoft AD/AD FS and release/deployment checks were not run here.
+The broader release checks and two independent final reviews remain coordinator
+work; this passing narrow golden does not claim their completion.
