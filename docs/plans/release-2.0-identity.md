@@ -61,6 +61,21 @@ session administration, DM, notes, созданию других workspace и а
 expires_at,policy_version,connection_version)` выдаётся только успешным OIDC callback.
 Refresh/local password/recovery не создают и не продлевают assurance.
 
+Для обычного доступа corporate proof ≤1 часа. Для изменения connection/policy/directory,
+recovery kit и OAuth client/secret в enforced workspace нужна corporate proof ≤5 минут
+плюс local reauth ≤5 минут. Bootstrap первого test/link/recovery setup при off/optional
+не требует ещё не существующей assurance; включение enforced требует обеих свежих proofs.
+Recovery repair вместо этого проверяет собственный одноразовый recovery proof ≤10 минут.
+Optional local_account работает без SSO proof; workspace_sso всегда требует действующую
+assurance и SSO entitlement, даже если policy optional.
+
+Допускается уже подготовленный Foundation Go seam: `Evaluate(now, State, Operation)`,
+`Service.CheckWorkspace`, `Loader.LoadIdentityState(ctx,sessionID,userID,workspaceID)`,
+`CheckGlobal`, `CheckSession`, `RequireEntitlement`, `Principal/State/Decision/Versions`.
+Перед consumers Foundation публикует явное отображение операций выше в Go constants;
+оно не меняет семантику allow/deny. Постоянный on-prem grant не требует выдуманной даты
+окончания подписки; возвращаемый access lease всё равно имеет конечный valid_until.
+
 ## 3. Entitlement, политика, ошибки
 
 `identity_entitlements(workspace_id,feature,enabled,source,updated_by,updated_at)`:
