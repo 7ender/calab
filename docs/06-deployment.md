@@ -220,7 +220,7 @@ ACL SETUSER calab on >ПАРОЛЬ resetkeys resetchannels ~calab:* &calab:* db=
 и обоих security/protocol review. До их завершения выпуск заблокирован.
 
 1. На конечном SHA: scope/ADR сверены, нет blocker/major, генерация без drift,
-   обязательные CI checks и целевые PG18/17 проверки зелёные, один полный server
+   обязательные CI checks и целевые PG17 проверки зелёные, один полный server
    integration прогон и два независимых review подтверждены на этом SHA.
    Исторические результаты и skipped тесты не заменяют эти evidence.
 2. Оператор закрывает [preflight](plans/identity-v2-operator-preflight.md): источник
@@ -373,7 +373,7 @@ main кандидата `script-heads/cloud-infra` не содержит Calab/e
 
 Перед rollout — protected DB backup вместе с restorable keyrings/Vault version и
 проверка восстановления в отдельной БД. Миграция `00055` выполняется при старте
-API под advisory lock; требуются evidence PG18 и PG17 на конечном SHA. Старые
+API под advisory lock; требуются evidence PG17 на конечном SHA. Старые
 сессии становятся `local_account` без свежего `local_authenticated_at` и assurance:
 для linking/admin нужен повторный независимый локальный вход/reauth. Старый клиент
 не поддерживает scope/bootstrap/consent UX; обновить web/desktop до identity-пилота.

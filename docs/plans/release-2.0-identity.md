@@ -425,7 +425,7 @@ workspace — «Войти через организацию». Заблокир
 | T12 | Provider token не работает в Calaba REST/WS/RTC, Calaba/bot/ID token не работает в UserInfo |
 | T13 | revoke/client disable/ban/expiry немедленно закрывают UserInfo/refresh; sub stable within workspace и distinct across workspace |
 | T14 | DNS rebind/redirect/private IP/proxy/IPv6 bypass fail; AAD/key rotation/JWKS не раскрывают секрет |
-| T15 | Старый local login/refresh/bots/guests при SSO off не регрессируют; SQL/proto migrations PG17/18, no generated drift |
+| T15 | Старый local login/refresh/bots/guests при SSO off не регрессируют; SQL/proto migrations PG17, no generated drift |
 | T16 | Независимый RP проходит discovery+authorize+token+userinfo; fake IdP и реальные Entra/AD FS/AD результаты отмечены раздельно |
 
 QA route inventory обязан сопоставить каждый endpoint/WS/event/SFU путь конкретному

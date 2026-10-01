@@ -192,7 +192,7 @@ Neither option has been implemented or accepted here.
   require Kubernetes annotations/readiness plus later API/web version smoke.
 - `calab-api` has `MIGRATE_ON_START=true`; release migrations run under the
   application advisory lock. No production DB/migration state was inspected.
-  Require final-SHA PG17/18 migration/compatibility evidence and a protected DB
+  Require final-SHA PG17 migration/compatibility evidence and a protected DB
   backup before the first image rollout. Identity migration 00055's Down guard
   blocks enforced policy/live scoped sessions, but **does not prevent an image-only
   rollback**. Do not rerun a pre-identity `images` workflow or accept automatic
