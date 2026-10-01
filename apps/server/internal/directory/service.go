@@ -377,6 +377,9 @@ func (s *Service) publish(ctx context.Context, c sqlc.WorkspaceDirectory, run sq
 						status = "unmapped"
 					}
 				} else {
+					// Authoritative absence closes access on the first complete scan.
+					// A second scan only finalizes the durable deletion tombstone.
+					status = "disabled"
 					if missing < 2 {
 						missing++
 					}

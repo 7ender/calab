@@ -153,8 +153,8 @@ func TestDirectoryAtomicLifecycleAndStaleness(t *testing.T) {
 	f.ldap.mu.Unlock()
 	f.sync(t)
 	object := f.object(t)
-	if object.Status != "active" || object.MissingFullScans != 1 {
-		t.Fatal("deleted after single snapshot")
+	if object.Status != "disabled" || object.MissingFullScans != 1 {
+		t.Fatal("first authoritative absence did not suspend access before tombstone")
 	}
 	before, err := q.GetWorkspaceIdentityDirectory(ctx, f.ws)
 	if err != nil {
