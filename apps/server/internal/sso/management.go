@@ -46,16 +46,10 @@ func (s *Service) manage(ctx context.Context, q *sqlc.Queries, p identitypolicy.
 	if err != nil {
 		return st, err
 	}
-	if !identitypolicy.Evaluate(s.now(), st, identitypolicy.ManageSSO).Allowed {
-		return st, ErrDenied
+	if err := s.require(ctx, q, st, identitypolicy.ManageSSO); err != nil {
+		return st, err
 	}
 	return st, nil
-}
-
-func ownerTestAllowed(now time.Time, st identitypolicy.State) bool {
-	st.Policy.Mode = identitypolicy.Optional
-	st.Directory.Required = false
-	return identitypolicy.Evaluate(now, st, identitypolicy.ManageSSO).Allowed
 }
 
 // PutConnection updates credentials under CAS; immutable issuer changes create a fresh draft.
@@ -111,7 +105,7 @@ func (s *Service) PutConnection(ctx context.Context, p identitypolicy.Principal,
 				return err
 			}
 			if st.Policy.Mode == identitypolicy.Enforced && !st.RecoveryReady {
-				return ErrDenied
+				return denied(identitypolicy.RecentAuthRequired)
 			}
 			candidate.ID = previous.ID
 			candidate.Version = previous.Version + 1
@@ -162,27 +156,31 @@ func (s *Service) ActivateConnection(ctx context.Context, p identitypolicy.Princ
 		if err != nil {
 			return err
 		}
-		if !ownerTestAllowed(s.now(), st) {
-			return ErrDenied
+		if err := s.requireTest(ctx, q, st); err != nil {
+			return err
 		}
 		if st.Policy.Mode == identitypolicy.Enforced && !st.RecoveryReady {
-			return ErrDenied
+			return denied(identitypolicy.RecentAuthRequired)
+		}
+		now, clockErr := s.boundaryNow(ctx, q)
+		if clockErr != nil {
+			return clockErr
 		}
 		c, err := q.GetIdentityConnectionForUpdate(ctx, sqlc.GetIdentityConnectionForUpdateParams{WorkspaceID: ws, ID: connection})
-		if err != nil || c.Version != version || c.TestedVersion == nil || *c.TestedVersion != version || c.TestedAt == nil || !s.now().Before(c.TestedAt.Add(5*time.Minute)) {
-			return ErrChanged
+		if err != nil || c.Version != version || c.TestedVersion == nil || *c.TestedVersion != version || c.TestedAt == nil || !now.Before(c.TestedAt.Add(5*time.Minute)) {
+			return classified(err, ErrChanged)
 		}
 		evidence, err := q.GetRecentIdentityConnectionTest(ctx, sqlc.GetRecentIdentityConnectionTestParams{WorkspaceID: ws, ConnectionID: connection, UserID: &p.UserID, ConnectionVersion: version})
 		if err != nil {
-			return ErrDenied
+			return classified(err, denied(identitypolicy.ScopeDenied))
 		}
 		var proof completion
 		if s.open(evidence, "sso-completion", evidence.ResultBox, &proof) != nil || proof.UserID != p.UserID {
-			return ErrDenied
+			return denied(identitypolicy.ScopeDenied)
 		}
 		identity, err := q.GetExternalIdentity(ctx, sqlc.GetExternalIdentityParams{WorkspaceID: ws, ID: proof.IdentityID})
 		if err != nil || identity.UserID != p.UserID || identity.ConnectionID != connection || identity.Version != proof.Versions.Identity || identity.Status != "active" {
-			return ErrDenied
+			return classified(err, denied(identitypolicy.ScopeDenied))
 		}
 		all, err := q.ListIdentityConnections(ctx, ws)
 		if err != nil {
@@ -244,15 +242,20 @@ func (s *Service) SetPolicy(ctx context.Context, p identitypolicy.Principal, ws 
 		}
 		desired := mode(req.Mode)
 		if p.Authority == identitypolicy.Recovery {
-			if desired == identitypolicy.Enforced || !identitypolicy.Evaluate(s.now(), st, identitypolicy.RepairPolicy).Allowed {
-				return ErrDenied
+			if desired == identitypolicy.Enforced {
+				return denied(identitypolicy.ScopeDenied)
+			}
+			if err := s.require(ctx, q, st, identitypolicy.RepairPolicy); err != nil {
+				return err
 			}
 		} else {
-			if !identitypolicy.Evaluate(s.now(), st, identitypolicy.ManageSSO).Allowed {
-				return ErrDenied
+			if err := s.require(ctx, q, st, identitypolicy.ManageSSO); err != nil {
+				return err
 			}
-			if desired == identitypolicy.Enforced && !identitypolicy.EvaluateEnforcement(s.now(), st).Allowed {
-				return ErrDenied
+			if desired == identitypolicy.Enforced {
+				if err := s.requireEnforcement(ctx, q, st); err != nil {
+					return err
+				}
 			}
 		}
 		seconds := st.Policy.MaxAge / time.Second
@@ -276,8 +279,8 @@ func (s *Service) freshOwner(ctx context.Context, q *sqlc.Queries, p identitypol
 	if st.Policy.Mode == identitypolicy.Enforced {
 		fresh := st
 		fresh.Policy.MaxAge = 5 * time.Minute
-		if !identitypolicy.Evaluate(s.now(), fresh, identitypolicy.ManageSSO).Allowed {
-			return st, ErrDenied
+		if err := s.require(ctx, q, fresh, identitypolicy.ManageSSO); err != nil {
+			return st, err
 		}
 	}
 	return st, nil
@@ -293,7 +296,7 @@ func (s *Service) RecoveryKit(ctx context.Context, p identitypolicy.Principal, w
 		}
 		// Setup while off/optional is the recovery bootstrap; enforced still requires SSO.
 		if st.Principal.Authority != identitypolicy.LocalAccount || st.BuiltinRole != "owner" {
-			return ErrDenied
+			return denied(identitypolicy.ScopeDenied)
 		}
 		if _, err = q.DeleteIdentityRecoveryCodes(ctx, ws); err != nil {
 			return err
@@ -333,11 +336,14 @@ func (s *Service) Recover(ctx context.Context, p identitypolicy.Principal, ws uu
 		if err != nil {
 			return err
 		}
-		if st.Principal.Authority != identitypolicy.LocalAccount || !identitypolicy.Evaluate(s.now(), st, identitypolicy.RepairPolicy).Allowed {
-			return ErrDenied
+		if st.Principal.Authority != identitypolicy.LocalAccount {
+			return denied(identitypolicy.ScopeDenied)
+		}
+		if err := s.require(ctx, q, st, identitypolicy.RepairPolicy); err != nil {
+			return err
 		}
 		if _, err = q.ConsumeIdentityRecoveryCode(ctx, sqlc.ConsumeIdentityRecoveryCodeParams{WorkspaceID: ws, OwnerID: p.UserID, CodeHash: identitycrypto.Hash(code)}); err != nil {
-			return ErrDenied
+			return classified(err, denied(identitypolicy.ScopeDenied))
 		}
 		databaseNow, err := q.IdentityDatabaseNow(ctx)
 		if err != nil {
@@ -363,17 +369,21 @@ func (s *Service) Unlink(ctx context.Context, p identitypolicy.Principal, ws uui
 		if err != nil {
 			return err
 		}
-		if !identitypolicy.CheckGlobal(s.now(), st.Principal, identitypolicy.LinkIdentity, false).Allowed {
-			return ErrDenied
+		now, clockErr := s.boundaryNow(ctx, q)
+		if clockErr != nil {
+			return clockErr
+		}
+		if err := accessDecision(identitypolicy.CheckGlobal(now, st.Principal, identitypolicy.LinkIdentity, false)); err != nil {
+			return err
 		}
 		fresh := st
 		fresh.Policy.Mode = identitypolicy.Enforced
 		fresh.Policy.MaxAge = 5 * time.Minute
-		if !identitypolicy.Evaluate(s.now(), fresh, identitypolicy.WorkspaceRead).Allowed {
-			return ErrDenied
+		if err := s.require(ctx, q, fresh, identitypolicy.WorkspaceRead); err != nil {
+			return err
 		}
 		if st.BuiltinRole == "owner" && (st.Policy.Mode == identitypolicy.Enforced || !st.RecoveryReady) {
-			return ErrDenied
+			return denied(identitypolicy.ScopeDenied)
 		}
 		c, err := q.GetActiveIdentityConnection(ctx, ws)
 		if err != nil {
@@ -381,7 +391,7 @@ func (s *Service) Unlink(ctx context.Context, p identitypolicy.Principal, ws uui
 		}
 		identity, err := q.FindUserExternalIdentity(ctx, sqlc.FindUserExternalIdentityParams{WorkspaceID: ws, ConnectionID: c.ID, UserID: p.UserID})
 		if err != nil {
-			return ErrNotLinked
+			return classified(err, ErrNotLinked)
 		}
 		if _, err = q.SetExternalIdentityStatus(ctx, sqlc.SetExternalIdentityStatusParams{WorkspaceID: ws, ID: identity.ID, Status: "unlinked"}); err != nil {
 			return err
@@ -399,11 +409,61 @@ func (s *Service) Status(ctx context.Context, p identitypolicy.Principal, ws uui
 	if err != nil {
 		return nil, err
 	}
-	if !identitypolicy.CheckSession(s.now(), st.Principal).Allowed || !st.Member || st.Principal.Authority != identitypolicy.LocalAccount && st.Principal.WorkspaceID != ws {
-		return nil, ErrDenied
+	if err := s.live(ctx, s.DB.Q, st.Principal); err != nil {
+		return nil, err
+	}
+	if !st.Member {
+		return nil, denied(identitypolicy.MembershipRequired)
+	}
+	if st.Principal.Authority != identitypolicy.LocalAccount && st.Principal.WorkspaceID != ws {
+		return nil, denied(identitypolicy.ScopeDenied)
 	}
 	modes := map[identitypolicy.Mode]pb.IdentityPolicyMode{identitypolicy.Off: pb.IdentityPolicyMode_IDENTITY_POLICY_MODE_OFF, identitypolicy.Optional: pb.IdentityPolicyMode_IDENTITY_POLICY_MODE_OPTIONAL, identitypolicy.Enforced: pb.IdentityPolicyMode_IDENTITY_POLICY_MODE_ENFORCED}
 	out := &pb.GetWorkspaceIdentityResponse{Access: &pb.WorkspaceIdentityAccess{WorkspaceId: ws.String(), Mode: modes[st.Policy.Mode], PolicyVersion: uint64(max(st.Policy.Version, 0)), MembershipVersion: uint64(max(st.AccessVersion, 0))}}
+	decision, err := s.CheckDecision(ctx, s.DB.Q, st, identitypolicy.WorkspaceRead)
+	if err != nil {
+		return nil, err
+	}
+	reasons := map[identitypolicy.Reason]pb.IdentityAccessReason{
+		identitypolicy.Allowed:             pb.IdentityAccessReason_IDENTITY_ACCESS_REASON_ALLOWED,
+		identitypolicy.SSORequired:         pb.IdentityAccessReason_IDENTITY_ACCESS_REASON_SSO_REQUIRED,
+		identitypolicy.ScopeDenied:         pb.IdentityAccessReason_IDENTITY_ACCESS_REASON_SCOPE_DENIED,
+		identitypolicy.EntitlementRequired: pb.IdentityAccessReason_IDENTITY_ACCESS_REASON_ENTITLEMENT_REQUIRED,
+		identitypolicy.DirectoryStale:      pb.IdentityAccessReason_IDENTITY_ACCESS_REASON_DIRECTORY_DENIED,
+		identitypolicy.MembershipSuspended: pb.IdentityAccessReason_IDENTITY_ACCESS_REASON_SUSPENDED,
+		identitypolicy.WorkspaceSuspended:  pb.IdentityAccessReason_IDENTITY_ACCESS_REASON_SUSPENDED,
+	}
+	out.Access.Reason = reasons[decision.Reason]
+	if st.Principal.Authority == identitypolicy.Recovery {
+		out.Access.Reason = pb.IdentityAccessReason_IDENTITY_ACCESS_REASON_RECOVERY_ONLY
+	}
+	if decision.Allowed {
+		out.Access.ValidUntil = timestamppb.New(decision.ValidUntil)
+	}
+	out.Access.Entitlements = &pb.WorkspaceIdentityEntitlements{Version: uint64(max(st.EntitlementVersion, 0))}
+	now, err := s.boundaryNow(ctx, s.DB.Q)
+	if err != nil {
+		return nil, err
+	}
+	features := []struct {
+		feature identitypolicy.Feature
+		wire    pb.IdentityFeature
+	}{{identitypolicy.SSO, pb.IdentityFeature_IDENTITY_FEATURE_CORPORATE_SSO}, {identitypolicy.DirectorySync, pb.IdentityFeature_IDENTITY_FEATURE_DIRECTORY_SYNC}, {identitypolicy.OAuthProvider, pb.IdentityFeature_IDENTITY_FEATURE_OAUTH_PROVIDER}}
+	for _, f := range features {
+		grant := st.Grants[f.feature]
+		source := pb.IdentityGrantSource_IDENTITY_GRANT_SOURCE_UNSPECIFIED
+		switch grant.Source {
+		case "cloud_business":
+			source = pb.IdentityGrantSource_IDENTITY_GRANT_SOURCE_CLOUD_BUSINESS
+		case "onprem_enterprise":
+			source = pb.IdentityGrantSource_IDENTITY_GRANT_SOURCE_ONPREM_ENTERPRISE
+		}
+		item := &pb.IdentityEntitlement{Feature: f.wire, Source: source, Version: uint64(max(grant.Version, 0)), Enabled: identitypolicy.RequireEntitlement(now, ws, grant, f.feature).Allowed}
+		if !grant.ValidUntil.IsZero() {
+			item.ValidUntil = timestamppb.New(grant.ValidUntil)
+		}
+		out.Access.Entitlements.Grants = append(out.Access.Entitlements.Grants, item)
+	}
 	if st.Assurance != nil && !st.Assurance.Revoked {
 		out.Access.Assurance = &pb.WorkspaceAssurance{WorkspaceId: ws.String(), AuthenticatedAt: timestamppb.New(st.Assurance.AuthenticatedAt), ExpiresAt: timestamppb.New(st.Assurance.ValidUntil), PolicyVersion: uint64(max(st.Assurance.Versions.Policy, 0)), ConnectionVersion: uint64(max(st.Assurance.Versions.Connection, 0))}
 	}

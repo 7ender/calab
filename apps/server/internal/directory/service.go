@@ -42,17 +42,27 @@ func secretBinding(c sqlc.WorkspaceDirectory) identitycrypto.Binding {
 }
 func (s *Service) authorize(ctx context.Context, q *sqlc.Queries, p identitypolicy.Principal, ws uuid.UUID) error {
 	if _, err := q.LockOAuthWorkspace(ctx, ws); err != nil {
+		if db.IsNotFound(err) {
+			return &sso.AccessError{Decision: identitypolicy.Decision{Reason: identitypolicy.ScopeDenied}}
+		}
 		return err
 	}
 	if _, err := q.LockIdentityBoundary(ctx, sqlc.LockIdentityBoundaryParams{WorkspaceID: ws, UserID: p.UserID, SessionID: p.SessionID}); err != nil {
+		if db.IsNotFound(err) {
+			return &sso.AccessError{Decision: identitypolicy.Decision{Reason: identitypolicy.InvalidSession}}
+		}
 		return err
 	}
 	st, err := identitypolicy.NewSQLLoader(q, s.Identity.Edition).LoadIdentityState(ctx, p.SessionID, p.UserID, ws)
 	if err != nil {
 		return err
 	}
-	if !identitypolicy.Evaluate(s.now(), st, identitypolicy.ManageDirectory).Allowed {
-		return sso.ErrDenied
+	decision, clockErr := s.Identity.CheckDecision(ctx, q, st, identitypolicy.ManageDirectory)
+	if clockErr != nil {
+		return clockErr
+	}
+	if !decision.Allowed {
+		return &sso.AccessError{Decision: decision}
 	}
 	return nil
 }
