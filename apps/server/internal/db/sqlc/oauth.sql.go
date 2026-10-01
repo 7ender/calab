@@ -1327,6 +1327,55 @@ func (q *Queries) LockOAuthWorkspace(ctx context.Context, id uuid.UUID) (Workspa
 	return i, err
 }
 
+const narrowOAuthGrantScopes = `-- name: NarrowOAuthGrantScopes :one
+UPDATE oauth_grants SET scopes=$1
+WHERE workspace_id=$2 AND id=$3 AND client_id=$4
+AND $1::text[] <@ scopes AND 'openid'=ANY($1::text[])
+AND revoked_at IS NULL AND expires_at>clock_timestamp() AND idle_expires_at>clock_timestamp()
+RETURNING id, workspace_id, user_id, client_id, consent_id, session_id, scopes, issuer, client_version, consent_version, policy_version, access_version, entitlement_version, session_version, authenticated_at, assurance_expires_at, created_at, expires_at, idle_expires_at, revoked_at, revoked_reason
+`
+
+type NarrowOAuthGrantScopesParams struct {
+	Scopes      []string
+	WorkspaceID uuid.UUID
+	ID          uuid.UUID
+	ClientID    uuid.UUID
+}
+
+func (q *Queries) NarrowOAuthGrantScopes(ctx context.Context, arg NarrowOAuthGrantScopesParams) (OauthGrant, error) {
+	row := q.db.QueryRow(ctx, narrowOAuthGrantScopes,
+		arg.Scopes,
+		arg.WorkspaceID,
+		arg.ID,
+		arg.ClientID,
+	)
+	var i OauthGrant
+	err := row.Scan(
+		&i.ID,
+		&i.WorkspaceID,
+		&i.UserID,
+		&i.ClientID,
+		&i.ConsentID,
+		&i.SessionID,
+		&i.Scopes,
+		&i.Issuer,
+		&i.ClientVersion,
+		&i.ConsentVersion,
+		&i.PolicyVersion,
+		&i.AccessVersion,
+		&i.EntitlementVersion,
+		&i.SessionVersion,
+		&i.AuthenticatedAt,
+		&i.AssuranceExpiresAt,
+		&i.CreatedAt,
+		&i.ExpiresAt,
+		&i.IdleExpiresAt,
+		&i.RevokedAt,
+		&i.RevokedReason,
+	)
+	return i, err
+}
+
 const revokeOAuthClientSecrets = `-- name: RevokeOAuthClientSecrets :execrows
 UPDATE oauth_client_secrets SET revoked_at=clock_timestamp() WHERE workspace_id=$1 AND client_id=$2 AND revoked_at IS NULL
 `

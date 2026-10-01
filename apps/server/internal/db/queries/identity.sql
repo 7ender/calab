@@ -325,3 +325,24 @@ RETURNING *;
 -- name: TouchIdentityPolicy :one
 UPDATE workspace_identity_policies SET version=version+1,updated_at=clock_timestamp()
 WHERE workspace_id=$1 RETURNING *;
+
+-- name: GetIdentityMemberEligibility :one
+SELECT u.id AS user_id,(u.disabled_at IS NOT NULL OR u.is_guest OR u.is_bot)::boolean AS user_denied,
+(m.user_id IS NOT NULL)::boolean AS member,
+(COALESCE(a.status='suspended',false) OR EXISTS(SELECT FROM workspace_bans b WHERE b.workspace_id=w.id AND (b.user_id=u.id OR b.email=u.email)))::boolean AS suspended,
+COALESCE(a.version,1)::bigint AS access_version,
+(o.user_id IS NOT NULL)::boolean AS directory_required,
+COALESCE(o.status='active' AND d.disabled_at IS NULL AND d.last_success_at IS NOT NULL,false)::boolean AS directory_active,
+COALESCE(d.last_success_at+make_interval(secs=>d.max_staleness_seconds),'epoch'::timestamptz)::timestamptz AS directory_valid_until
+FROM users u JOIN workspaces w ON w.id=sqlc.arg('workspace_id')
+LEFT JOIN workspace_members m ON m.workspace_id=w.id AND m.user_id=u.id
+LEFT JOIN workspace_identity_access a ON a.workspace_id=w.id AND a.user_id=u.id
+LEFT JOIN workspace_directories d ON d.workspace_id=w.id
+LEFT JOIN directory_objects o ON o.workspace_id=w.id AND o.directory_id=d.id AND o.user_id=u.id
+WHERE u.id=sqlc.arg('user_id');
+
+-- name: LockIdentityBoundary :one
+SELECT s.id FROM workspaces w JOIN workspace_members m ON m.workspace_id=w.id
+JOIN users u ON u.id=m.user_id JOIN sessions s ON s.user_id=u.id
+WHERE w.id=sqlc.arg('workspace_id') AND u.id=sqlc.arg('user_id') AND s.id=sqlc.arg('session_id')
+FOR UPDATE OF w,u,m,s;

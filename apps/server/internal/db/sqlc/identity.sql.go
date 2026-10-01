@@ -1496,6 +1496,54 @@ func (q *Queries) GetIdentityLoginTransactionByState(ctx context.Context, stateH
 	return i, err
 }
 
+const getIdentityMemberEligibility = `-- name: GetIdentityMemberEligibility :one
+SELECT u.id AS user_id,(u.disabled_at IS NOT NULL OR u.is_guest OR u.is_bot)::boolean AS user_denied,
+(m.user_id IS NOT NULL)::boolean AS member,
+(COALESCE(a.status='suspended',false) OR EXISTS(SELECT FROM workspace_bans b WHERE b.workspace_id=w.id AND (b.user_id=u.id OR b.email=u.email)))::boolean AS suspended,
+COALESCE(a.version,1)::bigint AS access_version,
+(o.user_id IS NOT NULL)::boolean AS directory_required,
+COALESCE(o.status='active' AND d.disabled_at IS NULL AND d.last_success_at IS NOT NULL,false)::boolean AS directory_active,
+COALESCE(d.last_success_at+make_interval(secs=>d.max_staleness_seconds),'epoch'::timestamptz)::timestamptz AS directory_valid_until
+FROM users u JOIN workspaces w ON w.id=$1
+LEFT JOIN workspace_members m ON m.workspace_id=w.id AND m.user_id=u.id
+LEFT JOIN workspace_identity_access a ON a.workspace_id=w.id AND a.user_id=u.id
+LEFT JOIN workspace_directories d ON d.workspace_id=w.id
+LEFT JOIN directory_objects o ON o.workspace_id=w.id AND o.directory_id=d.id AND o.user_id=u.id
+WHERE u.id=$2
+`
+
+type GetIdentityMemberEligibilityParams struct {
+	WorkspaceID uuid.UUID
+	UserID      uuid.UUID
+}
+
+type GetIdentityMemberEligibilityRow struct {
+	UserID              uuid.UUID
+	UserDenied          bool
+	Member              bool
+	Suspended           bool
+	AccessVersion       int64
+	DirectoryRequired   bool
+	DirectoryActive     bool
+	DirectoryValidUntil time.Time
+}
+
+func (q *Queries) GetIdentityMemberEligibility(ctx context.Context, arg GetIdentityMemberEligibilityParams) (GetIdentityMemberEligibilityRow, error) {
+	row := q.db.QueryRow(ctx, getIdentityMemberEligibility, arg.WorkspaceID, arg.UserID)
+	var i GetIdentityMemberEligibilityRow
+	err := row.Scan(
+		&i.UserID,
+		&i.UserDenied,
+		&i.Member,
+		&i.Suspended,
+		&i.AccessVersion,
+		&i.DirectoryRequired,
+		&i.DirectoryActive,
+		&i.DirectoryValidUntil,
+	)
+	return i, err
+}
+
 const getIdentityNativeHandoff = `-- name: GetIdentityNativeHandoff :one
 SELECT id, transaction_id, ticket_hash, challenge, result_box, expires_at, consumed_at FROM identity_native_handoffs WHERE id = $1
 `
@@ -1770,6 +1818,26 @@ func (q *Queries) ListIdentityInvalidationsForUpdate(ctx context.Context, limit 
 		return nil, err
 	}
 	return items, nil
+}
+
+const lockIdentityBoundary = `-- name: LockIdentityBoundary :one
+SELECT s.id FROM workspaces w JOIN workspace_members m ON m.workspace_id=w.id
+JOIN users u ON u.id=m.user_id JOIN sessions s ON s.user_id=u.id
+WHERE w.id=$1 AND u.id=$2 AND s.id=$3
+FOR UPDATE OF w,u,m,s
+`
+
+type LockIdentityBoundaryParams struct {
+	WorkspaceID uuid.UUID
+	UserID      uuid.UUID
+	SessionID   uuid.UUID
+}
+
+func (q *Queries) LockIdentityBoundary(ctx context.Context, arg LockIdentityBoundaryParams) (uuid.UUID, error) {
+	row := q.db.QueryRow(ctx, lockIdentityBoundary, arg.WorkspaceID, arg.UserID, arg.SessionID)
+	var id uuid.UUID
+	err := row.Scan(&id)
+	return id, err
 }
 
 const markIdentityConnectionTested = `-- name: MarkIdentityConnectionTested :one
