@@ -617,7 +617,13 @@ backfill из email нет; изменение env/email отзывает legacy
 ### Загрузка операторской конфигурации
 
 Полностью отсутствующая identity-конфигурация сохраняет запуск старой инсталляции:
-маршруты зарегистрированы, но возвращают 503. Частичная/невалидная конфигурация
+SSO/directory/provider маршруты зарегистрированы, но возвращают 503. Локальный
+`POST /api/auth/local/reauth` — first-party password proof и работает независимо
+от этих keyrings: иначе legacy product admin теряет возможность обновить обязательный
+пятиминутный proof. Он сохраняет local bearer/current password, запрет bot/scoped/recovery,
+rate limit и точный непустой Origin из операторских `AllowedOrigins()` либо настроенного
+identity origin; никакого вывода origin из Host, wildcard или клиентской OAuth-регистрации.
+Частичная/невалидная конфигурация
 origin/keyrings/network policy запрещает startup. Edition/feature grants сами по себе
 не означают настроенный keyring. `IDENTITY_PUBLIC_ORIGIN` — exact HTTPS origin без
 path/query/fragment. `IDENTITY_ENCRYPTION_KEYS` — JSON kid→base64 AES-256 key;
