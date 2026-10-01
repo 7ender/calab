@@ -522,6 +522,14 @@ policy query не вызывает hook рекурсивно. Нельзя об�
 в транзакцию или держать lock при чтении upload/сетевых вызовах blob/LiveKit/SMTP.
 Внешняя подготовка выполняется до финального DB commit; события — после commit.
 Cross-workspace операции используют согласованный порядок locks или отдельные units.
+Обычные mutations используют совместимый shared admission lock, revokers — exclusive;
+изменения самих boundary rows выбирают exclusive заранее, без небезопасного upgrade.
+Совпадение lock protocol проверяется для всех policy/member/session/directory/grant/user
+revokers. Guard включается явно для классифицированного запроса, не для migrations/
+loaders/background jobs. Внешние эффекты, предоставляющие доступ, требуют durable
+outbox и повторной проверки dispatcher; уже выполненный remote effect не считается
+откатываемым вместе с DB. Barrier tests подтверждают оба порядка commit и независимый
+прогресс другого workspace.
 
 READY.identity_access содержит причины и версии закрытых пространств участника,
 но не их защищённые snapshots. UI очищает их caches/subscriptions/media, сохраняя
