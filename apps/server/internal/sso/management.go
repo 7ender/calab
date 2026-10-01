@@ -162,11 +162,11 @@ func (s *Service) ActivateConnection(ctx context.Context, p identitypolicy.Princ
 		if st.Policy.Mode == identitypolicy.Enforced && !st.RecoveryReady {
 			return denied(identitypolicy.RecentAuthRequired)
 		}
+		c, err := q.GetIdentityConnectionForUpdate(ctx, sqlc.GetIdentityConnectionForUpdateParams{WorkspaceID: ws, ID: connection})
 		now, clockErr := s.boundaryNow(ctx, q)
 		if clockErr != nil {
 			return clockErr
 		}
-		c, err := q.GetIdentityConnectionForUpdate(ctx, sqlc.GetIdentityConnectionForUpdateParams{WorkspaceID: ws, ID: connection})
 		if err != nil || c.Version != version || c.TestedVersion == nil || *c.TestedVersion != version || c.TestedAt == nil || !now.Before(c.TestedAt.Add(5*time.Minute)) {
 			return classified(err, ErrChanged)
 		}
@@ -179,8 +179,14 @@ func (s *Service) ActivateConnection(ctx context.Context, p identitypolicy.Princ
 			return denied(identitypolicy.ScopeDenied)
 		}
 		identity, err := q.GetExternalIdentity(ctx, sqlc.GetExternalIdentityParams{WorkspaceID: ws, ID: proof.IdentityID})
-		if err != nil || identity.UserID != p.UserID || identity.ConnectionID != connection || identity.Version != proof.Versions.Identity || identity.Status != "active" {
+		if err != nil || identity.UserID != p.UserID || identity.ConnectionID != connection || identity.Version != proof.Versions.Identity || identity.Status != "active" || identity.Issuer != c.Issuer || identity.Issuer != proof.Proof.Issuer || identity.Subject != proof.Proof.Subject {
 			return classified(err, denied(identitypolicy.ScopeDenied))
+		}
+		if err := s.requireTest(ctx, q, st); err != nil {
+			return err
+		}
+		if err := s.requireOwnerTestProof(ctx, q, proof.Proof); err != nil {
+			return err
 		}
 		all, err := q.ListIdentityConnections(ctx, ws)
 		if err != nil {
@@ -201,6 +207,13 @@ func (s *Service) ActivateConnection(ctx context.Context, p identitypolicy.Princ
 			return err
 		}
 		if err = Audit(ctx, q, ws, &p.UserID, "connection_activated", &c.ID); err != nil {
+			return err
+		}
+		// Revocation can wait on other affected sessions; that wait cannot renew proof.
+		if err := s.requireTest(ctx, q, st); err != nil {
+			return err
+		}
+		if err := s.requireOwnerTestProof(ctx, q, proof.Proof); err != nil {
 			return err
 		}
 		out = ConnectionView(c)
