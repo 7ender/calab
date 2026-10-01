@@ -93,8 +93,24 @@ Policy `off|optional|enforced` + version. Connection `draft|tested|active|disabl
 Enforced включается только owner local reauth + успешный test актуальной config,
 его link, свежая assurance и подтверждённый recovery kit. Любое изменение issuer,
 client_id, endpoints/secret сбрасывает test, повышает connection version, отзывает
-транзакции/assurances; active replacement проводится как новый draft без изменения
-старой идентичности. Удаление/disable active connection при enforced закрывает доступ,
+транзакции/assurances. Изменение issuer/client_id создаёт новый draft без переноса
+identities по email; старая connection остаётся до явной активации замены. Ротация
+secret при неизменных issuer/client_id обновляет ту же connection: version++, draft,
+tested=false, немедленный отзыв её assurances/scoped sessions/provider grants и
+pending flows в одной транзакции с audit/outbox. Identity tuple и connection_id
+сохраняются. Это плановая ротация с повторным входом и возможным простоем, не обещание
+бесшовной смены. UI предупреждает до сохранения; для enforced требуется готовый
+recovery kit и обе свежие proofs до мутации. Concurrent update по старой version → 409.
+
+Владелец с local reauth может выполнить purpose=test черновика и при enforced без
+устаревшей assurance: это узкий control-plane endpoint без доступа к данным/выдачи
+сессий/OAuth. Test callback фиксирует только проверенный subject владельца и время
+test текущей версии; subject должен совпасть с его ранее явно привязанной identity.
+Активация ротации требует local reauth ≤5min и этого успешного owner test ≤5min,
+не старой инвалидированной assurance. При changed issuer/client_id действует явный
+link нового subject с независимым local proof; совпавший email не является доказательством.
+Неуспешный test оставляет доступ закрытым; recovery остаётся отдельным путём ремонта.
+Удаление/disable active connection при enforced закрывает доступ,
 не открывает пароль. Переход enforced → optional/off только явным owner recovery либо
 owner local reauth + свежий SSO, с уведомлением и audit.
 
