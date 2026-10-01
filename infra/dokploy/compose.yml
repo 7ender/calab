@@ -62,8 +62,8 @@ services:
       context: ../..
       dockerfile: apps/server/Dockerfile
       args:
-        VERSION: ${CALABA_VERSION:-dev}
-        COMMIT: ${CALABA_COMMIT:-unknown}
+        VERSION: ${CALABA_VERSION:-1.7.0}
+        COMMIT: ${CALABA_COMMIT:-99a60fc}
     restart: unless-stopped
     <<: *hardening
     tmpfs:
