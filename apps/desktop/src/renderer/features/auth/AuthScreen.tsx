@@ -160,7 +160,7 @@ function LoginScreen(): ReactNode {
     };
     return (
       <div className="auth-backdrop drag flex h-full flex-col items-center overflow-y-auto px-4 py-10 mobile:pb-[calc(var(--safe-bottom)+40px)] mobile:pt-[calc(var(--safe-top)+40px)]">
-        <div className="no-drag my-auto flex w-full max-w-[380px] flex-col items-stretch">
+        <div className="no-drag my-auto flex w-full max-w-[380px] shrink-0 flex-col items-stretch">
           <div className="mb-6 flex flex-col items-center text-center">
             <Logo size={72} className="mb-3" />
             <h1 className="text-large font-semibold">Calab</h1>
@@ -187,14 +187,14 @@ function LoginScreen(): ReactNode {
             }}
           />
         </div>
-        <AuthLegalFooter />
+        <AuthLegalFooter className="no-drag mt-6 w-full max-w-[380px] shrink-0 gap-2" />
       </div>
     );
   }
 
   return (
     <div className="auth-backdrop drag flex h-full flex-col items-center overflow-y-auto px-4 py-10 mobile:pb-[calc(var(--safe-bottom)+40px)] mobile:pt-[calc(var(--safe-top)+40px)]">
-      <form onSubmit={(e) => void submit(e)} className="no-drag my-auto flex w-full max-w-[380px] flex-col items-stretch">
+      <form onSubmit={(e) => void submit(e)} className="no-drag my-auto flex w-full max-w-[380px] shrink-0 flex-col items-stretch">
         <div className="mb-6 flex flex-col items-center text-center">
           <Logo size={72} className="mb-3" />
           <h1 className="text-large font-semibold">Calab</h1>
@@ -323,7 +323,7 @@ function LoginScreen(): ReactNode {
           ) : null}
         </div>
         <div className="mt-5 flex flex-col items-center gap-3 text-body text-muted">
-          <p>
+          <p className="flex flex-wrap items-center justify-center gap-x-1 gap-y-2 text-center">
             {mode === 'login' ? t('auth.noAccount') : t('auth.haveAccount')}{' '}
             <button
               type="button"
@@ -351,7 +351,7 @@ function LoginScreen(): ReactNode {
         ) : null}
       </form>
       {/* NOTICE: the «Powered by GPTunneL» attribution is required in the UI (BUSL-1.1 grant). */}
-      <AuthLegalFooter />
+      <AuthLegalFooter className="no-drag mt-6 w-full max-w-[380px] shrink-0 gap-2" />
     </div>
   );
 }

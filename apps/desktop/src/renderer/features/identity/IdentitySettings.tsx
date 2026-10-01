@@ -85,7 +85,7 @@ export function IdentitySettings({ workspaceId, owner }: { workspaceId: string; 
     <div className="flex flex-col gap-6" data-testid="identity-settings">
       <Card title={t('identity.title')}>
         <div className="p-4">
-          <p className="text-body text-muted">{t('identity.linkHelp')}</p>
+          <p className="text-body text-muted">{t('identity.accountStatusHelp')}</p>
           {access ? (
             <p className="mt-3 text-body">
               {t('identity.status')}: {t(reasonKey(access.reason))}
@@ -100,37 +100,50 @@ export function IdentitySettings({ workspaceId, owner }: { workspaceId: string; 
         </div>
       </Card>
       {local ? (
-        <>
-          <LocalReauth />
-          <SsoButton workspaceId={workspaceId} purpose="link" />
-        </>
+        <Card title={t('identity.link')}>
+          <div className="flex flex-col gap-3 p-4">
+            <p className="text-body text-muted">{t('identity.linkHelp')}</p>
+            <LocalReauth embedded />
+            <SsoButton workspaceId={workspaceId} purpose="link" />
+          </div>
+        </Card>
       ) : (
         <p className="text-muted">{t('identity.scope')}</p>
       )}
-      <SsoButton workspaceId={workspaceId} purpose="step_up" />
+      <Card title={t('identity.stepUp')}>
+        <div className="flex flex-col gap-3 p-4">
+          <p className="text-body text-muted">{t('identity.stepUpHelp')}</p>
+          <SsoButton workspaceId={workspaceId} purpose="step_up" />
+        </div>
+      </Card>
       {local ? (
-        <Button
+        <Card title={t('identity.unlink')}>
+          <div className="flex flex-col gap-3 p-4">
+            <p className="text-body text-muted">{t('identity.unlinkHelp')}</p>
+            <Button
               className="self-end mobile:self-stretch"
-          variant="destructive"
-          busy={action.busy}
-          onClick={() =>
-            void action.run(async () => {
-              if (
-                await confirmAction({
-                  title: t('identity.unlink'),
-                  body: t('identity.linkHelp'),
-                  confirm: t('identity.unlink'),
-                  danger: true,
+              variant="destructive"
+              busy={action.busy}
+              onClick={() =>
+                void action.run(async () => {
+                  if (
+                    await confirmAction({
+                      title: t('identity.unlink'),
+                      body: t('identity.linkHelp'),
+                      confirm: t('identity.unlink'),
+                      danger: true,
+                    })
+                  ) {
+                    await identityApi.unlink(workspaceId);
+                    await reload();
+                  }
                 })
-              ) {
-                await identityApi.unlink(workspaceId);
-                await reload();
               }
-            })
-          }
-        >
-          {t('identity.unlink')}
-        </Button>
+            >
+              {t('identity.unlink')}
+            </Button>
+          </div>
+        </Card>
       ) : null}
       {owner ? (
         <>

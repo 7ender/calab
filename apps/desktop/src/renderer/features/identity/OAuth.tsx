@@ -30,6 +30,7 @@ export function OAuthClients({ workspaceId }: { workspaceId: string }): ReactNod
   });
   const [edit, setEdit] = useState<OAuthClient | 'new' | null>(null);
   const [secret, setSecret] = useState<OAuthClientSecretResponse | null>(null);
+  const [rotation, setRotation] = useState<OAuthClient | null>(null);
   const [revokeOld, setRevokeOld] = useState(false);
   const action = useIdentityAction();
   const { run } = action;
@@ -45,45 +46,64 @@ export function OAuthClients({ workspaceId }: { workspaceId: string }): ReactNod
     },
     [run, workspaceId, refetch],
   );
-  const rotateClient = useCallback(
-    (client: OAuthClient): void => {
-      void run(async () => {
-        if (
-          await confirmAction({
-            title: t('identity.rotate'),
-            body: t('identity.rotationWarning'),
-            confirm: t('identity.rotate'),
-            danger: true,
-          })
-        ) {
-          setSecret(await identityApi.rotateClient(workspaceId, client.clientId, revokeOld));
-          await refetch();
-        }
-      });
-    },
-    [run, workspaceId, revokeOld, refetch],
-  );
+  const rotateClient = useCallback((client: OAuthClient): void => {
+    setRevokeOld(false);
+    setRotation(client);
+  }, []);
   return (
     <div className="flex flex-col gap-6" data-testid="oauth-clients">
       <LocalReauth />
-      <Card title={t('identity.oauth')}>
-        <div className="flex flex-col gap-3 p-4">
-          <Button className="self-end mobile:self-stretch" onClick={() => setEdit('new')}>{t('identity.create')}</Button>
-          <Toggle label={t('identity.revokeOld')} checked={revokeOld} onChange={setRevokeOld} />
-          {clients.data?.clients.map((c) => (
-            <ClientRow key={c.id} client={c} busy={action.busy} onEdit={setEdit} onDelete={removeClient} onRotate={rotateClient} />
-          ))}
-          {clients.data?.clients.length === 0 ? <p className="text-muted">{t('identity.noApps')}</p> : null}
-          {clients.error || action.error ? (
-            <p role="alert" className="text-danger-text">
-              {action.error || errorText(clients.error)}
-            </p>
-          ) : null}
-          <Button className="self-end mobile:self-stretch" variant="secondary" busy={clients.isFetching} onClick={() => void clients.refetch()}>
-            {t('identity.refresh')}
-          </Button>
+      <section className="flex flex-col gap-2" aria-label={t('identity.oauth')}>
+        <div className="flex flex-wrap items-center justify-between gap-3 px-1">
+          <h3 className="text-caption font-semibold text-muted">{t('identity.oauth')}</h3>
+          <Button onClick={() => setEdit('new')}>{t('identity.create')}</Button>
         </div>
-      </Card>
+        <Card>
+          <div className="flex flex-col gap-3 p-4">
+            {clients.data?.clients.map((c) => (
+              <ClientRow key={c.id} client={c} busy={action.busy} onEdit={setEdit} onDelete={removeClient} onRotate={rotateClient} />
+            ))}
+            {clients.data?.clients.length === 0 ? (
+              <div className="flex flex-col gap-1">
+                <p className="text-body font-medium">{t('identity.noApps')}</p>
+                <p className="text-body text-muted">{t('identity.oauthEmptyHelp')}</p>
+              </div>
+            ) : null}
+            {clients.error || action.error ? (
+              <p role="alert" className="text-danger-text">
+                {action.error || errorText(clients.error)}
+              </p>
+            ) : null}
+            <Button className="self-end mobile:self-stretch" variant="secondary" busy={clients.isFetching} onClick={() => void clients.refetch()}>
+              {t('identity.refresh')}
+            </Button>
+          </div>
+        </Card>
+      </section>
+      {rotation ? (
+        <Modal
+          open
+          title={t('identity.rotate')}
+          onClose={() => setRotation(null)}
+          footer={
+            <div className="flex w-full flex-wrap justify-end gap-2 pt-3">
+              <Button variant="secondary" onClick={() => setRotation(null)}>{t('identity.cancel')}</Button>
+              <Button variant="destructive" busy={action.busy} onClick={() => void action.run(async () => {
+                setSecret(await identityApi.rotateClient(workspaceId, rotation.clientId, revokeOld));
+                setRotation(null);
+                await refetch();
+              })}>{t('identity.rotate')}</Button>
+            </div>
+          }
+        >
+          <div className="flex flex-col gap-4">
+            <p className="text-body font-medium">{rotation.name}</p>
+            <p className="text-body text-muted">{t('identity.oauthRotationHelp')}</p>
+            <Toggle label={t('identity.revokeOld')} checked={revokeOld} onChange={setRevokeOld} />
+            {action.error ? <p role="alert" className="text-body text-danger-text">{action.error}</p> : null}
+          </div>
+        </Modal>
+      ) : null}
       {edit ? (
         <ClientForm
           workspaceId={workspaceId}
