@@ -85,7 +85,7 @@ func (s *Session) refreshWorkspaceLease(ctx context.Context, ws uuid.UUID) (iden
 	if s.hub.checkWorkspace != nil {
 		d, evaluated, err = s.hub.checkWorkspace(ctx, s.identity(), ws)
 	} else {
-		d, err = s.hub.auth.CheckWorkspaceDecision(ctx, s.identity(), ws, identitypolicy.Realtime)
+		d, err = s.hub.auth.CheckWorkspaceDecision(ctx, s.identity(), ws, identitypolicy.WorkspaceRead)
 		if err == nil {
 			evaluated, err = s.hub.db.Q.IdentityDatabaseNow(ctx)
 		}

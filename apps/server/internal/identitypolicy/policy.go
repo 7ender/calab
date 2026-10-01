@@ -302,7 +302,11 @@ func Evaluate(now time.Time, s State, op Operation) Decision {
 	if p.Authority == Recovery && op != RepairPolicy {
 		return deny(ScopeDenied)
 	}
-	if s.WorkspaceSuspended {
+	// Preserve the legacy read-only suspension contract without skipping any
+	// membership, directory, identity-version or resource permission checks.
+	localRead := p.Authority == LocalAccount && !p.Bot &&
+		(s.Policy.Mode == Off || s.Policy.Mode == Optional) && op == WorkspaceRead
+	if s.WorkspaceSuspended && !localRead {
 		return deny(WorkspaceSuspended)
 	}
 	if !s.Member {

@@ -2063,3 +2063,5 @@ CALABA_WEB_URL=http://127.0.0.1:39571 npx playwright test --config playwright.we
 - Operator-off local reauth принимает только local bearer/password и точный непустой trusted Origin, сохраняет limiter; bot/scoped/recovery запрещены, SSO остаётся 503.
 - Архивная временная комната: разрешённая history читается, POST/voice дают ROOM_ARCHIVED; существующий message-edit handler сохраняет 404. Permanent archive, B и recovery не открываются.
 - Invite preview учитывает неизвестные коды и не списывает успешный preview дважды; GET/HEAD file/thumbnail используют каждую разрешённую live reference через WithPolicy/CanRead.
+
+- Suspended workspace: `TestWorkspaceSuspension|TestIdentitySuspensionLocalReadIsolation|TestGatewayFlow` (PG18 race) сохраняют local off/optional history/member/READY; проверяют scoped/recovery/enforced/ACL/directory-denials и запрет TYPING при receive lease (ADR-0056).

@@ -236,3 +236,66 @@ func TestServiceFailClosed(t *testing.T) {
 		t.Fatal("loader scope mismatch allowed")
 	}
 }
+
+func TestPolicySuspendedWorkspaceLocalReadOnly(t *testing.T) {
+	for _, mode := range []Mode{Off, Optional} {
+		t.Run(string(mode), func(t *testing.T) {
+			s := validState()
+			s.Policy.Mode = mode
+			s.WorkspaceSuspended = true
+			if d := Evaluate(testNow, s, WorkspaceRead); !d.Allowed {
+				t.Fatalf("legacy local read lost: %+v", d)
+			}
+			for _, op := range []Operation{WorkspaceWrite, Realtime, RTC, OAuthAuthorize, OAuthExchange, OAuthRefresh, OAuthUserInfo, ManageSSO, ManageOAuth, ManageDirectory, BootstrapLink, RepairPolicy} {
+				if d := Evaluate(testNow, s, op); d.Allowed || d.Reason != WorkspaceSuspended {
+					t.Fatalf("read exception authorized %s: %+v", op, d)
+				}
+			}
+			cases := []struct {
+				name   string
+				change func(*State)
+			}{
+				{"enforced", func(s *State) { s.Policy.Mode = Enforced }},
+				{"scoped", func(s *State) {
+					s.Principal.Authority = WorkspaceSSO
+					s.Principal.WorkspaceID = s.WorkspaceID
+					s.Principal.ConnectionID = s.Connection.ID
+				}},
+				{"recovery", func(s *State) {
+					s.Principal.Authority = Recovery
+					s.Principal.WorkspaceID = s.WorkspaceID
+					s.Principal.RecoveryAuthenticatedAt = testNow
+				}},
+				{"bot", func(s *State) { s.Principal.Bot = true }},
+				{"revoked session", func(s *State) { s.Principal.Revoked = true }},
+				{"expired session", func(s *State) { s.Principal.ExpiresAt = testNow }},
+				{"missing membership", func(s *State) { s.Member = false }},
+				{"suspended membership", func(s *State) { s.Suspended = true }},
+				{"invalid policy", func(s *State) { s.Policy.Version = 0 }},
+				{"missing directory entitlement", func(s *State) { s.Directory.Required = true; delete(s.Grants, DirectorySync) }},
+				{"disabled directory", func(s *State) {
+					s.Directory = Directory{Required: true, Active: true, Enabled: false, ValidUntil: testNow.Add(time.Hour)}
+				}},
+				{"disabled directory member", func(s *State) {
+					s.Directory = Directory{Required: true, Active: false, Enabled: true, ValidUntil: testNow.Add(time.Hour)}
+				}},
+				{"stale directory", func(s *State) {
+					s.Directory = Directory{Required: true, Active: true, Enabled: true, ValidUntil: testNow}
+				}},
+			}
+			for _, c := range cases {
+				t.Run(c.name, func(t *testing.T) {
+					state := s
+					state.Grants = map[Feature]Grant{}
+					for feature, grant := range s.Grants {
+						state.Grants[feature] = grant
+					}
+					c.change(&state)
+					if d := Evaluate(testNow, state, WorkspaceRead); d.Allowed {
+						t.Fatal("suspension read skipped", c.name)
+					}
+				})
+			}
+		})
+	}
+}

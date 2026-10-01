@@ -426,7 +426,7 @@ func (h *Hub) buildReady(ctx context.Context, s *Session, uid uuid.UUID) (*v1.Re
 	if err != nil {
 		return nil, err
 	}
-	ctx = h.auth.WithPolicy(ctx, s.identity(), identitypolicy.Realtime)
+	ctx = h.auth.WithPolicy(ctx, s.identity(), identitypolicy.WorkspaceRead)
 	res := perm.NewResolver(h.db.Q)
 	wss, err := h.db.Q.ListUserWorkspaces(ctx, uid)
 	if err != nil {
@@ -912,6 +912,11 @@ func (h *Hub) typing(s *Session, roomIDStr string) {
 		} else if h.auth.CheckGlobal(ctx, s.identity(), identitypolicy.GlobalRead) != nil {
 			return
 		}
+	}
+	// A receive lease cannot authorize publication. Bot credentials retain
+	// the existing machine suspension check through the same fresh command gate.
+	if wid != uuid.Nil && h.auth != nil && h.auth.CheckWorkspace(ctx, s.identity(), wid, identitypolicy.Realtime) != nil {
+		return
 	}
 	peer := uuid.Nil
 	if wid == uuid.Nil { // not a workspace room: a DM of the user? (both participants may type)
