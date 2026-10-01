@@ -263,7 +263,10 @@ logout/dynamic registration/pairwise/offline_access. `state` и `nonce` обяз
 в профиле Calaba, ≤512 байт. `prompt=login`/max_age требуют подтверждённой новой auth,
 не refresh; `prompt=none` возвращает login_required/consent_required/interaction_required
 при отсутствии доказательств, не открывает UI. `prompt=consent` требует нового согласия.
-Неподдерживаемые request/request_uri/claims/acr_values явно отклоняются без fetch.
+Неподдерживаемые request/request_uri/claims явно отклоняются без fetch.
+`acr_values` принимается как необязательное предпочтение; неподдерживаемые значения
+игнорируются согласно минимальному требованию OIDC Core §15.1, без ошибки только
+из-за наличия параметра и без выдачи неподтверждённых `acr`/`amr` или обещания MFA.
 POST authorization обязателен по OIDC Core §3.1.2.1: ограниченный form-urlencoded
 body с единственным значением каждого параметра, без смешивания с query.
 Он проходит те же проверки и квоты, что GET, без расширения cookie-аутентификации;
