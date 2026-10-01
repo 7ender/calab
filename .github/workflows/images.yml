@@ -1,0 +1,100 @@
+name: images
+
+# Production image of the API, built after a green `ci` run of a release tag (v*), the same moment
+# release.sh used to update the stand: the server version is the tag.
+#
+#   1. Build apps/server/Dockerfile at the exact commit `ci` tested.
+#   2. Push it to the production registry. No stored keys: the job's GitHub OIDC token is exchanged
+#      for a short-lived Yandex Cloud IAM token of a service account that may only push to the calab
+#      repositories of that registry.
+#   3. File a GitHub deployment `calab-prod` whose payload is the image digest.
+#
+# The production cluster pulls those deployments itself and rolls the digest out (it accepts only
+# deployments created by this workflow for commits on main). This workflow has no access to the
+# cluster. Rollback: re-run an older successful run of this workflow.
+#
+# Repository secrets (masked in the public logs): YC_REGISTRY (registry path ending in /calab),
+# YC_CI_SA_ID (service account id).
+
+on:
+  workflow_run:
+    workflows: [ci]
+    types: [completed]
+    branches: ['v*']     # release tags; workflow_run runs on the default branch, so the OIDC subject stays main
+
+permissions: {}
+
+# One run at a time, newest pending wins: deployments are filed in commit order, so an older build
+# can never land after a newer one.
+concurrency:
+  group: images
+  cancel-in-progress: false
+
+jobs:
+  api:
+    if: >-
+      github.repository == 'itrcz/calab' &&
+      github.event.workflow_run.conclusion == 'success' &&
+      github.event.workflow_run.event == 'push' &&
+      startsWith(github.event.workflow_run.head_branch, 'v')
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    permissions:
+      contents: read
+      id-token: write      # GitHub OIDC token → Yandex Cloud IAM token (registry push only)
+      deployments: write   # file the calab-prod deployment
+    env:
+      SHA: ${{ github.event.workflow_run.head_sha }}
+      TAG: ${{ github.event.workflow_run.head_branch }}
+      REGISTRY: ${{ secrets.YC_REGISTRY }}
+      SA_ID: ${{ secrets.YC_CI_SA_ID }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ env.SHA }}
+          persist-credentials: false
+
+      - name: build
+        run: |
+          test -n "$REGISTRY" && test -n "$SA_ID" || { echo "::error::YC_REGISTRY / YC_CI_SA_ID are not set"; exit 1; }
+          [[ "$TAG" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]] || { echo "::error::not a release tag: $TAG"; exit 1; }
+          version="${TAG#v}"
+          docker build -f apps/server/Dockerfile \
+            --build-arg VERSION="$version" --build-arg COMMIT="${SHA:0:12}" \
+            -t "$REGISTRY/api:$SHA" .
+
+      - name: registry login (OIDC → Yandex Cloud IAM)
+        run: |
+          jwt="$(curl -sSf -H "Authorization: bearer $ACTIONS_ID_TOKEN_REQUEST_TOKEN" \
+            "$ACTIONS_ID_TOKEN_REQUEST_URL&audience=https://github.com/itrcz" | jq -r .value)"
+          echo "::add-mask::$jwt"
+          iam="$(curl -sSf -X POST https://auth.yandex.cloud/oauth/token \
+            --data-urlencode grant_type=urn:ietf:params:oauth:grant-type:token-exchange \
+            --data-urlencode requested_token_type=urn:ietf:params:oauth:token-type:access_token \
+            --data-urlencode audience="$SA_ID" \
+            --data-urlencode subject_token="$jwt" \
+            --data-urlencode subject_token_type=urn:ietf:params:oauth:token-type:id_token | jq -r .access_token)"
+          echo "::add-mask::$iam"
+          test -n "$iam" && test "$iam" != null || { echo "::error::token exchange failed"; exit 1; }
+          printf '%s' "$iam" | docker login cr.yandex --username iam --password-stdin
+
+      - name: push
+        id: push
+        run: |
+          docker push -q "$REGISTRY/api:$SHA"
+          digest="$(docker inspect --format '{{index .RepoDigests 0}}' "$REGISTRY/api:$SHA" | sed 's/.*@//')"
+          [[ "$digest" =~ ^sha256:[0-9a-f]{64}$ ]] || { echo "::error::no digest"; exit 1; }
+          echo "digest=$digest" >> "$GITHUB_OUTPUT"
+          docker logout cr.yandex
+
+      - name: file deployment
+        env:
+          GH_TOKEN: ${{ github.token }}
+          DIGEST: ${{ steps.push.outputs.digest }}
+        run: |
+          jq -n --arg sha "$SHA" --arg api "$DIGEST" '{
+              ref: $sha, environment: "calab-prod", task: "deploy",
+              auto_merge: false, required_contexts: [],
+              production_environment: true, payload: {api: $api},
+              description: "api image"
+            }' | gh api "repos/$GITHUB_REPOSITORY/deployments" --input - --jq '"deployment \(.id) for \(.sha[0:12])"'
