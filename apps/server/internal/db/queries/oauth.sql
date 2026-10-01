@@ -194,3 +194,10 @@ AND (sqlc.narg('client_id')::uuid IS NULL OR client_id=sqlc.narg('client_id'));
 
 -- name: ListUserOAuthGrants :many
 SELECT * FROM oauth_grants WHERE user_id=$1 AND (sqlc.narg('workspace_id')::uuid IS NULL OR workspace_id=sqlc.narg('workspace_id')) ORDER BY created_at DESC;
+-- name: LockOAuthWorkspace :one
+SELECT * FROM workspaces WHERE id=$1 FOR UPDATE;
+
+-- name: UpdateOAuthClientName :one
+UPDATE oauth_clients SET name=sqlc.arg('name')
+WHERE workspace_id=sqlc.arg('workspace_id') AND id=sqlc.arg('id') AND version=sqlc.arg('expected_version')
+RETURNING *;

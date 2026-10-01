@@ -303,3 +303,25 @@ WHERE s.id=sqlc.arg('session_id') AND s.user_id=sqlc.arg('user_id');
 -- name: EnsureIdentityPolicy :one
 INSERT INTO workspace_identity_policies(workspace_id) VALUES($1)
 ON CONFLICT(workspace_id) DO UPDATE SET workspace_id=EXCLUDED.workspace_id RETURNING *;
+
+-- name: GetIdentityLoginTransactionByState :one
+SELECT * FROM identity_login_transactions WHERE state_hash=$1;
+
+-- name: GetIdentityLoginTransactionByID :one
+SELECT * FROM identity_login_transactions WHERE id=$1;
+
+-- name: RevokeScopedIdentitySessions :execrows
+UPDATE sessions SET revoked_at=clock_timestamp(), authority_version=authority_version+1
+WHERE authority_workspace_id=sqlc.arg('workspace_id') AND authority_kind IN ('workspace_sso','recovery')
+AND (sqlc.narg('user_id')::uuid IS NULL OR user_id=sqlc.narg('user_id'))
+AND (sqlc.narg('connection_id')::uuid IS NULL OR authority_connection_id=sqlc.narg('connection_id'))
+AND revoked_at IS NULL;
+
+-- name: TouchIdentityAccess :one
+INSERT INTO workspace_identity_access(workspace_id,user_id) VALUES($1,$2)
+ON CONFLICT(workspace_id,user_id) DO UPDATE SET version=workspace_identity_access.version+1,updated_at=clock_timestamp()
+RETURNING *;
+
+-- name: TouchIdentityPolicy :one
+UPDATE workspace_identity_policies SET version=version+1,updated_at=clock_timestamp()
+WHERE workspace_id=$1 RETURNING *;

@@ -1430,6 +1430,72 @@ func (q *Queries) GetIdentityLoginTransaction(ctx context.Context, arg GetIdenti
 	return i, err
 }
 
+const getIdentityLoginTransactionByID = `-- name: GetIdentityLoginTransactionByID :one
+SELECT id, workspace_id, connection_id, connection_version, purpose, session_id, user_id, state_hash, browser_hash, nonce_hash, verifier_box, return_uri, native_challenge, browser_start_hash, browser_started_at, result_box, completed_at, finished_at, expires_at, consumed_at, created_at FROM identity_login_transactions WHERE id=$1
+`
+
+func (q *Queries) GetIdentityLoginTransactionByID(ctx context.Context, id uuid.UUID) (IdentityLoginTransaction, error) {
+	row := q.db.QueryRow(ctx, getIdentityLoginTransactionByID, id)
+	var i IdentityLoginTransaction
+	err := row.Scan(
+		&i.ID,
+		&i.WorkspaceID,
+		&i.ConnectionID,
+		&i.ConnectionVersion,
+		&i.Purpose,
+		&i.SessionID,
+		&i.UserID,
+		&i.StateHash,
+		&i.BrowserHash,
+		&i.NonceHash,
+		&i.VerifierBox,
+		&i.ReturnUri,
+		&i.NativeChallenge,
+		&i.BrowserStartHash,
+		&i.BrowserStartedAt,
+		&i.ResultBox,
+		&i.CompletedAt,
+		&i.FinishedAt,
+		&i.ExpiresAt,
+		&i.ConsumedAt,
+		&i.CreatedAt,
+	)
+	return i, err
+}
+
+const getIdentityLoginTransactionByState = `-- name: GetIdentityLoginTransactionByState :one
+SELECT id, workspace_id, connection_id, connection_version, purpose, session_id, user_id, state_hash, browser_hash, nonce_hash, verifier_box, return_uri, native_challenge, browser_start_hash, browser_started_at, result_box, completed_at, finished_at, expires_at, consumed_at, created_at FROM identity_login_transactions WHERE state_hash=$1
+`
+
+func (q *Queries) GetIdentityLoginTransactionByState(ctx context.Context, stateHash []byte) (IdentityLoginTransaction, error) {
+	row := q.db.QueryRow(ctx, getIdentityLoginTransactionByState, stateHash)
+	var i IdentityLoginTransaction
+	err := row.Scan(
+		&i.ID,
+		&i.WorkspaceID,
+		&i.ConnectionID,
+		&i.ConnectionVersion,
+		&i.Purpose,
+		&i.SessionID,
+		&i.UserID,
+		&i.StateHash,
+		&i.BrowserHash,
+		&i.NonceHash,
+		&i.VerifierBox,
+		&i.ReturnUri,
+		&i.NativeChallenge,
+		&i.BrowserStartHash,
+		&i.BrowserStartedAt,
+		&i.ResultBox,
+		&i.CompletedAt,
+		&i.FinishedAt,
+		&i.ExpiresAt,
+		&i.ConsumedAt,
+		&i.CreatedAt,
+	)
+	return i, err
+}
+
 const getIdentityNativeHandoff = `-- name: GetIdentityNativeHandoff :one
 SELECT id, transaction_id, ticket_hash, challenge, result_box, expires_at, consumed_at FROM identity_native_handoffs WHERE id = $1
 `
@@ -1803,6 +1869,28 @@ func (q *Queries) ReserveIdentityID(ctx context.Context) (uuid.UUID, error) {
 	return id, err
 }
 
+const revokeScopedIdentitySessions = `-- name: RevokeScopedIdentitySessions :execrows
+UPDATE sessions SET revoked_at=clock_timestamp(), authority_version=authority_version+1
+WHERE authority_workspace_id=$1 AND authority_kind IN ('workspace_sso','recovery')
+AND ($2::uuid IS NULL OR user_id=$2)
+AND ($3::uuid IS NULL OR authority_connection_id=$3)
+AND revoked_at IS NULL
+`
+
+type RevokeScopedIdentitySessionsParams struct {
+	WorkspaceID  *uuid.UUID
+	UserID       *uuid.UUID
+	ConnectionID *uuid.UUID
+}
+
+func (q *Queries) RevokeScopedIdentitySessions(ctx context.Context, arg RevokeScopedIdentitySessionsParams) (int64, error) {
+	result, err := q.db.Exec(ctx, revokeScopedIdentitySessions, arg.WorkspaceID, arg.UserID, arg.ConnectionID)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
+}
+
 const revokeWorkspaceAssurances = `-- name: RevokeWorkspaceAssurances :execrows
 UPDATE session_workspace_assurances SET revoked_at=clock_timestamp()
 WHERE workspace_id=$1 AND ($2::uuid IS NULL OR user_id=$2)
@@ -1878,6 +1966,51 @@ func (q *Queries) SetIdentityPolicy(ctx context.Context, arg SetIdentityPolicyPa
 		arg.WorkspaceID,
 		arg.ExpectedVersion,
 	)
+	var i WorkspaceIdentityPolicy
+	err := row.Scan(
+		&i.WorkspaceID,
+		&i.EntitlementVersion,
+		&i.Mode,
+		&i.Version,
+		&i.AssuranceMaxAgeSeconds,
+		&i.UpdatedBy,
+		&i.UpdatedAt,
+	)
+	return i, err
+}
+
+const touchIdentityAccess = `-- name: TouchIdentityAccess :one
+INSERT INTO workspace_identity_access(workspace_id,user_id) VALUES($1,$2)
+ON CONFLICT(workspace_id,user_id) DO UPDATE SET version=workspace_identity_access.version+1,updated_at=clock_timestamp()
+RETURNING workspace_id, user_id, status, version, reason, updated_at
+`
+
+type TouchIdentityAccessParams struct {
+	WorkspaceID uuid.UUID
+	UserID      uuid.UUID
+}
+
+func (q *Queries) TouchIdentityAccess(ctx context.Context, arg TouchIdentityAccessParams) (WorkspaceIdentityAccess, error) {
+	row := q.db.QueryRow(ctx, touchIdentityAccess, arg.WorkspaceID, arg.UserID)
+	var i WorkspaceIdentityAccess
+	err := row.Scan(
+		&i.WorkspaceID,
+		&i.UserID,
+		&i.Status,
+		&i.Version,
+		&i.Reason,
+		&i.UpdatedAt,
+	)
+	return i, err
+}
+
+const touchIdentityPolicy = `-- name: TouchIdentityPolicy :one
+UPDATE workspace_identity_policies SET version=version+1,updated_at=clock_timestamp()
+WHERE workspace_id=$1 RETURNING workspace_id, entitlement_version, mode, version, assurance_max_age_seconds, updated_by, updated_at
+`
+
+func (q *Queries) TouchIdentityPolicy(ctx context.Context, workspaceID uuid.UUID) (WorkspaceIdentityPolicy, error) {
+	row := q.db.QueryRow(ctx, touchIdentityPolicy, workspaceID)
 	var i WorkspaceIdentityPolicy
 	err := row.Scan(
 		&i.WorkspaceID,
