@@ -311,3 +311,45 @@ func TestIdentityCompatibilityReceiptFinalSocketAndReplay(t *testing.T) {
 		})
 	}
 }
+
+// A revoked A event can arrive while its subscription is being reconciled.
+// Its durable denial must not break B or release A into the replay buffer.
+func TestIdentityCompatibilityDurableDenialPreservesIndependentWorkspace(t *testing.T) {
+	h := leaseTestHub()
+	a, b := uuid.New(), uuid.New()
+	s := leasedSession(h, a)
+	_, _ = s.refreshWorkspaceLease(context.Background(), b)
+	s.leases.mu.Lock()
+	delete(s.leases.workspaces, a)
+	s.leases.mu.Unlock()
+	original := h.checkWorkspace
+	h.checkWorkspace = func(ctx context.Context, id auth.Identity, ws uuid.UUID) (identitypolicy.Decision, time.Time, error) {
+		if ws == a {
+			return identitypolicy.Decision{}, time.Now(), identitypolicy.ErrDenied
+		}
+		return original(ctx, id, ws)
+	}
+	deniedID := uuid.New()
+	s.dispatchEnc(deniedID, leaseEvent(a))
+	s.dispatchEnc(uuid.New(), leaseEvent(b))
+	select {
+	case job := <-h.preparations:
+		job()
+	case <-time.After(time.Second):
+		t.Fatal("denied A was not prepared")
+	}
+	entries := drain(s)
+	if s.broken.Load() || s.paused != 0 || len(s.pending) != 0 || len(entries) != 1 || entries[0].workspace != b || s.seq != 1 {
+		t.Fatalf("A denial broke B: broken=%v paused=%d pending=%d entries=%v seq=%d", s.broken.Load(), s.paused, len(s.pending), entries, s.seq)
+	}
+	if err := s.prepareEventLeases(context.Background(), leaseEvent(a)); !errors.Is(err, identitypolicy.ErrDenied) {
+		t.Fatalf("user preparation denial: %v", err)
+	}
+	// A positive preparation invalidated before emit still requires resynchronization.
+	s.mu.Lock()
+	s.emit(uuid.New(), leaseEvent(a))
+	s.mu.Unlock()
+	if !s.broken.Load() || len(drain(s)) != 0 {
+		t.Fatal("final admission was relaxed")
+	}
+}

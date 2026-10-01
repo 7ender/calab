@@ -163,8 +163,13 @@ func (s *Session) deferIdentityEvent(id uuid.UUID, enc *encEvent) {
 		}
 		for _, ws := range scopes {
 			if ws != uuid.Nil && !s.workspaceLeaseAllows(ws) {
-				_, err := s.refreshWorkspaceLease(ctx, ws)
-				if err != nil && !errors.Is(err, identitypolicy.ErrDenied) {
+				decision, err := s.refreshWorkspaceLease(ctx, ws)
+				if errors.Is(err, identitypolicy.ErrDenied) || (err == nil && !decision.Allowed) {
+					// A durable denial consumes this event, not the independent session.
+					s.resumeMany(mark, nil)
+					return
+				}
+				if err != nil {
 					s.preparationFailed(mark)
 					return
 				}
@@ -178,15 +183,15 @@ func (s *Session) deferIdentityEvent(id uuid.UUID, enc *encEvent) {
 
 // User-channel attribution has completed; refresh only its exact resource leases
 // before releasing the ordered pause. This function runs in preparation workers.
-func (s *Session) prepareEventLeases(ctx context.Context, enc *encEvent) bool {
+func (s *Session) prepareEventLeases(ctx context.Context, enc *encEvent) error {
 	if s.bot {
-		return true
+		return nil
 	}
 	if !s.sessionLeaseAllows() {
 		s.refreshSessionLease(ctx)
 	}
 	if !s.sessionLeaseAllows() {
-		return false
+		return errors.New("session lease unavailable")
 	}
 	var scopes []uuid.UUID
 	if enc.workspace != uuid.Nil {
@@ -198,9 +203,13 @@ func (s *Session) prepareEventLeases(ctx context.Context, enc *encEvent) bool {
 		if ws == uuid.Nil || s.workspaceLeaseAllows(ws) {
 			continue
 		}
-		if _, err := s.refreshWorkspaceLease(ctx, ws); err != nil && !errors.Is(err, identitypolicy.ErrDenied) {
-			return false
+		decision, err := s.refreshWorkspaceLease(ctx, ws)
+		if errors.Is(err, identitypolicy.ErrDenied) || (err == nil && !decision.Allowed) {
+			return identitypolicy.ErrDenied
+		}
+		if err != nil {
+			return err
 		}
 	}
-	return ctx.Err() == nil
+	return ctx.Err()
 }

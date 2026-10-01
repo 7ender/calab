@@ -5,6 +5,7 @@ package gateway
 
 import (
 	"context"
+	"errors"
 	"log/slog"
 	"math/rand/v2"
 	"strings"
@@ -850,9 +851,15 @@ func (h *Hub) routeUser(uid, id uuid.UUID, ev *v1.DispatchEvent) {
 				h.prepareEvent(ctx, recipient)
 				s.prepareAdmissionReceipts(ctx, recipient)
 			}
-			if s.identityEnabled() && !s.prepareEventLeases(ctx, recipient) {
-				s.preparationFailed(markers[i])
-				continue
+			if s.identityEnabled() {
+				if err := s.prepareEventLeases(ctx, recipient); err != nil {
+					if errors.Is(err, identitypolicy.ErrDenied) {
+						s.resumeMany(markers[i], nil)
+					} else {
+						s.preparationFailed(markers[i])
+					}
+					continue
+				}
 			}
 			s.resume(markers[i], id, recipient)
 		}
