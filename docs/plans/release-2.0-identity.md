@@ -250,7 +250,7 @@ OIDC discovery: `GET I/.well-known/openid-configuration`. OAuth RFC8414 metadata
 
 | Endpoint | Семантика |
 |---|---|
-| GET `I/authorize` | code only; client_id, exact redirect_uri, scope, state, nonce, code_challenge S256 |
+| GET/POST `I/authorize` | code only; GET query или POST form-urlencoded; client_id, exact redirect_uri, scope, state, nonce, code_challenge S256 |
 | POST `I/token` | form-urlencoded; authorization_code или refresh_token; confidential client_secret_basic, public none |
 | GET `I/jwks` | RS256 public keys only; kid/alg/use; cache max-age=60 |
 | GET/POST `I/userinfo` | provider access Bearer only; no cookie/first-party/bot tokens |
@@ -264,6 +264,10 @@ logout/dynamic registration/pairwise/offline_access. `state` и `nonce` обяз
 не refresh; `prompt=none` возвращает login_required/consent_required/interaction_required
 при отсутствии доказательств, не открывает UI. `prompt=consent` требует нового согласия.
 Неподдерживаемые request/request_uri/claims/acr_values явно отклоняются без fetch.
+POST authorization обязателен по OIDC Core §3.1.2.1: ограниченный form-urlencoded
+body с единственным значением каждого параметра, без смешивания с query.
+Он проходит те же проверки и квоты, что GET, без расширения cookie-аутентификации;
+переход после POST использует 303 и не пересылает тело на redirect URI.
 
 Client types `confidential_web|public_native|public_spa`, immutable after creation;
 workspace immutable. HTTPS exact registered redirects; no wildcards, fragments,
