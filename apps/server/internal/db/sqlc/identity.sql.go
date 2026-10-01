@@ -1750,6 +1750,17 @@ func (q *Queries) GetWorkspaceAssurance(ctx context.Context, arg GetWorkspaceAss
 	return i, err
 }
 
+const identityDatabaseNow = `-- name: IdentityDatabaseNow :one
+SELECT clock_timestamp()::timestamptz AS database_now
+`
+
+func (q *Queries) IdentityDatabaseNow(ctx context.Context) (time.Time, error) {
+	row := q.db.QueryRow(ctx, identityDatabaseNow)
+	var database_now time.Time
+	err := row.Scan(&database_now)
+	return database_now, err
+}
+
 const listIdentityAudit = `-- name: ListIdentityAudit :many
 SELECT id, workspace_id, actor_id, action, target_id, outcome, created_at FROM workspace_identity_audit WHERE workspace_id=$1 AND ($2::uuid IS NULL OR id<$2)
 ORDER BY id DESC LIMIT $3
@@ -2126,7 +2137,7 @@ func (q *Queries) SetIdentityPolicy(ctx context.Context, arg SetIdentityPolicyPa
 }
 
 const touchIdentityAccess = `-- name: TouchIdentityAccess :one
-INSERT INTO workspace_identity_access(workspace_id,user_id) VALUES($1,$2)
+INSERT INTO workspace_identity_access(workspace_id,user_id,version) VALUES($1,$2,2)
 ON CONFLICT(workspace_id,user_id) DO UPDATE SET version=workspace_identity_access.version+1,updated_at=clock_timestamp()
 RETURNING workspace_id, user_id, status, version, reason, updated_at
 `

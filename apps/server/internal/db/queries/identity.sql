@@ -318,7 +318,7 @@ AND (sqlc.narg('connection_id')::uuid IS NULL OR authority_connection_id=sqlc.na
 AND revoked_at IS NULL;
 
 -- name: TouchIdentityAccess :one
-INSERT INTO workspace_identity_access(workspace_id,user_id) VALUES($1,$2)
+INSERT INTO workspace_identity_access(workspace_id,user_id,version) VALUES($1,$2,2)
 ON CONFLICT(workspace_id,user_id) DO UPDATE SET version=workspace_identity_access.version+1,updated_at=clock_timestamp()
 RETURNING *;
 
@@ -354,3 +354,6 @@ ORDER BY finished_at DESC LIMIT 1;
 
 -- name: GetSSOWorkspaceBySlug :one
 SELECT * FROM workspaces WHERE slug=$1;
+
+-- name: IdentityDatabaseNow :one
+SELECT clock_timestamp()::timestamptz AS database_now;
