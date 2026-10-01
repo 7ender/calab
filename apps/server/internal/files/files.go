@@ -654,35 +654,65 @@ func (s *Service) CanRead(r *http.Request, f sqlc.File) (bool, error) {
 	ctx := r.Context()
 	id := auth.MustFromContext(ctx)
 	uid := id.UserID
+	res := perm.FromContext(ctx)
+	// A denied source scope must not hide a live copy in another allowed scope.
+	// Keep its error for callers when no candidate allows access; dependency failures
+	// stop the lookup instead of being mistaken for an unavailable candidate.
+	var denied error
+	candidate := func(err error) error {
+		if err == nil {
+			return nil
+		}
+		if !fileReadDenial(err) {
+			return err
+		}
+		if denied == nil && !errors.Is(err, perm.ErrNotMember) && !errors.Is(err, perm.ErrNoRoom) {
+			denied = err
+		}
+		return nil
+	}
 	if f.WorkspaceID == nil && id.Principal.Authority == identitypolicy.WorkspaceSSO && (r.Method == http.MethodGet || r.Method == http.MethodHead) {
 		image, err := s.db.Q.IsIdentityWorkspaceProfileImage(ctx, sqlc.IsIdentityWorkspaceProfileImageParams{WorkspaceID: id.Principal.WorkspaceID, FileID: &f.ID})
 		if err != nil {
 			return false, err
 		}
 		if image {
-			if err := perm.CheckAccess(ctx, id.Principal.WorkspaceID, uid); err != nil {
+			err := perm.CheckAccess(ctx, id.Principal.WorkspaceID, uid)
+			if err == nil {
+				return true, nil
+			}
+			if err := candidate(err); err != nil {
 				return false, err
 			}
-			return true, nil
 		}
 	}
-	ws := uuid.Nil
-	if f.WorkspaceID != nil {
-		ws = *f.WorkspaceID
-	}
-	if err := perm.CheckAccess(ctx, ws, uid); err != nil {
-		return false, err
-	}
 	if f.UploaderID == uid {
-		return true, nil
+		ws := uuid.Nil
+		if f.WorkspaceID != nil {
+			ws = *f.WorkspaceID
+		}
+		err := perm.CheckAccess(ctx, ws, uid)
+		if err == nil {
+			return true, nil
+		}
+		if err := candidate(err); err != nil {
+			return false, err
+		}
 	}
-	res := perm.FromContext(ctx)
 	if f.WorkspaceID == nil {
-		// User-scoped: an avatar is public; any other (a DM attachment, ADR-0020) follows the
-		// room of its message like a workspace file.
+		// Avatars use global authority, or the exact scoped profile image above.
 		avatar, err := s.db.Q.IsAvatar(ctx, &f.ID)
-		if err != nil || avatar {
-			return avatar, err
+		if err != nil {
+			return false, err
+		}
+		if avatar {
+			err := perm.CheckAccess(ctx, uuid.Nil, uid)
+			if err == nil {
+				return true, nil
+			}
+			if err := candidate(err); err != nil {
+				return false, err
+			}
 		}
 	} else {
 		icon, err := s.db.Q.IsWorkspaceIcon(ctx, &f.ID)
@@ -706,10 +736,12 @@ func (s *Service) CanRead(r *http.Request, f sqlc.File) (bool, error) {
 		}
 		if icon {
 			_, err := res.Role(ctx, *f.WorkspaceID, uid)
-			if errors.Is(err, perm.ErrNotMember) {
-				return false, nil
+			if err == nil {
+				return true, nil
 			}
-			return err == nil, err
+			if err := candidate(err); err != nil {
+				return false, err
+			}
 		}
 		// A web app icon (ADR-0050): the members who see apps (not guests).
 		appIcon, err := s.db.Q.IsWorkspaceAppIcon(ctx, &f.ID)
@@ -718,44 +750,67 @@ func (s *Service) CanRead(r *http.Request, f sqlc.File) (bool, error) {
 		}
 		if appIcon {
 			role, err := res.Role(ctx, *f.WorkspaceID, uid)
-			if errors.Is(err, perm.ErrNotMember) {
-				return false, nil
-			}
-			return err == nil && role != perm.RoleGuest, err
-		}
-	}
-	lookup := s.db.Q.FileRooms
-	if f.WorkspaceID != nil {
-		// A sticker (ADR-0030): members of its workspace (guests too), else through the live
-		// messages that show it (e.g. a DM after leaving the workspace).
-		if _, err := s.db.Q.GetStickerFileWorkspace(ctx, f.ID); err == nil {
-			if _, err := res.Role(ctx, *f.WorkspaceID, uid); err == nil {
+			if err == nil && role != perm.RoleGuest {
 				return true, nil
-			} else if !errors.Is(err, perm.ErrNotMember) {
+			}
+			if err := candidate(err); err != nil {
 				return false, err
 			}
-			lookup = s.db.Q.StickerFileRooms
+		}
+	}
+	roomIDs, err := s.db.Q.FileRooms(ctx, f.ID)
+	if err != nil {
+		return false, err
+	}
+	if f.WorkspaceID != nil {
+		// A sticker also has an origin membership candidate and live message candidates.
+		if ws, err := s.db.Q.GetStickerFileWorkspace(ctx, f.ID); err == nil {
+			_, err := res.Role(ctx, ws, uid)
+			if err == nil {
+				return true, nil
+			}
+			if err := candidate(err); err != nil {
+				return false, err
+			}
+			stickerRooms, err := s.db.Q.StickerFileRooms(ctx, f.ID)
+			if err != nil {
+				return false, err
+			}
+			roomIDs = append(roomIDs, stickerRooms...)
 		} else if !db.IsNotFound(err) {
 			return false, err
 		}
 	}
-	roomIDs, err := lookup(ctx, f.ID)
-	if err != nil {
-		return false, err
-	}
 	for _, rid := range roomIDs {
 		acc, err := res.ReadRoom(ctx, rid, uid) // attachments of archived temporary rooms stay readable (ADR-0044)
-		if errors.Is(err, perm.ErrNoRoom) {
-			continue
-		}
 		if err != nil {
-			return false, err
+			if err := candidate(err); err != nil {
+				return false, err
+			}
+			continue
 		}
 		if acc.Bits.Has(perm.ViewRoom) {
 			return true, nil
 		}
 	}
-	return false, nil
+	return false, denied
+}
+
+// fileReadDenial identifies expected candidate denials, never dependency failures.
+func fileReadDenial(err error) bool {
+	if errors.Is(err, perm.ErrNotMember) || errors.Is(err, perm.ErrNoRoom) {
+		return true
+	}
+	var e *httpx.Error
+	if !errors.As(err, &e) || e.Err != nil {
+		return false
+	}
+	switch e.Status {
+	case http.StatusUnauthorized, http.StatusForbidden, http.StatusNotFound, http.StatusConflict:
+		return true
+	default:
+		return false
+	}
 }
 
 func (s *Service) load(r *http.Request) (sqlc.File, error) {
