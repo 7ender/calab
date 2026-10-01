@@ -63,6 +63,9 @@ func (r *Resolver) Board(ctx context.Context, boardID, userID uuid.UUID) (BoardA
 	if acc.WorkspaceID == uuid.Nil {
 		return BoardAccess{}, ErrNoBoard
 	}
+	if err := CheckAccess(ctx, acc.WorkspaceID, userID); err != nil {
+		return BoardAccess{}, err
+	}
 	return acc, nil
 }
 

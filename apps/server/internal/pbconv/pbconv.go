@@ -274,6 +274,7 @@ func Session(s sqlc.Session, current uuid.UUID) *v1.Session {
 		LastSeenAt: ts(s.LastSeenAt),
 		ExpiresAt:  ts(s.ExpiresAt),
 		Current:    s.ID == current,
+		Authority:  SessionAuthority(s),
 	}
 }
 
@@ -694,4 +695,33 @@ func WorkspaceNotificationSettings(s sqlc.WorkspaceNotificationSetting) *v1.Work
 		Level:     notifications.LevelFromDB(s.Level, v1.NotificationLevel_NOTIFICATION_LEVEL_MENTIONS),
 		TaskLevel: notifications.LevelFromDB(s.TaskLevel, v1.NotificationLevel_NOTIFICATION_LEVEL_ALL),
 	}
+}
+
+// SessionAuthority exposes persisted provenance without adding assurance.
+func SessionAuthority(s sqlc.Session) *v1.SessionAuthority {
+	kind := v1.SessionAuthorityKind_SESSION_AUTHORITY_KIND_UNSPECIFIED
+	switch s.AuthorityKind {
+	case "local_account":
+		kind = v1.SessionAuthorityKind_SESSION_AUTHORITY_KIND_LOCAL_ACCOUNT
+	case "workspace_sso":
+		kind = v1.SessionAuthorityKind_SESSION_AUTHORITY_KIND_WORKSPACE_SSO
+	case "recovery":
+		kind = v1.SessionAuthorityKind_SESSION_AUTHORITY_KIND_RECOVERY
+	}
+	a := &v1.SessionAuthority{Kind: kind, Version: uint64(max(s.AuthorityVersion, 0))}
+	if s.AuthorityWorkspaceID != nil {
+		a.WorkspaceId = s.AuthorityWorkspaceID.String()
+	}
+	if s.AuthorityConnectionID != nil {
+		a.ConnectionId = s.AuthorityConnectionID.String()
+	}
+	if s.LocalAuthenticatedAt != nil {
+		a.LocalAuthenticatedAt = ts(*s.LocalAuthenticatedAt)
+	}
+	return a
+}
+
+// ScopedMe is the minimal profile available under workspace authority.
+func ScopedMe(u sqlc.User) *v1.Me {
+	return &v1.Me{User: &v1.User{Id: u.ID.String(), DisplayName: u.DisplayName}}
 }

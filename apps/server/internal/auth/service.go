@@ -23,6 +23,7 @@ import (
 	"github.com/calaba/calaba/server/internal/db/sqlc"
 	"github.com/calaba/calaba/server/internal/events"
 	"github.com/calaba/calaba/server/internal/httpx"
+	"github.com/calaba/calaba/server/internal/identitypolicy"
 	"github.com/calaba/calaba/server/internal/mail"
 	"github.com/calaba/calaba/server/internal/moderation"
 	"github.com/calaba/calaba/server/internal/pbconv"
@@ -48,15 +49,18 @@ const (
 
 // Service implements the auth use cases.
 type Service struct {
-	db       *db.DB
-	redis    rueidis.Client
-	tokens   *Tokens
-	events   events.Publisher
-	mode     config.RegistrationMode
-	refresh  time.Duration
-	accessTL time.Duration
-	now      func() time.Time
-	used     usedGens
+	// Policy evaluates fresh workspace state from the database.
+	Policy       *identitypolicy.Service
+	entitlements identitypolicy.EntitlementConfig
+	db           *db.DB
+	redis        rueidis.Client
+	tokens       *Tokens
+	events       events.Publisher
+	mode         config.RegistrationMode
+	refresh      time.Duration
+	accessTL     time.Duration
+	now          func() time.Time
+	used         usedGens
 
 	// Mail sends verification / reset codes (ADR-0023); disabled = no SMTP (addresses are
 	// then verified at registration). Set before serving.
@@ -79,14 +83,16 @@ type Service struct {
 // NewService wires the auth service.
 func NewService(cfg *config.Config, d *db.DB, r rueidis.Client, ev events.Publisher) *Service {
 	return &Service{
-		db:       d,
-		redis:    r,
-		tokens:   NewTokens([]byte(cfg.JWTSecret), cfg.AccessTokenTTL),
-		events:   ev,
-		mode:     cfg.RegistrationMode,
-		refresh:  cfg.RefreshTokenTTL,
-		accessTL: cfg.AccessTokenTTL,
-		now:      time.Now,
+		db:           d,
+		redis:        r,
+		tokens:       NewTokens([]byte(cfg.JWTSecret), cfg.AccessTokenTTL),
+		events:       ev,
+		mode:         cfg.RegistrationMode,
+		refresh:      cfg.RefreshTokenTTL,
+		accessTL:     cfg.AccessTokenTTL,
+		now:          time.Now,
+		Policy:       &identitypolicy.Service{Loader: identitypolicy.NewSQLLoader(d.Q, cfg.IdentityEntitlements())},
+		entitlements: cfg.IdentityEntitlements(),
 	}
 }
 
@@ -218,11 +224,27 @@ func (s *Service) newSessionTTL(ctx context.Context, q *sqlc.Queries, userID uui
 	if err != nil {
 		return nil, fmt.Errorf("create session: %w", err)
 	}
+	u, err := q.GetUser(ctx, userID)
+	if err != nil {
+		return nil, err
+	}
+	if !u.IsGuest && !u.IsBot && u.PasswordHash != nil {
+		if sess, err = q.RecordLocalAuthentication(ctx, sqlc.RecordLocalAuthenticationParams{SessionID: sess.ID, UserID: userID, AuthenticatedAt: ptrTime(s.now())}); err != nil {
+			return nil, err
+		}
+	}
 	return s.tokenPair(sess, secret)
 }
 
 func (s *Service) tokenPair(sess sqlc.Session, secret string) (*v1.AuthTokens, error) {
-	access, exp, err := s.tokens.Issue(sess.UserID, sess.ID, sess.RefreshGen)
+	deadline := sess.ExpiresAt
+	if sess.AuthorityKind != string(identitypolicy.LocalAccount) {
+		limit := s.now().Add(5 * time.Minute)
+		if limit.Before(deadline) {
+			deadline = limit
+		}
+	}
+	access, exp, err := s.tokens.IssueUntil(sess.UserID, sess.ID, sess.RefreshGen, deadline)
 	if err != nil {
 		return nil, err
 	}
@@ -232,6 +254,7 @@ func (s *Service) tokenPair(sess sqlc.Session, secret string) (*v1.AuthTokens, e
 		RefreshToken:     FormatRefreshToken(sess.ID, secret),
 		RefreshExpiresAt: timestamppb.New(sess.ExpiresAt),
 		SessionId:        sess.ID.String(),
+		Authority:        pbconv.SessionAuthority(sess),
 	}, nil
 }
 
@@ -467,6 +490,17 @@ func (s *Service) Login(ctx context.Context, req *v1.LoginRequest, c Client) (*v
 // the previous one after the new one was used, or an older one — is reuse: the session is
 // revoked (401 SESSION_REVOKED, reason REUSE).
 func (s *Service) Refresh(ctx context.Context, req *v1.RefreshRequest, c Client) (*v1.RefreshResponse, error) {
+	return s.refreshAuthority(ctx, req, c, identitypolicy.LocalAccount, uuid.Nil)
+}
+
+// RefreshWorkspace rotates only the presented workspace session; proof is never renewed.
+func (s *Service) RefreshWorkspace(ctx context.Context, ws uuid.UUID, req *v1.RefreshRequest, c Client) (*v1.RefreshResponse, error) {
+	if ws == uuid.Nil {
+		return nil, errInvalidRefresh
+	}
+	return s.refreshAuthority(ctx, req, c, identitypolicy.WorkspaceSSO, ws)
+}
+func (s *Service) refreshAuthority(ctx context.Context, req *v1.RefreshRequest, c Client, authority identitypolicy.Authority, ws uuid.UUID) (*v1.RefreshResponse, error) {
 	sid, secret, ok := ParseRefreshToken(req.GetRefreshToken())
 	if !ok {
 		return nil, errInvalidRefresh
@@ -485,6 +519,17 @@ func (s *Service) Refresh(ctx context.Context, req *v1.RefreshRequest, c Client)
 			return err
 		}
 		now := s.now()
+		p := SessionPrincipal(sess)
+		if p.Authority != authority || p.WorkspaceID != ws {
+			return errInvalidRefresh
+		}
+		if authority == identitypolicy.WorkspaceSSO {
+			policy := &identitypolicy.Service{Loader: identitypolicy.NewSQLLoader(q, s.entitlements), Now: s.now}
+			d, err := policy.CheckWorkspace(ctx, p, ws, identitypolicy.WorkspaceRead)
+			if err != nil {
+				return IdentityError(p, d, err)
+			}
+		}
 		current := subtle.ConstantTimeCompare(presented, sess.RefreshTokenHash) == 1
 		previous := !current && sess.PrevRefreshTokenHash != nil && subtle.ConstantTimeCompare(presented, sess.PrevRefreshTokenHash) == 1
 		if sess.RevokedAt != nil {
@@ -584,6 +629,9 @@ func derefStr(p *string) string {
 // Logout revokes the caller's session, or all of the user's sessions.
 func (s *Service) Logout(ctx context.Context, id Identity, all bool) error {
 	if all {
+		if err := s.CheckGlobal(ctx, id, identitypolicy.GlobalWrite); err != nil {
+			return err
+		}
 		ids, err := s.db.Q.RevokeAllUserSessions(ctx, sqlc.RevokeAllUserSessionsParams{UserID: id.UserID, Reason: RevokeLogoutAll})
 		if err != nil {
 			return err
