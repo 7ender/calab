@@ -8,13 +8,15 @@ import type { Timestamp } from "@bufbuild/protobuf/wkt";
 import { file_google_protobuf_timestamp } from "@bufbuild/protobuf/wkt";
 import type { Me } from "./user_pb.js";
 import { file_calaba_v1_user } from "./user_pb.js";
+import type { SessionAuthority, WorkspaceIdentityAccess } from "./identity_pb.js";
+import { file_calaba_v1_identity } from "./identity_pb.js";
 import type { Message } from "@bufbuild/protobuf";
 
 /**
  * Describes the file calaba/v1/auth.proto.
  */
 export const file_calaba_v1_auth: GenFile = /*@__PURE__*/
-  fileDesc("ChRjYWxhYmEvdjEvYXV0aC5wcm90bxIJY2FsYWJhLnYxIu0BCgdTZXNzaW9uEgoKAmlkGAEgASgJEhMKC2RldmljZV9uYW1lGAIgASgJEgoKAmlwGAMgASgJEhIKCnVzZXJfYWdlbnQYBCABKAkSLgoKY3JlYXRlZF9hdBgFIAEoCzIaLmdvb2dsZS5wcm90b2J1Zi5UaW1lc3RhbXASMAoMbGFzdF9zZWVuX2F0GAYgASgLMhouZ29vZ2xlLnByb3RvYnVmLlRpbWVzdGFtcBIuCgpleHBpcmVzX2F0GAcgASgLMhouZ29vZ2xlLnByb3RvYnVmLlRpbWVzdGFtcBIPCgdjdXJyZW50GAggASgIIrwBCgpBdXRoVG9rZW5zEhQKDGFjY2Vzc190b2tlbhgBIAEoCRI1ChFhY2Nlc3NfZXhwaXJlc19hdBgCIAEoCzIaLmdvb2dsZS5wcm90b2J1Zi5UaW1lc3RhbXASFQoNcmVmcmVzaF90b2tlbhgDIAEoCRI2ChJyZWZyZXNoX2V4cGlyZXNfYXQYBCABKAsyGi5nb29nbGUucHJvdG9idWYuVGltZXN0YW1wEhIKCnNlc3Npb25faWQYBSABKAkioQEKD1JlZ2lzdGVyUmVxdWVzdBINCgVlbWFpbBgBIAEoCRIQCghwYXNzd29yZBgCIAEoCRIUCgxkaXNwbGF5X25hbWUYAyABKAkSEwoLaW52aXRlX2NvZGUYBCABKAkSEwoLZGV2aWNlX25hbWUYBSABKAkSDgoGbG9jYWxlGAYgASgJEh0KFWNoZWNrX3NpbWlsYXJfYWNjb3VudBgHIAEoCCJtChBSZWdpc3RlclJlc3BvbnNlEiUKBnRva2VucxgBIAEoCzIVLmNhbGFiYS52MS5BdXRoVG9rZW5zEhkKAm1lGAIgASgLMg0uY2FsYWJhLnYxLk1lEhcKD3NpbWlsYXJfYWNjb3VudBgDIAEoCCJECgxMb2dpblJlcXVlc3QSDQoFZW1haWwYASABKAkSEAoIcGFzc3dvcmQYAiABKAkSEwoLZGV2aWNlX25hbWUYAyABKAkiUQoNTG9naW5SZXNwb25zZRIlCgZ0b2tlbnMYASABKAsyFS5jYWxhYmEudjEuQXV0aFRva2VucxIZCgJtZRgCIAEoCzINLmNhbGFiYS52MS5NZSInCg5SZWZyZXNoUmVxdWVzdBIVCg1yZWZyZXNoX3Rva2VuGAEgASgJIjgKD1JlZnJlc2hSZXNwb25zZRIlCgZ0b2tlbnMYASABKAsyFS5jYWxhYmEudjEuQXV0aFRva2VucyI8Cg1Mb2dvdXRSZXF1ZXN0EhQKDGFsbF9zZXNzaW9ucxgBIAEoCBIVCg1yZWZyZXNoX3Rva2VuGAIgASgJIjwKFExpc3RTZXNzaW9uc1Jlc3BvbnNlEiQKCHNlc3Npb25zGAEgAygLMhIuY2FsYWJhLnYxLlNlc3Npb24iIgoSVmVyaWZ5RW1haWxSZXF1ZXN0EgwKBGNvZGUYASABKAkiTgoTVmVyaWZ5RW1haWxSZXNwb25zZRIZCgJtZRgBIAEoCzINLmNhbGFiYS52MS5NZRIcChRqb2luZWRfd29ya3NwYWNlX2lkcxgCIAMoCSImChVGb3Jnb3RQYXNzd29yZFJlcXVlc3QSDQoFZW1haWwYASABKAkiMQoWRm9yZ290UGFzc3dvcmRSZXNwb25zZRIXCg9zaW1pbGFyX2FjY291bnQYASABKAgiRQoUUmVzZXRQYXNzd29yZFJlcXVlc3QSDQoFZW1haWwYASABKAkSDAoEY29kZRgCIAEoCRIQCghwYXNzd29yZBgDIAEoCUKXAQoNY29tLmNhbGFiYS52MUIJQXV0aFByb3RvUAFaNmdpdGh1Yi5jb20vY2FsYWJhL2NhbGFiYS9zZXJ2ZXIvZ2VuL2NhbGFiYS92MTtjYWxhYmF2MaICA0NYWKoCCUNhbGFiYS5WMcoCCUNhbGFiYVxWMeICFUNhbGFiYVxWMVxHUEJNZXRhZGF0YeoCCkNhbGFiYTo6VjFiBnByb3RvMw", [file_google_protobuf_timestamp, file_calaba_v1_user]);
+  fileDesc("ChRjYWxhYmEvdjEvYXV0aC5wcm90bxIJY2FsYWJhLnYxIp0CCgdTZXNzaW9uEgoKAmlkGAEgASgJEhMKC2RldmljZV9uYW1lGAIgASgJEgoKAmlwGAMgASgJEhIKCnVzZXJfYWdlbnQYBCABKAkSLgoKY3JlYXRlZF9hdBgFIAEoCzIaLmdvb2dsZS5wcm90b2J1Zi5UaW1lc3RhbXASMAoMbGFzdF9zZWVuX2F0GAYgASgLMhouZ29vZ2xlLnByb3RvYnVmLlRpbWVzdGFtcBIuCgpleHBpcmVzX2F0GAcgASgLMhouZ29vZ2xlLnByb3RvYnVmLlRpbWVzdGFtcBIuCglhdXRob3JpdHkYCSABKAsyGy5jYWxhYmEudjEuU2Vzc2lvbkF1dGhvcml0eRIPCgdjdXJyZW50GAggASgIIuwBCgpBdXRoVG9rZW5zEhQKDGFjY2Vzc190b2tlbhgBIAEoCRI1ChFhY2Nlc3NfZXhwaXJlc19hdBgCIAEoCzIaLmdvb2dsZS5wcm90b2J1Zi5UaW1lc3RhbXASFQoNcmVmcmVzaF90b2tlbhgDIAEoCRI2ChJyZWZyZXNoX2V4cGlyZXNfYXQYBCABKAsyGi5nb29nbGUucHJvdG9idWYuVGltZXN0YW1wEhIKCnNlc3Npb25faWQYBSABKAkSLgoJYXV0aG9yaXR5GAYgASgLMhsuY2FsYWJhLnYxLlNlc3Npb25BdXRob3JpdHkioQEKD1JlZ2lzdGVyUmVxdWVzdBINCgVlbWFpbBgBIAEoCRIQCghwYXNzd29yZBgCIAEoCRIUCgxkaXNwbGF5X25hbWUYAyABKAkSEwoLaW52aXRlX2NvZGUYBCABKAkSEwoLZGV2aWNlX25hbWUYBSABKAkSDgoGbG9jYWxlGAYgASgJEh0KFWNoZWNrX3NpbWlsYXJfYWNjb3VudBgHIAEoCCJtChBSZWdpc3RlclJlc3BvbnNlEiUKBnRva2VucxgBIAEoCzIVLmNhbGFiYS52MS5BdXRoVG9rZW5zEhkKAm1lGAIgASgLMg0uY2FsYWJhLnYxLk1lEhcKD3NpbWlsYXJfYWNjb3VudBgDIAEoCCJECgxMb2dpblJlcXVlc3QSDQoFZW1haWwYASABKAkSEAoIcGFzc3dvcmQYAiABKAkSEwoLZGV2aWNlX25hbWUYAyABKAkiUQoNTG9naW5SZXNwb25zZRIlCgZ0b2tlbnMYASABKAsyFS5jYWxhYmEudjEuQXV0aFRva2VucxIZCgJtZRgCIAEoCzINLmNhbGFiYS52MS5NZSInCg5SZWZyZXNoUmVxdWVzdBIVCg1yZWZyZXNoX3Rva2VuGAEgASgJIjgKD1JlZnJlc2hSZXNwb25zZRIlCgZ0b2tlbnMYASABKAsyFS5jYWxhYmEudjEuQXV0aFRva2VucyI8Cg1Mb2dvdXRSZXF1ZXN0EhQKDGFsbF9zZXNzaW9ucxgBIAEoCBIVCg1yZWZyZXNoX3Rva2VuGAIgASgJIjwKFExpc3RTZXNzaW9uc1Jlc3BvbnNlEiQKCHNlc3Npb25zGAEgAygLMhIuY2FsYWJhLnYxLlNlc3Npb24iIgoSVmVyaWZ5RW1haWxSZXF1ZXN0EgwKBGNvZGUYASABKAkiTgoTVmVyaWZ5RW1haWxSZXNwb25zZRIZCgJtZRgBIAEoCzINLmNhbGFiYS52MS5NZRIcChRqb2luZWRfd29ya3NwYWNlX2lkcxgCIAMoCSImChVGb3Jnb3RQYXNzd29yZFJlcXVlc3QSDQoFZW1haWwYASABKAkiMQoWRm9yZ290UGFzc3dvcmRSZXNwb25zZRIXCg9zaW1pbGFyX2FjY291bnQYASABKAgiRQoUUmVzZXRQYXNzd29yZFJlcXVlc3QSDQoFZW1haWwYASABKAkSDAoEY29kZRgCIAEoCRIQCghwYXNzd29yZBgDIAEoCSKJAQoRU1NPRmluaXNoUmVzcG9uc2USJQoGdG9rZW5zGAEgASgLMhUuY2FsYWJhLnYxLkF1dGhUb2tlbnMSMgoGYWNjZXNzGAIgASgLMiIuY2FsYWJhLnYxLldvcmtzcGFjZUlkZW50aXR5QWNjZXNzEhkKAm1lGAMgASgLMg0uY2FsYWJhLnYxLk1lQpcBCg1jb20uY2FsYWJhLnYxQglBdXRoUHJvdG9QAVo2Z2l0aHViLmNvbS9jYWxhYmEvY2FsYWJhL3NlcnZlci9nZW4vY2FsYWJhL3YxO2NhbGFiYXYxogIDQ1hYqgIJQ2FsYWJhLlYxygIJQ2FsYWJhXFYx4gIVQ2FsYWJhXFYxXEdQQk1ldGFkYXRh6gIKQ2FsYWJhOjpWMWIGcHJvdG8z", [file_google_protobuf_timestamp, file_calaba_v1_user, file_calaba_v1_identity]);
 
 /**
  * A login session = one device. Each session has its own rotating refresh token.
@@ -56,6 +58,11 @@ export type Session = Message<"calaba.v1.Session"> & {
    * @generated from field: google.protobuf.Timestamp expires_at = 7;
    */
   expiresAt?: Timestamp | undefined;
+
+  /**
+   * @generated from field: calaba.v1.SessionAuthority authority = 9;
+   */
+  authority?: SessionAuthority | undefined;
 
   /**
    * true for the session that made the request
@@ -106,6 +113,11 @@ export type AuthTokens = Message<"calaba.v1.AuthTokens"> & {
    * @generated from field: string session_id = 5;
    */
   sessionId: string;
+
+  /**
+   * @generated from field: calaba.v1.SessionAuthority authority = 6;
+   */
+  authority?: SessionAuthority | undefined;
 };
 
 /**
@@ -474,4 +486,35 @@ export type ResetPasswordRequest = Message<"calaba.v1.ResetPasswordRequest"> & {
  */
 export const ResetPasswordRequestSchema: GenMessage<ResetPasswordRequest> = /*@__PURE__*/
   messageDesc(file_calaba_v1_auth, 14);
+
+/**
+ * Session credentials are returned only to the bound initiating client.
+ *
+ * @generated from message calaba.v1.SSOFinishResponse
+ */
+export type SSOFinishResponse = Message<"calaba.v1.SSOFinishResponse"> & {
+  /**
+   * @generated from field: calaba.v1.AuthTokens tokens = 1;
+   */
+  tokens?: AuthTokens | undefined;
+
+  /**
+   * @generated from field: calaba.v1.WorkspaceIdentityAccess access = 2;
+   */
+  access?: WorkspaceIdentityAccess | undefined;
+
+  /**
+   * restricted profile for workspace_sso/recovery
+   *
+   * @generated from field: calaba.v1.Me me = 3;
+   */
+  me?: Me | undefined;
+};
+
+/**
+ * Describes the message calaba.v1.SSOFinishResponse.
+ * Use `create(SSOFinishResponseSchema)` to create a new message.
+ */
+export const SSOFinishResponseSchema: GenMessage<SSOFinishResponse> = /*@__PURE__*/
+  messageDesc(file_calaba_v1_auth, 15);
 

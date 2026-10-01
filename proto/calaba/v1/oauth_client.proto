@@ -1,0 +1,77 @@
+syntax = "proto3";
+package calaba.v1;
+import "google/protobuf/timestamp.proto";
+
+// Standard OAuth endpoints use OAuth JSON/form; these are Calaba management/consent DTOs.
+enum OAuthClientType {
+  OAUTH_CLIENT_TYPE_UNSPECIFIED = 0;
+  OAUTH_CLIENT_TYPE_CONFIDENTIAL_WEB = 1;
+  OAUTH_CLIENT_TYPE_PUBLIC_NATIVE = 2;
+  OAUTH_CLIENT_TYPE_PUBLIC_SPA = 3;
+}
+message OAuthClient {
+  string id = 1;
+  string workspace_id = 2;
+  string client_id = 3;
+  string name = 4;
+  OAuthClientType type = 5;
+  repeated string redirect_uris = 6;
+  repeated string allowed_origins = 7;
+  repeated string scopes = 8;
+  bool refresh_enabled = 9;
+  uint64 version = 10;
+  google.protobuf.Timestamp disabled_at = 11;
+  google.protobuf.Timestamp created_at = 12;
+}
+message CreateOAuthClientRequest {
+  string name = 1;
+  OAuthClientType type = 2;
+  repeated string redirect_uris = 3;
+  repeated string allowed_origins = 4;
+  repeated string scopes = 5;
+  bool refresh_enabled = 6;
+}
+message UpdateOAuthClientRequest {
+  uint64 version = 1;
+  string name = 2;
+  repeated string redirect_uris = 3;
+  repeated string allowed_origins = 4;
+  repeated string scopes = 5;
+  bool refresh_enabled = 6;
+}
+message OAuthClientSecretResponse {
+  OAuthClient client = 1;
+  string secret_once = 2;
+  google.protobuf.Timestamp old_secret_valid_until = 3;
+}
+message RotateOAuthClientSecretRequest { bool revoke_old = 1; }
+message ListOAuthClientsResponse { repeated OAuthClient clients = 1; }
+message OAuthConsentSnapshot {
+  string request_id = 1;
+  string workspace_id = 2;
+  string workspace_name = 3;
+  string client_name = 4;
+  string redirect_uri = 5;
+  string display_name = 6;
+  repeated string scopes = 7;
+  bool refresh_requested = 8;
+  string csrf_token = 9;
+  google.protobuf.Timestamp expires_at = 10;
+}
+message BindOAuthRequest { string csrf_token = 1; }
+message DecideOAuthRequest {
+  bool allow = 1;
+  bool allow_refresh = 2;
+  string csrf_token = 3;
+}
+message OAuthDecisionResponse { string redirect_url = 1; }
+message OAuthGrant {
+  string id = 1;
+  string workspace_id = 2;
+  string client_name = 3;
+  repeated string scopes = 4;
+  google.protobuf.Timestamp created_at = 5;
+  google.protobuf.Timestamp expires_at = 6;
+  google.protobuf.Timestamp revoked_at = 7;
+}
+message ListOAuthGrantsResponse { repeated OAuthGrant grants = 1; }
