@@ -2,11 +2,9 @@ import { describe, expect, it } from 'vitest';
 import { appDropAt, appInitial, coversContent, moveApp, showBottomIsland, titleSlot, visibleViewRect, type OverlayNode } from './webApps';
 
 describe('showBottomIsland', () => {
-  it('is hidden under an app view unless a voice call is on', () => {
-    expect(showBottomIsland(false, false)).toBe(true);
-    expect(showBottomIsland(false, true)).toBe(true);
-    expect(showBottomIsland(true, false)).toBe(false);
-    expect(showBottomIsland(true, true)).toBe(true);
+  it('is hidden whenever an app is open, regardless of voice state', () => {
+    expect(showBottomIsland(false)).toBe(true);
+    expect(showBottomIsland(true)).toBe(false);
   });
 });
 

@@ -11,21 +11,13 @@ import { useToasts } from '../../stores/toasts';
 import { useCall } from '../../stores/call';
 import { useAdmissions } from '../guests/stores/admissions';
 
-/**
- * The open web app (ADR-0050 §3 + «Уточнение») in place of the room column and the chat, as one
- * island like them: no toolbar — just the site, with a 2 px load line above it while it loads
- * (the name is in the title bar; ⌘/Ctrl+[ ] R and the rail tile's menu navigate). The site goes
- * down to the window's bottom; only while a voice call is on does the bottom island stay and the
- * site keeps clear of its band (`--island-height`, unset = 0 → `-16px + 16px`): on the desktop it
- * is a native view that nothing in the page can overlap.
- */
+/** The web app fills the content area down to the window bottom, also during calls. */
 export function AppScreen({ appId }: { appId: string }): ReactNode {
   const url = useWebApps((s) => s.byId[appId]?.url ?? '');
   if (!url) return null;
   return (
     <div
-      className="mat-content flex min-w-0 flex-1 flex-col overflow-hidden rounded-tl-[var(--radius-panel)] border-l border-t border-line"
-      style={{ paddingBottom: 'calc(var(--island-height, -16px) + 16px)' }}
+      className="mat-content flex min-w-0 flex-1 flex-col overflow-hidden rounded-[var(--radius-panel)] border-l border-t border-line"
       data-testid="app-screen"
     >
       <LoadLine appId={appId} />
@@ -77,9 +69,12 @@ function useOverlayOpen(): boolean {
 /** A hidden view (main: zero bounds take it out of the window, it stays alive). */
 const HIDDEN: WebAppBounds = { x: 0, y: 0, width: 0, height: 0 };
 
+// Tooltips are native-view occluders too: a DOM z-index cannot put them above Electron.
+const OCCLUDERS = '[data-app-occluder], [data-radix-popper-content-wrapper]:has([data-app-tooltip])';
+
 /** Rectangles of the overlays that must stay visible over the site (`[data-app-occluder]`). */
 function occluderRects(): WebAppBounds[] {
-  return Array.from(document.querySelectorAll<HTMLElement>('[data-app-occluder]'), (o) => {
+  return Array.from(document.querySelectorAll<HTMLElement>(OCCLUDERS), (o) => {
     const r = o.getBoundingClientRect();
     return { x: r.left, y: r.top, width: r.width, height: r.height };
   });
@@ -136,11 +131,24 @@ function DesktopView({ appId, url }: { appId: string; url: string }): ReactNode 
     };
     const ro = new ResizeObserver(push);
     ro.observe(el);
-    for (const o of document.querySelectorAll('[data-app-occluder]')) ro.observe(o);
+    let observed = new Set<Element>();
+    const observeOverlays = (): void => {
+      const next = new Set(document.querySelectorAll(OCCLUDERS));
+      if (next.size === observed.size && [...next].every((o) => observed.has(o))) return;
+      for (const o of observed) if (!next.has(o)) ro.unobserve(o);
+      for (const o of next) if (!observed.has(o)) ro.observe(o);
+      observed = next;
+      push();
+    };
+    // Radix tooltips mount lazily and lay out after their portal is inserted.
+    const mo = new MutationObserver(observeOverlays);
+    mo.observe(document.body, { childList: true, subtree: true });
+    observeOverlays();
     push();
     return () => {
       cancelAnimationFrame(raf);
       ro.disconnect();
+      mo.disconnect();
     };
   }, [api, covered, occluders]);
 
