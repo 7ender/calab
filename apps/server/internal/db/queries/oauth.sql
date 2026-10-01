@@ -5,6 +5,13 @@ INSERT INTO oauth_clients (workspace_id, client_id, name, client_type, refresh_e
 VALUES (sqlc.arg('workspace_id'), sqlc.arg('client_id'), sqlc.arg('name'), sqlc.arg('client_type'), sqlc.arg('refresh_enabled'), sqlc.arg('allowed_origins'), sqlc.arg('auth_method'), sqlc.arg('scopes'), sqlc.narg('created_by'))
 RETURNING *;
 
+-- name: NarrowOAuthGrantScopes :one
+UPDATE oauth_grants SET scopes=sqlc.arg('scopes')
+WHERE workspace_id=sqlc.arg('workspace_id') AND id=sqlc.arg('id') AND client_id=sqlc.arg('client_id')
+AND sqlc.arg('scopes')::text[] <@ scopes AND 'openid'=ANY(sqlc.arg('scopes')::text[])
+AND revoked_at IS NULL AND absolute_expires_at>clock_timestamp() AND idle_expires_at>clock_timestamp()
+RETURNING *;
+
 -- name: GetOAuthClient :one
 SELECT * FROM oauth_clients WHERE workspace_id = sqlc.arg('workspace_id') AND id = sqlc.arg('id');
 
