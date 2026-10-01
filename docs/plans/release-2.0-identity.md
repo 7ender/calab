@@ -577,3 +577,11 @@ HttpOnly browser cookie; consent/issuance остаются серверными 
 смена account/server и истечение flow очищают context. Истёкший authorization request
 требует нового запуска клиентом, а не автоматического создания grant. Проверяется
 navigation round trip, смена account и отказ от произвольного return URL.
+
+[ADR-0055](../adr/0055-scoped-session-reauthentication.md) разрешает `step_up`
+также для живой `workspace_sso(A)`: только тот же workspace/connection/identity и
+исходная session, без новых tokens, local proof или продления session deadline.
+Scope/subject/версии и отзыв проверяются на begin/callback/finish/exchange; истёкшая
+session требует нового login/request. Provider `auth_time` остаётся связан с authority:
+local account требует local reauth для `prompt=login`/`max_age`, scoped session — SSO.
+При необходимости локальный consent проходит обе проверки; SSO не обновляет local proof.
