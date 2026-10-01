@@ -142,7 +142,7 @@ func (s *Service) CheckGlobal(ctx context.Context, id Identity, op identitypolic
 
 // WithPolicy installs a request-local gate used by every nested resource resolution.
 func (s *Service) WithPolicy(ctx context.Context, id Identity, op identitypolicy.Operation) context.Context {
-	return perm.WithAccessGuard(ctx, func(ctx context.Context, ws, user uuid.UUID) error {
+	return perm.WithAccessGuard(ctx, func(ctx context.Context, ws, _ uuid.UUID) error {
 		// A handler may resolve another member's permissions; authority still belongs to caller.
 		if ws == uuid.Nil {
 			if id.IsBot {
