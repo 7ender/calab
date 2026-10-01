@@ -1,5 +1,26 @@
 # Identity 2.0 isolated validation environment and evidence
 
+## Final integrated QA ownership (2026-10-01)
+
+The coordinator handed over this report, TESTING.md Identity2 steps 5–9 and the
+browser harness's narrow CORS assertions to the final-QA worker. Preparation base
+`b3b752be24f91842fe47fed758729f9560aa8b86` is **not the final release source**;
+common checks and full suites await the integrated provider corrections and an
+explicit final SHA. No final acceptance is claimed by the historical results below.
+The required browser runner now fetches discovery/JWKS from its registered
+`https://rp.identity.test` document with browser CORS, and asserts the request-uri
+and authorization-response issuer metadata flags. APIRequestContext alone cannot
+prove CORS. Independent Node RS256 verification and the existing golden stay intact.
+
+Final QA uses the coordinator-assigned ORIGINAL retained harness at
+`/Users/macbook/orca/workspaces/Calaba/identity-v2-qa-env/tools/identity-test-env.sh`,
+QA Valkey 57479 (App DB15 / RTC14), PG18 57418 then PG17 57417 and LiveKit 57488.
+Only a dedicated Garage container `calaba-identity-final-garage` on free port 57590
+is created by final QA; TEST_S3_* is kept in a private temporary file. No copied
+harness up/down, other-worktree changes, production changes or visual suites.
+
+## Historical environment preparation (not final acceptance)
+
 2026-10-01; audited/tested application baseline **`99a60fc5`**, before the identity-delivery workers'
 implementation. These artifacts are Task Q only. **SSO/OAuth acceptance is planned, not executed.**
 The coordinator's contract hold was lifted after ADR-0054 and `release-2.0-identity.md` were published

@@ -142,10 +142,28 @@ async function consentJourney(workspace, client, token, proof, journeyPage = pag
  const exchange = { grant_type: 'authorization_code', client_id: client.clientId, redirect_uri: callback, code, code_verifier: verifier };
  const tokens = await jsonResponse(await context.request.post(`${issuer}/token`, { form: exchange }), 200, 'S256 exchange');
  assert(tokens.access_token && tokens.id_token);
- const discovery = await jsonResponse(await context.request.get(`${issuer}/.well-known/openid-configuration`), 200, 'discovery');
+ // Fetch from the registered RP document: APIRequestContext does not enforce
+ // browser CORS and cannot prove SPA discovery/JWKS interoperability.
+ assert.equal(new URL(page.url()).origin, 'https://rp.identity.test');
+ const publicMetadata = await page.evaluate(async issuer => {
+  const options = { mode: 'cors', credentials: 'omit', redirect: 'error' };
+  const discovery = await fetch(`${issuer}/.well-known/openid-configuration`, options);
+  const jwks = await fetch(`${issuer}/jwks`, options);
+  return {
+   discoveryStatus: discovery.status, discoveryType: discovery.type,
+   discovery: await discovery.json(),
+   jwksStatus: jwks.status, jwksType: jwks.type, jwks: await jwks.json(),
+  };
+ }, issuer);
+ assert.equal(publicMetadata.discoveryStatus, 200, 'browser discovery CORS');
+ assert.equal(publicMetadata.jwksStatus, 200, 'browser JWKS CORS');
+ assert.equal(publicMetadata.discoveryType, 'cors');
+ assert.equal(publicMetadata.jwksType, 'cors');
+ const { discovery, jwks } = publicMetadata;
  assert.equal(discovery.issuer, issuer);
  assert.equal(discovery.jwks_uri, `${issuer}/jwks`);
- const jwks = await jsonResponse(await context.request.get(discovery.jwks_uri), 200, 'public JWKS');
+ assert.equal(discovery.request_uri_parameter_supported, false);
+ assert.equal(discovery.authorization_response_iss_parameter_supported, true);
  const [h, p, s] = tokens.id_token.split('.');
  const header = JSON.parse(Buffer.from(h, 'base64url'));
  const claims = JSON.parse(Buffer.from(p, 'base64url'));
@@ -170,7 +188,7 @@ async function consentJourney(workspace, client, token, proof, journeyPage = pag
  const revoke = await context.request.post(`${issuer}/revoke`, { form: { client_id: client.clientId, token: tokens.access_token } }); assert.equal(revoke.status(), 200);
  const denied = await context.request.get(`${issuer}/userinfo`, { headers: { Authorization: `Bearer ${tokens.access_token}` } }); assert.equal(denied.status(), 401);
  await page.unroute(callbackRoute);
- checkpoint(`${proof} consent, same request, S256, independent JWKS verification, UserInfo and revoke`);
+ checkpoint(`${proof} consent, same request, S256, browser discovery/JWKS CORS, independent JWKS verification, UserInfo and revoke`);
  return claims.sub;
 }
 try {
