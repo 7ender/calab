@@ -135,6 +135,9 @@ func (s *Service) checkGrant(ctx context.Context, q *sqlc.Queries, c sqlc.OauthC
 
 func (s *Service) issueTokens(ctx context.Context, q *sqlc.Queries, c sqlc.OauthClient, g sqlc.OauthGrant, nonce string, refresh bool, generation int64, parent *uuid.UUID, d identitypolicy.Decision) (tokenResponse, error) {
 	now := s.c.Now().UTC()
+	if g.AuthenticatedAt.After(now) {
+		return tokenResponse{}, oauthError("invalid_grant")
+	}
 	dbNow, err := q.IdentityDatabaseNow(ctx)
 	if err != nil {
 		return tokenResponse{}, err

@@ -106,7 +106,11 @@ func (s *Service) state(ctx context.Context, q *sqlc.Queries, p identitypolicy.P
 	if st.Principal.UserID != p.UserID || st.Principal.SessionID != p.SessionID || st.WorkspaceID != ws {
 		return st, identitypolicy.Decision{}, identitypolicy.ErrDenied
 	}
-	d := identitypolicy.Evaluate(s.c.Now(), st, op)
+	now, err := s.policyNow(ctx, q)
+	if err != nil {
+		return st, identitypolicy.Decision{}, err
+	}
+	d := identitypolicy.Evaluate(now, st, op)
 	if lockErr != nil && d.Allowed {
 		d = identitypolicy.Decision{Reason: identitypolicy.MembershipRequired}
 	}
@@ -114,6 +118,20 @@ func (s *Service) state(ctx context.Context, q *sqlc.Queries, p identitypolicy.P
 		return st, d, identitypolicy.ErrDenied
 	}
 	return st, d, nil
+}
+
+// A deadline expired on either trusted clock is expired for policy. Read this
+// only after boundary locks and the authoritative state snapshot are acquired.
+func (s *Service) policyNow(ctx context.Context, q *sqlc.Queries) (time.Time, error) {
+	dbNow, err := q.IdentityDatabaseNow(ctx)
+	if err != nil {
+		return time.Time{}, err
+	}
+	now := s.c.Now()
+	if dbNow.After(now) {
+		now = dbNow
+	}
+	return now, nil
 }
 
 // All provider transactions acquire workspace, then policy, then client, grant,

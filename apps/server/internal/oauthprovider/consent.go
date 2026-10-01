@@ -68,12 +68,17 @@ func (s *Service) entitlement(ctx context.Context, q *sqlc.Queries, ws uuid.UUID
 		return oauthError("access_denied")
 	}
 	plan, err := q.GetWorkspacePlan(ctx, ws)
-	business := err == nil && plan.Plan == "enterprise" && (plan.ValidUntil == nil || s.c.Now().Before(*plan.ValidUntil))
+	planFound := err == nil
+	now, err := s.policyNow(ctx, q)
+	if err != nil {
+		return err
+	}
+	business := planFound && plan.Plan == "enterprise" && (plan.ValidUntil == nil || now.Before(*plan.ValidUntil))
 	grant := identitypolicy.Grant{WorkspaceID: ws, Feature: identitypolicy.OAuthProvider, Source: g.Source, Enabled: g.Enabled, Revoked: g.RevokedAt != nil, Version: g.Version, PlanEligible: s.c.Entitlements.Eligible(ws, g.Source, business)}
 	if g.ValidUntil != nil {
 		grant.ValidUntil = *g.ValidUntil
 	}
-	if !identitypolicy.RequireEntitlement(s.c.Now(), ws, grant, identitypolicy.OAuthProvider).Allowed {
+	if !identitypolicy.RequireEntitlement(now, ws, grant, identitypolicy.OAuthProvider).Allowed {
 		return oauthError("access_denied")
 	}
 	return nil
@@ -262,6 +267,9 @@ func (s *Service) findRequest(ctx context.Context, q *sqlc.Queries, r *http.Requ
 		return sqlc.OauthAuthorizationRequest{}, oauthError("invalid_request")
 	}
 	req, err := q.FindOAuthRequest(ctx, sqlc.FindOAuthRequestParams{HandleHash: hash(handle), BrowserHash: hash(cookie)})
+	if err != nil && !errors.Is(err, dbNoRows()) {
+		return req, err
+	}
 	if err != nil || req.ConsumedAt != nil || !s.c.Now().Before(req.ExpiresAt) || req.Issuer != s.issuer(req.WorkspaceID) {
 		return req, oauthError("invalid_request")
 	}
@@ -280,7 +288,7 @@ func (s *Service) bind(w http.ResponseWriter, r *http.Request) {
 	}
 	p, err := s.resolveBearer(r)
 	if err != nil {
-		writeAPIError(w, &protocolError{code: "invalid_token", status: http.StatusUnauthorized})
+		writeAPIError(w, apiSessionError(err))
 		return
 	}
 	var snapshot *v1.OAuthConsentSnapshot
@@ -299,15 +307,18 @@ func (s *Service) bind(w http.ResponseWriter, r *http.Request) {
 		if c.DisabledAt != nil || c.Version != req.ClientVersion {
 			return oauthError("invalid_request")
 		}
-		st, _, err := s.state(r.Context(), q, p, req.WorkspaceID, identitypolicy.OAuthAuthorize)
+		st, d, err := s.state(r.Context(), q, p, req.WorkspaceID, identitypolicy.OAuthAuthorize)
 		if err != nil {
-			return oauthError("interaction_required")
+			return apiIdentityError(st, d, err)
 		}
 		if !freshAuthentication(s.c.Now(), req.CreatedAt, authTime(st), req.Prompt, req.MaxAgeSeconds) {
 			return oauthError("login_required")
 		}
 		csrf := opaque("calab_cs_")
 		_, err = q.BindOAuthRequest(r.Context(), sqlc.BindOAuthRequestParams{ID: req.ID, BrowserHash: req.BrowserHash, SessionID: &p.SessionID, UserID: &p.UserID, CsrfHash: hash(csrf)})
+		if err != nil && !errors.Is(err, dbNoRows()) {
+			return err
+		}
 		if err != nil {
 			return oauthError("invalid_request")
 		}
@@ -341,7 +352,7 @@ func (s *Service) decide(w http.ResponseWriter, r *http.Request) {
 	}
 	p, err := s.resolveBearer(r)
 	if err != nil {
-		writeAPIError(w, &protocolError{code: "invalid_token", status: http.StatusUnauthorized})
+		writeAPIError(w, apiSessionError(err))
 		return
 	}
 	redirect := ""
@@ -362,12 +373,15 @@ func (s *Service) decide(w http.ResponseWriter, r *http.Request) {
 		}
 		st, d, err := s.state(r.Context(), q, p, req.WorkspaceID, identitypolicy.OAuthAuthorize)
 		if err != nil {
-			return oauthError("interaction_required")
+			return apiIdentityError(st, d, err)
 		}
 		if !freshAuthentication(s.c.Now(), req.CreatedAt, authTime(st), req.Prompt, req.MaxAgeSeconds) {
 			return oauthError("login_required")
 		}
 		req, err = q.ConsumeOAuthRequest(r.Context(), sqlc.ConsumeOAuthRequestParams{ID: req.ID, BrowserHash: req.BrowserHash, CsrfHash: hash(input.CsrfToken), SessionID: &p.SessionID, UserID: &p.UserID})
+		if err != nil && !errors.Is(err, dbNoRows()) {
+			return err
+		}
 		if err != nil {
 			return oauthError("invalid_request")
 		}
