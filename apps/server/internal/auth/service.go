@@ -511,6 +511,13 @@ func (s *Service) refreshAuthority(ctx context.Context, req *v1.RefreshRequest, 
 		revoked string // reason of a revocation made here
 	)
 	err := s.db.Tx(ctx, func(q *sqlc.Queries) error {
+		// Workspace mutations and RP issuance lock the source row before any session.
+		// Take that same boundary before rotating a scoped refresh token.
+		if authority == identitypolicy.WorkspaceSSO {
+			if _, err := q.LockOAuthWorkspace(ctx, ws); err != nil {
+				return errInvalidRefresh
+			}
+		}
 		sess, err := q.GetSessionForUpdate(ctx, sid)
 		if db.IsNotFound(err) {
 			return errInvalidRefresh
@@ -523,13 +530,7 @@ func (s *Service) refreshAuthority(ctx context.Context, req *v1.RefreshRequest, 
 		if p.Authority != authority || p.WorkspaceID != ws {
 			return errInvalidRefresh
 		}
-		if authority == identitypolicy.WorkspaceSSO {
-			policy := &identitypolicy.Service{Loader: identitypolicy.NewSQLLoader(q, s.entitlements), Now: s.now}
-			d, err := policy.CheckWorkspace(ctx, p, ws, identitypolicy.WorkspaceRead)
-			if err != nil {
-				return IdentityError(p, d, err)
-			}
-		}
+
 		current := subtle.ConstantTimeCompare(presented, sess.RefreshTokenHash) == 1
 		previous := !current && sess.PrevRefreshTokenHash != nil && subtle.ConstantTimeCompare(presented, sess.PrevRefreshTokenHash) == 1
 		if sess.RevokedAt != nil {
@@ -562,6 +563,13 @@ func (s *Service) refreshAuthority(ctx context.Context, req *v1.RefreshRequest, 
 				return nil // commit the revocation
 			}
 		}
+		if authority == identitypolicy.WorkspaceSSO {
+			policy := &identitypolicy.Service{Loader: identitypolicy.NewSQLLoader(q, s.entitlements), Now: s.now}
+			d, err := policy.CheckWorkspace(ctx, p, ws, identitypolicy.WorkspaceRead)
+			if err != nil {
+				return IdentityError(p, d, err)
+			}
+		}
 		user, err := q.GetUser(ctx, sess.UserID)
 		if err != nil {
 			return err
@@ -592,10 +600,14 @@ func (s *Service) refreshAuthority(ctx context.Context, req *v1.RefreshRequest, 
 		if err != nil {
 			return err
 		}
+		expires := now.Add(ttl)
+		if authority != identitypolicy.LocalAccount && sess.ExpiresAt.Before(expires) {
+			expires = sess.ExpiresAt // corporate session has an absolute RP deadline
+		}
 		sess, err = q.RotateSession(ctx, sqlc.RotateSessionParams{
 			ID:               sess.ID,
 			RefreshTokenHash: newHash,
-			ExpiresAt:        now.Add(ttl),
+			ExpiresAt:        expires,
 			Ip:               clip(c.IP, 64),
 			UserAgent:        clip(c.UserAgent, 256),
 			ReplaySeal:       seal,

@@ -55,13 +55,19 @@ func (c *liveCache) put(sess sqlc.Session, now time.Time) {
 		for k, u := range c.until {
 			if !now.Before(u) {
 				delete(c.until, k)
+				delete(c.principals, k)
 			}
 		}
 		if len(c.until) >= liveCacheMax {
 			clear(c.until)
+			clear(c.principals)
 		}
 	}
-	c.until[sid] = now.Add(sessionRecheck)
+	until := now.Add(sessionRecheck)
+	if sess.ExpiresAt.Before(until) {
+		until = sess.ExpiresAt
+	}
+	c.until[sid] = until
 	if c.principals == nil {
 		c.principals = map[uuid.UUID]identitypolicy.Principal{}
 	}
