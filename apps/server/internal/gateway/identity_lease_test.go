@@ -194,11 +194,11 @@ func TestIdentityLeaseSessionExpiryAndBounds(t *testing.T) {
 	if s.allowsEvent(leaseEvent(ws)) {
 		t.Fatal("expired session allowed workspace")
 	}
-	for i := 0; i < maxIdentityWorkspaces+10; i++ {
+	for i := 0; i < 266; i++ {
 		_, _ = s.refreshWorkspaceLease(context.Background(), uuid.New())
 	}
-	if len(s.leases.workspaces) > maxIdentityWorkspaces {
-		t.Fatal("lease map grew without bound")
+	if len(s.leases.workspaces) != 267 {
+		t.Fatal("supported durable memberships lost their positive leases")
 	}
 	s.ready = false
 	s.hub = nil // queue bounding is independent of identity

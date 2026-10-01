@@ -402,10 +402,19 @@ func (h *Hub) identify(c *conn, req *v1.Identify) *Session {
 		h.destroy(s, 4000, "try again")
 		return nil
 	}
+	enc := newEnc(&v1.DispatchEvent{Event: &v1.DispatchEvent_Ready{Ready: ready}})
+	s.prepareAdmissionReceipts(ctx, enc)
+	filtered := ready.PendingAdmissions[:0]
+	for _, receipt := range ready.PendingAdmissions {
+		if s.allowsAdmissionReceipt(enc, receipt) {
+			filtered = append(filtered, receipt)
+		}
+	}
+	ready.PendingAdmissions = filtered
 	s.mu.Lock()
 	s.attachLocked(c)
 	s.ready = true
-	s.emit(uuid.New(), newEnc(&v1.DispatchEvent{Event: &v1.DispatchEvent_Ready{Ready: ready}}))
+	s.emit(uuid.New(), enc)
 	s.flushPending(nil)
 	s.mu.Unlock()
 	h.publishPresence(ctx, s.user)
@@ -478,18 +487,12 @@ func (h *Hub) buildReady(ctx context.Context, s *Session, uid uuid.UUID) (*v1.Re
 		ready.Workspaces = append(ready.Workspaces, snap)
 	}
 	// Guest admission (ADR-0040): the recipient's own knocks, and the knocks they decide.
-	if s.bot || s.principal.Authority == identitypolicy.LocalAccount {
+	if !s.bot && s.principal.Authority == identitypolicy.LocalAccount {
 		if ready.PendingAdmissions, err = guests.OwnAdmissions(ctx, h.db.Q, uid); err != nil {
 			return nil, err
 		}
 	}
-	filteredAdmissions := ready.PendingAdmissions[:0]
-	for _, admission := range ready.PendingAdmissions {
-		if s.allowsWorkspace(ctx, parseID(admission.GetWorkspaceId())) {
-			filteredAdmissions = append(filteredAdmissions, admission)
-		}
-	}
-	ready.PendingAdmissions = filteredAdmissions
+
 	if err := guests.FillAdmissions(ctx, h.db.Q, uid, ready.Workspaces); err != nil {
 		return nil, err
 	}

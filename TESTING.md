@@ -2053,3 +2053,13 @@ CALABA_WEB_URL=http://127.0.0.1:39571 npx playwright test --config playwright.we
 7. Инвайт: `curl -X POST $CALAB/api/workspaces/$WS/invites -H "Authorization: Bearer $TOKEN" -H 'Content-Type: application/json' -d '{"maxUses":1}'` → 201 с `code`; ссылка `/join/<code>` пускает нового человека. Снять у роли `INVITE_MEMBERS` → тот же запрос 403 (не `BOT_NOT_ALLOWED`).
 8. `GET …/freebusy?users=$BOB&from=…&to=…` → 200, в `busy` нет `title`; `POST …/invites/lookup` → 403 `BOT_NOT_ALLOWED`.
 9. В логе сервера на шаги 3–5 и 7 — строки `bot action` с `bot_id` и `bot_owner`.
+
+
+### Identity 2.0: совместимость локальных событий и чтения
+
+- Go 1.26.8: gateway race units проверяют собственный receipt без membership, A/B isolation, версии/expiry, final socket/replay и bounded cold preparation с resync при overload.
+- На отдельной PG18 БД/Redis выполнить App race с фильтром `TestIdentityCompatibility.*|TestIdentityFileReferences.*|TestForwardMessages|TestIdentityProfileImagesRequireCurrentScopedMembership`.
+- READY сохраняет все 258 разрешённых memberships; удалённые memberships и истёкшие receipts удаляются из lease state.
+- Operator-off local reauth принимает только local bearer/password и точный непустой trusted Origin, сохраняет limiter; bot/scoped/recovery запрещены, SSO остаётся 503.
+- Архивная временная комната: разрешённая history читается, POST/voice дают ROOM_ARCHIVED; существующий message-edit handler сохраняет 404. Permanent archive, B и recovery не открываются.
+- Invite preview учитывает неизвестные коды и не списывает успешный preview дважды; GET/HEAD file/thumbnail используют каждую разрешённую live reference через WithPolicy/CanRead.

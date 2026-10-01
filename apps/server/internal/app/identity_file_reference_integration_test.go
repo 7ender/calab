@@ -53,7 +53,7 @@ func identityReferencePolicy(t *testing.T, workspace, mode string) {
 // Authenticate and resolve the durable principal, then install the same identity
 // and permission contexts as the App. This exercises the real typed file handler
 // while the separately owned App routing change is pending.
-func identityReferenceRequest(t *testing.T, u *user, method string, ctx context.Context) *http.Request {
+func identityReferenceRequest(ctx context.Context, t *testing.T, u *user, method string) *http.Request {
 	t.Helper()
 	r, err := http.NewRequestWithContext(ctx, method, srv.URL+"/api/files/"+uuid.NewString(), http.NoBody)
 	if err != nil {
@@ -77,7 +77,7 @@ func identityReferenceRequest(t *testing.T, u *user, method string, ctx context.
 func identityReferenceRead(t *testing.T, u *user, file sqlc.File, want bool) {
 	t.Helper()
 	for _, method := range []string{http.MethodGet, http.MethodHead} {
-		r := identityReferenceRequest(t, u, method, t.Context())
+		r := identityReferenceRequest(t.Context(), t, u, method)
 		allowed, err := testApp.Files.CanRead(r, file)
 		if allowed != want || want && err != nil {
 			t.Fatalf("CanRead %s authority session=%s file=%s: allowed=%v err=%v want=%v", method, u.session, file.ID, allowed, err, want)
@@ -262,7 +262,7 @@ func TestIdentityFileReferencesOriginAndProfileCanRead(t *testing.T) {
 
 	// A failed policy database lookup must remain a dependency error, not fall
 	// through to the uploader or another live candidate.
-	r = identityReferenceRequest(t, f.local, http.MethodGet, t.Context())
+	r = identityReferenceRequest(t.Context(), t, f.local, http.MethodGet)
 	cancelled, cancel := context.WithCancel(r.Context())
 	cancel()
 	if allowed, err := testApp.Files.CanRead(r.WithContext(cancelled), orphanA); allowed || err == nil || httpx.AsError(err).Status != 503 {

@@ -374,7 +374,8 @@ func New(d Deps) *App {
 		})))
 	}
 
-	mux := &routeRecorder{ServeMux: http.NewServeMux(), capability: publicIdentityGate(d.DB.Q)}
+	previews := redisx.NewRateLimiter(d.Redis, "rl:invite-preview:", 30, 30) // 30 per minute per IP, before policy/unknown-code rejection
+	mux := &routeRecorder{ServeMux: http.NewServeMux(), capability: publicIdentityGate(d.DB.Q, previews)}
 	health.Routes(mux, d.DB.Pool, d.Redis)
 	buildinfo.Routes(mux, d.Config.PlanContact())
 	mux.Handle("GET /metrics", promhttp.Handler())
@@ -387,11 +388,11 @@ func New(d Deps) *App {
 	ah.Private(mux, private)
 	users.NewHandlers(d.DB, pub, hub).Routes(mux, private)
 	workspaces.NewHandlers(d.DB, pub, d.Blob, workspaces.Limits{
-		MaxOwned:       d.Config.MaxWorkspacesPerUser,
-		Quota:          d.Config.DefaultWorkspaceQuotaBytes,
-		CreateLimiter:  redisx.NewRateLimiter(d.Redis, "rl:ws-create:", d.Config.WorkspaceCreatesPerHour, float64(d.Config.WorkspaceCreatesPerHour)/60),
-		Plans:          planSvc,
-		PreviewLimiter: redisx.NewRateLimiter(d.Redis, "rl:invite-preview:", 30, 30), // 30 per minute per IP
+		MaxOwned:      d.Config.MaxWorkspacesPerUser,
+		Quota:         d.Config.DefaultWorkspaceQuotaBytes,
+		CreateLimiter: redisx.NewRateLimiter(d.Redis, "rl:ws-create:", d.Config.WorkspaceCreatesPerHour, float64(d.Config.WorkspaceCreatesPerHour)/60),
+		Plans:         planSvc,
+		// Public identity wrapper charges preview requests exactly once.
 	}).WithEmailInvites(workspaces.EmailInvites{
 		Mail: mailSvc, PublicURL: d.Config.PublicAppURL,
 		Lookup: redisx.NewRateLimiter(d.Redis, "rl:invite-lookup:", 20, 20), // 20 per minute

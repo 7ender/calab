@@ -153,12 +153,18 @@ func (s *Session) allowsEvent(enc *encEvent) bool {
 		return false
 	}
 	if s.bot {
+		if enc.workspace == uuid.Nil && (ownReceipt(enc.ev.GetRoomAdmissionDecided().GetAdmission()) || len(enc.ev.GetReady().GetPendingAdmissions()) > 0) {
+			return false
+		}
 		return true
 	} // existing machine route and viewer gates remain mandatory
 	if !s.sessionLeaseAllows() {
 		return false
 	}
 	ev := enc.ev
+	if enc.workspace == uuid.Nil && ownReceipt(ev.GetRoomAdmissionDecided().GetAdmission()) {
+		return s.allowsAdmissionReceipt(enc, ev.GetRoomAdmissionDecided().GetAdmission())
+	}
 	if gone := ev.GetWorkspaceDelete(); gone != nil {
 		ws := parseID(gone.GetWorkspaceId())
 		return ws != uuid.Nil && (s.principal.Authority == identitypolicy.LocalAccount || s.principal.WorkspaceID == ws)
@@ -175,6 +181,11 @@ func (s *Session) allowsEvent(enc *encEvent) bool {
 		}
 		for _, snap := range ready.Workspaces {
 			if !s.workspaceLeaseAllows(parseID(snap.GetWorkspace().GetId())) {
+				return false
+			}
+		}
+		for _, receipt := range ready.PendingAdmissions {
+			if !s.allowsAdmissionReceipt(enc, receipt) {
 				return false
 			}
 		}
@@ -212,6 +223,23 @@ func knownScopedEvent(ev *v1.DispatchEvent) bool {
 // shared by recipients and remains attached through pauses and the socket write queue.
 func (h *Hub) prepareEvent(ctx context.Context, enc *encEvent) {
 	if enc.workspace != uuid.Nil || enc.ev.GetReady() != nil || enc.ev.GetResumed() != nil || enc.ev.GetWorkspaceDelete() != nil || enc.ev.GetWorkspaceIdentityAccessUpdate() != nil {
+		return
+	}
+	if ownReceipt(enc.ev.GetRoomAdmissionDecided().GetAdmission()) {
+		return // recipient preparation checks only the narrow receipt's durable policy
+	}
+	// These two local deletion/departure signals carry no surviving resource to
+	// resolve. Only their explicit variants qualify, never arbitrary missing IDs.
+	if gone := enc.ev.GetNotesDelete(); gone != nil {
+		if parseID(gone.GetRoomId()) != uuid.Nil {
+			enc.scopes, enc.scoped = []uuid.UUID{uuid.Nil}, true
+		}
+		return
+	}
+	if state := enc.ev.GetVoiceStateUpdate().GetState(); state != nil && state.GetRoomId() == "" && state.GetWorkspaceId() == "" {
+		if parseID(state.GetUserId()) != uuid.Nil {
+			enc.scopes, enc.scoped = []uuid.UUID{uuid.Nil}, true
+		}
 		return
 	}
 	scopes, valid := h.eventResources(ctx, enc.ev)
@@ -258,6 +286,7 @@ func (s *Session) replayAllowed(es []entry) bool {
 			continue
 		}
 		s.hub.prepareEvent(ctx, enc)
+		s.prepareAdmissionReceipts(ctx, enc)
 		scopes := append([]uuid.UUID{enc.workspace}, enc.scopes...)
 		if ready := enc.ev.GetReady(); ready != nil {
 			for _, snap := range ready.Workspaces {
@@ -347,6 +376,15 @@ func (h *Hub) enforceIdentitySession(ctx context.Context, s *Session) {
 	present := map[uuid.UUID]bool{}
 	for _, ws := range ids {
 		present[ws] = true
+	}
+	if err == nil {
+		s.leases.mu.Lock()
+		for ws := range s.leases.workspaces {
+			if !present[ws] {
+				delete(s.leases.workspaces, ws)
+			}
+		}
+		s.leases.mu.Unlock()
 	}
 	for ws := range old {
 		if !present[ws] {
@@ -447,6 +485,24 @@ func (h *Hub) identityNotification(payload string) {
 		Access    int64     `json:"access_version"`
 	}
 	if json.Unmarshal([]byte(payload), &notice) == nil && notice.Workspace != uuid.Nil {
+		// Receipts can outlive membership and have no byWS subscription. Only
+		// actually prepared receipts of this workspace track monotonic invalidations.
+		for _, s := range h.sessionsWhere(func(s *Session) bool { return !s.bot }) {
+			s.leases.mu.Lock()
+			for ws, state := range s.leases.receipts {
+				if !time.Now().Before(state.until) {
+					delete(s.leases.receipts, ws)
+				}
+			}
+			state, ok := s.leases.receipts[notice.Workspace]
+			if ok && (notice.Policy > state.policy || notice.Access > state.access) {
+				state.policy = max(state.policy, notice.Policy)
+				state.access = max(state.access, notice.Access)
+				state.epoch++
+				s.leases.receipts[notice.Workspace] = state
+			}
+			s.leases.mu.Unlock()
+		}
 		for _, s := range h.inWorkspace(notice.Workspace) {
 			s.leases.mu.Lock()
 			l := s.leases.workspaces[notice.Workspace]

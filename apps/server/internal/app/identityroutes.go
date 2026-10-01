@@ -7,6 +7,7 @@ import (
 	"github.com/calaba/calaba/server/internal/db/sqlc"
 	"github.com/calaba/calaba/server/internal/httpx"
 	"github.com/calaba/calaba/server/internal/identitypolicy"
+	"github.com/calaba/calaba/server/internal/redisx"
 	"github.com/google/uuid"
 	"net/http"
 	"strings"
@@ -134,7 +135,7 @@ var identityRoutes = map[string]identityScope{
 	"GET /api/boards/{id}/views":                                                        scopeBoard,
 	"GET /api/bots/me":                                                                  scopeMachine,
 	"GET /api/bots/me/webhook":                                                          scopeMachine,
-	"GET /api/bots/{ref}":                                                               scopeMachine,
+	"GET /api/bots/{ref}":                                                               scopeGlobal,
 	"GET /api/dms":                                                                      scopeGlobal,
 	"GET /api/dms/candidates":                                                           scopeGlobal,
 	"GET /api/event-rsvp":                                                               scopeCapability,
@@ -365,6 +366,12 @@ func identityGate(q *sqlc.Queries, a *auth.Service, next http.Handler) http.Hand
 		}
 		ctx := a.WithPolicy(r.Context(), id, op)
 		r = r.WithContext(ctx)
+		// The typed file handler checks every live reference with this exact policy
+		// context; the source workspace is not the only possible reading authority.
+		if scope == scopeFile && (r.Method == http.MethodGet || r.Method == http.MethodHead) {
+			next.ServeHTTP(w, r)
+			return
+		}
 		var err error
 		mutation := auth.MutationOptions{}
 		switch scope {
@@ -431,19 +438,6 @@ func identityGate(q *sqlc.Queries, a *auth.Service, next http.Handler) http.Hand
 			if db.IsNotFound(err) {
 				err = httpx.NotFound("resource")
 			}
-			if err == nil && scope == scopeFile && ws == uuid.Nil && id.Principal.Authority == identitypolicy.WorkspaceSSO && (r.Method == http.MethodGet || r.Method == http.MethodHead) {
-				file, e := httpx.PathUUID(r, "id", "file")
-				if e != nil {
-					err = e
-				} else {
-					image, e := q.IsIdentityWorkspaceProfileImage(ctx, sqlc.IsIdentityWorkspaceProfileImageParams{WorkspaceID: id.Principal.WorkspaceID, FileID: &file})
-					if e != nil {
-						err = e
-					} else if image {
-						ws = id.Principal.WorkspaceID
-					}
-				}
-			}
 			if err == nil {
 				if ws == uuid.Nil {
 					if !id.IsBot {
@@ -483,9 +477,9 @@ func identityTarget(r *http.Request, q *sqlc.Queries, sc identityScope) (uuid.UU
 	case scopeWorkspace:
 		return id, nil
 	case scopeRoom:
-		row, err := q.GetRoom(ctx, id)
-		if row.WorkspaceID != nil {
-			return *row.WorkspaceID, err
+		parent, err := q.GetIdentityRoomParent(ctx, id)
+		if parent != nil {
+			return *parent, err
 		}
 		return uuid.Nil, err
 	case scopeMessage:
@@ -493,9 +487,9 @@ func identityTarget(r *http.Request, q *sqlc.Queries, sc identityScope) (uuid.UU
 		if err != nil {
 			return uuid.Nil, err
 		}
-		room, err := q.GetRoom(ctx, row.RoomID)
-		if room.WorkspaceID != nil {
-			return *room.WorkspaceID, err
+		parent, err := q.GetIdentityRoomParent(ctx, row.RoomID)
+		if parent != nil {
+			return *parent, err
 		}
 		return uuid.Nil, err
 	case scopeBoard:
@@ -536,12 +530,18 @@ func identityTarget(r *http.Request, q *sqlc.Queries, sc identityScope) (uuid.UU
 // IdentityRouteCovered is used by the runtime route census assertion.
 func IdentityRouteCovered(pattern string) bool { _, ok := identityRoutes[pattern]; return ok }
 
-func publicIdentityGate(q *sqlc.Queries) func(string, http.Handler) http.Handler {
+func publicIdentityGate(q *sqlc.Queries, previews *redisx.RateLimiter) func(string, http.Handler) http.Handler {
 	return func(pattern string, next http.Handler) http.Handler {
 		if pattern != "GET /api/invites/{code}" && pattern != "GET /api/room-invites/{code}" && pattern != "POST /api/room-invites/{code}/join" {
 			return next
 		}
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			if pattern == "GET /api/invites/{code}" && previews != nil {
+				if err := previews.Take(r.Context(), httpx.ClientIP(r.Context())); err != nil {
+					httpx.WriteError(w, r, err)
+					return
+				}
+			}
 			if pattern == "POST /api/room-invites/{code}/join" && auth.IsBotRequest(r) {
 				httpx.WriteError(w, r, auth.ErrBotNotAllowed)
 				return

@@ -9,8 +9,6 @@ import (
 	"github.com/google/uuid"
 )
 
-const maxIdentityWorkspaces = 256
-
 // A lease is owned by one exact Session, never shared by user ID. until retains
 // time.Now's monotonic component; the absolute DB deadline can only shorten it.
 type identityLease struct {
@@ -26,6 +24,7 @@ type identityLeases struct {
 	mu         sync.Mutex
 	session    identityLease
 	workspaces map[uuid.UUID]identityLease
+	receipts   map[uuid.UUID]receiptPolicyState // actual own receipts only; never workspace access
 }
 
 func (s *Session) lease(d identitypolicy.Decision, ws uuid.UUID, started, evaluated time.Time, revision uint64) identityLease {
@@ -106,6 +105,12 @@ func (s *Session) refreshWorkspaceLease(ctx context.Context, ws uuid.UUID) (iden
 	if s.leases.workspaces == nil {
 		s.leases.workspaces = map[uuid.UUID]identityLease{}
 	}
+	// A replica/cache decision older than a received durable notice cannot
+	// resurrect access, even when refresh began after that notice.
+	oldVersion := s.leases.workspaces[ws].versions
+	if l.versions.Policy < oldVersion.Policy || l.versions.Access < oldVersion.Access {
+		l = identityLease{}
+	}
 	// Retain bounded version tombstones so duplicate invalidations cannot revoke again.
 	if l.session == uuid.Nil {
 		old := s.leases.workspaces[ws]
@@ -113,7 +118,9 @@ func (s *Session) refreshWorkspaceLease(ctx context.Context, ws uuid.UUID) (iden
 		if old.session != uuid.Nil {
 			s.leases.workspaces[ws] = old
 		}
-	} else if len(s.leases.workspaces) < maxIdentityWorkspaces || s.leases.workspaces[ws].session != uuid.Nil {
+	} else {
+		// Positive decisions prove durable membership, rather than imposing a
+		// fixed product cap that silently drops READY for supported memberships.
 		s.leases.workspaces[ws] = l
 	}
 	return d, err
@@ -180,6 +187,16 @@ func (s *Session) preparationFailed(marker *pauseMark) {
 	s.mu.Lock()
 	if s.conn != nil {
 		s.conn.closeNow(4000, "resync required")
+	}
+	s.mu.Unlock()
+}
+
+// Called outside gateway locks when an event cannot fit the bounded preparation budget.
+func (s *Session) requireIdentityResync() {
+	s.broken.Store(true)
+	s.mu.Lock()
+	if s.conn != nil {
+		s.conn.closeNow(4000, "identity resync required")
 	}
 	s.mu.Unlock()
 }

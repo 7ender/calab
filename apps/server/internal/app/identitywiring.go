@@ -245,8 +245,17 @@ func wireIdentity(d Deps, mux *routeRecorder, a *auth.Service) (*sso.Service, *d
 	// RegisterRoutes itself only binds method handlers; nil service never executes behind
 	// the explicitly disabled registrar, retaining complete route census on old installs.
 	op.RegisterRoutes(identityRegistrar{mux: mux, enabled: enabled, quota: providerQuotas(d, a)})
-	registrar.Handle("POST /api/auth/local/reauth", httpx.HandlerFunc(func(w http.ResponseWriter, r *http.Request) error {
-		if r.Header.Get("Origin") != settings.Origin {
+	// Independent local password proof remains available on operator-off installs.
+	// This does not enable SSO/provider routes or accept absent/native null origins.
+	reauthOrigins := map[string]bool{}
+	for _, origin := range d.Config.AllowedOrigins() {
+		reauthOrigins[origin] = true
+	}
+	if settings != nil {
+		reauthOrigins[settings.Origin] = true
+	}
+	(identityRegistrar{mux: mux, enabled: true}).Handle("POST /api/auth/local/reauth", httpx.HandlerFunc(func(w http.ResponseWriter, r *http.Request) error {
+		if origin := r.Header.Get("Origin"); origin == "" || !reauthOrigins[origin] {
 			return httpx.Forbidden("cross-origin request rejected")
 		}
 		id, err := a.Authenticate(r)

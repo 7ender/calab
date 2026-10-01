@@ -60,16 +60,17 @@ type Hub struct {
 	states   map[uuid.UUID]*wsState
 	releases map[uuid.UUID]chan struct{}
 
-	IdentityInvalidated func()
-	identityWake        chan struct{}
-	identityRun         sync.Mutex
-	identityCursor      uuid.UUID
-	preparations        chan func()
-	checkWorkspace      func(context.Context, auth.Identity, uuid.UUID) (identitypolicy.Decision, time.Time, error)
-	identityWorkspaces  func(context.Context, uuid.UUID) ([]uuid.UUID, error)
-	checkPrincipal      func(context.Context, auth.Identity) (identitypolicy.Principal, time.Time, error)
-	closing             atomic.Bool
-	nSockets            atomic.Int64
+	IdentityInvalidated  func()
+	identityWake         chan struct{}
+	identityRun          sync.Mutex
+	identityCursor       uuid.UUID
+	preparations         chan func()
+	checkWorkspace       func(context.Context, auth.Identity, uuid.UUID) (identitypolicy.Decision, time.Time, error)
+	identityWorkspaces   func(context.Context, uuid.UUID) ([]uuid.UUID, error)
+	checkPrincipal       func(context.Context, auth.Identity) (identitypolicy.Principal, time.Time, error)
+	checkAdmissionPolicy func(context.Context, uuid.UUID) (int64, error)
+	closing              atomic.Bool
+	nSockets             atomic.Int64
 	// botSeen: when a bot's REST activity was last recorded here (TouchBot throttle).
 	botSeen sync.Map
 }
@@ -843,7 +844,17 @@ func (h *Hub) routeUser(uid, id uuid.UUID, ev *v1.DispatchEvent) {
 			h.prepareEvent(ctx, enc)
 		}
 		for i, s := range sessions {
-			s.resume(markers[i], id, enc)
+			recipient := enc
+			if ev.GetRoomAdmissionDecided() != nil {
+				recipient = newEnc(ev)
+				h.prepareEvent(ctx, recipient)
+				s.prepareAdmissionReceipts(ctx, recipient)
+			}
+			if s.identityEnabled() && !s.prepareEventLeases(ctx, recipient) {
+				s.preparationFailed(markers[i])
+				continue
+			}
+			s.resume(markers[i], id, recipient)
 		}
 	}) {
 		for i, s := range sessions {

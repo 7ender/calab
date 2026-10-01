@@ -1625,6 +1625,18 @@ func (q *Queries) GetIdentityRecoveryCode(ctx context.Context, arg GetIdentityRe
 	return i, err
 }
 
+const getIdentityRoomParent = `-- name: GetIdentityRoomParent :one
+SELECT workspace_id FROM rooms WHERE id = $1
+`
+
+// Durable attribution only: handlers retain archive, permissions and read/write rules.
+func (q *Queries) GetIdentityRoomParent(ctx context.Context, id uuid.UUID) (*uuid.UUID, error) {
+	row := q.db.QueryRow(ctx, getIdentityRoomParent, id)
+	var workspace_id *uuid.UUID
+	err := row.Scan(&workspace_id)
+	return workspace_id, err
+}
+
 const getProductAdminGrant = `-- name: GetProductAdminGrant :one
 SELECT user_id, granted_at, revoked_at, operator_note FROM product_admin_grants WHERE user_id = $1
 `

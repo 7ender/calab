@@ -23,12 +23,14 @@ const bufferQueue = 512
 // receive it (security review M13); each session only prepends its op and seq.
 type encEvent struct {
 	workspace uuid.UUID
-	scopes    []uuid.UUID
-	scoped    bool
-	ev        *v1.DispatchEvent
-	once      sync.Once
-	b         []byte
-	err       error
+	// Receipt proofs authorize only this event's own guestView, never workspace data.
+	receipts map[uuid.UUID]admissionReceiptProof
+	scopes   []uuid.UUID
+	scoped   bool
+	ev       *v1.DispatchEvent
+	once     sync.Once
+	b        []byte
+	err      error
 }
 
 func newEnc(ev *v1.DispatchEvent) *encEvent { return &encEvent{ev: ev} }
@@ -84,7 +86,8 @@ type Session struct {
 	client          clientInfo // Identify.device (docs/09 #143); set before register, then read-only
 	hub             *Hub
 
-	leases     identityLeases
+	leases identityLeases
+
 	mu         sync.Mutex
 	seq        uint64
 	ready      bool           // READY (or resume replay) sent; before that events wait in pending
@@ -216,6 +219,7 @@ func (s *Session) dispatch(id uuid.UUID, ev *v1.DispatchEvent) { s.dispatchEnc(i
 // dispatchEnc delivers a (shared) encoded event, deduplicated by event id.
 func (s *Session) dispatchEnc(id uuid.UUID, enc *encEvent) {
 	if s.identityEnabled() && !s.allowsEvent(enc) {
+		s.deferIdentityEvent(id, enc)
 		return
 	}
 	s.mu.Lock()
@@ -240,7 +244,14 @@ func (s *Session) dispatchEnc(id uuid.UUID, enc *encEvent) {
 // emit assigns the next seq, buffers the frame and sends it (an ephemeral event: sends only,
 // without a seq); s.mu must be held.
 func (s *Session) emit(id uuid.UUID, enc *encEvent) {
-	if s.dead || (s.identityEnabled() && !s.allowsEvent(enc)) {
+	if s.dead {
+		return
+	}
+	if s.identityEnabled() && !s.allowsEvent(enc) {
+		s.broken.Store(true)
+		if s.conn != nil {
+			s.conn.closeNow(4000, "identity resync required")
+		}
 		return
 	}
 	payload, err := enc.bytes()

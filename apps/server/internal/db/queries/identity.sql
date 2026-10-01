@@ -1,3 +1,6 @@
+-- name: GetIdentityRoomParent :one
+-- Durable attribution only: handlers retain archive, permissions and read/write rules.
+SELECT workspace_id FROM rooms WHERE id = $1;
 -- Identity v1 foundation, ADR-0054. Consumer mutations run with audit/outbox in one transaction.
 
 -- name: CreateIdentityGrant :one
