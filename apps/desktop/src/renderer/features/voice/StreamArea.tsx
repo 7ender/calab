@@ -4,11 +4,12 @@ import { useCallback, useEffect, useLayoutEffect, useRef, useState, type ReactNo
 import { createPortal } from 'react-dom';
 import { Avatar } from '../../components/Avatar';
 import { Badge, CloseButton, IconButton, Slider, cx } from '../../components/ui';
-import { t } from '../../i18n';
+import { plural, t } from '../../i18n';
 import { platform } from '../../platform';
 import { useMediaQuery } from '../../lib/useMediaQuery';
 import { voice } from '../../services/voice';
 import { useMessages } from '../../stores/messages';
+import { showsUnread, useRooms } from '../../stores/rooms';
 import { useVoice, type RemoteStream, type StreamQuality } from '../../stores/voice';
 import { useMemberName, useWorkspaces } from '../../stores/workspaces';
 import { menuBox, menuItem } from '../shell/menu';
@@ -16,6 +17,7 @@ import { AnnotLayer, AnnotTools } from './Annotations';
 import { CameraGrid, CameraPip, CameraStripTile, useAnyCamera, useStripCameras } from './CameraTiles';
 import { FullscreenState, domHost, isExitKey, mainFullscreen, useIdle, useStreamFullscreen, windowHost } from './fullscreen';
 import { PIP_SHADOW, WELCOME_ROW, layerLabel, pipSize, presetText, qualityOptions } from './streamFormat';
+import { bindPopoutVideo } from './popoutVideo';
 
 /**
  * <video> bound to a stream track: a remote one (its on-screen size drives adaptive stream, the
@@ -88,7 +90,7 @@ function Popout({ stream, wsId, title, onClose }: { stream: RemoteStream; wsId: 
   const videoRef = useRef<HTMLVideoElement>(null);
 
   useEffect(() => {
-    const w = window.open('about:blank', `calaba-popout-${trackSid}`);
+    const w = window.open('about:blank', `calaba-popout-${trackSid}`, 'popup,width=960,height=580');
     if (!w) {
       onClose();
       return;
@@ -107,25 +109,21 @@ function Popout({ stream, wsId, title, onClose }: { stream: RemoteStream; wsId: 
     // eslint-disable-next-line react-hooks/set-state-in-effect
     setContainer(root);
     setChild(w);
-    const timer = window.setInterval(() => {
-      if (w.closed) onClose();
-    }, 500);
+    w.addEventListener('pagehide', onClose);
     return () => {
-      window.clearInterval(timer);
+      w.removeEventListener('pagehide', onClose);
       if (!w.closed) w.close();
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [trackSid]);
 
-  // Not `attach()`: adaptive stream keeps observing the (large) element in the main window,
-  // the pop-out just renders the same track.
+  // Only the detached window renders this track; it also owns adaptive-stream visibility.
   useEffect(() => {
     const el = videoRef.current;
     const track = voice.streamVideo(trackSid);
-    if (!el || !track) return;
-    el.srcObject = new MediaStream([track.mediaStreamTrack]);
-    void el.play().catch(() => undefined);
-  }, [container, trackSid, epoch]);
+    if (!el || !track || !child) return;
+    return bindPopoutVideo(track, el, child);
+  }, [container, child, trackSid, epoch]);
 
   if (!container || !child) return null;
   return createPortal(
@@ -135,6 +133,15 @@ function Popout({ stream, wsId, title, onClose }: { stream: RemoteStream; wsId: 
     </PopoutView>,
     container,
   );
+}
+
+/** Call-scoped host: changing rooms, calendar or workspace must not close the stream window. */
+export function StreamPopout(): ReactNode {
+  const current = useVoice((s) => s.stage === 'popout' ? s.streams.find((stream) => stream.trackSid === s.watching) : undefined);
+  const wsId = useVoice((s) => s.workspaceId);
+  const name = useMemberName(wsId, current?.userId ?? '');
+  const onClose = useCallback(() => voice.setStage('expanded'), []);
+  return current ? <Popout key={current.trackSid} stream={current} wsId={wsId} title={`${name} — Calab`} onClose={onClose} /> : null;
 }
 
 /** The pop-out's full-screen state, on the pop-out window's own bridge (or its Fullscreen API). */
@@ -457,7 +464,7 @@ function VolumeControl({ stream }: { stream: RemoteStream }): ReactNode {
   );
 }
 
-function PreviewTile({ stream, wsId, current }: { stream: RemoteStream; wsId: string | null; current: boolean }): ReactNode {
+function PreviewTile({ stream, wsId, current, detached }: { stream: RemoteStream; wsId: string | null; current: boolean; detached: boolean }): ReactNode {
   const name = useMemberName(wsId, stream.userId);
   return (
     <button
@@ -471,7 +478,7 @@ function PreviewTile({ stream, wsId, current }: { stream: RemoteStream; wsId: st
         current ? 'ring-2 ring-accent' : 'ring-1 ring-[var(--color-border-popover)] hover:ring-2 hover:ring-[var(--color-fill-hover)]',
       )}
     >
-      <StreamVideo stream={stream} wsId={wsId} avatarSize={32} className="size-full" />
+      {detached ? <StreamPlaceholder stream={stream} wsId={wsId} size={32} /> : <StreamVideo stream={stream} wsId={wsId} avatarSize={32} className="size-full" />}
       <span className="absolute bottom-1 left-1 flex max-w-[calc(100%-8px)]">
         <StreamerChip stream={stream} wsId={wsId} size="sm" />
       </span>
@@ -480,6 +487,33 @@ function PreviewTile({ stream, wsId, current }: { stream: RemoteStream; wsId: st
 }
 
 
+
+/**
+ * The room's chat unread while the stage hides the feed (issue #35): the mention counter as in
+ * the room rows (it survives a muted room), else the unread counter, else — when the count is
+ * unknown (no read state yet) — a plain dot; a quiet room shows only mentions (docs/09 #22).
+ */
+function ChatUnreadBadge(): ReactNode {
+  const roomId = useVoice((s) => s.roomId);
+  const mentions = useRooms((s) => (roomId ? (s.mentions[roomId] ?? 0) : 0));
+  const unread = useRooms((s) => (roomId ? (s.unread[roomId] ?? 0) : 0));
+  const dot = useRooms((s) => (roomId ? showsUnread(roomId, s) : false));
+  if (mentions > 0) {
+    return (
+      <span aria-label={plural('shell.unreadMentions', mentions)} data-testid="stream-chat-unread" className="rounded-full bg-danger-fill px-1.5 text-micro font-bold leading-4 text-white">
+        {mentions > 99 ? '99+' : mentions}
+      </span>
+    );
+  }
+  if (unread > 0 && dot) {
+    return (
+      <span aria-label={plural('stream.chatUnread', unread)} data-testid="stream-chat-unread" className="rounded-full bg-accent-strong px-1.5 text-micro font-semibold leading-4 text-accent-fg">
+        {unread > 99 ? '99+' : unread}
+      </span>
+    );
+  }
+  return dot ? <span aria-label={t('ws.unread')} data-testid="stream-chat-unread" className="size-1.5 shrink-0 rounded-full bg-white" /> : null;
+}
 
 function Stage({ stream, streams, wsId, box, emptyFeed }: { stream: RemoteStream; streams: RemoteStream[]; wsId: string | null; box: Box; emptyFeed: boolean }): ReactNode {
   const stage = useVoice((s) => s.stage);
@@ -501,8 +535,8 @@ function Stage({ stream, streams, wsId, box, emptyFeed }: { stream: RemoteStream
         // Inline, as in the PiP: the unlayered .mat-popover material overrides a bg utility.
         style={{ background: 'var(--color-video-bg)' }}
       >
-        <StreamVideo stream={stream} wsId={wsId} avatarSize={80} className="size-full" annotate="edit" />
-        <AnnotTools stream={stream} />
+        {stage !== 'popout' ? <StreamVideo stream={stream} wsId={wsId} avatarSize={80} className="size-full" annotate="edit" /> : null}
+        {stage !== 'popout' ? <AnnotTools stream={stream} /> : null}
         <span className="absolute left-3 top-3 flex max-w-[calc(100%-120px)]">
           <StreamerChip stream={stream} wsId={wsId} />
         </span>
@@ -515,6 +549,7 @@ function Stage({ stream, streams, wsId, box, emptyFeed }: { stream: RemoteStream
         >
           <MessageCircle className="size-3.5" aria-hidden />
           {t('stream.showChat')}
+          <ChatUnreadBadge />
         </button>
         {stage === 'popout' ? (
           <div className="absolute inset-0 grid place-items-center bg-black/80 text-white">
@@ -560,7 +595,7 @@ function Stage({ stream, streams, wsId, box, emptyFeed }: { stream: RemoteStream
       {/* The stream is the main picture; other streams and the cameras line up underneath (docs/09 #42). */}
       {streams.length > 1 || cameras.length > 0 ? (
         <div className="flex shrink-0 justify-center-safe gap-2 overflow-x-auto p-0.5" role="group" aria-label={t('streamView.others')} data-testid="stream-strip">
-          {streams.length > 1 ? streams.map((s) => <PreviewTile key={s.trackSid} stream={s} wsId={wsId} current={s.trackSid === stream.trackSid} />) : null}
+          {streams.length > 1 ? streams.map((s) => <PreviewTile key={s.trackSid} stream={s} wsId={wsId} current={s.trackSid === stream.trackSid} detached={stage === 'popout' && s.trackSid === stream.trackSid} />) : null}
           {cameras.map((id) => (
             <CameraStripTile key={`cam:${id}`} userId={id} wsId={wsId} />
           ))}
@@ -616,7 +651,6 @@ export function StreamArea(): ReactNode {
   const anchor = useRef<HTMLDivElement>(null);
   const box = useMessageBox(anchor);
   const current = streams.find((s) => s.trackSid === watching);
-  const name = useMemberName(wsId, current?.userId ?? '');
   const roomId = useVoice((s) => s.roomId);
   const emptyFeed = useMessages((s) => {
     const r = roomId ? s.rooms[roomId] : undefined;
@@ -646,7 +680,6 @@ export function StreamArea(): ReactNode {
     <>
       <div ref={anchor} aria-hidden className="h-0 shrink-0" />
       {view}
-      {current && stage === 'popout' ? <Popout stream={current} wsId={wsId} title={`${name} — Calab`} onClose={() => voice.setStage('expanded')} /> : null}
       {current && fullscreen ? <FullscreenStage stream={current} wsId={wsId} /> : null}
     </>
   );

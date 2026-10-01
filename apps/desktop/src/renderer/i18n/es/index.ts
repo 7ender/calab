@@ -419,6 +419,7 @@ export const es: Dict = {
   'stream.close': 'Dejar de ver',
   'stream.showChat': 'Chat',
   'stream.showChatHint': 'Mostrar chat, pantalla compartida en la esquina',
+  'stream.chatUnread': { one: '{n} mensaje sin leer', many: '{n} mensajes sin leer', other: '{n} mensajes sin leer' },
   'stream.inPopout': 'La pantalla compartida está abierta en una ventana aparte',
   'stream.returnHere': 'Traer aquí de vuelta',
 

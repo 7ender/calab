@@ -24,6 +24,8 @@ export const zhChat: DictShape<typeof enChat> = {
   'chat.attachment': '附件',
   'chat.openImage': '打开图片"{name}"',
   'chat.reactionLabel': '表情回应 {emoji}：{count}',
+  'chat.reactedWith': '回应了 {emoji}',
+  'chat.reactionOthers': { other: '还有 {n} 人' },
   'chat.replyOpen': '显示原消息',
   'chat.messageGone': '消息已删除或不可用',
   'chat.rowFailed': '无法显示此消息',

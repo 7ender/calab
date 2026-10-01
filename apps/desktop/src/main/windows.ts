@@ -183,12 +183,25 @@ export function createMainWindow(): BrowserWindow {
           backgroundColor: '#000000',
           title: mainStrings().streamWindow,
           autoHideMenuBar: true,
+          alwaysOnTop: true,
           webPreferences: { ...webPreferences },
         },
       };
     }
     if (/^https?:\/\//.test(url)) void shell.openExternal(url);
     return { action: 'deny' };
+  });
+  win.webContents.on('did-create-window', (child, details) => {
+    if (details.url !== 'about:blank' || !details.frameName.startsWith(POPUP_PREFIX)) return;
+    // This is an independent floating stream, including above fullscreen apps on macOS.
+    if (process.platform === 'darwin') child.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true });
+    const sendShown = (): void => {
+      if (!child.isDestroyed()) child.webContents.send(IPC.windowShownChanged, isShown(child));
+    };
+    child.on('show', sendShown);
+    child.on('hide', sendShown);
+    child.on('minimize', sendShown);
+    child.on('restore', sendShown);
   });
   // Navigation / frame / <webview> guards: installWebContentsGuards (every webContents).
 

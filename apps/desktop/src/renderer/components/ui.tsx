@@ -205,6 +205,7 @@ function LiveTip({ label, shortcut, children, side = 'top', wake }: TipProps & {
       </TooltipP.Trigger>
       <TooltipP.Portal>
         <TooltipP.Content
+          data-app-tooltip
           side={side}
           sideOffset={6}
           collisionPadding={8}

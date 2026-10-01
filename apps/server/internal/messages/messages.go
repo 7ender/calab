@@ -65,6 +65,7 @@ func (h *Handlers) Routes(mux httpx.Router, wrap func(http.Handler) http.Handler
 	mux.Handle("DELETE /api/messages/{id}", wrap(httpx.HandlerFunc(h.delete)))
 	mux.Handle("PUT /api/rooms/{id}/read", wrap(httpx.HandlerFunc(h.read)))
 	mux.Handle("GET /api/workspaces/{id}/messages/search", wrap(httpx.HandlerFunc(h.searchWorkspace)))
+	mux.Handle("GET /api/messages/{id}/reactions/{emoji}", wrap(httpx.HandlerFunc(h.listReactionUsers)))
 	mux.Handle("PUT /api/messages/{id}/reactions/{emoji}", wrap(httpx.HandlerFunc(h.addReaction)))
 	mux.Handle("DELETE /api/messages/{id}/reactions/{emoji}", wrap(httpx.HandlerFunc(h.removeReaction)))
 	mux.Handle("PUT /api/messages/{id}/pin", wrap(httpx.HandlerFunc(func(w http.ResponseWriter, r *http.Request) error { return h.setPin(w, r, true) })))

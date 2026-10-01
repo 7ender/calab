@@ -12,7 +12,8 @@ import { useRooms } from '../stores/rooms';
 import { useTyping } from '../stores/typing';
 import { myUserId, useSession } from '../stores/session';
 import { activeRoomId, useUi } from '../stores/ui';
-import { useVoice } from '../stores/voice';
+import { streamCoversChat, useVoice } from '../stores/voice';
+import { useStreamFullscreen } from '../features/voice/fullscreen';
 import { rolesOf, useWorkspaces } from '../stores/workspaces';
 import { resyncLoadedRooms, resyncPins, retryFailedLoads } from './chat';
 import { queryClient } from '../lib/queryClient';
@@ -558,7 +559,10 @@ function onMessage(m: Message, workspaceId: string): void {
     rooms.setRead(m.roomId, m.id);
     return;
   }
-  onIncomingMessage(m, workspaceId, activeRoomId() === m.roomId && document.hasFocus());
+  // The open room counts as on screen only when its feed is: the stream stage / stream full
+  // screen covering it hides new messages — they stay unread (issue #35).
+  const covered = streamCoversChat(useVoice.getState(), m.roomId, useStreamFullscreen.getState().on);
+  onIncomingMessage(m, workspaceId, activeRoomId() === m.roomId && document.hasFocus() && !covered);
 }
 
 /** A DM's or a shelf's list preview was deleted and is not known yet. */

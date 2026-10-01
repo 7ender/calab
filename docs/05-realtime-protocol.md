@@ -417,6 +417,7 @@ GET    /api/rooms/{id}/messages/{messageId}             Message (без обёр
 POST   /api/rooms/{id}/messages        CreateMessageRequest → 201 | 200 при повторе nonce   (SEND_MESSAGES; вложения — ATTACH_FILES)
 PATCH  /api/messages/{id}              UpdateMessageRequest                (только автор)
 DELETE /api/messages/{id}              204                                 (автор или MANAGE_MESSAGES; мягкое удаление)
+GET    /api/messages/{id}/reactions/{emoji}?after=&limit=   ListReactionUsersResponse   (VIEW_ROOM; кто поставил эмодзи — тултип реакции, по запросу; по user id, after — последний id страницы; limit 1..100, 25; 404 — как у чтения сообщения)
 PUT    /api/rooms/{id}/read            UpdateReadStateRequest → 204        (маркер только вперёд; сдвиг → READ_RECEIPT другим, docs/09 #92)
 POST   /api/workspaces/{id}/files      multipart, поле "file" → 201 UploadFileResponse   (участник workspace)
 POST   /api/me/avatar                  multipart, только изображение ≤ 5 MB → UpdateMeResponse

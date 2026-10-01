@@ -5,6 +5,7 @@ import (
 	"context"
 	"net/http"
 	"slices"
+	"strconv"
 	"unicode"
 	"unicode/utf8"
 
@@ -15,6 +16,7 @@ import (
 	"github.com/calaba/calaba/server/internal/db"
 	"github.com/calaba/calaba/server/internal/db/sqlc"
 	"github.com/calaba/calaba/server/internal/httpx"
+	"github.com/calaba/calaba/server/internal/pbconv"
 	"github.com/calaba/calaba/server/internal/perm"
 	"github.com/calaba/calaba/server/internal/rooms"
 )
@@ -96,6 +98,84 @@ func (h *Handlers) reaction(r *http.Request) (sqlc.Message, perm.RoomAccess, str
 		return m, acc, "", httpx.Validation("emoji", "not an emoji")
 	}
 	return m, acc, emoji, nil
+}
+
+// visibleReaction resolves {id}/{emoji} for reading the reactor list. The message must be in
+// the caller's visible history — the rules of `get` (VIEW_ROOM incl. an archived temporary
+// room, not before the cleared slice of a DM) — so 404 hides it the same way.
+func (h *Handlers) visibleReaction(r *http.Request) (sqlc.Message, string, error) {
+	id, err := httpx.PathUUID(r, "id", "message")
+	if err != nil {
+		return sqlc.Message{}, "", err
+	}
+	m, err := h.db.Q.GetMessage(r.Context(), id)
+	if db.IsNotFound(err) {
+		return m, "", httpx.NotFound("message")
+	}
+	if err != nil {
+		return m, "", err
+	}
+	acc, err := rooms.ReadAccess(r, m.RoomID)
+	if err != nil {
+		return m, "", httpx.NotFound("message")
+	}
+	since, err := h.clearedBefore(r, acc, m.RoomID)
+	if err != nil {
+		return m, "", err
+	}
+	if since != nil && bytes.Compare(m.ID[:], since[:]) <= 0 {
+		return m, "", httpx.NotFound("message")
+	}
+	emoji := r.PathValue("emoji")
+	if !ValidEmoji(emoji) {
+		return m, "", httpx.Validation("emoji", "not an emoji")
+	}
+	return m, emoji, nil
+}
+
+// DefaultReactorPage is the page size of GET …/reactions/{emoji} without a limit (a tooltip
+// needs only the first names; callers page with `after` for the rest).
+const DefaultReactorPage = 25
+
+// listReactionUsers: GET /api/messages/{id}/reactions/{emoji}?after=&limit= (VIEW_ROOM) —
+// who reacted with an emoji. Pages are ordered by user id, `after` is the last id of the
+// previous page; limit 1..100, default 25.
+func (h *Handlers) listReactionUsers(w http.ResponseWriter, r *http.Request) error {
+	m, emoji, err := h.visibleReaction(r)
+	if err != nil {
+		return err
+	}
+	q := r.URL.Query()
+	lim := int32(DefaultReactorPage)
+	if s := q.Get("limit"); s != "" {
+		n, err := strconv.Atoi(s)
+		if err != nil || n < 1 || n > MaxLimit {
+			return httpx.BadRequest("limit must be 1..100")
+		}
+		lim = int32(n) //nolint:gosec // bounded above
+	}
+	var after *uuid.UUID
+	if s := q.Get("after"); s != "" {
+		id, err := uuid.Parse(s)
+		if err != nil {
+			return httpx.BadRequest("after must be a user id")
+		}
+		after = &id
+	}
+	rows, err := h.db.Q.ListReactionUsers(r.Context(), sqlc.ListReactionUsersParams{MessageID: m.ID, Emoji: emoji, After: after, Lim: lim + 1})
+	if err != nil {
+		return err
+	}
+	more := len(rows) > int(lim)
+	if more {
+		rows = rows[:lim]
+	}
+	users := make([]*v1.User, len(rows))
+	for i, row := range rows {
+		users[i] = pbconv.User(row.User)
+	}
+	httpx.Write(w, http.StatusOK, &v1.ListReactionUsersResponse{Users: users, HasMore: more})
+	return nil
 }
 
 func reactionEvent(add bool, acc perm.RoomAccess, m sqlc.Message, user uuid.UUID, emoji string) *v1.DispatchEvent {

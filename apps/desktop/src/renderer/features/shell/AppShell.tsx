@@ -18,7 +18,6 @@ import { useSession } from '../../stores/session';
 import { useMediaQuery } from '../../lib/useMediaQuery';
 import { useMobile } from '../../lib/mobile';
 import { showBottomIsland } from '../../lib/webApps';
-import { useVoice } from '../../stores/voice';
 import { MobileShell } from './MobileShell';
 import { MEMBERS_COLUMN_MIN, useUi } from '../../stores/ui';
 import { useMemberRoles, useWorkspaces } from '../../stores/workspaces';
@@ -43,13 +42,18 @@ import { WorkspaceRail } from './WorkspaceRail';
 import { AppScreen } from '../webapps/AppScreen';
 import { installWebApps } from '../../services/webApps';
 import { useOpenApp } from '../../stores/webApps';
+import { StreamPopout } from '../voice/StreamArea';
+
+export function AppShell(): ReactNode {
+  return <><ShellLayout /><StreamPopout /></>;
+}
 
 /**
  * Main layout (docs/08, «Layout»; docs/09 #1–#2):
  * title bar 38 px across the window, then
  * rail 72 px │ rooms 256 px (200–320, resizable) │ content (opaque) │ members (optional).
  */
-export function AppShell(): ReactNode {
+function ShellLayout(): ReactNode {
   const ready = useSession((s) => s.ready);
   const onboarded = usePrefs((s) => s.onboarded);
   const wsId = useUi((s) => s.activeWorkspaceId);
@@ -211,12 +215,10 @@ export function AppShell(): ReactNode {
 }
 
 /**
- * The bottom island, except under a full-screen web app without a voice call (ADR-0050
- * «Уточнение»). Its own leaf: the voice phase re-renders this slot only.
+ * Web apps use the entire content area, including while a voice call continues.
  */
 function IslandSlot({ appOpen }: { appOpen: boolean }): ReactNode {
-  const inVoice = useVoice((s) => s.phase !== 'idle');
-  return showBottomIsland(appOpen, inVoice) ? <BottomIsland /> : null;
+  return showBottomIsland(appOpen) ? <BottomIsland /> : null;
 }
 
 /**

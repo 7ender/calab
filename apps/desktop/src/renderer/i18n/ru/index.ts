@@ -413,6 +413,7 @@ export const ru = {
   'stream.close': 'Не смотреть',
   'stream.showChat': 'Чат',
   'stream.showChatHint': 'Показать чат, стрим — в углу',
+  'stream.chatUnread': { one: '{n} непрочитанное сообщение', few: '{n} непрочитанных сообщения', many: '{n} непрочитанных сообщений', other: '{n} непрочитанных сообщения' },
   'stream.inPopout': 'Стрим открыт в отдельном окне',
   'stream.returnHere': 'Вернуть сюда',
 

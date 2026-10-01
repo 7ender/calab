@@ -419,6 +419,7 @@ export const en: Dict = {
   'stream.close': 'Stop watching',
   'stream.showChat': 'Chat',
   'stream.showChatHint': 'Show chat, screen share in the corner',
+  'stream.chatUnread': { one: '{n} unread message', other: '{n} unread messages' },
   'stream.inPopout': 'Screen share is open in a separate window',
   'stream.returnHere': 'Bring back here',
 
