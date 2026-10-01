@@ -43,13 +43,18 @@ import { WorkspaceRail } from './WorkspaceRail';
 import { AppScreen } from '../webapps/AppScreen';
 import { installWebApps } from '../../services/webApps';
 import { useOpenApp } from '../../stores/webApps';
+import { StreamPopout } from '../voice/StreamArea';
+
+export function AppShell(): ReactNode {
+  return <><ShellLayout /><StreamPopout /></>;
+}
 
 /**
  * Main layout (docs/08, «Layout»; docs/09 #1–#2):
  * title bar 38 px across the window, then
  * rail 72 px │ rooms 256 px (200–320, resizable) │ content (opaque) │ members (optional).
  */
-export function AppShell(): ReactNode {
+function ShellLayout(): ReactNode {
   const ready = useSession((s) => s.ready);
   const onboarded = usePrefs((s) => s.onboarded);
   const wsId = useUi((s) => s.activeWorkspaceId);
