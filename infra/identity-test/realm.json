@@ -1,0 +1,43 @@
+{
+  "realm": "identity.test",
+  "enabled": true,
+  "sslRequired": "all",
+  "registrationAllowed": false,
+  "resetPasswordAllowed": false,
+  "clients": [
+    {
+      "clientId": "calaba-identity-test",
+      "name": "Local Calaba RP fixture",
+      "enabled": true,
+      "protocol": "openid-connect",
+      "publicClient": false,
+      "secret": "fixture-only-client-secret",
+      "standardFlowEnabled": true,
+      "directAccessGrantsEnabled": false,
+      "serviceAccountsEnabled": false,
+      "redirectUris": ["http://127.0.0.1:57500/identity-test/callback"],
+      "webOrigins": [],
+      "attributes": {"pkce.code.challenge.method": "S256"}
+    }
+  ],
+  "users": [
+    {
+      "username": "alice",
+      "enabled": true,
+      "email": "alice@identity.test",
+      "emailVerified": true,
+      "firstName": "Alice",
+      "lastName": "Fixture",
+      "credentials": [{"type": "password", "value": "fixture-only-alice-password", "temporary": false}]
+    },
+    {
+      "username": "disabled",
+      "enabled": false,
+      "email": "disabled@identity.test",
+      "emailVerified": true,
+      "firstName": "Disabled",
+      "lastName": "Fixture",
+      "credentials": [{"type": "password", "value": "fixture-only-disabled-password", "temporary": false}]
+    }
+  ]
+}
