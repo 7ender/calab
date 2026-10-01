@@ -1761,6 +1761,30 @@ func (q *Queries) IdentityDatabaseNow(ctx context.Context) (time.Time, error) {
 	return database_now, err
 }
 
+const isIdentityWorkspaceProfileImage = `-- name: IsIdentityWorkspaceProfileImage :one
+SELECT EXISTS (
+    SELECT 1 FROM workspaces w
+    WHERE w.id = $1 AND w.icon_file_id = $2
+    UNION ALL
+    SELECT 1 FROM users u
+    JOIN workspace_members m ON m.user_id = u.id
+    WHERE m.workspace_id = $1
+      AND u.avatar_file_id = $2 AND u.disabled_at IS NULL
+)::boolean AS allowed
+`
+
+type IsIdentityWorkspaceProfileImageParams struct {
+	WorkspaceID uuid.UUID
+	FileID      *uuid.UUID
+}
+
+func (q *Queries) IsIdentityWorkspaceProfileImage(ctx context.Context, arg IsIdentityWorkspaceProfileImageParams) (bool, error) {
+	row := q.db.QueryRow(ctx, isIdentityWorkspaceProfileImage, arg.WorkspaceID, arg.FileID)
+	var allowed bool
+	err := row.Scan(&allowed)
+	return allowed, err
+}
+
 const listIdentityAudit = `-- name: ListIdentityAudit :many
 SELECT id, workspace_id, actor_id, action, target_id, outcome, created_at FROM workspace_identity_audit WHERE workspace_id=$1 AND ($2::uuid IS NULL OR id<$2)
 ORDER BY id DESC LIMIT $3
