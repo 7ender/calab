@@ -261,7 +261,7 @@ func (s *Service) preflight(w http.ResponseWriter, r *http.Request) {
 
 func bearer(r *http.Request) string {
 	a := r.Header.Values("Authorization")
-	if len(a) != 1 || len(a[0])<7 || !strings.EqualFold(a[0][:7], "Bearer ") {
+	if len(a) != 1 || len(a[0]) < 7 || !strings.EqualFold(a[0][:7], "Bearer ") {
 		return ""
 	}
 	return a[0][7:]

@@ -4,8 +4,12 @@ package oauthprovider
 
 import (
 	"context"
+	"crypto/rand"
+	"crypto/rsa"
+	"crypto/x509"
 	"encoding/base64"
 	"encoding/json"
+	"encoding/pem"
 	"net/http"
 	"net/url"
 	"strings"
@@ -13,6 +17,7 @@ import (
 	"time"
 
 	v1 "github.com/calaba/calaba/server/gen/calaba/v1"
+	"github.com/calaba/calaba/server/internal/oauthprovider/signing"
 	"github.com/google/uuid"
 	"google.golang.org/protobuf/encoding/protojson"
 )
@@ -264,11 +269,19 @@ func TestProviderRevocationWithoutEntitlementAndSubjects(t *testing.T) {
 func TestProviderOriginalAssuranceDeadline(t *testing.T) {
 	f := fixture(t)
 	c := f.client(v1.OAuthClientType_OAUTH_CLIENT_TYPE_PUBLIC_NATIVE, true)
+	connection, identity := uuid.New(), uuid.New()
+	f.sql("INSERT INTO workspace_identity_connections(id,workspace_id,name,status,provider,issuer,client_id,tested_version) VALUES($1,$2,'Test IdP','active','generic','https://idp.example.test','upstream',1)", connection, f.ws)
+	f.sql("INSERT INTO workspace_external_identities(id,workspace_id,connection_id,user_id,issuer,subject,status) VALUES($1,$2,$3,$4,'https://idp.example.test','upstream-alice','active')", identity, f.ws, connection, f.user)
+	f.sql("INSERT INTO workspace_identity_grants(workspace_id,feature,enabled,source) VALUES($1,'corporate_sso',true,'cloud_business')", f.ws)
+	f.sql("UPDATE workspace_identity_policies SET mode='enforced' WHERE workspace_id=$1", f.ws)
+	at := time.Now().Add(-time.Second).UTC()
+	deadline := at.Add(90 * time.Second)
+	f.sql("INSERT INTO session_workspace_assurances(session_id,workspace_id,user_id,connection_id,identity_id,authenticated_at,valid_until,policy_version,access_version,connection_version,identity_version,entitlement_version,session_version) SELECT $1,$2,$3,$4,$5,$6,$7,p.version,1,1,1,p.entitlement_version,1 FROM workspace_identity_policies p WHERE p.workspace_id=$2", f.session, f.ws, f.user, connection, identity, at, deadline)
 	req, code := f.code(c.Client, true)
-	deadline := time.Now().Add(90 * time.Second).UTC()
-	f.sql("UPDATE oauth_grants SET assurance_expires_at=$1", deadline)
-	// A fresh current decision lasts hours. The original grant snapshot still
-	// wins for both access/ID and the rotated refresh token.
+	// A verified later authentication may renew this session's assurance, but
+	// it cannot extend an existing provider grant's captured proof deadline.
+	renewed := time.Now().UTC()
+	f.sql("UPDATE session_workspace_assurances SET authenticated_at=$1,valid_until=$2", renewed, renewed.Add(time.Hour))
 	st, tokens, b := f.exchange(c, req, code)
 	if st != 200 {
 		t.Fatalf("bound exchange %d %s", st, b)
@@ -288,6 +301,10 @@ func TestProviderOriginalAssuranceDeadline(t *testing.T) {
 	claims = f.verifyID(rotated.IDToken, c.Client.ClientId, "")
 	if claims["exp"].(float64) > float64(deadline.Unix()) {
 		t.Fatal("refreshed proof extended old grant")
+	}
+	f.s.c.Now = func() time.Time { return time.Now().Add(2 * time.Minute) }
+	if st, _, _ := f.token(c, url.Values{"grant_type": {"refresh_token"}, "refresh_token": {rotated.RefreshToken}}); st != 400 {
+		t.Fatal("renewed session resurrected expired original grant proof")
 	}
 }
 
@@ -320,5 +337,83 @@ func TestProviderCrossWorkspaceAndSPAOrigin(t *testing.T) {
 	}
 	if st, _, _ := f.proto("DELETE", "/api/workspaces/"+otherWS.String()+"/oauth/clients/"+c.Client.Id, nil); st == 204 {
 		t.Fatal("cross workspace management accepted")
+	}
+	_, originalInfo := f.info(tokens.AccessToken)
+	f.sql("INSERT INTO workspace_members(workspace_id,user_id,role) VALUES($1,$2,'owner')", otherWS, f.user)
+	f.sql("INSERT INTO workspace_plans(workspace_id,plan) VALUES($1,'enterprise')", otherWS)
+	f.sql("INSERT INTO workspace_identity_grants(workspace_id,feature,enabled,source) VALUES($1,'oauth_provider',true,'cloud_business')", otherWS)
+	f.ws = otherWS
+	otherClient := f.client(v1.OAuthClientType_OAUTH_CLIENT_TYPE_PUBLIC_NATIVE, false)
+	req, code = f.code(otherClient.Client, false)
+	st, otherTokens, b := f.exchange(otherClient, req, code)
+	if st != 200 {
+		t.Fatalf("other workspace exchange %d %s", st, b)
+	}
+	_, otherInfo := f.info(otherTokens.AccessToken)
+	if otherInfo["sub"] == originalInfo["sub"] {
+		t.Fatal("public subject correlated across workspace issuer")
+	}
+}
+
+func TestProviderKeyRotationAndRevocationWire(t *testing.T) {
+	f := fixture(t)
+	c := f.client(v1.OAuthClientType_OAUTH_CLIENT_TYPE_PUBLIC_NATIVE, true)
+	req, code := f.code(c.Client, true)
+	st, tokens, b := f.exchange(c, req, code)
+	if st != 200 {
+		t.Fatalf("initial exchange %d %s", st, b)
+	}
+	key, err := rsa.GenerateKey(rand.Reader, 2048)
+	if err != nil {
+		t.Fatal(err)
+	}
+	next := pem.EncodeToMemory(&pem.Block{Type: "RSA PRIVATE KEY", Bytes: x509.MarshalPKCS1PrivateKey(key)})
+	f.s.c.SignerForWorkspace = func(ws uuid.UUID) (*signing.Keyring, error) {
+		return signing.New(signing.Config{Issuer: f.s.issuer(ws), ActiveKID: "next-key", Keys: []signing.Key{{KID: "fixture-key", PEM: f.private}, {KID: "next-key", PEM: next}}})
+	}
+	f.verifyID(tokens.IDToken, c.Client.ClientId, req.nonce)
+	st, rotated, b := f.token(c, url.Values{"grant_type": {"refresh_token"}, "refresh_token": {tokens.RefreshToken}})
+	if st != 200 {
+		t.Fatalf("key rotation refresh %d %s", st, b)
+	}
+	f.verifyID(rotated.IDToken, c.Client.ClientId, "")
+	st, _, b = f.wire("GET", "/oidc/workspaces/"+f.ws.String()+"/jwks", "", nil, "", "")
+	if st != 200 {
+		t.Fatal("JWKS failed")
+	}
+	var set struct{ Keys []map[string]any }
+	if err = json.Unmarshal(b, &set); err != nil {
+		t.Fatal(err)
+	}
+	if len(set.Keys) != 2 {
+		t.Fatal("old verification key prematurely removed")
+	}
+	for _, key := range set.Keys {
+		for _, private := range []string{"d", "p", "q", "dp", "dq", "qi"} {
+			if _, ok := key[private]; ok {
+				t.Fatal("private key published")
+			}
+		}
+	}
+	other := f.client(v1.OAuthClientType_OAUTH_CLIENT_TYPE_PUBLIC_NATIVE, true)
+	revokePath := "/oidc/workspaces/" + f.ws.String() + "/revoke"
+	form := url.Values{"token": {rotated.AccessToken}, "client_id": {other.Client.ClientId}}
+	st, _, _ = f.wire("POST", revokePath, "application/x-www-form-urlencoded", []byte(form.Encode()), "", "")
+	if st != 200 {
+		t.Fatal("unknown/wrong-client revoke disclosed token")
+	}
+	if st, _ := f.info(rotated.AccessToken); st != 200 {
+		t.Fatal("wrong client revoked another family")
+	}
+	form.Set("client_id", c.Client.ClientId)
+	st, _, _ = f.wire("POST", revokePath, "application/x-www-form-urlencoded", []byte(form.Encode()), "", "")
+	if st != 200 {
+		t.Fatal("correct revoke failed")
+	}
+	if st, _ := f.info(rotated.AccessToken); st != 401 {
+		t.Fatal("revoked access accepted")
+	}
+	if st, _, _ := f.token(c, url.Values{"grant_type": {"refresh_token"}, "refresh_token": {rotated.RefreshToken}}); st != 400 {
+		t.Fatal("revoked refresh accepted")
 	}
 }
