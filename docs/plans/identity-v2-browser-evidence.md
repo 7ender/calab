@@ -1,7 +1,8 @@
 # Composed identity browser acceptance
 
 This is a narrow rerunnable acceptance harness for ADR-0054 and the 2.0 contract,
-including consent continuation in specification commit `ff05248f`. It is a
+including consent continuation in specification commit `ff05248f` and the
+same-session scoped reauthentication decision ADR-0055/spec `a8adc34c`. It is a
 prerequisite to final QA, not release acceptance or a substitute for two independent
 security reviews. Production source used during development:
 `1b590b855051c74924dceecdf959235d3b1103c8`.
@@ -69,17 +70,23 @@ per-run temporary directory. They contain no upstream codes or credentials.
 - Opt-in absent: standalone test SKIP observed, without contacting services.
 - Targeted `-race` run on PostgreSQL 18, Valkey DB9 and real TLS Keycloak 26.4.7
   passes local consent + S256/JWKS/UserInfo/revoke, real control-plane/enforcement,
-  independent B and scoped session/cookie/refresh/denial cases.
-- The required golden is currently failing at SSO consent freshness; evidence
-  is `/tmp/identity-browser-target.log`. It must not be reported as passed.
+  independent B, actual standalone scoped UI login/cookie/refresh/denial cases,
+  and local-account consent after explicit local reauth plus actual SSO return.
+- The required golden is pending the scoped same-session reauthentication fix;
+  `/tmp/identity-browser-target.log` reproduces STEP_UP begin HTTP 403 for the
+  live scoped session on `1b590b85`. This run must not be reported as passed.
 
-Reproduction: an enforced workspace's local session has ALLOWED read access;
-provider authorization with `prompt=login` produces RECENT_AUTH_REQUIRED at bind.
-The consent SSO button completes actual Keycloak, returns the same request and
-obtains fresh assurance, but bind remains RECENT_AUTH_REQUIRED.
-`oauthprovider.authTime` selects local authentication for a local principal,
-therefore fresh SSO alone does not satisfy this request. The coordinator must
-choose the expected proof semantics before this dependent case changes.
-Separately, scoped consent exposes step_up although SSO Begin/Finish accepts
-step_up only for local_account; this is a code-inspection finding, not a claimed
-browser pass. No production fix or proof timestamp mutation is hidden in the harness.
+The coordinator clarified that provider `auth_time` follows authority: local
+accounts must complete local reauth for `prompt=login` even when read is ALLOWED.
+SSO never substitutes that local proof. The local golden now uses both actual UI
+actions and returns to the same saved consent request successfully. This is
+contract clarification, not a production bug or a weakened freshness check.
+
+ADR-0055 permits live scoped same-session step_up; implementation is assigned to
+another worker. The new golden additionally asserts no tokens from HTTP step_up,
+actual scoped consent navigation, unchanged session id/authority/local proof and
+absolute refresh deadline, followed by B/DM/global denials and scoped logout.
+These dependent assertions remain required and failing until that fix is merged.
+No production edits, auth injection, proof timestamp mutation or mocked API
+response is hidden in the harness. Full server integration, visuals, Microsoft
+AD/AD FS and release/deployment checks are outside this artifact's evidence.

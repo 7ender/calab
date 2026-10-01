@@ -65,15 +65,16 @@ async function keycloakLogin(p) {
  }
  try { await p.waitForURL(u => u.origin === f.origin && u.pathname === '/sso/complete'); } catch { console.error(`Keycloak page ${new URL(p.url()).pathname}: ${(await p.locator('body').innerText()).slice(0, 500)}`); throw new Error('Keycloak did not return to App completion'); }
 }
-async function ssoHTTP(purpose, token) {
+async function ssoHTTP(purpose, token, flowPage = page, flowContext = context) {
+ const page = flowPage;
  stage = `real ${purpose} flow`;
  const path = purpose === 'TEST' ? `/api/workspaces/${f.workspaceA}/identity/test` : `/api/auth/sso/workspaces/${f.workspaceA}/begin`;
- const begun = await api('POST', path, token, { purpose: `SSO_FLOW_PURPOSE_${purpose}`, clientKind: 'SSO_CLIENT_KIND_WEB' });
+ const begun = await api('POST', path, token, { purpose: `SSO_FLOW_PURPOSE_${purpose}`, clientKind: 'SSO_CLIENT_KIND_WEB' }, 200, flowContext);
  // HTTP control-plane acceptance deliberately does not install web platform state.
  // Callback/finish still traverse the real browser binding and production issuer.
  await page.goto(begun.authorizationUrl);
  await keycloakLogin(page);
- const result = await api('POST', '/api/auth/sso/finish', token, { flowId: begun.flowId });
+ const result = await api('POST', '/api/auth/sso/finish', token, { flowId: begun.flowId }, 200, flowContext);
  if (purpose === 'TEST') assert.equal(result.tested, true);
  else if (purpose === 'LINK') { assert.equal(result.tokens, undefined); assert.equal(result.assurance, undefined); }
  else { assert.equal(result.assurance.workspaceId, f.workspaceA); assert.equal(result.tokens, undefined); }
@@ -83,7 +84,9 @@ async function createRP(workspace, token) {
  const result = await api('POST', `/api/workspaces/${workspace}/oauth/clients`, token, { name: `Browser RP ${workspace.slice(0, 8)}`, type: 'OAUTH_CLIENT_TYPE_PUBLIC_SPA', redirectUris: [callback], allowedOrigins: ['https://rp.identity.test'], scopes: ['openid', 'profile', 'email'] }, 201);
  return result.client;
 }
-async function consentJourney(workspace, client, token, proof) {
+async function consentJourney(workspace, client, token, proof, journeyPage = page, journeyContext = context, scoped = false) {
+ const page = journeyPage;
+ const context = journeyContext;
  stage = `${proof} consent repair`;
  const nonce = randomBytes(32).toString('base64url');
  const state = randomBytes(32).toString('base64url');
@@ -101,25 +104,26 @@ async function consentJourney(workspace, client, token, proof) {
  assert.equal(new URL(consentURL).pathname, '/oauth/consent');
  const handle = new URL(consentURL).searchParams.get('request');
  assert(handle, 'saved consent request handle');
- assert.equal((await api('GET', `/api/workspaces/${workspace}/identity`, token)).access.reason, 'IDENTITY_ACCESS_REASON_ALLOWED');
+ assert.equal((await api('GET', `/api/workspaces/${workspace}/identity`, token, undefined, 200, context)).access.reason, 'IDENTITY_ACCESS_REASON_ALLOWED');
  await page.getByTestId('consent-auth-repair').locator('[role=alert]').waitFor();
  assert.equal(await page.getByRole('button', { name: 'Allow', exact: true }).count(), 0);
  await new Promise(r => setTimeout(r, 1100));
- if (proof === 'local') {
+ if (proof === 'local' || !scoped) {
   await page.locator('input[autocomplete=current-password]').fill(f.password);
   const reauth = page.waitForResponse(r => r.url().endsWith('/api/auth/local/reauth'));
   await page.getByRole('button', { name: 'Confirm password', exact: true }).click();
   await jsonResponse(await reauth, 200, 'local reauth UI');
-  await page.getByTestId('consent-auth-repair').getByRole('button', { name: 'Refresh', exact: true }).click();
- } else {
+  if (proof === 'local') await page.getByTestId('consent-auth-repair').getByRole('button', { name: 'Refresh', exact: true }).click();
+ }
+ if (proof !== 'local') {
   const select = page.getByTestId('consent-auth-repair').locator('select');
   await select.selectOption(workspace);
   const finish = page.waitForResponse(r => r.url().endsWith('/api/auth/sso/finish')).then(r => { assert.equal(r.status(), 200, 'SSO finish UI'); });
   await page.getByTestId('sso-step_up').getByRole('button').click();
   await keycloakLogin(page);
   await finish;
-  await api('GET', `/api/workspaces/${f.workspaceB}/identity`, token); // Same local session still owns B.
-  const confirmed = await api('GET', `/api/workspaces/${workspace}/identity`, token);
+  await api('GET', `/api/workspaces/${f.workspaceB}/identity`, token, undefined, scoped ? 403 : 200, context);
+  const confirmed = await api('GET', `/api/workspaces/${workspace}/identity`, token, undefined, 200, context);
   assert.equal(confirmed.access.assurance.workspaceId, workspace);
   await page.waitForURL(consentURL);
   assert.equal(new URL(page.url()).searchParams.get('request'), handle, 'same request restored after SSO');
@@ -156,7 +160,7 @@ async function consentJourney(workspace, client, token, proof) {
  const info = await jsonResponse(await context.request.get(`${issuer}/userinfo`, { headers: { Authorization: `Bearer ${tokens.access_token}` } }), 200, 'UserInfo');
  assert.equal(info.sub, claims.sub); assert.equal(info.email, f.email); assert.equal(info.email_verified, true);
  for (const privateField of ['user_id', 'userId', 'roles', 'workspaces', 'superadmin']) assert.equal(info[privateField], undefined);
- await api('GET', '/api/me', tokens.access_token, undefined, 401);
+ await api('GET', '/api/me', tokens.access_token, undefined, 401, context);
  await jsonResponse(await context.request.post(`${issuer}/token`, { form: exchange }), 400, 'code replay denied');
  const revoke = await context.request.post(`${issuer}/revoke`, { form: { client_id: client.clientId, token: tokens.access_token } }); assert.equal(revoke.status(), 200);
  const denied = await context.request.get(`${issuer}/userinfo`, { headers: { Authorization: `Bearer ${tokens.access_token}` } }); assert.equal(denied.status(), 401);
@@ -204,18 +208,28 @@ try {
   await api('GET', '/api/me', other.accessToken, undefined, 200, independent);
  } finally { await independent.close(); }
  checkpoint('real linking, test, activation, recovery setup, enforcement and independent B access');
+ const ssoSub = await consentJourney(f.workspaceA, rpA, token, 'SSO');
+ assert.notEqual(localSub, ssoSub, 'workspace subjects differ');
  // Standalone SSO uses the actual App issuer and scoped browser cookies.
  stage = 'standalone scoped login';
  const scopedContext = await browser.newContext({ ignoreHTTPSErrors: true, locale: 'en-US', permissions: [] });
  try {
-  const begun = await api('POST', `/api/auth/sso/workspaces/${f.workspaceA}/begin`, '', { purpose: 'SSO_FLOW_PURPOSE_LOGIN', clientKind: 'SSO_CLIENT_KIND_WEB' }, 200, scopedContext);
-  const scopedPage = await scopedContext.newPage(); await scopedPage.goto(begun.authorizationUrl); await keycloakLogin(scopedPage);
-  const done = await api('POST', '/api/auth/sso/finish', '', { flowId: begun.flowId }, 200, scopedContext);
+  const scopedPage = await scopedContext.newPage();
+  await scopedPage.goto(f.origin);
+  await scopedPage.getByLabel('Workspace address', { exact: true }).fill(f.slugA);
+  await scopedPage.getByRole('button', { name: 'Find workspace', exact: true }).click();
+  const installed = scopedPage.waitForResponse(r => r.url().endsWith('/api/auth/sso/finish')).then(r => jsonResponse(r, 200, 'scoped UI finish'));
+  await scopedPage.getByTestId('sso-login').getByRole('button').click();
+  await keycloakLogin(scopedPage);
+  const done = await installed;
   assert.equal(done.tokens.authority.kind, 'SESSION_AUTHORITY_KIND_WORKSPACE_SSO'); assert.equal(done.tokens.authority.workspaceId, f.workspaceA);
   const refreshed = await api('POST', `/api/auth/sso/workspaces/${f.workspaceA}/refresh`, '', {}, 200, scopedContext);
   assert.equal(refreshed.tokens.authority.kind, 'SESSION_AUTHORITY_KIND_WORKSPACE_SSO');
   assert.equal(refreshed.tokens.authority.workspaceId, f.workspaceA);
   assert.equal(refreshed.tokens.refreshToken ?? '', '');
+  assert.equal(refreshed.tokens.sessionId, done.tokens.sessionId);
+  assert.equal(refreshed.tokens.refreshExpiresAt, done.tokens.refreshExpiresAt);
+  assert.equal(refreshed.tokens.authority.localAuthenticatedAt, undefined);
   const scoped = refreshed.tokens.accessToken;
   await api('GET', `/api/rooms/${roomA}`, scoped, undefined, 200, scopedContext);
   for (const path of [`/api/rooms/${roomB}`, '/api/dms', '/api/me/sessions']) {
@@ -223,11 +237,19 @@ try {
   }
   const cookies = await scopedContext.cookies();
   assert(cookies.some(c => c.httpOnly && c.secure && c.path === `/api/auth/sso/workspaces/${f.workspaceA}`));
-  await api('POST', `/api/auth/sso/workspaces/${f.workspaceA}/logout`, scoped, {}, 204, scopedContext);
+  // Explicit HTTP step-up asserts no new tokens before the UI round trip.
+  await ssoHTTP('STEP_UP', scoped, scopedPage, scopedContext);
+  const scopedSub = await consentJourney(f.workspaceA, rpA, scoped, 'scoped SSO', scopedPage, scopedContext, true);
+  const again = await api('POST', `/api/auth/sso/workspaces/${f.workspaceA}/refresh`, '', {}, 200, scopedContext);
+  assert.equal(again.tokens.sessionId, done.tokens.sessionId);
+  assert.equal(again.tokens.refreshExpiresAt, done.tokens.refreshExpiresAt);
+  assert.deepEqual(again.tokens.authority, done.tokens.authority);
+  assert.equal(again.tokens.authority.localAuthenticatedAt, undefined);
+  for (const path of [`/api/rooms/${roomB}`, '/api/dms', '/api/me/sessions']) await api('GET', path, again.tokens.accessToken, undefined, 403, scopedContext);
+  assert.notEqual(scopedSub, localSub);
+  await api('POST', `/api/auth/sso/workspaces/${f.workspaceA}/logout`, again.tokens.accessToken, {}, 204, scopedContext);
  } finally { await scopedContext.close(); }
- checkpoint('production scoped issuer/cookies, scoped refresh and B/DM/global denial');
- const ssoSub = await consentJourney(f.workspaceA, rpA, token, 'SSO');
- assert.notEqual(localSub, ssoSub, 'workspace subjects differ');
+ checkpoint('production scoped issuer/cookies, same-session reauth, unchanged authority/deadline and B/DM/global denial');
  console.log('IDENTITY_BROWSER_GOLDEN_PASS');
 } catch (error) {
  // Assertion errors may contain tokens/authorization query values: print only
