@@ -238,7 +238,7 @@ func TestSSORotationTestActivateRecovery(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err = f.s.SetPolicy(ctx, f.p, f.ws, &pb.PutIdentityPolicyRequest{Version: uint64(policy.Version), Mode: pb.IdentityPolicyMode_IDENTITY_POLICY_MODE_ENFORCED}); err != nil {
+	if err = f.s.SetPolicy(ctx, f.p, f.ws, &pb.PutIdentityPolicyRequest{Version: uint64(max(policy.Version, 0)), Mode: pb.IdentityPolicyMode_IDENTITY_POLICY_MODE_ENFORCED}); err != nil {
 		t.Fatal(err)
 	}
 	begin, cb = f.web(t, pb.SSOFlowPurpose_SSO_FLOW_PURPOSE_STEP_UP, "owner-subject")
@@ -293,5 +293,62 @@ func TestSSORotationTestActivateRecovery(t *testing.T) {
 	}
 	if _, err = f.s.Recover(ctx, f.p, f.ws, kit.CodesOnce[0]); err == nil {
 		t.Fatal("recovery replay accepted")
+	}
+}
+
+func TestSSONewIssuerNeverInheritsOldSecret(t *testing.T) {
+	f := newServiceFixture(t)
+	f.activate(t)
+	other, _, _ := newIDP(t)
+	_, err := f.s.PutConnection(context.Background(), f.p, f.ws, &pb.PutIdentityConnectionRequest{Version: 1, Name: "Replacement", Provider: pb.IdentityProvider_IDENTITY_PROVIDER_GENERIC, Issuer: other.server.URL, ClientId: "other-client"})
+	if !errors.Is(err, ErrInvalid) {
+		t.Fatalf("omitted credential crossed issuer boundary: %v", err)
+	}
+	rows, err := f.s.DB.Q.ListIdentityConnections(context.Background(), f.ws)
+	if err != nil || len(rows) != 1 {
+		t.Fatal("replacement created without explicit secret")
+	}
+	other.mu.Lock()
+	calls := other.tokenCalls + other.discoveryCalls
+	other.mu.Unlock()
+	if calls != 0 {
+		t.Fatal("old secret sent to replacement issuer")
+	}
+}
+
+func TestSSOExpiredRecoveryKitAndRotation(t *testing.T) {
+	f := newServiceFixture(t)
+	f.activate(t)
+	ctx := context.Background()
+	begin, cb := f.web(t, pb.SSOFlowPurpose_SSO_FLOW_PURPOSE_STEP_UP, "owner-subject")
+	if _, err := f.s.Finish(ctx, cb.FlowID, begin.Browser); err != nil {
+		t.Fatal(err)
+	}
+	kit, err := f.s.RecoveryKit(ctx, f.p, f.ws)
+	if err != nil || kit.ExpiresAt == nil || time.Until(kit.ExpiresAt.AsTime()) > 365*24*time.Hour || time.Until(kit.ExpiresAt.AsTime()) < 365*24*time.Hour-time.Minute {
+		t.Fatal("kit expiry not fixed365days")
+	}
+	if _, err = f.s.DB.Pool.Exec(ctx, `UPDATE workspace_identity_recovery_codes SET expires_at=clock_timestamp()-interval '1 second' WHERE workspace_id=$1`, f.ws); err != nil {
+		t.Fatal(err)
+	}
+	policy, err := f.s.DB.Q.GetIdentityPolicy(ctx, f.ws)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err = f.s.SetPolicy(ctx, f.p, f.ws, &pb.PutIdentityPolicyRequest{Version: uint64(max(policy.Version, 0)), Mode: pb.IdentityPolicyMode_IDENTITY_POLICY_MODE_ENFORCED}); err == nil {
+		t.Fatal("expired kit enabled enforcement")
+	}
+	if _, err = f.s.Recover(ctx, f.p, f.ws, kit.CodesOnce[0]); err == nil {
+		t.Fatal("expired recovery code accepted")
+	}
+	replacement, err := f.s.RecoveryKit(ctx, f.p, f.ws)
+	if err != nil || len(replacement.CodesOnce) != 10 {
+		t.Fatal(err)
+	}
+	if _, err = f.s.Recover(ctx, f.p, f.ws, kit.CodesOnce[0]); err == nil {
+		t.Fatal("rotated kit resurrected old code")
+	}
+	if err = f.s.SetPolicy(ctx, f.p, f.ws, &pb.PutIdentityPolicyRequest{Version: uint64(max(policy.Version, 0)), Mode: pb.IdentityPolicyMode_IDENTITY_POLICY_MODE_ENFORCED}); err != nil {
+		t.Fatal(err)
 	}
 }

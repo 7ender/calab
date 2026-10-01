@@ -3,6 +3,7 @@ package directory
 import (
 	"context"
 	"net/url"
+	"sync"
 	"time"
 
 	pb "github.com/calaba/calaba/server/gen/calaba/v1"
@@ -26,6 +27,8 @@ type Service struct {
 	Identity    *sso.Service
 	LDAP        Scanner
 	OperatorCAs map[string]string
+	// OnError reports redacted background dependency failures to root supervision.
+	OnError func(error)
 }
 
 func (s *Service) now() time.Time {
@@ -56,7 +59,7 @@ func (s *Service) authorize(ctx context.Context, q *sqlc.Queries, p identitypoli
 
 // View never exposes bind credentials or operator CA settings.
 func View(c sqlc.WorkspaceDirectory) *pb.IdentityDirectory {
-	out := &pb.IdentityDirectory{Id: c.ID.String(), WorkspaceId: c.WorkspaceID.String(), Version: uint64(c.Version), Enabled: c.DisabledAt == nil, Url: c.Url, BindDn: c.BindDn, BaseDn: c.BaseDn, AllowedGroupDns: c.AllowedGroupDns, SecretConfigured: len(c.BindSecretBox) > 0, LastError: c.LastError, SyncIntervalSeconds: uint32(c.SyncIntervalSeconds), MaxStalenessSeconds: uint32(c.MaxStalenessSeconds)}
+	out := &pb.IdentityDirectory{Id: c.ID.String(), WorkspaceId: c.WorkspaceID.String(), Version: uint64(max(c.Version, 0)), Enabled: c.DisabledAt == nil, Url: c.Url, BindDn: c.BindDn, BaseDn: c.BaseDn, AllowedGroupDns: c.AllowedGroupDns, SecretConfigured: len(c.BindSecretBox) > 0, LastError: c.LastError, SyncIntervalSeconds: uint32(max(c.SyncIntervalSeconds, 0)), MaxStalenessSeconds: uint32(max(c.MaxStalenessSeconds, 0))}
 	if c.LastSuccessAt != nil {
 		out.LastSuccessAt = timestamppb.New(*c.LastSuccessAt)
 	}
@@ -103,7 +106,7 @@ func (s *Service) Put(ctx context.Context, p identitypolicy.Principal, ws uuid.U
 		if err != nil && !fresh {
 			return err
 		}
-		if fresh && req.Version != 0 || !fresh && uint64(existing.Version) != req.Version {
+		if fresh && req.Version != 0 || !fresh && uint64(max(existing.Version, 0)) != req.Version {
 			return sso.ErrChanged
 		}
 		password := ""
@@ -211,7 +214,7 @@ func (s *Service) Members(ctx context.Context, p identitypolicy.Principal, ws uu
 			if row.UserID != nil {
 				user = row.UserID.String()
 			}
-			out.Members = append(out.Members, &pb.IdentityDirectoryMember{UserId: user, ObjectGuid: row.ObjectGuid.String(), Status: statuses[row.Status], Version: uint64(row.Version)})
+			out.Members = append(out.Members, &pb.IdentityDirectoryMember{UserId: user, ObjectGuid: row.ObjectGuid.String(), Status: statuses[row.Status], Version: uint64(max(row.Version, 0))})
 		}
 		return nil
 	})
@@ -274,7 +277,11 @@ func (s *Service) Sync(ctx context.Context, ws uuid.UUID) error {
 		if err != nil || c.DisabledAt != nil {
 			return sso.ErrDenied
 		}
-		run, err = q.CreateDirectorySyncRun(ctx, sqlc.CreateDirectorySyncRunParams{WorkspaceID: ws, DirectoryID: c.ID, FullScan: true, ConfigVersion: c.Version, LeaseUntil: s.now().Add(120 * time.Second), Status: "running", StartedAt: s.now(), Generation: c.Generation + 1})
+		databaseNow, err := q.IdentityDatabaseNow(ctx)
+		if err != nil {
+			return err
+		}
+		run, err = q.CreateDirectorySyncRun(ctx, sqlc.CreateDirectorySyncRunParams{WorkspaceID: ws, DirectoryID: c.ID, FullScan: true, ConfigVersion: c.Version, LeaseUntil: databaseNow.Add(120 * time.Second), Status: "running", StartedAt: databaseNow, Generation: c.Generation + 1})
 		return err
 	})
 	if err != nil {
@@ -393,7 +400,7 @@ func (s *Service) publish(ctx context.Context, c sqlc.WorkspaceDirectory, run sq
 				}
 			}
 		}
-		if _, err = q.FinishDirectorySyncRun(ctx, sqlc.FinishDirectorySyncRunParams{ID: run.ID, Status: "succeeded", Complete: true, ObjectsSeen: int32(len(objects))}); err != nil {
+		if _, err = q.FinishDirectorySyncRun(ctx, sqlc.FinishDirectorySyncRunParams{ID: run.ID, Status: "succeeded", Complete: true, ObjectsSeen: int32(len(objects))}); err != nil { //nolint:gosec // G115: publish rejects snapshots above 100000 objects before this bounded conversion.
 			return err
 		}
 		_, err = q.PublishDirectorySuccess(ctx, sqlc.PublishDirectorySuccessParams{WorkspaceID: c.WorkspaceID, DirectoryID: c.ID, ConfigVersion: c.Version, Generation: run.Generation, RunID: run.ID})
@@ -401,35 +408,96 @@ func (s *Service) publish(ctx context.Context, c sqlc.WorkspaceDirectory, run sq
 	})
 }
 
-// Run is a cancellable bounded worker; freshness enforcement is independently DB-backed.
-func (s *Service) Run(ctx context.Context) error {
-	timer := time.NewTicker(5 * time.Minute)
+// Run schedules due directories fairly using four bounded scan workers. Listing failures
+// are retried while durable freshness checks continue to fail closed independently.
+func (s *Service) Run(ctx context.Context) error { return s.run(ctx, time.Second) }
+
+func (s *Service) run(ctx context.Context, interval time.Duration) error {
+	jobs := make(chan uuid.UUID, 4)
+	var workers sync.WaitGroup
+	var mu sync.Mutex
+	active := map[uuid.UUID]bool{}
+	nextAttempt := map[uuid.UUID]time.Time{}
+	for range 4 {
+		workers.Go(func() {
+			for {
+				select {
+				case <-ctx.Done():
+					return
+				case ws := <-jobs:
+					err := s.Sync(ctx, ws)
+					mu.Lock()
+					delete(active, ws)
+					mu.Unlock()
+					if err != nil && ctx.Err() == nil && s.OnError != nil {
+						s.OnError(ErrDirectory)
+					}
+				}
+			}
+		})
+	}
+	defer workers.Wait()
+	timer := time.NewTicker(interval)
 	defer timer.Stop()
-	for {
-		var after *uuid.UUID
+	var after *uuid.UUID
+	schedule := func() {
 		for {
-			rows, err := s.Identity.DB.Q.ListEnabledIdentityDirectoriesAfter(ctx, sqlc.ListEnabledIdentityDirectoriesAfterParams{AfterID: after, LimitCount: 100})
+			listingCtx, stopListing := context.WithTimeout(ctx, 3*time.Second)
+			rows, err := s.Identity.DB.Q.ListEnabledIdentityDirectoriesAfter(listingCtx, sqlc.ListEnabledIdentityDirectoriesAfterParams{AfterID: after, LimitCount: 100})
+			stopListing()
 			if err != nil {
-				return err
+				if s.OnError != nil {
+					s.OnError(ErrDirectory)
+				}
+				return
 			}
 			if len(rows) == 0 {
-				break
+				after = nil
+				return
 			}
 			for _, c := range rows {
 				if c.LastSuccessAt == nil || !s.now().Before(c.LastSuccessAt.Add(time.Duration(c.SyncIntervalSeconds)*time.Second)) {
-					_ = s.Sync(ctx, c.WorkspaceID)
+					mu.Lock()
+					busy := active[c.WorkspaceID] || s.now().Before(nextAttempt[c.WorkspaceID])
+					if !busy {
+						active[c.WorkspaceID] = true
+						nextAttempt[c.WorkspaceID] = s.now().Add(5 * time.Minute)
+					}
+					mu.Unlock()
+					if !busy {
+						select {
+						case jobs <- c.WorkspaceID:
+						case <-ctx.Done():
+							mu.Lock()
+							delete(active, c.WorkspaceID)
+							delete(nextAttempt, c.WorkspaceID)
+							mu.Unlock()
+							return
+						default:
+							mu.Lock()
+							delete(active, c.WorkspaceID)
+							delete(nextAttempt, c.WorkspaceID)
+							mu.Unlock()
+							return
+						}
+					}
 				}
-				if ctx.Err() != nil {
-					return ctx.Err()
-				}
+				id := c.ID
+				after = &id
 			}
-			id := rows[len(rows)-1].ID
-			after = &id
+			if len(rows) < 100 {
+				after = nil
+				return
+			}
 		}
+	}
+	schedule()
+	for {
 		select {
 		case <-ctx.Done():
 			return ctx.Err()
 		case <-timer.C:
+			schedule()
 		}
 	}
 }

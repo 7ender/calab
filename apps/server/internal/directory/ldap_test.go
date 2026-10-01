@@ -135,7 +135,7 @@ func (f *ldapFixture) serve(conn net.Conn) {
 		switch operation.Tag {
 		case ldap.ApplicationBindRequest:
 			code := int64(0)
-			if len(operation.Children) != 3 || operation.Children[1].Value != "CN=Service,DC=example,DC=test" || string(operation.Children[2].Data.Bytes()) != "fixture-password" {
+			if len(operation.Children) != 3 || operation.Children[1].Value != "CN=Service,DC=example,DC=test" || operation.Children[2].Data.String() != "fixture-password" {
 				code = 49
 			}
 			if _, err = conn.Write(ldapPacket(id, ldapResult(ldap.ApplicationBindResponse, code), nil).Bytes()); err != nil {

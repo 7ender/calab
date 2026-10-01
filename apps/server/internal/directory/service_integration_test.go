@@ -224,7 +224,7 @@ func TestDirectoryConfigRaceDiscardsSnapshot(t *testing.T) {
 	done := make(chan error, 1)
 	go func() { done <- f.service.Sync(ctx, f.ws) }()
 	<-gate.scanned
-	if _, err = f.service.Put(ctx, f.p, f.ws, &pb.PutIdentityDirectoryRequest{Version: uint64(c.Version), Enabled: true, Url: c.Url, BaseDn: c.BaseDn, BindDn: c.BindDn, AllowedGroupDns: []string{"CN=Different,DC=example,DC=test"}}); err != nil {
+	if _, err = f.service.Put(ctx, f.p, f.ws, &pb.PutIdentityDirectoryRequest{Version: uint64(max(c.Version, 0)), Enabled: true, Url: c.Url, BaseDn: c.BaseDn, BindDn: c.BindDn, AllowedGroupDns: []string{"CN=Different,DC=example,DC=test"}}); err != nil {
 		t.Fatal(err)
 	}
 	close(gate.release)
@@ -234,5 +234,85 @@ func TestDirectoryConfigRaceDiscardsSnapshot(t *testing.T) {
 	current, err := f.service.Identity.DB.Q.GetWorkspaceIdentityDirectory(ctx, f.ws)
 	if err != nil || current.LastSuccessAt != nil || current.Generation != c.Generation {
 		t.Fatal("scope change reused freshness")
+	}
+}
+
+func TestDirectoryPublishRechecksDatabaseLease(t *testing.T) {
+	f := newDirectoryFixture(t)
+	f.sync(t)
+	ctx := context.Background()
+	q := f.service.Identity.DB.Q
+	c, err := q.GetWorkspaceIdentityDirectory(ctx, f.ws)
+	if err != nil {
+		t.Fatal(err)
+	}
+	run, err := q.CreateDirectorySyncRun(ctx, sqlc.CreateDirectorySyncRunParams{WorkspaceID: f.ws, DirectoryID: c.ID, FullScan: true, ConfigVersion: c.Version, Generation: c.Generation + 1, Status: "running", StartedAt: time.Now(), LeaseUntil: time.Now().Add(time.Minute)})
+	if err != nil {
+		t.Fatal(err)
+	}
+	// The scan captured a still-live lease, but the durable lease expires before commit.
+	if _, err = f.service.Identity.DB.Pool.Exec(ctx, `UPDATE directory_sync_runs SET lease_until=clock_timestamp()-interval '1 second' WHERE id=$1`, run.ID); err != nil {
+		t.Fatal(err)
+	}
+	if err = f.service.publish(ctx, c, run, nil); err == nil {
+		t.Fatal("expired durable lease published")
+	}
+	current, err := q.GetWorkspaceIdentityDirectory(ctx, f.ws)
+	if err != nil || current.Generation != c.Generation || !current.LastSuccessAt.Equal(*c.LastSuccessAt) {
+		t.Fatal("expired publish changed freshness")
+	}
+	object := f.object(t)
+	if object.MissingFullScans != 0 || object.Status != "unmapped" {
+		t.Fatal("expired publish changed objects")
+	}
+	actual, err := q.GetDirectorySyncRun(ctx, sqlc.GetDirectorySyncRunParams{WorkspaceID: f.ws, ID: run.ID})
+	if err != nil || actual.Status != "running" {
+		t.Fatal("expired publish failed to rollback staged run")
+	}
+}
+
+type scannerMux map[uuid.UUID]Scanner
+
+func (m scannerMux) Validate(c sqlc.WorkspaceDirectory) error { return m[c.WorkspaceID].Validate(c) }
+func (m scannerMux) Scan(ctx context.Context, c sqlc.WorkspaceDirectory, password string) ([]Object, error) {
+	return m[c.WorkspaceID].Scan(ctx, c, password)
+}
+func TestDirectorySchedulerDoesNotBlockHealthyWorkspace(t *testing.T) {
+	slow, healthy := newDirectoryFixture(t), newDirectoryFixture(t)
+	gate := blockingScanner{Scanner: slow.service.LDAP, scanned: make(chan struct{}), release: make(chan struct{})}
+	slow.service.LDAP = scannerMux{slow.ws: gate, healthy.ws: healthy.service.LDAP}
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	done := make(chan error, 1)
+	go func() { done <- slow.service.run(ctx, 10*time.Millisecond) }()
+	select {
+	case <-gate.scanned:
+	case <-time.After(2 * time.Second):
+		t.Fatal("slow workspace not scheduled")
+	}
+	until := time.After(2 * time.Second)
+	tick := time.NewTicker(10 * time.Millisecond)
+	defer tick.Stop()
+	for {
+		select {
+		case <-until:
+			cancel()
+			<-done
+			t.Fatal("slow workspace blocked healthy sync")
+		case <-tick.C:
+			c, err := healthy.service.Identity.DB.Q.GetWorkspaceIdentityDirectory(ctx, healthy.ws)
+			if err != nil {
+				cancel()
+				<-done
+				t.Fatal(err)
+			}
+			if c.LastSuccessAt != nil {
+				cancel()
+				if err := <-done; !errors.Is(err, context.Canceled) {
+					t.Fatal(err)
+				}
+				return
+			}
+		}
 	}
 }

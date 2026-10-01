@@ -314,7 +314,11 @@ func (s *Service) Begin(ctx context.Context, p identitypolicy.Principal, ws uuid
 			challenge = &req.DesktopChallenge
 			startHash = identitycrypto.Hash(start)
 		}
-		expires := s.now().Add(5 * time.Minute)
+		databaseNow, err := q.IdentityDatabaseNow(ctx)
+		if err != nil {
+			return err
+		}
+		expires := databaseNow.Add(5 * time.Minute)
 		_, err = q.CreateIdentityLoginTransaction(ctx, sqlc.CreateIdentityLoginTransactionParams{ID: &id, WorkspaceID: ws, ConnectionID: c.ID, ConnectionVersion: c.Version, Purpose: what, SessionID: session, UserID: user, StateHash: identitycrypto.Hash(state), BrowserHash: identitycrypto.Hash(browser), NonceHash: identitycrypto.Hash(nonce), VerifierBox: encrypted, ReturnUri: "/sso/complete", NativeChallenge: challenge, BrowserStartHash: startHash, ExpiresAt: expires})
 		if err != nil {
 			return err
@@ -425,6 +429,9 @@ func (s *Service) Callback(ctx context.Context, connection uuid.UUID, state, bro
 	if err != nil {
 		return result, err
 	}
+	if t.Purpose == "test" && !s.now().Before(proof.AuthenticatedAt.Add(5*time.Minute)) {
+		return result, ErrInvalidProof
+	}
 	err = s.DB.Tx(ctx, func(q *sqlc.Queries) error {
 		if _, err := s.validateFlow(ctx, q, t, payload); err != nil {
 			return err
@@ -474,7 +481,11 @@ func (s *Service) Callback(ctx context.Context, connection uuid.UUID, state, bro
 			if err != nil {
 				return err
 			}
-			until := minTime(t.ExpiresAt, s.now().Add(time.Minute))
+			databaseNow, err := q.IdentityDatabaseNow(ctx)
+			if err != nil {
+				return err
+			}
+			until := minTime(t.ExpiresAt, databaseNow.Add(time.Minute))
 			_, err = q.CreateIdentityNativeHandoff(ctx, sqlc.CreateIdentityNativeHandoffParams{TransactionID: t.ID, TicketHash: identitycrypto.Hash(ticket), Challenge: *t.NativeChallenge, ExpiresAt: until, ResultBox: encrypted})
 			if err != nil {
 				return err
@@ -591,7 +602,7 @@ func (s *Service) finish(ctx context.Context, flow uuid.UUID, browser, ticket, v
 		if err != nil || !identitypolicy.Evaluate(s.now(), final, identitypolicy.WorkspaceRead).Allowed {
 			return ErrDenied
 		}
-		out.Assurance = &pb.WorkspaceAssurance{WorkspaceId: t.WorkspaceID.String(), AuthenticatedAt: timestamppb.New(done.Proof.AuthenticatedAt), ExpiresAt: timestamppb.New(until), PolicyVersion: uint64(done.Versions.Policy), ConnectionVersion: uint64(c.Version)}
+		out.Assurance = &pb.WorkspaceAssurance{WorkspaceId: t.WorkspaceID.String(), AuthenticatedAt: timestamppb.New(done.Proof.AuthenticatedAt), ExpiresAt: timestamppb.New(until), PolicyVersion: uint64(max(done.Versions.Policy, 0)), ConnectionVersion: uint64(max(c.Version, 0))}
 		return Audit(ctx, q, t.WorkspaceID, &done.UserID, "sso_completed", &t.ID)
 	})
 	if err != nil {
@@ -610,11 +621,12 @@ func (s *Service) issue(ctx context.Context, q *sqlc.Queries, r IssueRequest) (I
 	}
 	var conn *uuid.UUID
 	var at *time.Time
-	if r.Authority == identitypolicy.WorkspaceSSO {
+	switch r.Authority {
+	case identitypolicy.WorkspaceSSO:
 		conn = &r.ConnectionID
-	} else if r.Authority == identitypolicy.Recovery {
+	case identitypolicy.Recovery:
 		at = &r.AuthenticatedAt
-	} else {
+	default:
 		return Issued{}, ErrDenied
 	}
 	row, err := q.CreateScopedIdentitySession(ctx, sqlc.CreateScopedIdentitySessionParams{UserID: r.UserID, RefreshTokenHash: identitycrypto.Hash(refresh), ExpiresAt: r.ExpiresAt, AuthorityKind: string(r.Authority), AuthorityWorkspaceID: &r.WorkspaceID, AuthorityConnectionID: conn, RecoveryAuthenticatedAt: at})
