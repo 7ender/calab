@@ -29,6 +29,7 @@ func (s *Service) RegisterRoutes(mux httpx.Router) {
 	mux.HandleFunc("GET /.well-known/oauth-authorization-server/oidc/workspaces/{workspace}", s.metadata)
 	mux.HandleFunc("GET "+base+"/jwks", s.jwks)
 	mux.HandleFunc("GET "+base+"/authorize", s.authorize)
+	mux.HandleFunc("POST "+base+"/authorize", s.authorize)
 	mux.HandleFunc("POST "+base+"/token", s.token)
 	mux.HandleFunc("GET "+base+"/userinfo", s.userinfo)
 	mux.HandleFunc("POST "+base+"/userinfo", s.userinfo)
@@ -178,6 +179,29 @@ func cors(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
+// Public documents have no client credential to bind CORS to. Permit only an
+// exact origin of an active SPA in this issuer's workspace, including Vary on
+// requests without Origin so a cached JWKS cannot reuse another CORS decision.
+func (s *Service) publicDocumentCORS(w http.ResponseWriter, r *http.Request, ws uuid.UUID) error {
+	w.Header().Add("Vary", "Origin")
+	if r.Header.Get("Origin") == "" || r.Header.Get("Origin") == s.c.PublicOrigin {
+		// Same-origin readers need no CORS grant. Preserve public readability
+		// without reflecting an origin unless it belongs to an active SPA.
+		return nil
+	}
+	clients, err := s.c.DB.Q.ListOAuthClients(r.Context(), ws)
+	if err != nil {
+		return err
+	}
+	for _, c := range clients {
+		if c.DisabledAt == nil && s.checkCORS(r, c) == nil {
+			w.Header().Set("Access-Control-Allow-Origin", r.Header.Get("Origin"))
+			return nil
+		}
+	}
+	return oauthError("invalid_request")
+}
+
 func (s *Service) metadata(w http.ResponseWriter, r *http.Request) {
 	ws, err := pathWorkspace(r)
 	if err != nil {
@@ -188,8 +212,12 @@ func (s *Service) metadata(w http.ResponseWriter, r *http.Request) {
 		writeError(w, &protocolError{code: "invalid_request", status: http.StatusNotFound})
 		return
 	}
+	if err = s.publicDocumentCORS(w, r, ws); err != nil {
+		writeError(w, err)
+		return
+	}
 	i := s.issuer(ws)
-	jsonResponse(w, http.StatusOK, map[string]any{"issuer": i, "authorization_endpoint": i + "/authorize", "token_endpoint": i + "/token", "userinfo_endpoint": i + "/userinfo", "revocation_endpoint": i + "/revoke", "jwks_uri": i + "/jwks", "scopes_supported": []string{"openid", "profile", "email"}, "response_types_supported": []string{"code"}, "response_modes_supported": []string{"query"}, "grant_types_supported": []string{"authorization_code", "refresh_token"}, "subject_types_supported": []string{"public"}, "id_token_signing_alg_values_supported": []string{"RS256"}, "token_endpoint_auth_methods_supported": []string{"client_secret_basic", "none"}, "revocation_endpoint_auth_methods_supported": []string{"client_secret_basic", "none"}, "code_challenge_methods_supported": []string{"S256"}, "claims_supported": []string{"iss", "sub", "aud", "iat", "exp", "nonce", "auth_time", "name", "email", "email_verified"}})
+	jsonResponse(w, http.StatusOK, map[string]any{"request_uri_parameter_supported": false, "authorization_response_iss_parameter_supported": true, "issuer": i, "authorization_endpoint": i + "/authorize", "token_endpoint": i + "/token", "userinfo_endpoint": i + "/userinfo", "revocation_endpoint": i + "/revoke", "jwks_uri": i + "/jwks", "scopes_supported": []string{"openid", "profile", "email"}, "response_types_supported": []string{"code"}, "response_modes_supported": []string{"query"}, "grant_types_supported": []string{"authorization_code", "refresh_token"}, "subject_types_supported": []string{"public"}, "id_token_signing_alg_values_supported": []string{"RS256"}, "token_endpoint_auth_methods_supported": []string{"client_secret_basic", "none"}, "revocation_endpoint_auth_methods_supported": []string{"client_secret_basic", "none"}, "code_challenge_methods_supported": []string{"S256"}, "claims_supported": []string{"iss", "sub", "aud", "iat", "exp", "nonce", "auth_time", "name", "email", "email_verified"}})
 }
 func (s *Service) jwks(w http.ResponseWriter, r *http.Request) {
 	ws, err := pathWorkspace(r)
@@ -199,6 +227,10 @@ func (s *Service) jwks(w http.ResponseWriter, r *http.Request) {
 	}
 	if _, err = s.c.DB.Q.GetWorkspace(r.Context(), ws); err != nil {
 		writeError(w, &protocolError{code: "invalid_request", status: http.StatusNotFound})
+		return
+	}
+	if err = s.publicDocumentCORS(w, r, ws); err != nil {
+		writeError(w, err)
 		return
 	}
 	k, err := s.c.SignerForWorkspace(ws)

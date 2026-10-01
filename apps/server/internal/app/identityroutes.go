@@ -47,6 +47,7 @@ var identityRoutes = map[string]identityScope{
 	"POST /oidc/workspaces/{workspace}/userinfo":                                        scopePublic,
 	"POST /oidc/workspaces/{workspace}/token":                                           scopePublic,
 	"POST /oidc/workspaces/{workspace}/revoke":                                          scopePublic,
+	"POST /oidc/workspaces/{workspace}/authorize":                                       scopePublic,
 	"POST /api/workspaces/{workspace}/oauth/clients/{client}/rotate-secret":             scopePublic,
 	"POST /api/workspaces/{workspace}/oauth/clients":                                    scopePublic,
 	"POST /api/workspaces/{workspace_id}/identity/test":                                 scopePublic,

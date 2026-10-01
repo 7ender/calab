@@ -36,6 +36,7 @@ var botRoutes = map[string]botAccess{
 	"POST /oidc/workspaces/{workspace}/userinfo":                                        botDeny,
 	"POST /oidc/workspaces/{workspace}/token":                                           botDeny,
 	"POST /oidc/workspaces/{workspace}/revoke":                                          botDeny,
+	"POST /oidc/workspaces/{workspace}/authorize":                                       botDeny,
 	"POST /api/workspaces/{workspace}/oauth/clients/{client}/rotate-secret":             botDeny,
 	"POST /api/workspaces/{workspace}/oauth/clients":                                    botDeny,
 	"POST /api/workspaces/{workspace_id}/identity/test":                                 botDeny,

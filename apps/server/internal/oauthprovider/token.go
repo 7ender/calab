@@ -220,7 +220,26 @@ func (s *Service) exchange(ctx context.Context, ws uuid.UUID, r *http.Request, f
 			code, err := q.ConsumeOAuthCode(ctx, sqlc.ConsumeOAuthCodeParams{WorkspaceID: ws, ClientID: c.ID, CodeHash: hash(f.Get("code")), RedirectUri: f.Get("redirect_uri"), PkceChallenge: challenge})
 			if err != nil {
 				if errors.Is(err, dbNoRows()) {
-					return oauthError("invalid_grant")
+					// Only an authenticated, exactly bound replay can revoke the
+					// issued family. Retained consumed codes remain replay evidence
+					// after their exchange deadline; no lifetime is extended.
+					used, replayErr := q.GetConsumedOAuthCodeForUpdate(ctx, sqlc.GetConsumedOAuthCodeForUpdateParams{WorkspaceID: ws, ClientID: c.ID, CodeHash: hash(f.Get("code")), RedirectUri: f.Get("redirect_uri"), PkceChallenge: challenge})
+					if replayErr != nil {
+						if errors.Is(replayErr, dbNoRows()) {
+							return oauthError("invalid_grant")
+						}
+						return replayErr
+					}
+					g, replayErr := q.GetOAuthGrantForUpdate(ctx, sqlc.GetOAuthGrantForUpdateParams{WorkspaceID: ws, ID: used.GrantID, ClientID: c.ID})
+					if replayErr != nil {
+						return replayErr
+					}
+					if replayErr = s.revokeGrant(ctx, q, g, "authorization_code_reuse"); replayErr != nil {
+						return replayErr
+					}
+					// Returning an error from the transaction would undo revocation.
+					wireErr = oauthError("invalid_grant")
+					return nil
 				}
 				return err
 			}
