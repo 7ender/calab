@@ -15,7 +15,7 @@ import (
 // The calendar side of the CalDAV push (ADR-0041 §4): who is told about a change, and what
 // a user's calendar should hold for a meeting now.
 
-// ErrWithheld: the meeting's workspace identity policy does not let its content leave Calab
+// ErrWithheld is returned when the workspace identity policy does not let the content leave Calab
 // for this user now (CalDAV push): the push is dropped, nothing is sent.
 var ErrWithheld = errors.New("calendar: withheld by the workspace identity policy")
 

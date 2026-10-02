@@ -29,7 +29,7 @@ func TestDirectoryHostBoundToWorkspaces(t *testing.T) {
 		t.Fatal(err)
 	}
 	put := func() error {
-		_, err := f.service.Put(ctx, f.p, f.ws, &pb.PutIdentityDirectoryRequest{Version: uint64(c.Version), Enabled: true, Url: c.Url, BaseDn: c.BaseDn, BindDn: c.BindDn, AllowedGroupDns: c.AllowedGroupDns})
+		_, err := f.service.Put(ctx, f.p, f.ws, &pb.PutIdentityDirectoryRequest{Version: uint64(max(c.Version, 0)), Enabled: true, Url: c.Url, BaseDn: c.BaseDn, BindDn: c.BindDn, AllowedGroupDns: c.AllowedGroupDns})
 		return err
 	}
 	bind(f.otherWS)
