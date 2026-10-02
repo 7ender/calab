@@ -14,14 +14,14 @@ const rec = (over: Partial<ResumeVoice> = {}): ResumeVoice => ({
   deafened: false,
   mutedBeforeDeafen: false,
   cameraOn: false,
-  serverUrl: 'https://app.calab.ru',
+  serverUrl: 'https://app.calab.io',
   at: AT,
   ...over,
 });
 
 const ctx = (over: Partial<ResumeContext> = {}): ResumeContext => ({
   now: AT + 20_000,
-  serverUrl: 'https://app.calab.ru',
+  serverUrl: 'https://app.calab.io',
   userId: 'u1',
   inVoiceHere: false,
   myVoice: null,
@@ -42,7 +42,7 @@ describe('decideResume', () => {
   });
 
   it('same server only (trailing slash and case do not matter)', () => {
-    expect(decideResume(rec(), ctx({ serverUrl: 'https://APP.calab.ru/' })).kind).toBe('join');
+    expect(decideResume(rec(), ctx({ serverUrl: 'https://APP.calab.io/' })).kind).toBe('join');
     expect(decideResume(rec(), ctx({ serverUrl: 'https://meet.example.com' }))).toEqual({ kind: 'none', reason: 'other-server' });
   });
 

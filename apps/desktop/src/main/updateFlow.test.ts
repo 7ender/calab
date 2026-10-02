@@ -19,9 +19,9 @@ import {
   type UpdaterLike,
 } from './updateFlow';
 
-const FEED = 'https://releases.calab.ru/';
+const FEED = 'https://releases.calab.io/';
 const SERVER_FEED = 'https://chat.example.com/download/';
-const PAGE = 'https://app.calab.ru/download/';
+const PAGE = 'https://app.calab.io/download/';
 
 /** Scripted electron-updater: `next` decides what the next check emits. */
 class FakeUpdater extends EventEmitter implements UpdaterLike {
@@ -664,7 +664,7 @@ describe('update flow', () => {
         await t.flow.check();
         t.updater.finishDownload('0.1.1');
         await vi.advanceTimersByTimeAsync(INSTALL_FRESH_MS);
-        t.updater.next = new Error('ENOTFOUND releases.calab.ru');
+        t.updater.next = new Error('ENOTFOUND releases.calab.io');
         await t.flow.check();
         expect(t.flow.status()).toEqual({ state: 'downloaded', version: '0.1.1' });
         await vi.advanceTimersByTimeAsync(INSTALL_FRESH_MS);
@@ -844,7 +844,7 @@ describe('update flow', () => {
 
   it('error → status error, logged, no throw; the next check recovers', async () => {
     const t = setup();
-    t.updater.next = new Error('ENOTFOUND releases.calab.ru');
+    t.updater.next = new Error('ENOTFOUND releases.calab.io');
     await expect(t.flow.check()).resolves.toEqual({ state: 'error', message: 'update failed' });
     expect(t.warns.length).toBeGreaterThan(0);
     expect(t.notified).toEqual([]);

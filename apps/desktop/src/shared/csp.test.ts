@@ -1,3 +1,4 @@
+import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
 import { connectSrc } from './csp';
 
@@ -29,6 +30,27 @@ describe('Electron connect-src (review L3)', () => {
     expect(allows(s, 'wss://calab.ru.evil.com')).toBe(false);
     expect(allows(s, 'ws://rtc.calab.ru')).toBe(false);
   });
+  it('app.calab.io: the same sibling rule for the new domain; .ru siblings are not implied', () => {
+    const s = connectSrc('https://app.calab.io', 'calaba-api');
+    expect(allows(s, 'wss://rtc.calab.io')).toBe(true);
+    expect(allows(s, 'wss://turn.calab.io')).toBe(true);
+    expect(allows(s, 'wss://app.calab.io/gateway')).toBe(true);
+    expect(allows(s, 'wss://rtc.calab.ru')).toBe(false);
+    expect(allows(s, 'wss://calab.io.evil.com')).toBe(false);
+  });
+  it('release build list (.env.production): old (.ru) and new (.io) saved origins reach LiveKit/TURN of both families', () => {
+    const env = readFileSync(new URL('../../.env.production', import.meta.url), 'utf8');
+    const extra = /^MAIN_VITE_CSP_CONNECT="([^"]*)"$/m.exec(env)?.[1] ?? '';
+    for (const origin of ['https://app.calab.ru', 'https://app.calab.io']) {
+      const s = connectSrc(origin, 'calaba-api', extra);
+      for (const host of ['rtc.calab.ru', 'turn.calab.ru', 'rtc.calab.io', 'turn.calab.io']) {
+        expect(allows(s, `wss://${host}`), `${origin} → ${host}`).toBe(true);
+        expect(allows(s, `https://${host}/rtc/validate`), `${origin} → ${host}`).toBe(true);
+      }
+      expect(allows(s, 'wss://evil.ru')).toBe(false);
+      expect(allows(s, 'wss://evil.io')).toBe(false);
+    }
+  });
   it('meet.gptunnel.ru: its siblings only; rtc.calab.ru needs an explicit extra source', () => {
     const s = connectSrc('https://meet.gptunnel.ru', 'calaba-api');
     expect(allows(s, 'wss://rtc.gptunnel.ru')).toBe(true);
@@ -42,6 +64,10 @@ describe('Electron connect-src (review L3)', () => {
     expect(s).toContain('wss://*.calab.ru');
     expect(s).not.toContain('*.ru ');
     expect(s.endsWith('*.ru')).toBe(false);
+    const io = connectSrc('https://calab.io', 'calaba-api');
+    expect(io).toContain('wss://*.calab.io');
+    expect(io).not.toContain('*.io ');
+    expect(io.endsWith('*.io')).toBe(false);
     const ip = connectSrc('http://141.105.69.177', 'calaba-api');
     expect(ip).not.toContain('*.105.69.177');
   });

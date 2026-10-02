@@ -4,7 +4,7 @@ interface ImportMetaEnv {
   /** Build-time default API URL for packaged builds (e.g. the staging stand). */
   readonly MAIN_VITE_DEFAULT_SERVER_URL?: string;
   /**
-   * The pinned update feed (https only; .env.production: https://releases.calab.ru/). The only feed
+   * The pinned update feed (https only; .env.production: https://releases.calab.io/). The only feed
    * updates are auto-installed from; empty (dev) → notify-only from the server (shared/updateFeed.ts).
    */
   readonly MAIN_VITE_UPDATE_FEED?: string;

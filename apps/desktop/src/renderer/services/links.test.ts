@@ -17,9 +17,9 @@ describe('DM links (ADR-0020)', () => {
   it('parses calab://dm/<id> and https://<server>/dm/<id>, nothing else', () => {
     expect(parseDmLink(`calab://dm/${ID}`)).toBe(ID);
     expect(parseDmLink(`calaba://dm/${ID}/`)).toBe(ID);
-    expect(parseDmLink(`https://app.calab.ru/dm/${ID.toUpperCase()}?x=1`)).toBe(ID);
+    expect(parseDmLink(`https://app.calab.io/dm/${ID.toUpperCase()}?x=1`)).toBe(ID);
     expect(parseDmLink('calab://dm/abcd1234')).toBeNull();
-    expect(parseDmLink(`https://app.calab.ru/r/${ID}`)).toBeNull();
+    expect(parseDmLink(`https://app.calab.io/r/${ID}`)).toBeNull();
   });
   it('opens the DM in «Личные»', async () => {
     handleDeepLink(`calab://dm/${ID}`);
@@ -32,15 +32,15 @@ describe('DM links (ADR-0020)', () => {
 describe('meeting links (ADR-0038)', () => {
   const ID = '00000000-0000-7000-8010-000000000001';
   it('parses https://<server>/e/<id> and calab://e/<id>, not the answer page', () => {
-    expect(parseEventLink(`https://app.calab.ru/e/${ID}`)).toBe(ID);
-    expect(parseEventLink(`https://app.calab.ru/e/${ID.toUpperCase()}/?utm=mail`)).toBe(ID);
+    expect(parseEventLink(`https://app.calab.io/e/${ID}`)).toBe(ID);
+    expect(parseEventLink(`https://app.calab.io/e/${ID.toUpperCase()}/?utm=mail`)).toBe(ID);
     expect(parseEventLink(`calab://e/${ID}`)).toBe(ID);
-    expect(parseEventLink(`https://app.calab.ru/e/${ID}/rsvp?t=x`)).toBeNull();
-    expect(parseEventLink('https://app.calab.ru/e/abcd1234')).toBeNull();
-    expect(parseEventLink(`https://app.calab.ru/dm/${ID}`)).toBeNull();
+    expect(parseEventLink(`https://app.calab.io/e/${ID}/rsvp?t=x`)).toBeNull();
+    expect(parseEventLink('https://app.calab.io/e/abcd1234')).toBeNull();
+    expect(parseEventLink(`https://app.calab.io/dm/${ID}`)).toBeNull();
   });
   it('opens the meeting card (after sign-in if need be)', async () => {
-    handleDeepLink(`https://app.calab.ru/e/${ID}`);
+    handleDeepLink(`https://app.calab.io/e/${ID}`);
     await vi.waitFor(() => expect(openEventLink).toHaveBeenCalledWith(ID));
     expect(openRoom).not.toHaveBeenCalledWith('@me', ID);
   });
@@ -77,20 +77,20 @@ describe('shared links are https only (docs/09 #53)', () => {
     expect(inviteUrl('calab://join', 'abcd1234')).toBeNull();
   });
   it('falls back to the configured server URL', () => {
-    session.settings = { serverUrl: 'https://app.calab.ru/' };
-    expect(inviteUrl('', 'abcd1234')).toBe('https://app.calab.ru/join/abcd1234');
-    expect(roomInviteUrl('', 'abcd1234')).toBe('https://app.calab.ru/r/abcd1234');
+    session.settings = { serverUrl: 'https://app.calab.io/' };
+    expect(inviteUrl('', 'abcd1234')).toBe('https://app.calab.io/join/abcd1234');
+    expect(roomInviteUrl('', 'abcd1234')).toBe('https://app.calab.io/r/abcd1234');
   });
   it('prefers the session server over settings', () => {
     session.settings = { serverUrl: 'https://old.example.org' };
-    expect(inviteUrl('https://app.calab.ru', 'abcd1234')).toBe('https://app.calab.ru/join/abcd1234');
+    expect(inviteUrl('https://app.calab.io', 'abcd1234')).toBe('https://app.calab.io/join/abcd1234');
   });
   it('on the web uses the page origin', () => {
     vi.stubEnv('VITE_PLATFORM', 'web');
-    vi.stubGlobal('location', { origin: 'https://app.calab.ru' });
+    vi.stubGlobal('location', { origin: 'https://app.calab.io' });
     try {
-      expect(inviteUrl('', 'abcd1234')).toBe('https://app.calab.ru/join/abcd1234');
-      expect(roomInviteUrl('', 'abcd1234')).toBe('https://app.calab.ru/r/abcd1234');
+      expect(inviteUrl('', 'abcd1234')).toBe('https://app.calab.io/join/abcd1234');
+      expect(roomInviteUrl('', 'abcd1234')).toBe('https://app.calab.io/r/abcd1234');
     } finally {
       vi.unstubAllGlobals();
     }
@@ -130,8 +130,8 @@ describe('join dialog placeholder', () => {
     vi.unstubAllGlobals();
   });
   it('is a real-looking link on the session server', () => {
-    expect(joinPlaceholder('https://app.calab.ru')).toBe('https://app.calab.ru/join/AbC123xYz');
-    expect(joinPlaceholder('https://app.calab.ru/')).toBe('https://app.calab.ru/join/AbC123xYz');
+    expect(joinPlaceholder('https://app.calab.io')).toBe('https://app.calab.io/join/AbC123xYz');
+    expect(joinPlaceholder('https://app.calab.io/')).toBe('https://app.calab.io/join/AbC123xYz');
   });
   it('falls back to the configured server, then to the web page origin', () => {
     session.settings = { serverUrl: 'https://team.example.org' };
@@ -145,7 +145,7 @@ describe('join dialog placeholder', () => {
     expect(joinPlaceholder('')).toBe('AbC123xYz');
   });
   it('the example itself is accepted by the parser (it shows a valid shape)', () => {
-    expect(parseInviteCode(joinPlaceholder('https://app.calab.ru'))).toBe(INVITE_EXAMPLE_CODE);
+    expect(parseInviteCode(joinPlaceholder('https://app.calab.io'))).toBe(INVITE_EXAMPLE_CODE);
     expect(parseInviteCode(joinPlaceholder(''))).toBe(INVITE_EXAMPLE_CODE);
   });
 });
@@ -154,12 +154,12 @@ describe('board, task and message links (ADR-0042)', () => {
   const B = '0190a0b0-0000-7000-80b1-000000000001';
   const M = '0190a0b0-0000-7000-8004-000000000002';
   it('parses /b/<id>, /t/<KEY-N> and /m/<room>/<message> in both forms', () => {
-    expect(parseBoardLink(`https://app.calab.ru/b/${B}`)).toEqual({ kind: 'board', id: B });
+    expect(parseBoardLink(`https://app.calab.io/b/${B}`)).toEqual({ kind: 'board', id: B });
     expect(parseBoardLink('calab://t/cal-12')).toEqual({ kind: 'task', id: 'CAL-12' });
-    expect(parseBoardLink('https://app.calab.ru/t/FNG-98?x=1')).toEqual({ kind: 'task', id: 'FNG-98' });
-    expect(parseBoardLink('https://app.calab.ru/t/9X-1')).toBeNull();
-    expect(parseMessageLink(`https://app.calab.ru/m/${B}/${M}`)).toEqual({ roomId: B, messageId: M });
+    expect(parseBoardLink('https://app.calab.io/t/FNG-98?x=1')).toEqual({ kind: 'task', id: 'FNG-98' });
+    expect(parseBoardLink('https://app.calab.io/t/9X-1')).toBeNull();
+    expect(parseMessageLink(`https://app.calab.io/m/${B}/${M}`)).toEqual({ roomId: B, messageId: M });
     expect(parseMessageLink(`calab://m/${B}/${M}`)).toEqual({ roomId: B, messageId: M });
-    expect(parseMessageLink(`https://app.calab.ru/m/${B}`)).toBeNull();
+    expect(parseMessageLink(`https://app.calab.io/m/${B}`)).toBeNull();
   });
 });

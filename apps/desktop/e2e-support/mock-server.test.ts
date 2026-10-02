@@ -629,7 +629,7 @@ describe('link previews (docs/09 #51)', () => {
 });
 
 describe('marketing scenario (README / landing screenshots)', () => {
-  it('READY has the marketing rooms; «общий» has 5–7 messages and a calab.ru preview', async () => {
+  it('READY has the marketing rooms; «общий» has 5–7 messages and a calab.io preview', async () => {
     const mk = await startMockServer({ scenario: 'marketing' });
     try {
       const res = await fetch(`${mk.url}/api/auth/login`, {
@@ -662,7 +662,7 @@ describe('marketing scenario (README / landing screenshots)', () => {
       expect(page.messages.length).toBeLessThanOrEqual(7);
       expect(page.messages.some((m) => m.content.includes(`@${IDS.users.anna}`))).toBe(true);
 
-      const preview = await fetch(`${mk.url}/api/unfurl?url=${encodeURIComponent('https://calab.ru')}`, { headers: { Authorization: `Bearer ${token}` } });
+      const preview = await fetch(`${mk.url}/api/unfurl?url=${encodeURIComponent('https://calab.io')}`, { headers: { Authorization: `Bearer ${token}` } });
       expect(((await preview.json()) as { siteName: string }).siteName).toBe('Calab');
       const file = await fetch(`${mk.url}/api/files/${MARKETING_IDS.files.screenshot}/thumbnail`, { headers: { Authorization: `Bearer ${token}` } });
       expect(file.headers.get('content-type')).toBe('image/jpeg');

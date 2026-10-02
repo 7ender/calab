@@ -96,11 +96,11 @@ describe('voice link diagnostics', () => {
     expect(describeConnectError({})).toBe('unknown error');
   });
   it('CSP reports: connect-src with an absolute URL → host', () => {
-    expect(cspBlockedHost({ effectiveDirective: 'connect-src', blockedURI: 'wss://rtc.calab.ru/rtc?access_token=x' })).toBe('rtc.calab.ru');
-    expect(cspBlockedHost({ violatedDirective: 'connect-src https://app.calab.ru', blockedURI: 'https://turn.calab.ru/' })).toBe('turn.calab.ru');
+    expect(cspBlockedHost({ effectiveDirective: 'connect-src', blockedURI: 'wss://rtc.calab.io/rtc?access_token=x' })).toBe('rtc.calab.io');
+    expect(cspBlockedHost({ violatedDirective: 'connect-src https://app.calab.io', blockedURI: 'https://turn.calab.io/' })).toBe('turn.calab.io');
     expect(cspBlockedHost({ effectiveDirective: 'img-src', blockedURI: 'https://x.example/a.png' })).toBeNull();
     expect(cspBlockedHost({ effectiveDirective: 'connect-src', blockedURI: 'eval' })).toBeNull();
-    expect(hostOfUrl('wss://rtc.calab.ru:7881/rtc')).toBe('rtc.calab.ru:7881');
+    expect(hostOfUrl('wss://rtc.calab.io:7881/rtc')).toBe('rtc.calab.io:7881');
     expect(hostOfUrl('nope')).toBeNull();
   });
   it('«Повторить» from the 3rd failed attempt, or at once when blocked', () => {
