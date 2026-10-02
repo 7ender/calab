@@ -46,7 +46,7 @@ Está pensado para equipos de hasta 20–30 personas en voz a la vez y hasta 3 p
 - **Llamadas uno a uno** en mensajes directos, con tono de llamada, cámara y pantalla compartida.
 - **Grabaciones de reuniones**: graba el servidor y transcribe GPTunneL; al chat de la sala llega una tarjeta con el resumen, el audio y la transcripción completa.
 - **Botonera de sonidos**, moderación (silenciar desde el servidor, desconectar, mover arrastrando), estados.
-- **Llamadas telefónicas (SIP)** — conecta tu propio proveedor SIP y marca un número fijo o móvil desde una sala de voz; el interlocutor entra como participante y todos ven «Marcando → Llamando → En la llamada». Ajustes del proveedor, registro de llamadas y el permiso «Hacer llamadas», que por defecto no tiene nadie ([ADR-0046](docs/adr/0046-sip-telephony.md)).
+- **Llamadas telefónicas (SIP)** — conecta tu propio proveedor SIP y marca un número fijo o móvil desde una sala de voz; el interlocutor entra como participante y todos ven «Marcando → Llamando → En la llamada». Ajustes del proveedor, registro de llamadas y el permiso «Hacer llamadas», que por defecto no tiene nadie. Plan Business y Enterprise ([ADR-0046](docs/adr/0046-sip-telephony.md)).
 - **Salas temporales** — una sala por una hora o un día con enlace de invitado listo y, si quieres, una reunión en el calendario: un sustituto de Zoom que desaparece solo ([ADR-0044](docs/adr/0044-temp-rooms.md)).
 
 ### 💬 Chat
@@ -180,6 +180,7 @@ Comprobaciones: `make test` (Go + TS), `make test-integration`, pruebas visuales
 | Tableros de tareas | 3 | 30 | 50 | sin límite |
 | Calendario | ✓ | ✓ | ✓ | ✓ |
 | CalDAV | — | ✓ | ✓ | ✓ |
+| Telefonía (SIP) | — | — | ✓ | ✓ |
 | On-prem (servidor propio) | — | — | — | ✓ |
 | Soporte | — | soporte | prioritario | ✓ |
 | Precio | gratis | a consultar (**it@gptunnel.ai**) | a consultar (**it@gptunnel.ai**) | gratis para uso no comercial (BSL 1.1, «Powered by GPTunneL»); licencia comercial a consultar |
