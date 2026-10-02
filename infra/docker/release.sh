@@ -6,8 +6,10 @@
 #   STEPS="deploy verify" infra/docker/release.sh <commit>   # a subset (order is always the canonical one)
 #
 # Env: VERSION (default 0.1.0) · STAND_HOST (root@141.105.69.177) · STAND_IP (141.105.69.177)
-#      APP_HOST (app.calab.ru) · ALIAS_HOST (meet.gptunnel.ru) · LANDING_HOST (calab.ru, empty = none)
-#      RELEASES_HOST (releases.calab.ru) · RTC_HOST (rtc.calab.ru) · WORK_DIR ($TMPDIR/calaba-release-$VERSION)
+#      APP_HOST (app.calab.io) · ALIAS_HOST (meet.gptunnel.ru) · LANDING_HOST (calab.io, empty = none)
+#      RELEASES_HOST (releases.calab.io) · RTC_HOST (rtc.calab.ru — the LiveKit host the API hands out, docs/06
+#      «Домены») · LEGACY_APP_HOST (app.calab.ru) · LEGACY_RELEASES_HOST (releases.calab.ru): the pre-2.0 hosts
+#      installed clients still use (empty = not checked) · WORK_DIR ($TMPDIR/calaba-release-$VERSION)
 #      GH_TOKEN (default: GITHUB_TOKEN from the root .env; for gh only)
 #      CALAB_RELEASE_BOT_TOKEN (default: from the root .env; announce only) · CALAB_API_URL (https://$APP_HOST)
 #      CALAB_RELEASE_ROOM (default in tools/release-announce.py)
@@ -60,11 +62,13 @@ VERSION="${VERSION:-0.1.0}"
 STEPS="${STEPS:-preflight web deploy verify desktop announce}"
 HOST="${STAND_HOST:-root@141.105.69.177}"
 IP="${STAND_IP:-141.105.69.177}"
-D1="${APP_HOST:-app.calab.ru}"          # the app
+D1="${APP_HOST:-app.calab.io}"          # the app
 D2="${ALIAS_HOST:-meet.gptunnel.ru}"  # an alias of the app (must behave the same)
-LAND="${LANDING_HOST-calab.ru}"
-RTC="${RTC_HOST:-rtc.calab.ru}"
-REL="${RELEASES_HOST:-releases.calab.ru}"
+D3="${LEGACY_APP_HOST-app.calab.ru}"    # pre-2.0 app host: saved as the server of installed clients
+LAND="${LANDING_HOST-calab.io}"
+RTC="${RTC_HOST:-rtc.calab.ru}"          # LIVEKIT_URL host (stays .ru while pre-2.0 clients exist, docs/06)
+REL="${RELEASES_HOST:-releases.calab.io}"
+REL_OLD="${LEGACY_RELEASES_HOST-releases.calab.ru}"  # feed baked into pre-2.0 builds: must serve the same feed
 REPO="${RELEASE_REPO:-itrcz/calab}"
 if [[ -z "${GH_TOKEN:-}" && -f .env ]]; then   # gh only; never printed
   GH_TOKEN="$(sed -nE 's/^GITHUB_TOKEN=["'"'"']?([^"'"'"']*)["'"'"']?$/\1/p' .env | tail -1)"; export GH_TOKEN
@@ -174,8 +178,8 @@ run_verify() {
   log "verify v$VERSION ($COMMIT)"
   have_export || { bad "no export of $COMMIT in $SRC_DIR (run the web step first)"; exit 1; }
   sleep 10
-  # 1. health + build info on both domains (.ai via IP), readiness inside
-  for d in "$D1" "$D2"; do
+  # 1. health + build info on every app host (via the stand IP), readiness inside
+  for d in "$D1" "$D2" ${D3:+"$D3"}; do
     code=$(rcurl -o /dev/null -w '%{http_code}' "https://$d/healthz" || echo 000)
     [[ "$code" == 200 ]] && ok "$d/healthz 200" || bad "$d/healthz $code"
     ver=$(rcurl "https://$d/api/version" | node -e 'let s="";process.stdin.on("data",d=>s+=d).on("end",()=>{const j=JSON.parse(s);console.log(j.version+"/"+j.commit)})' 2>/dev/null || echo "?")
@@ -193,7 +197,7 @@ run_verify() {
 
   # 2. /download/ on the app and the landing: 302 to the release host, same path (electron-updater of
   #    older builds follows it); the feed itself is checked in the desktop step
-  for d in "$D1" "$D2" ${LAND:+"$LAND"}; do
+  for d in "$D1" "$D2" ${D3:+"$D3"} ${LAND:+"$LAND"}; do
     r=$(rcurl -o /dev/null -w '%{http_code} %{redirect_url}' "https://$d/download/latest.yml" || echo 000)
     [[ "$r" == "302 https://$REL/latest.yml" ]] && ok "$d/download/ → https://$REL/" || bad "$d/download/latest.yml → '$r' (want 302 https://$REL/latest.yml)"
     # stable shortcuts → latest/<file>; bare /download/ picks the file by User-Agent
@@ -375,6 +379,11 @@ desktop_finish() {
     for y in latest-mac.yml latest-linux.yml latest.yml; do
       if body=$(rcurl -f "https://$REL/$y"); then
         grep -q "^version: $VERSION$" <<<"$body" && ok "$REL/$y: version $VERSION" || bad "$REL/$y: not version $VERSION"
+        # no absolute URLs in the feed: old (.ru) and new (.io) builds resolve files against their own feed host
+        grep -Eq '^ *(- url|path): *https?:' <<<"$body" && bad "$REL/$y: absolute file URL" || ok "$REL/$y: relative file URLs"
+        if [[ -n "$REL_OLD" ]]; then   # pre-2.0 builds poll the old feed host: same bytes
+          [[ "$(rcurl -f "https://$REL_OLD/$y" 2>/dev/null)" == "$body" ]] && ok "$REL_OLD/$y = $REL/$y" || bad "$REL_OLD/$y differs from $REL/$y (pre-2.0 clients get no update)"
+        fi
         files+=$(awk '/^ *- url: /{u=$3} /^ *size: /{if(u!=""){print u" "$2; u=""}}' <<<"$body")$'\n'
       else bad "$REL/$y missing"; fi
     done
@@ -417,7 +426,7 @@ PY
       git show "$COMMIT:CHANGELOG.md" > "$WORK.CHANGELOG.md" 2>/dev/null || : > "$WORK.CHANGELOG.md"
       body=(--generate-notes)
       if section=$(bash infra/ci/changelog-section.sh "$VERSION" "$WORK.CHANGELOG.md" 2>/dev/null) && [[ -n "$section" ]]; then
-        printf '%s\n\n---\n%s\n' "$section" "**Скачать:** [calab.ru](https://calab.ru/#download) · файлы и обновления: [releases.calab.ru](https://releases.calab.ru/) · [все изменения](https://github.com/$REPO/blob/main/CHANGELOG.md)" > "$notes"
+        printf '%s\n\n---\n%s\n' "$section" "**Скачать:** [calab.io](https://calab.io/#download) · файлы и обновления: [releases.calab.io](https://releases.calab.io/) · [все изменения](https://github.com/$REPO/blob/main/CHANGELOG.md)" > "$notes"
         body=(--notes-file "$notes")
       fi
       pre=(); [[ "$VERSION" == *-* ]] && pre=(--prerelease) || pre=(--latest)

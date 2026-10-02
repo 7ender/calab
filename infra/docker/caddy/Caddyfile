@@ -3,7 +3,8 @@
 #                        (LiveKit runs with turn.external_tls: true)
 #   anything else     -> falls through to the regular HTTPS server (app, landing, rtc.*)
 # HTTP/3 is disabled: UDP 443 belongs to LiveKit TURN/UDP.
-# Host lists come from entrypoint.sh (APP_HOST/LANDING_HOST/DOMAIN/DOMAIN_ALT/DOMAIN_LEGACY → APP_HOSTS,
+# Host lists come from entrypoint.sh (APP_HOST/LANDING_HOST/DOMAIN/DOMAIN_ALT/DOMAIN_LEGACY/DOMAIN_ALIASES and the
+# *_HOST_ALIASES → APP_HOSTS,
 # RTC_HOSTS, TURN_HOSTS, RTC_ORIGINS, RELEASES_ORIGIN, /tmp/landing.caddy, /tmp/download.caddy, /tmp/releases.caddy) — see docs/10-branding.md.
 {
 	admin off
