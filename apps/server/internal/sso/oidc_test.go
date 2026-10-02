@@ -29,6 +29,9 @@ type fakeIDP struct {
 	tokenCalls      int
 	discoveryCalls  int
 	changeDiscovery bool
+	// methods overrides code_challenge_methods_supported; omitMethods drops the field.
+	methods     []string
+	omitMethods bool
 }
 type fakeCode struct {
 	nonce, challenge, subject string
@@ -69,7 +72,16 @@ func (f *fakeIDP) serve(w http.ResponseWriter, r *http.Request) {
 		if changed {
 			authorization = "https://unapproved.test/authorize"
 		}
-		_ = json.NewEncoder(w).Encode(map[string]any{"issuer": f.server.URL, "authorization_endpoint": authorization, "token_endpoint": f.server.URL + "/token", "jwks_uri": f.server.URL + "/jwks", "code_challenge_methods_supported": []string{"S256"}, "token_endpoint_auth_methods_supported": []string{"client_secret_basic", "client_secret_post"}})
+		doc := map[string]any{"issuer": f.server.URL, "authorization_endpoint": authorization, "token_endpoint": f.server.URL + "/token", "jwks_uri": f.server.URL + "/jwks", "code_challenge_methods_supported": []string{"S256"}, "token_endpoint_auth_methods_supported": []string{"client_secret_basic", "client_secret_post"}}
+		f.mu.Lock()
+		if f.methods != nil {
+			doc["code_challenge_methods_supported"] = f.methods
+		}
+		if f.omitMethods {
+			delete(doc, "code_challenge_methods_supported")
+		}
+		f.mu.Unlock()
+		_ = json.NewEncoder(w).Encode(doc)
 	case "/jwks":
 		_ = json.NewEncoder(w).Encode(jose.JSONWebKeySet{Keys: []jose.JSONWebKey{{Key: &f.key.PublicKey, KeyID: "fixture", Algorithm: "RS256", Use: "sig"}}})
 	case "/token":
@@ -181,6 +193,72 @@ func TestEntraIssuerRestriction(t *testing.T) {
 		base.Issuer = issuer
 		if validIssuer(base) {
 			t.Fatal("unfixed tenant accepted")
+		}
+	}
+}
+
+func TestAuthTimeFallbackOnlyForEntra(t *testing.T) {
+	iat := time.Unix(1_700_000_000, 0)
+	for _, tc := range []struct {
+		provider string
+		authTime int64
+		want     time.Time
+		ok       bool
+	}{
+		{"generic", 1_699_999_000, time.Unix(1_699_999_000, 0), true},
+		{"entra", 1_699_999_000, time.Unix(1_699_999_000, 0), true}, // a present auth_time wins
+		{"entra", 0, iat, true},            // optional claim absent: prompt=login + iat
+		{"generic", 0, time.Time{}, false}, // max_age requested: auth_time required
+		{"adfs", 0, time.Time{}, false},
+		{"entra", -1, time.Time{}, false},
+	} {
+		got, ok := authenticatedAt(tc.provider, tc.authTime, iat)
+		if ok != tc.ok || !got.Equal(tc.want) {
+			t.Fatalf("%s auth_time=%d: got %v %v", tc.provider, tc.authTime, got, ok)
+		}
+	}
+	if _, ok := authenticatedAt("entra", 0, time.Time{}); ok {
+		t.Fatal("entra without iat accepted")
+	}
+}
+func TestPKCEDiscoveryRule(t *testing.T) {
+	exchange := func(f *fakeIDP, p *OIDC, c sqlc.WorkspaceIdentityConnection) (Proof, error) {
+		verifier, _ := identitycrypto.Secret()
+		nonce, _ := identitycrypto.Secret()
+		auth, err := p.Authorization(context.Background(), c, "state", nonce, verifier)
+		if err != nil {
+			return Proof{}, err
+		}
+		code, _ := f.code(t, auth, "subject", nil)
+		return p.Exchange(context.Background(), c, "secret", code, verifier, identitycrypto.Hash(nonce))
+	}
+	f, p, c := newIDP(t)
+	if proof, err := exchange(f, p, c); err != nil || !proof.PKCEAdvertised {
+		t.Fatalf("advertised S256: %v %+v", err, proof)
+	}
+	set := func(omit bool, methods []string) {
+		f.mu.Lock()
+		f.omitMethods, f.methods = omit, methods
+		f.mu.Unlock()
+	}
+	set(true, nil)
+	proof, err := exchange(f, p, c)
+	if err != nil || proof.PKCEAdvertised {
+		t.Fatalf("generic without the methods list must pass flagged: %v %+v", err, proof)
+	}
+	adfs := c
+	adfs.Provider = "adfs"
+	if _, err = p.Authorization(context.Background(), adfs, "state", "nonce", "verifier"); err == nil {
+		t.Fatal("AD FS without advertised S256 accepted")
+	}
+	set(false, nil)
+	if _, err = exchange(f, p, adfs); err != nil {
+		t.Fatalf("AD FS with advertised S256: %v", err)
+	}
+	set(false, []string{"plain"})
+	for _, conn := range []sqlc.WorkspaceIdentityConnection{c, adfs} {
+		if _, err = p.Authorization(context.Background(), conn, "state", "nonce", "verifier"); err == nil {
+			t.Fatalf("%s: discovery without S256 accepted", conn.Provider)
 		}
 	}
 }

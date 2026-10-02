@@ -715,6 +715,13 @@ func (s *Service) finish(ctx context.Context, flow uuid.UUID, browser, ticket, v
 				return err
 			}
 			out.Tested = true
+			if !done.Proof.PKCEAdvertised && c.Provider != "entra" {
+				// Generic discovery omitted code_challenge_methods_supported: S256 was sent but the
+				// provider never confirmed it. Recorded next to the test for the owner (ADR-0054).
+				if err := Audit(ctx, q, c.WorkspaceID, t.UserID, "connection_tested_pkce_unadvertised", &c.ID); err != nil {
+					return err
+				}
+			}
 			return Audit(ctx, q, c.WorkspaceID, t.UserID, "connection_tested", &c.ID)
 		}
 		if done.Link {
