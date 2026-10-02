@@ -21,7 +21,15 @@ func TestBuiltinStickers(t *testing.T) {
 	for _, u := range []*user{o, mem, guest, outsider(t)} {
 		var mine v1.MyStickerPacksResponse
 		u.must(200, "GET", "/api/me/sticker-packs", nil, &mine)
-		if len(mine.Installed) != 1 || !mine.Installed[0].Builtin || mine.Installed[0].Id != p.Id || len(mine.Installed[0].Stickers) != 16 {
+		// The shared owner (owner(t)) may have packs installed by earlier tests of the shard:
+		// it must have exactly one built-in pack; fresh users have nothing else.
+		var builtins []*v1.StickerPack
+		for _, pk := range mine.Installed {
+			if pk.Builtin {
+				builtins = append(builtins, pk)
+			}
+		}
+		if len(builtins) != 1 || builtins[0].Id != p.Id || len(builtins[0].Stickers) != 16 || (u != o && len(mine.Installed) != 1) {
 			t.Fatalf("default pack: %v", &mine)
 		}
 		u.must(200, "GET", "/api/sticker-packs/"+p.Id, nil, nil)
@@ -54,11 +62,21 @@ func TestBuiltinStickers(t *testing.T) {
 	if err := testDB.Pool.QueryRow(context.Background(), "SELECT count(*) FROM sticker_packs WHERE workspace_id=$1", ws.Id).Scan(&n); err != nil || n != 0 {
 		t.Fatalf("quota: %d %v", n, err)
 	}
-	custom := createPack(t, o, ws.Id, "Custom")
-	o.must(200, "PUT", "/api/me/sticker-packs/order", &v1.SetStickerPackOrderRequest{PackIds: []string{custom.Id}}, nil)
+	createPack(t, o, ws.Id, "Custom")
+	// The order must list every installed custom pack; the shared owner may have more from
+	// earlier tests of the shard.
+	var installed v1.MyStickerPacksResponse
+	o.must(200, "GET", "/api/me/sticker-packs", nil, &installed)
+	var own []string
+	for _, pk := range installed.Installed {
+		if !pk.Builtin {
+			own = append(own, pk.Id)
+		}
+	}
+	o.must(200, "PUT", "/api/me/sticker-packs/order", &v1.SetStickerPackOrderRequest{PackIds: own}, nil)
 	// A pre-ADR-0057 client lists the built-in pack too: it is skipped, not a 422.
-	o.must(200, "PUT", "/api/me/sticker-packs/order", &v1.SetStickerPackOrderRequest{PackIds: []string{p.Id, custom.Id}}, nil)
-	o.must(422, "PUT", "/api/me/sticker-packs/order", &v1.SetStickerPackOrderRequest{PackIds: []string{p.Id, p.Id, custom.Id}}, nil)
+	o.must(200, "PUT", "/api/me/sticker-packs/order", &v1.SetStickerPackOrderRequest{PackIds: append([]string{p.Id}, own...)}, nil)
+	o.must(422, "PUT", "/api/me/sticker-packs/order", &v1.SetStickerPackOrderRequest{PackIds: append([]string{p.Id, p.Id}, own...)}, nil)
 	// Regular send, nonce replay and history all resolve embedded metadata.
 	var sent v1.CreateMessageResponse
 	payload := &v1.CreateMessageRequest{StickerId: sid, Nonce: uniq("builtin")}
