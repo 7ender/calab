@@ -381,7 +381,7 @@ footer { background: #0b0b0b; }
  @keyframes cursor-marquee { to { transform:translateX(-50%); } }
 }
 
-@font-face { font-family:CalabManrope; src:url('/fonts/manrope-variable.ttf') format('truetype'); font-style:normal; font-weight:200 800; font-display:swap; }
+@font-face { font-family:CalabManrope; src:url('/fonts/manrope-variable.woff2') format('woff2'); font-style:normal; font-weight:200 800; font-display:swap; }
 .living-title,.living-title .title-line-accent { font-family:CalabManrope,sans-serif; font-style:normal; font-weight:800; }
 .living-title .title-line-accent { font-weight:300; }
 .living-title .glyph-slot { position:relative; }
@@ -398,7 +398,7 @@ footer { background: #0b0b0b; }
 .living-title .title-line-accent { font-family:CalabSourceSerif,Georgia,serif; font-style:normal; letter-spacing:-.055em; }
 .nav-draw-link { font-family:CalabCondensed,sans-serif; }
 @media(max-width:639px) { .living-title { font-size:clamp(40px,10.5vw,67px); } }
-@font-face { font-family:CalabCormorant; src:url('/fonts/cormorant-variable.ttf') format('truetype'); font-style:normal; font-weight:300 700; font-display:swap; }
+@font-face { font-family:CalabCormorant; src:url('/fonts/cormorant-variable.woff2') format('woff2'); font-style:normal; font-weight:300 700; font-display:swap; }
 .living-title .title-line-accent { font-family:CalabCormorant,Georgia,serif; letter-spacing:-.045em; }
 .story-hero-copy > p:first-child { font-size:14px; line-height:1.65; max-width:400px; }
 @media(max-width:639px) { }
