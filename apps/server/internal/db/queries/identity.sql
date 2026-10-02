@@ -345,10 +345,13 @@ LEFT JOIN directory_objects o ON o.workspace_id=w.id AND o.directory_id=d.id AND
 WHERE u.id=sqlc.arg('user_id');
 
 -- name: LockIdentityBoundary :one
+-- NO KEY UPDATE still conflicts with every UPDATE/DELETE of these rows (ban, member
+-- removal, session revoke) and with the FOR SHARE admission locks, but not with
+-- FK KEY SHARE inserts (messages, files, members) referencing the workspace/user.
 SELECT s.id FROM workspaces w JOIN workspace_members m ON m.workspace_id=w.id
 JOIN users u ON u.id=m.user_id JOIN sessions s ON s.user_id=u.id
 WHERE w.id=sqlc.arg('workspace_id') AND u.id=sqlc.arg('user_id') AND s.id=sqlc.arg('session_id')
-FOR UPDATE OF w,u,m,s;
+FOR NO KEY UPDATE OF w,u,m,s;
 
 -- name: GetRecentIdentityConnectionTest :one
 SELECT * FROM identity_login_transactions WHERE workspace_id=$1 AND connection_id=$2 AND user_id=$3
@@ -362,7 +365,7 @@ SELECT * FROM workspaces WHERE slug=$1;
 SELECT clock_timestamp()::timestamptz AS database_now;
 
 -- Admission locks are shared for ordinary resource writes. Revokers already
--- take LockOAuthWorkspace (FOR UPDATE); UPDATE of user/member/session rows also
+-- take LockOAuthWorkspace (FOR NO KEY UPDATE); UPDATE of user/member/session rows also
 -- conflicts with these locks. Acquire sorted workspaces, users, members, sessions.
 -- Boundary-row mutations choose the exclusive mode before reading any source.
 -- name: LockIdentityWorkspaceShared :one

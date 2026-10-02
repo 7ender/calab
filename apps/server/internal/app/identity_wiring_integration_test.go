@@ -134,9 +134,20 @@ func TestIdentityHTTPScopedCookieRotationLogout(t *testing.T) {
 	if status != 403 {
 		t.Fatal("cross-origin refresh accepted")
 	}
+	// The logout invalidation carries the user's real access version, not 1.
+	ctx := context.Background()
+	ws, user := f.scopedSession.AuthorityWorkspaceID, f.scopedSession.UserID
+	if _, err := testDB.Pool.Exec(ctx, `INSERT INTO workspace_identity_access(workspace_id,user_id,version) VALUES($1,$2,7)
+ON CONFLICT(workspace_id,user_id) DO UPDATE SET version=7`, ws, user); err != nil {
+		t.Fatal(err)
+	}
 	status, data, cleared := identityRequest(t, base, "POST", path+"/logout", "", origin, cookies, &v1.LogoutRequest{})
 	if status != 204 || len(cleared) != 2 {
 		t.Fatalf("logout=%d %s", status, data)
+	}
+	var accessVersion int64
+	if err := testDB.Pool.QueryRow(ctx, "SELECT access_version FROM identity_invalidation_outbox WHERE workspace_id=$1 AND session_id=$2 AND reason=$3", ws, f.scopedSession.ID, auth.RevokeLogout).Scan(&accessVersion); err != nil || accessVersion != 7 {
+		t.Fatalf("logout invalidation access_version=%d %v", accessVersion, err)
 	}
 	for _, cookie := range cleared {
 		if cookie.MaxAge >= 0 {

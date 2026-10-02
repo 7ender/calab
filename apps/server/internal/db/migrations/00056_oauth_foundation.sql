@@ -1,5 +1,11 @@
 -- Outbound OIDC credentials never reuse first-party sessions or JWT signing keys.
 -- +goose Up
+-- New tables only, but their foreign keys take SHARE ROW EXCLUSIVE on sessions (the composite
+-- (id,user_id) key), users and workspaces — a lock queued behind a long transaction blocks every
+-- login and refresh. Fail fast instead; the advisory-locked migrate is retried (see 00055).
+-- NOT VALID is unnecessary here: the referencing tables are created empty, so validation
+-- scans nothing.
+SET LOCAL lock_timeout = '10s';
 CREATE TABLE oauth_clients (
     id uuid PRIMARY KEY DEFAULT uuidv7(),
     workspace_id uuid NOT NULL REFERENCES workspaces(id) ON DELETE CASCADE,
@@ -79,12 +85,17 @@ CREATE TABLE oauth_authorization_requests (
     expires_at timestamptz NOT NULL,
     consumed_at timestamptz,
     created_at timestamptz NOT NULL DEFAULT clock_timestamp(),
+    -- SHA-256 of the trusted client IP that created the request; caps pending rows per IP.
+    client_ip_hash bytea NOT NULL CHECK (octet_length(client_ip_hash) = 32),
+    -- Client display name shown by the latest bind; decide refuses a renamed client.
+    shown_client_name text,
     FOREIGN KEY (workspace_id, client_id) REFERENCES oauth_clients(workspace_id, id) ON DELETE CASCADE,
     FOREIGN KEY (session_id, user_id) REFERENCES sessions(id, user_id) ON DELETE CASCADE,
     CHECK ((session_id IS NULL) = (user_id IS NULL))
 );
 CREATE INDEX oauth_authorization_requests_client_idx ON oauth_authorization_requests(workspace_id, client_id);
 CREATE INDEX oauth_authorization_requests_expiry_idx ON oauth_authorization_requests(expires_at);
+CREATE INDEX oauth_authorization_requests_ip_idx ON oauth_authorization_requests(client_ip_hash, expires_at) WHERE consumed_at IS NULL;
 CREATE TABLE oauth_grants (
     id uuid PRIMARY KEY DEFAULT uuidv7(),
     workspace_id uuid NOT NULL,
@@ -178,6 +189,7 @@ CREATE TRIGGER oauth_subject_identity_guard BEFORE UPDATE ON oauth_subjects FOR 
 CREATE TRIGGER oauth_client_identity_guard BEFORE UPDATE ON oauth_clients FOR EACH ROW EXECUTE FUNCTION oauth_immutable_identity_guard();
 
 -- +goose Down
+SET LOCAL lock_timeout = '10s';
 DROP TRIGGER oauth_subject_identity_guard ON oauth_subjects;
 DROP TRIGGER oauth_client_identity_guard ON oauth_clients;
 DROP FUNCTION oauth_immutable_identity_guard();

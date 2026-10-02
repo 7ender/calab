@@ -212,8 +212,9 @@ func TestProviderCodeReplayBindingsAndDurableRevocation(t *testing.T) {
 		t.Fatalf("revocation/deadline mismatch: revoked=%t reason=%s", revoked, reason)
 	}
 	var audit, outbox int
-	if err := f.d.Pool.QueryRow(ctx, "SELECT (SELECT count(*) FROM workspace_identity_audit WHERE target_id=$1 AND action='authorization_code_reuse'),(SELECT count(*) FROM identity_invalidation_outbox WHERE workspace_id=$2 AND reason='authorization_code_reuse')", grantID, ws).Scan(&audit, &outbox); err != nil || audit != 1 || outbox != 1 {
-		t.Fatalf("durable idempotent audit/outbox: %d/%d %v", audit, outbox, err)
+	if err := f.d.Pool.QueryRow(ctx, "SELECT (SELECT count(*) FROM workspace_identity_audit WHERE target_id=$1 AND action='authorization_code_reuse'),(SELECT count(*) FROM identity_invalidation_outbox WHERE workspace_id=$2 AND reason='authorization_code_reuse')", grantID, ws).Scan(&audit, &outbox); err != nil || audit != 1 || outbox != 0 {
+		// OAuth-only revocations wake no gateway/RTC sweep (no identity invalidation).
+		t.Fatalf("durable idempotent audit, no outbox: %d/%d %v", audit, outbox, err)
 	}
 }
 

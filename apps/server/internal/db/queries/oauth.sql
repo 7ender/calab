@@ -52,8 +52,8 @@ RETURNING *;
 SELECT * FROM oauth_consents WHERE workspace_id = sqlc.arg('workspace_id') AND id = sqlc.arg('id');
 
 -- name: CreateOAuthRequest :one
-INSERT INTO oauth_authorization_requests (workspace_id, client_id, client_version, handle_hash, browser_hash, csrf_hash, session_id, user_id, redirect_uri, scopes, state, nonce, pkce_challenge, prompt, max_age_seconds, expires_at, issuer)
-VALUES (sqlc.arg('workspace_id'), sqlc.arg('client_id'), sqlc.arg('client_version'), sqlc.arg('handle_hash'), sqlc.arg('browser_hash'), sqlc.narg('csrf_hash'), sqlc.narg('session_id'), sqlc.narg('user_id'), sqlc.arg('redirect_uri'), sqlc.arg('scopes'), sqlc.arg('state'), sqlc.arg('nonce'), sqlc.arg('pkce_challenge'), sqlc.arg('prompt'), sqlc.narg('max_age_seconds'), sqlc.arg('expires_at'), sqlc.arg('issuer'))
+INSERT INTO oauth_authorization_requests (workspace_id, client_id, client_version, handle_hash, browser_hash, csrf_hash, session_id, user_id, redirect_uri, scopes, state, nonce, pkce_challenge, prompt, max_age_seconds, expires_at, issuer, client_ip_hash)
+VALUES (sqlc.arg('workspace_id'), sqlc.arg('client_id'), sqlc.arg('client_version'), sqlc.arg('handle_hash'), sqlc.arg('browser_hash'), sqlc.narg('csrf_hash'), sqlc.narg('session_id'), sqlc.narg('user_id'), sqlc.arg('redirect_uri'), sqlc.arg('scopes'), sqlc.arg('state'), sqlc.arg('nonce'), sqlc.arg('pkce_challenge'), sqlc.arg('prompt'), sqlc.narg('max_age_seconds'), sqlc.arg('expires_at'), sqlc.arg('issuer'), sqlc.arg('client_ip_hash'))
 RETURNING *;
 
 -- name: GetOAuthRequest :one
@@ -123,9 +123,23 @@ ON CONFLICT(workspace_id,user_id) DO UPDATE SET subject=oauth_subjects.subject R
 SELECT * FROM oauth_consents WHERE workspace_id=$1 AND user_id=$2 AND client_id=$3;
 
 -- name: UpsertOAuthConsent :one
+-- The version (pinned by every grant) moves only when the new decision is not a
+-- superset of a live previous one: narrower scopes, a changed refresh decision or
+-- a revoked consent invalidate all families; a widening keeps other devices' grants,
+-- which stay bounded by their own scopes.
 INSERT INTO oauth_consents(workspace_id,user_id,client_id,scopes,refresh_allowed,client_name) VALUES($1,$2,$3,$4,$5,$6)
 ON CONFLICT(workspace_id,user_id,client_id) DO UPDATE SET scopes=EXCLUDED.scopes,refresh_allowed=EXCLUDED.refresh_allowed,
-client_name=EXCLUDED.client_name,version=oauth_consents.version+1,granted_at=clock_timestamp(),revoked_at=NULL RETURNING *;
+client_name=EXCLUDED.client_name,
+version=oauth_consents.version+CASE WHEN oauth_consents.revoked_at IS NULL AND EXCLUDED.scopes @> oauth_consents.scopes
+    AND EXCLUDED.refresh_allowed=oauth_consents.refresh_allowed THEN 0 ELSE 1 END,
+granted_at=clock_timestamp(),revoked_at=NULL RETURNING *;
+
+-- name: RevokeReplacedOAuthGrants :execrows
+-- Re-consent replaces the family of this device (session) only; families pinned to an
+-- older consent version are dead anyway and are closed here as well.
+UPDATE oauth_grants SET revoked_at=clock_timestamp(),revoked_reason='consent_replaced'
+WHERE workspace_id=sqlc.arg('workspace_id') AND user_id=sqlc.arg('user_id') AND client_id=sqlc.arg('client_id')
+AND revoked_at IS NULL AND (session_id=sqlc.arg('session_id') OR consent_version<>sqlc.arg('consent_version'));
 
 -- name: RevokeOAuthConsent :one
 UPDATE oauth_consents SET revoked_at=clock_timestamp(),version=version+1 WHERE workspace_id=$1 AND user_id=$2 AND client_id=$3 RETURNING *;
@@ -134,13 +148,26 @@ UPDATE oauth_consents SET revoked_at=clock_timestamp(),version=version+1 WHERE w
 SELECT * FROM oauth_authorization_requests WHERE handle_hash=$1 AND browser_hash=$2;
 
 -- name: BindOAuthRequest :one
+-- The same session may bind again (consent page reload after a rename): the csrf
+-- rotates and the shown client name is replaced. Another account needs a new request.
 WITH locked AS MATERIALIZED (
-    SELECT src.* FROM oauth_authorization_requests AS src WHERE src.id=$1 AND src.browser_hash=$2 FOR UPDATE
+    SELECT src.* FROM oauth_authorization_requests AS src WHERE src.id=sqlc.arg('id') AND src.browser_hash=sqlc.arg('browser_hash') FOR UPDATE
 ), eligible AS MATERIALIZED (
-    SELECT locked.id FROM locked WHERE locked.session_id IS NULL AND locked.consumed_at IS NULL AND locked.expires_at>clock_timestamp()
+    SELECT locked.id FROM locked WHERE (locked.session_id IS NULL OR (locked.session_id=sqlc.arg('session_id') AND locked.user_id=sqlc.arg('user_id')))
+    AND locked.consumed_at IS NULL AND locked.expires_at>clock_timestamp()
 )
-UPDATE oauth_authorization_requests AS t SET session_id=$3,user_id=$4,csrf_hash=$5
+UPDATE oauth_authorization_requests AS t SET session_id=sqlc.arg('session_id'),user_id=sqlc.arg('user_id'),csrf_hash=sqlc.arg('csrf_hash'),shown_client_name=sqlc.arg('shown_client_name')
 FROM eligible WHERE t.id=eligible.id RETURNING t.*;
+
+-- name: CountPendingOAuthRequestsByIP :one
+-- Bounded count: stops scanning at the cap.
+SELECT count(*) FROM (SELECT 1 FROM oauth_authorization_requests
+WHERE client_ip_hash=sqlc.arg('client_ip_hash') AND consumed_at IS NULL AND expires_at>clock_timestamp()
+LIMIT sqlc.arg('cap')::int) AS pending;
+
+-- name: DeleteEvictedOAuthRequests :execrows
+-- Requests whose browser binding fell out of the cookie can never be continued.
+DELETE FROM oauth_authorization_requests WHERE browser_hash=ANY(sqlc.arg('browser_hashes')::bytea[]) AND consumed_at IS NULL;
 
 -- name: ConsumeOAuthRequest :one
 WITH locked AS MATERIALIZED (

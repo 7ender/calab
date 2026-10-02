@@ -98,7 +98,7 @@ func (s *Service) deleteGrant(w http.ResponseWriter, r *http.Request) {
 		if _, err = q.RevokeWorkspaceOAuthGrants(r.Context(), sqlc.RevokeWorkspaceOAuthGrantsParams{WorkspaceID: g.WorkspaceID, UserID: &p.UserID, ClientID: &g.ClientID, Reason: &reason}); err != nil {
 			return err
 		}
-		return s.invalidate(r.Context(), q, g, reason)
+		return s.auditGrant(r.Context(), q, g, reason)
 	})
 	if err != nil {
 		writeAPIError(w, err)

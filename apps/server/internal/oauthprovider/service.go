@@ -175,11 +175,10 @@ func (s *Service) audit(ctx context.Context, q *sqlc.Queries, ws, user, target u
 	return err
 }
 
-func (s *Service) invalidate(ctx context.Context, q *sqlc.Queries, g sqlc.OauthGrant, reason string) error {
-	_, err := q.CreateIdentityInvalidation(ctx, sqlc.CreateIdentityInvalidationParams{WorkspaceID: g.WorkspaceID, UserID: &g.UserID, SessionID: &g.SessionID, PolicyVersion: g.PolicyVersion, AccessVersion: g.AccessVersion, Reason: reason})
-	if err != nil {
-		return err
-	}
+// auditGrant records an OAuth-only revocation. It deliberately writes no identity
+// invalidation: those wake gateway/RTC sweeps, and WS/RTC never accept provider
+// tokens. Provider endpoints re-check the grant row on every use.
+func (s *Service) auditGrant(ctx context.Context, q *sqlc.Queries, g sqlc.OauthGrant, reason string) error {
 	return s.audit(ctx, q, g.WorkspaceID, g.UserID, g.ID, reason)
 }
 
