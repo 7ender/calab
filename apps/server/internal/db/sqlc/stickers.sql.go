@@ -60,7 +60,7 @@ const countWorkspaceStickerPacks = `-- name: CountWorkspaceStickerPacks :one
 SELECT count(*)::integer FROM sticker_packs WHERE workspace_id = $1 AND deleted_at IS NULL
 `
 
-func (q *Queries) CountWorkspaceStickerPacks(ctx context.Context, workspaceID uuid.UUID) (int32, error) {
+func (q *Queries) CountWorkspaceStickerPacks(ctx context.Context, workspaceID *uuid.UUID) (int32, error) {
 	row := q.db.QueryRow(ctx, countWorkspaceStickerPacks, workspaceID)
 	var column_1 int32
 	err := row.Scan(&column_1)
@@ -73,7 +73,7 @@ JOIN sticker_packs p ON p.id = s.pack_id AND p.deleted_at IS NULL
 WHERE p.workspace_id = $1 AND s.deleted_at IS NULL
 `
 
-func (q *Queries) CountWorkspaceStickers(ctx context.Context, workspaceID uuid.UUID) (int32, error) {
+func (q *Queries) CountWorkspaceStickers(ctx context.Context, workspaceID *uuid.UUID) (int32, error) {
 	row := q.db.QueryRow(ctx, countWorkspaceStickers, workspaceID)
 	var column_1 int32
 	err := row.Scan(&column_1)
@@ -116,8 +116,8 @@ func (q *Queries) DeleteUnreferencedPackStickers(ctx context.Context, packID uui
 }
 
 const getSticker = `-- name: GetSticker :one
-SELECT s.id, s.pack_id, s.file_id, s.emoji, s.position, s.width, s.height, s.animated, s.created_at, s.deleted_at, f.size AS file_size, p.workspace_id FROM stickers s
-JOIN files f ON f.id = s.file_id
+SELECT s.id, s.pack_id, s.file_id, s.emoji, s.position, s.width, s.height, s.animated, s.created_at, s.deleted_at, coalesce(f.size, 0)::bigint AS file_size, coalesce(p.workspace_id, '00000000-0000-0000-0000-000000000000'::uuid)::uuid AS workspace_id FROM stickers s
+LEFT JOIN files f ON f.id = s.file_id
 JOIN sticker_packs p ON p.id = s.pack_id AND p.deleted_at IS NULL
 WHERE s.id = $1 AND s.deleted_at IS NULL
 `
@@ -150,13 +150,13 @@ func (q *Queries) GetSticker(ctx context.Context, id uuid.UUID) (GetStickerRow, 
 }
 
 const getStickerFileWorkspace = `-- name: GetStickerFileWorkspace :one
-SELECT p.workspace_id FROM stickers s JOIN sticker_packs p ON p.id = s.pack_id WHERE s.file_id = $1
+SELECT p.workspace_id FROM stickers s JOIN sticker_packs p ON p.id = s.pack_id WHERE s.file_id = $1::uuid
 `
 
 // The workspace of the pack whose sticker is this file (no row = not a sticker file).
-func (q *Queries) GetStickerFileWorkspace(ctx context.Context, fileID uuid.UUID) (uuid.UUID, error) {
+func (q *Queries) GetStickerFileWorkspace(ctx context.Context, fileID uuid.UUID) (*uuid.UUID, error) {
 	row := q.db.QueryRow(ctx, getStickerFileWorkspace, fileID)
-	var workspace_id uuid.UUID
+	var workspace_id *uuid.UUID
 	err := row.Scan(&workspace_id)
 	return workspace_id, err
 }
@@ -190,7 +190,7 @@ RETURNING id, pack_id, file_id, emoji, position, width, height, animated, create
 
 type InsertStickerParams struct {
 	PackID   uuid.UUID
-	FileID   uuid.UUID
+	FileID   *uuid.UUID
 	Emoji    string
 	Position int32
 	Width    int32
@@ -232,7 +232,7 @@ RETURNING id, workspace_id, name, short_name, cover_sticker_id, created_by, crea
 `
 
 type InsertStickerPackParams struct {
-	WorkspaceID uuid.UUID
+	WorkspaceID *uuid.UUID
 	Name        string
 	ShortName   string
 	CreatedBy   *uuid.UUID
@@ -323,8 +323,8 @@ func (q *Queries) ListAvailableStickerPacks(ctx context.Context, userID uuid.UUI
 }
 
 const listPackStickers = `-- name: ListPackStickers :many
-SELECT s.id, s.pack_id, s.file_id, s.emoji, s.position, s.width, s.height, s.animated, s.created_at, s.deleted_at, f.size AS file_size FROM stickers s
-JOIN files f ON f.id = s.file_id
+SELECT s.id, s.pack_id, s.file_id, s.emoji, s.position, s.width, s.height, s.animated, s.created_at, s.deleted_at, coalesce(f.size, 0)::bigint AS file_size FROM stickers s
+LEFT JOIN files f ON f.id = s.file_id
 WHERE s.pack_id = ANY($1::uuid[]) AND s.deleted_at IS NULL
 ORDER BY s.pack_id, s.position, s.id
 `
@@ -368,8 +368,8 @@ func (q *Queries) ListPackStickers(ctx context.Context, packIds []uuid.UUID) ([]
 }
 
 const listStickersByID = `-- name: ListStickersByID :many
-SELECT s.id, s.pack_id, s.file_id, s.emoji, s.position, s.width, s.height, s.animated, s.created_at, s.deleted_at, f.size AS file_size, p.workspace_id FROM stickers s
-JOIN files f ON f.id = s.file_id
+SELECT s.id, s.pack_id, s.file_id, s.emoji, s.position, s.width, s.height, s.animated, s.created_at, s.deleted_at, coalesce(f.size, 0)::bigint AS file_size, coalesce(p.workspace_id, '00000000-0000-0000-0000-000000000000'::uuid)::uuid AS workspace_id FROM stickers s
+LEFT JOIN files f ON f.id = s.file_id
 JOIN sticker_packs p ON p.id = s.pack_id
 WHERE s.id = ANY($1::uuid[])
 `
@@ -487,7 +487,7 @@ const listWorkspaceStickerPacks = `-- name: ListWorkspaceStickerPacks :many
 SELECT id, workspace_id, name, short_name, cover_sticker_id, created_by, created_at, updated_at, deleted_at FROM sticker_packs WHERE workspace_id = $1 AND deleted_at IS NULL ORDER BY id
 `
 
-func (q *Queries) ListWorkspaceStickerPacks(ctx context.Context, workspaceID uuid.UUID) ([]StickerPack, error) {
+func (q *Queries) ListWorkspaceStickerPacks(ctx context.Context, workspaceID *uuid.UUID) ([]StickerPack, error) {
 	rows, err := q.db.Query(ctx, listWorkspaceStickerPacks, workspaceID)
 	if err != nil {
 		return nil, err
@@ -548,7 +548,7 @@ WHERE id = $1 AND deleted_at IS NULL
 
 type ReplaceStickerFileParams struct {
 	ID       uuid.UUID
-	FileID   uuid.UUID
+	FileID   *uuid.UUID
 	Width    int32
 	Height   int32
 	Animated bool
@@ -635,7 +635,7 @@ func (q *Queries) SoftDeleteStickerPack(ctx context.Context, id uuid.UUID) (int6
 const stickerFileRooms = `-- name: StickerFileRooms :many
 SELECT DISTINCT m.room_id FROM stickers s
 JOIN messages m ON m.sticker_id = s.id AND m.deleted_at IS NULL
-WHERE s.file_id = $1
+WHERE s.file_id = $1::uuid
 LIMIT 50
 `
 

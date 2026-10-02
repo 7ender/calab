@@ -1,0 +1,86 @@
+{
+  "id": "5a976390-e511-5ebf-8e74-3e214d88c7c0",
+  "name": "Calab Stikers",
+  "stickers": [
+    {
+      "id": "1b2b7d35-8800-5fee-9ed7-33672e202bdd",
+      "name": "joy",
+      "emoji": "😀"
+    },
+    {
+      "id": "db43a172-3c58-5868-accc-0634b3e7062c",
+      "name": "laugh",
+      "emoji": "😂"
+    },
+    {
+      "id": "82e01364-0323-5695-99ac-b048f74dea8a",
+      "name": "love",
+      "emoji": "😍"
+    },
+    {
+      "id": "458b51d4-a6ad-5fb8-aa80-38e0f65bb44c",
+      "name": "wink",
+      "emoji": "😉"
+    },
+    {
+      "id": "ffb51945-32df-5d11-a742-2f9399786d61",
+      "name": "wow",
+      "emoji": "🤩"
+    },
+    {
+      "id": "bbc7eeba-1a29-50ae-8cb6-312cd6710ee1",
+      "name": "sad",
+      "emoji": "😢"
+    },
+    {
+      "id": "e294af4c-b858-553b-a4e7-3f8c6dd662bc",
+      "name": "angry",
+      "emoji": "😤"
+    },
+    {
+      "id": "12c1f7c5-d7b5-56b6-ae29-e32db1220093",
+      "name": "surprise",
+      "emoji": "😮"
+    },
+    {
+      "id": "3440a6d3-800a-5a0c-8743-7570a36c0c58",
+      "name": "think",
+      "emoji": "🤔"
+    },
+    {
+      "id": "60551597-6f32-58e1-985d-e842d7853a9b",
+      "name": "shy",
+      "emoji": "😅"
+    },
+    {
+      "id": "e2ef9c8f-60b0-555f-abb5-62398d264a85",
+      "name": "sleep",
+      "emoji": "😴"
+    },
+    {
+      "id": "6485bd07-41e3-503d-8635-d804c961f7e8",
+      "name": "cool",
+      "emoji": "😎"
+    },
+    {
+      "id": "e2c4ff0d-30c2-59ce-9532-fb9af385c45e",
+      "name": "like",
+      "emoji": "👍"
+    },
+    {
+      "id": "88147f7b-3b2a-55a9-9201-77f8686b9791",
+      "name": "clap",
+      "emoji": "👏"
+    },
+    {
+      "id": "250a5d8e-150c-52ec-b4bb-59d60c70c5d1",
+      "name": "thanks",
+      "emoji": "🙏"
+    },
+    {
+      "id": "8bbe1f6a-7e1a-585e-ba88-b7378ff917bf",
+      "name": "fire",
+      "emoji": "🔥"
+    }
+  ]
+}

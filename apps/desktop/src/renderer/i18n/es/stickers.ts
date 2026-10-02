@@ -3,6 +3,7 @@ import type { DictShape } from '../types';
 
 /** Spanish UI strings — sticker packs (ADR-0030). Same keys as ru/stickers.ts. */
 export const esStickers: DictShape<typeof enStickers> = {
+  'stk.builtin': 'Integrado',
   'stk.tabStickers': 'Stickers',
   'stk.preview': '{emoji} Sticker',
   'stk.search': 'Buscar por emoji',

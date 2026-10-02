@@ -536,7 +536,7 @@ type SipCall struct {
 type Sticker struct {
 	ID        uuid.UUID
 	PackID    uuid.UUID
-	FileID    uuid.UUID
+	FileID    *uuid.UUID
 	Emoji     string
 	Position  int32
 	Width     int32
@@ -548,7 +548,7 @@ type Sticker struct {
 
 type StickerPack struct {
 	ID             uuid.UUID
-	WorkspaceID    uuid.UUID
+	WorkspaceID    *uuid.UUID
 	Name           string
 	ShortName      string
 	CoverStickerID *uuid.UUID

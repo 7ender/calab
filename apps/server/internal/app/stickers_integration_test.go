@@ -362,16 +362,16 @@ func TestStickerInstallAndEvents(t *testing.T) {
 
 	var mine v1.MyStickerPacksResponse
 	mem.must(200, "GET", "/api/me/sticker-packs", nil, &mine)
-	if len(mine.GetInstalled()) != 0 || len(mine.GetAvailable()) != 2 {
+	if len(customInstalled(&mine)) != 0 || len(mine.GetAvailable()) != 2 {
 		t.Fatalf("before install: %v", &mine)
 	}
 	mem.must(200, "PUT", "/api/me/sticker-packs/"+p1.GetId(), nil, nil)
 	mem.must(200, "PUT", "/api/me/sticker-packs/"+p2.GetId(), nil, &mine)
-	if len(mine.GetInstalled()) != 2 || mine.GetInstalled()[0].GetId() != p2.GetId() || len(mine.GetAvailable()) != 0 {
+	if len(customInstalled(&mine)) != 2 || customInstalled(&mine)[0].GetId() != p2.GetId() || len(mine.GetAvailable()) != 0 {
 		t.Fatalf("installed: %v", &mine)
 	}
 	mem.must(200, "PUT", "/api/me/sticker-packs/order", &v1.SetStickerPackOrderRequest{PackIds: []string{p1.GetId(), p2.GetId()}}, &mine)
-	if mine.GetInstalled()[0].GetId() != p1.GetId() || len(mine.GetInstalled()[0].GetStickers()) != 1 {
+	if customInstalled(&mine)[0].GetId() != p1.GetId() || len(customInstalled(&mine)[0].GetStickers()) != 1 {
 		t.Fatalf("order: %v", &mine)
 	}
 	mem.must(422, "PUT", "/api/me/sticker-packs/order", &v1.SetStickerPackOrderRequest{PackIds: []string{p1.GetId()}}, nil)
@@ -389,11 +389,11 @@ func TestStickerInstallAndEvents(t *testing.T) {
 		return ev.GetStickerPackDelete().GetPackId() == p2.GetId()
 	})
 	mem.must(200, "GET", "/api/me/sticker-packs", nil, &mine)
-	if len(mine.GetInstalled()) != 1 || mine.GetInstalled()[0].GetId() != p1.GetId() {
+	if len(customInstalled(&mine)) != 1 || customInstalled(&mine)[0].GetId() != p1.GetId() {
 		t.Fatalf("after pack delete: %v", &mine)
 	}
 	mem.must(200, "DELETE", "/api/me/sticker-packs/"+p1.GetId(), nil, &mine)
-	if len(mine.GetInstalled()) != 0 || len(mine.GetAvailable()) != 1 {
+	if len(customInstalled(&mine)) != 0 || len(mine.GetAvailable()) != 1 {
 		t.Fatalf("after uninstall: %v", &mine)
 	}
 }
@@ -419,11 +419,11 @@ func TestStickerInstalledHiddenPacks(t *testing.T) {
 
 	var mine v1.MyStickerPacksResponse
 	mem.must(200, "GET", "/api/me/sticker-packs", nil, &mine)
-	if len(mine.GetInstalled()) != 2 {
+	if len(customInstalled(&mine)) != 2 {
 		t.Fatalf("installed after becoming a guest: %v", &mine)
 	}
 	mem.must(200, "PUT", "/api/me/sticker-packs/order", &v1.SetStickerPackOrderRequest{PackIds: []string{p1.GetId(), p2.GetId()}}, &mine)
-	if ids := []string{mine.GetInstalled()[0].GetId(), mine.GetInstalled()[1].GetId()}; ids[0] != p1.GetId() || ids[1] != p2.GetId() {
+	if ids := []string{customInstalled(&mine)[0].GetId(), customInstalled(&mine)[1].GetId()}; ids[0] != p1.GetId() || ids[1] != p2.GetId() {
 		t.Fatalf("order: %v", ids)
 	}
 	// The hidden pack cannot be named in the order either.
@@ -544,4 +544,15 @@ func TestStickerReplace(t *testing.T) {
 	if st != 200 || res.GetPack().GetStickers()[1].GetEmoji() != "🔷" || res.GetPack().GetStickers()[1].GetUrl() != s1.GetUrl() {
 		t.Fatalf("emoji only: %d %v %v", st, res, e)
 	}
+}
+
+// Existing pack tests count user-managed installs independently of the fixed built-in pack.
+func customInstalled(r *v1.MyStickerPacksResponse) []*v1.StickerPack {
+	var out []*v1.StickerPack
+	for _, p := range r.GetInstalled() {
+		if !p.GetBuiltin() {
+			out = append(out, p)
+		}
+	}
+	return out
 }

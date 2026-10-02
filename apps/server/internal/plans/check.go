@@ -72,7 +72,7 @@ func (k Kind) count(ctx context.Context, q *sqlc.Queries, wsID uuid.UUID) (int64
 	case KindBots:
 		return q.CountWorkspaceBots(ctx, wsID)
 	case KindStickerPacks:
-		n, err := q.CountWorkspaceStickerPacks(ctx, wsID)
+		n, err := q.CountWorkspaceStickerPacks(ctx, &wsID)
 		return int64(n), err
 	case KindBoards:
 		n, err := q.CountAllBoards(ctx, wsID)

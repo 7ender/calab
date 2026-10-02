@@ -2039,3 +2039,12 @@ CALABA_WEB_URL=http://127.0.0.1:39571 npx playwright test --config playwright.we
 7. Инвайт: `curl -X POST $CALAB/api/workspaces/$WS/invites -H "Authorization: Bearer $TOKEN" -H 'Content-Type: application/json' -d '{"maxUses":1}'` → 201 с `code`; ссылка `/join/<code>` пускает нового человека. Снять у роли `INVITE_MEMBERS` → тот же запрос 403 (не `BOT_NOT_ALLOWED`).
 8. `GET …/freebusy?users=$BOB&from=…&to=…` → 200, в `busy` нет `title`; `POST …/invites/lookup` → 403 `BOT_NOT_ALLOWED`.
 9. В логе сервера на шаги 3–5 и 7 — строки `bot action` с `bot_id` и `bot_owner`.
+
+### Built-in Calab Stikers (ADR-0054)
+
+- `go test ./internal/builtinstickers ./internal/stickers ./internal/pbconv ./internal/messages` in `apps/server`: embedded WebP validation and public allowlist/cache.
+- PG17 + Valkey 9/Redis 7.4: `go test -tags integration -run 'Test(BuiltinStickers|Sticker)' ./internal/app` with isolated TEST_PG_URL / TEST_REDIS_URL.
+- Desktop Vitest: `src/renderer/lib/{stickers,builtinStickers,stickerSuggest}.test.ts`; build:web + build:app include the same 16 assets.
+- Manual: fresh account → stickers → Calab Stikers; emoji search, send to room and DM, reload history, view pack, check fixed built-in label in My stickers.
+- Guest/no SEND_MESSAGES: send rejected. Free workspace: custom pack allowance unchanged.
+- Unknown asset ID: 404; public built-in route never serves uploads.

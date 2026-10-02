@@ -70,22 +70,22 @@ RETURNING *;
 
 -- name: ListPackStickers :many
 -- Live stickers of the packs with their file size, in pack order.
-SELECT sqlc.embed(s), f.size AS file_size FROM stickers s
-JOIN files f ON f.id = s.file_id
+SELECT sqlc.embed(s), coalesce(f.size, 0)::bigint AS file_size FROM stickers s
+LEFT JOIN files f ON f.id = s.file_id
 WHERE s.pack_id = ANY(sqlc.arg('pack_ids')::uuid[]) AND s.deleted_at IS NULL
 ORDER BY s.pack_id, s.position, s.id;
 
 -- name: ListStickersByID :many
 -- Stickers shown by messages (deleted ones included) with their file size and workspace.
-SELECT sqlc.embed(s), f.size AS file_size, p.workspace_id FROM stickers s
-JOIN files f ON f.id = s.file_id
+SELECT sqlc.embed(s), coalesce(f.size, 0)::bigint AS file_size, coalesce(p.workspace_id, '00000000-0000-0000-0000-000000000000'::uuid)::uuid AS workspace_id FROM stickers s
+LEFT JOIN files f ON f.id = s.file_id
 JOIN sticker_packs p ON p.id = s.pack_id
 WHERE s.id = ANY(sqlc.arg('ids')::uuid[]);
 
 -- name: GetSticker :one
 -- A live sticker of a live pack, with its workspace.
-SELECT sqlc.embed(s), f.size AS file_size, p.workspace_id FROM stickers s
-JOIN files f ON f.id = s.file_id
+SELECT sqlc.embed(s), coalesce(f.size, 0)::bigint AS file_size, coalesce(p.workspace_id, '00000000-0000-0000-0000-000000000000'::uuid)::uuid AS workspace_id FROM stickers s
+LEFT JOIN files f ON f.id = s.file_id
 JOIN sticker_packs p ON p.id = s.pack_id AND p.deleted_at IS NULL
 WHERE s.id = $1 AND s.deleted_at IS NULL;
 
@@ -112,13 +112,13 @@ WHERE s.id = o.id AND s.pack_id = sqlc.arg('pack_id');
 
 -- name: GetStickerFileWorkspace :one
 -- The workspace of the pack whose sticker is this file (no row = not a sticker file).
-SELECT p.workspace_id FROM stickers s JOIN sticker_packs p ON p.id = s.pack_id WHERE s.file_id = $1;
+SELECT p.workspace_id FROM stickers s JOIN sticker_packs p ON p.id = s.pack_id WHERE s.file_id = sqlc.arg('file_id')::uuid;
 
 -- name: StickerFileRooms :many
 -- Rooms where a live message shows the sticker of this file.
 SELECT DISTINCT m.room_id FROM stickers s
 JOIN messages m ON m.sticker_id = s.id AND m.deleted_at IS NULL
-WHERE s.file_id = $1
+WHERE s.file_id = sqlc.arg('file_id')::uuid
 LIMIT 50;
 
 -- name: CountNonGuestMembers :one

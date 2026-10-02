@@ -63,7 +63,7 @@ export async function orderPacks(packIds: readonly string[]): Promise<void> {
   const s = useStickers.getState();
   const byId = new Map(s.installed.map((p) => [p.id, p]));
   // Optimistic: the list moves at once; the server's answer replaces it.
-  s.setMine({ installed: packIds.map((id) => byId.get(id)).filter((p): p is StickerPack => !!p), available: s.available });
+  s.setMine({ installed: [...s.installed.filter((p) => p.builtin), ...packIds.map((id) => byId.get(id)).filter((p): p is StickerPack => !!p)], available: s.available });
   try {
     useStickers.getState().setMine(await api.stickers.order(packIds));
   } catch (e) {

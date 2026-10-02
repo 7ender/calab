@@ -10,6 +10,7 @@ import (
 
 	v1 "github.com/calaba/calaba/server/gen/calaba/v1"
 	"github.com/calaba/calaba/server/internal/auth"
+	"github.com/calaba/calaba/server/internal/builtinstickers"
 	"github.com/calaba/calaba/server/internal/db"
 	"github.com/calaba/calaba/server/internal/db/sqlc"
 	"github.com/calaba/calaba/server/internal/dms"
@@ -76,6 +77,9 @@ func (h *Handlers) forward(w http.ResponseWriter, r *http.Request) error {
 	}
 	if !dst.Bits.Has(perm.SendMessages) {
 		return httpx.Forbidden("SEND_MESSAGES required")
+	}
+	if m.StickerID != nil && builtinstickers.Sticker(m.StickerID.String()) != nil && !dst.DM && (dst.Role == perm.RoleGuest || dst.Role == "") {
+		return httpx.Forbidden("guests cannot send stickers")
 	}
 	if err := h.forwardable(ctx, m, src); err != nil {
 		return err
