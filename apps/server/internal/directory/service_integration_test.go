@@ -363,7 +363,7 @@ func TestDirectoryShrinkQuarantined(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err = f.service.Put(ctx, f.p, f.ws, &pb.PutIdentityDirectoryRequest{Version: uint64(c.Version), Enabled: true, Url: c.Url, BaseDn: c.BaseDn, BindDn: c.BindDn, AllowedGroupDns: c.AllowedGroupDns}); err != nil {
+	if _, err = f.service.Put(ctx, f.p, f.ws, &pb.PutIdentityDirectoryRequest{Version: uint64(max(c.Version, 0)), Enabled: true, Url: c.Url, BaseDn: c.BaseDn, BindDn: c.BindDn, AllowedGroupDns: c.AllowedGroupDns}); err != nil {
 		t.Fatal(err)
 	}
 	f.ldap.mu.Lock()

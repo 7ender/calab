@@ -54,7 +54,7 @@ func TestSSOBrowserBindingCookieIsBounded(t *testing.T) {
 	}
 	// Malformed entries never yield a binding.
 	r = httptest.NewRequestWithContext(context.Background(), "GET", "/", nil)
-	r.AddCookie(&http.Cookie{Name: browserCookieName, Value: flows[0].String() + ":short." + "not-a-uuid:" + secrets[flows[0]]})
+	r.AddCookie(&http.Cookie{Name: browserCookieName, Value: flows[0].String() + ":short." + "not-a-uuid:" + secrets[flows[0]], Secure: true, HttpOnly: true, SameSite: http.SameSiteLaxMode})
 	if len(browserBindings(r)) != 0 {
 		t.Fatal("malformed binding accepted")
 	}
