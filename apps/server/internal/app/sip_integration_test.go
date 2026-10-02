@@ -185,6 +185,7 @@ func TestSIP(t *testing.T) {
 	liveKitUp(t)
 	o, bob, ws, room := setupTeam(t)
 	wid, rid := ws.GetId(), room.GetId()
+	setPlan(t, wid, &v1.AdminSetPlanRequest{Plan: v1.Plan_PLAN_ENTERPRISE}) // telephony is Business only
 	base := "/api/workspaces/" + wid + "/sip"
 	calls := "/api/rooms/" + rid + "/calls"
 	start := time.Now()
@@ -557,6 +558,7 @@ func TestSIPDialingSeenByRoom(t *testing.T) {
 	liveKitUp(t)
 	o, bob, ws, room := setupTeam(t)
 	wid, rid := ws.GetId(), room.GetId()
+	setPlan(t, wid, &v1.AdminSetPlanRequest{Plan: v1.Plan_PLAN_ENTERPRISE}) // telephony is Business only
 	calls := "/api/rooms/" + rid + "/calls"
 	alice := register(t, invite(t, o, wid)) // in the room's call, no PLACE_CALLS
 	carol := register(t, invite(t, o, wid)) // a member outside the call
@@ -624,4 +626,92 @@ func TestSIPDialingSeenByRoom(t *testing.T) {
 		}
 	}
 	sipFake.fail(c2.GetParticipantIdentity(), 487, "Request Terminated")
+}
+
+// TestSIPPlanBusinessOnly (owner, 02.10, ADR-0046): telephony is Business only. Free and Team
+// refuse saving an enabled trunk, the connection test and calls with 409 PLAN_LIMIT; after a
+// downgrade the trunk stays readable, a live call is not cut and can be hung up, but new calls,
+// tests and re-saving it enabled are refused; turning it off always works.
+func TestSIPPlanBusinessOnly(t *testing.T) {
+	liveKitUp(t)
+	o, bob, ws, room := setupTeam(t)
+	wid, rid := ws.GetId(), room.GetId()
+	base := "/api/workspaces/" + wid + "/sip"
+	calls := "/api/rooms/" + rid + "/calls"
+	pw := "pw"
+	enable := &v1.PutSipSettingsRequest{Enabled: true, Host: "203.0.113.10", Username: "u", Password: &pw, CallerId: "+74951234567"}
+	num := &v1.PlaceSipCallRequest{Number: "+7 916 123-45-67"}
+	o.must(200, "PUT", "/api/rooms/"+rid+"/permissions", &v1.SetRoomPermissionsRequest{Overrides: []*v1.RoomPermissionOverride{
+		{TargetType: v1.PermissionTargetType_PERMISSION_TARGET_TYPE_USER, TargetId: bob.id, Allow: uint64(perm.PlaceCalls)},
+	}}, nil)
+	joinVoice(t, bob, wid, rid)
+
+	// Free (no plan row) and Team: settings readable, enabling / testing / calling refused.
+	for _, p := range []v1.Plan{v1.Plan_PLAN_FREE, v1.Plan_PLAN_TEAM} {
+		if p != v1.Plan_PLAN_FREE {
+			setPlan(t, wid, &v1.AdminSetPlanRequest{Plan: p})
+		}
+		o.must(200, "GET", base, nil, nil)
+		st, e := o.apiErrBody("PUT", base, enable)
+		wantPlanLimit(t, p.String()+" trunk save", st, e, 0, 0)
+		st, e = o.apiErrBody("POST", base+"/test", nil)
+		wantPlanLimit(t, p.String()+" connection test", st, e, 0, 0)
+		st, e = bob.apiErrBody("POST", calls, num)
+		wantPlanLimit(t, p.String()+" call", st, e, 0, 0)
+	}
+	if _, err := testDB.Q.GetSipAccount(context.Background(), uuid.MustParse(wid)); err == nil {
+		t.Fatal("a refused save stored the account")
+	}
+
+	// Business: the trunk is saved and a call goes through.
+	setPlan(t, wid, &v1.AdminSetPlanRequest{Plan: v1.Plan_PLAN_ENTERPRISE})
+	var put v1.PutSipSettingsResponse
+	o.must(200, "PUT", base, enable, &put)
+	if !put.GetSettings().GetTrunkSaved() {
+		t.Fatalf("business save: %v", put.GetSettings())
+	}
+	var pc v1.SipCallResponse
+	bob.must(201, "POST", calls, num, &pc)
+	c1 := pc.GetCall()
+	sipFake.answer(c1.GetParticipantIdentity())
+	sipCallStatus(t, o, wid, c1.GetId(), v1.SipCallStatus_SIP_CALL_STATUS_ACTIVE)
+
+	// Downgrade to Team: nothing is deleted, the live call goes on.
+	setPlan(t, wid, &v1.AdminSetPlanRequest{Plan: v1.Plan_PLAN_TEAM})
+	var g v1.GetSipSettingsResponse
+	o.must(200, "GET", base, nil, &g)
+	if !g.GetSettings().GetEnabled() || !g.GetSettings().GetTrunkSaved() || g.GetSettings().GetHost() != "203.0.113.10" {
+		t.Fatalf("downgraded settings: %v", g.GetSettings())
+	}
+	o.must(200, "GET", "/api/workspaces/"+wid+"/calls", nil, nil)
+	if c := sipCallStatus(t, o, wid, c1.GetId(), v1.SipCallStatus_SIP_CALL_STATUS_ACTIVE); c.GetEndedAt() != nil {
+		t.Fatalf("downgrade cut the call: %v", c)
+	}
+	st, e := o.apiErrBody("PUT", base, enable)
+	wantPlanLimit(t, "downgraded trunk save", st, e, 0, 0)
+	st, e = o.apiErrBody("POST", base+"/test", nil)
+	wantPlanLimit(t, "downgraded connection test", st, e, 0, 0)
+	var hr v1.SipCallResponse
+	bob.must(200, "DELETE", calls+"/"+c1.GetId(), nil, &hr) // hanging up always works
+	if hr.GetCall().GetStatus() != v1.SipCallStatus_SIP_CALL_STATUS_ENDED {
+		t.Fatalf("hangup: %v", hr.GetCall())
+	}
+	st, e = bob.apiErrBody("POST", calls, num)
+	wantPlanLimit(t, "downgraded call", st, e, 0, 0)
+	acct, err := testDB.Q.GetSipAccount(context.Background(), uuid.MustParse(wid))
+	if err != nil || acct.TrunkID == "" || !acct.Enabled {
+		t.Fatalf("the downgrade dropped the trunk: %+v %v", acct, err)
+	}
+	sipFake.mu.Lock()
+	for _, id := range sipFake.deletes {
+		if id == acct.TrunkID {
+			t.Error("the downgrade deleted the trunk in LiveKit")
+		}
+	}
+	sipFake.mu.Unlock()
+	// Turning telephony off is always allowed.
+	o.must(200, "PUT", base, &v1.PutSipSettingsRequest{Enabled: false, Host: "203.0.113.10", CallerId: "+74951234567"}, &put)
+	if put.GetSettings().GetEnabled() {
+		t.Fatalf("off: %v", put.GetSettings())
+	}
 }

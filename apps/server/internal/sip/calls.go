@@ -107,6 +107,9 @@ func (s *Service) place(w http.ResponseWriter, r *http.Request) error {
 		return httpx.Forbidden("PLACE_CALLS required")
 	}
 	ctx, me := r.Context(), uid(r)
+	if err := s.planAllows(ctx, acc.WorkspaceID); err != nil {
+		return err
+	}
 	if room, err = s.db.Q.GetRoom(ctx, room.ID); db.IsNotFound(err) {
 		return httpx.NotFound("room")
 	} else if err != nil {
@@ -394,6 +397,9 @@ func (s *Service) test(w http.ResponseWriter, r *http.Request) error {
 		return err
 	}
 	ctx, me := r.Context(), uid(r)
+	if err := s.planAllows(ctx, wsID); err != nil {
+		return err
+	}
 	a, _, err := s.account(ctx, s.db.Q, wsID)
 	if err != nil {
 		return err

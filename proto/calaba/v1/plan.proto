@@ -36,7 +36,8 @@ message PlanLimits {
   bool musician_disabled = 28;             // musician mode (ADR-0052) is not part of the plan (Free): VoiceState.musician refused
   bool checklists_disabled = 29;           // task checklists (ADR-0058 §5) are Team and above: writes refused, reading stays
   bool board_webhooks_disabled = 30;       // board webhooks (ADR-0058 §5) are Business only: setup refused, delivery paused
-  // Removed flags (telephony, web apps, approvals per plan): never reuse their numbers.
+  bool telephony_disabled = 31;            // telephony SIP (ADR-0046) is Business only: trunk setup, test and calls refused, settings readable
+  // Removed flags (an older telephony flag, web apps, approvals per plan): never reuse their numbers.
   reserved 24, 25, 26;
 }
 
