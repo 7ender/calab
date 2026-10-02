@@ -115,11 +115,10 @@ export function visibleViewRect(view: ViewRect, overlays: readonly ViewRect[], g
 
 /**
  * Hide profile and voice controls while a web app fills the content area, and on the Calendar /
- * Boards tabs (owner, 02.10) — unless a voice call is active there: the island is then the only
- * place with mute / deafen / disconnect.
+ * Boards tabs — even during a call (owner, 02.10: the user returns to «Голос» to control it).
  */
-export function showBottomIsland(appOpen: boolean, workTab = false, inCall = false): boolean {
-  return !appOpen && (!workTab || inCall);
+export function showBottomIsland(appOpen: boolean, workTab = false): boolean {
+  return !appOpen && !workTab;
 }
 
 /**
