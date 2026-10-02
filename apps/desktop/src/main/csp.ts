@@ -2,7 +2,7 @@ import { session } from 'electron';
 import log from 'electron-log/main';
 import { connectSrc } from '../shared/csp';
 import { API_SCHEME } from '../shared/ipc';
-import { currentServerUrl } from './auth';
+import { rendererServerUrl } from './auth';
 import { getMainWindow, isOwnPage } from './windows';
 
 /**
@@ -30,7 +30,7 @@ export function installRendererCsp(): void {
       cb({});
       return;
     }
-    const server = currentServerUrl();
+    const server = rendererServerUrl();
     appliedFor = originOf(server);
     const headers = { ...(d.responseHeaders ?? {}) };
     headers['Content-Security-Policy'] = [`connect-src ${connectSrc(server, API_SCHEME, EXTRA)}`];
@@ -41,7 +41,7 @@ export function installRendererCsp(): void {
 /** Call after the server URL may have changed (login / settings). */
 export function reloadIfServerChanged(): void {
   if (appliedFor === null || process.env['ELECTRON_RENDERER_URL']) return;
-  const now = originOf(currentServerUrl());
+  const now = originOf(rendererServerUrl());
   if (now === appliedFor) return;
   log.info('[csp] server changed, reloading the renderer', { from: appliedFor, to: now });
   appliedFor = now;

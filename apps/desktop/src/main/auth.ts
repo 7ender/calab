@@ -242,6 +242,20 @@ export function currentServerUrl(): string {
   return broker.serverUrl || getSettings().serverUrl;
 }
 
+/**
+ * The server the renderer page talks to (its CSP connect-src, csp.ts). The page loads before
+ * restore() runs, so without a live session the stored one decides, then the settings default.
+ * Incident 2.0.0: 1.7 builds defaulted to app.calab.ru without writing it to settings.json, 2.0
+ * builds default to app.calab.io — a CSP built from the settings blocked the gateway socket of
+ * the restored app.calab.ru session (endless «Подключение…» while REST, proxied by main, worked).
+ */
+export function rendererServerUrl(): string {
+  if (broker.serverUrl) return broker.serverUrl;
+  const stored = loadStored();
+  if (stored?.serverUrl && !insecure(stored.serverUrl)) return stored.serverUrl;
+  return getSettings().serverUrl;
+}
+
 function insecure(base: string): IpcResult<never> | null {
   const problem = serverUrlProblem(base, ALLOW_INSECURE);
   if (!problem) return null;
