@@ -322,3 +322,63 @@ func TestIdentityLeaseWorkspaceRefreshRotationDoesNotStarveTail(t *testing.T) {
 		t.Fatalf("workspace budget unbounded: %d checks", total)
 	}
 }
+
+// Access versions are per (workspace, user): removing member A (A's version 1 → 2)
+// must not tombstone member B's lease at version 2, which B's own durable version (1)
+// could never satisfy again — B's READY/events were closed with "identity resync
+// required" and the sweep sent B a spurious WORKSPACE_DELETE (CI TestJoinRevalidation).
+func TestIdentityLeaseAccessNoticeScopedToItsUser(t *testing.T) {
+	h := leaseTestHub()
+	ws := uuid.New()
+	removed, other := leasedSession(h, ws), leasedSession(h, ws)
+	h.identityNotification(fmt.Sprintf(`{"workspace":%q,"user":%q,"policy_version":1,"access_version":2}`, ws.String(), removed.user.String()))
+	if removed.allowsEvent(leaseEvent(ws)) {
+		t.Fatal("the target user's lease survived its access invalidation")
+	}
+	if !other.allowsEvent(leaseEvent(ws)) {
+		t.Fatal("another member's lease was revoked by a notice about a different user")
+	}
+	_, _ = removed.refreshWorkspaceLease(context.Background(), ws)
+	if removed.allowsEvent(leaseEvent(ws)) {
+		t.Fatal("a lower durable access version resurrected the removed user's lease")
+	}
+	// A workspace-wide notice (no user) advances policy for everyone, never per-user access.
+	h.identityNotification(fmt.Sprintf(`{"workspace":%q,"user":"","policy_version":1,"access_version":5}`, ws.String()))
+	if !other.allowsEvent(leaseEvent(ws)) {
+		t.Fatal("a workspace-wide notice compared per-user access versions")
+	}
+	h.identityNotification(fmt.Sprintf(`{"workspace":%q,"user":"","policy_version":2}`, ws.String()))
+	if other.allowsEvent(leaseEvent(ws)) {
+		t.Fatal("a workspace-wide policy notice kept a positive lease")
+	}
+	// Legacy payloads without the user field stay fail-closed for every session.
+	h.identityNotification(fmt.Sprintf(`{"workspace":%q,"policy_version":2,"access_version":3}`, ws.String()))
+	_, _ = other.refreshWorkspaceLease(context.Background(), ws)
+	if other.allowsEvent(leaseEvent(ws)) {
+		t.Fatal("legacy unattributed access notice did not fail closed")
+	}
+}
+
+// A positive decision that raced an invalidation (revision bump) is re-evaluated after it,
+// so a fresh, still-authorized connection gets its lease instead of a READY close.
+func TestIdentityLeaseRefreshRetriesAfterConcurrentInvalidation(t *testing.T) {
+	h := leaseTestHub()
+	ws := uuid.New()
+	s := leasedSession(h, ws)
+	original := h.checkWorkspace
+	calls := 0
+	h.checkWorkspace = func(ctx context.Context, id auth.Identity, w uuid.UUID) (identitypolicy.Decision, time.Time, error) {
+		calls++
+		if calls == 1 {
+			// The policy advances while this evaluation (begun before it) is in flight.
+			h.identityNotification(fmt.Sprintf(`{"workspace":%q,"user":"","policy_version":2}`, ws.String()))
+		}
+		d, now, err := original(ctx, id, w)
+		d.Versions.Policy = 2
+		return d, now, err
+	}
+	d, err := s.refreshWorkspaceLease(context.Background(), ws)
+	if err != nil || !d.Allowed || !s.allowsEvent(leaseEvent(ws)) {
+		t.Fatalf("authorized refresh lost to a concurrent revision bump (calls %d)", calls)
+	}
+}
