@@ -202,6 +202,40 @@ func (q *Queries) GetMessageByNonce(ctx context.Context, arg GetMessageByNoncePa
 	return i, err
 }
 
+const getMessageShared = `-- name: GetMessageShared :one
+SELECT id, room_id, author_id, content, reply_to_id, nonce, created_at, edited_at, deleted_at, pinned_at, pinned_by, embeds_hidden, kind, payload, sticker_id, forwarded_from, forward_author_id, forward_sent_at, inline_keyboard, keyboard_revision FROM messages WHERE id = $1 AND deleted_at IS NULL FOR SHARE
+`
+
+// The source of a forward, read under a share lock: what a recording card gets meanwhile (payload,
+// audio) is either seen here or applied to the copy once it exists (UpdateSystemMessage waits for it).
+func (q *Queries) GetMessageShared(ctx context.Context, id uuid.UUID) (Message, error) {
+	row := q.db.QueryRow(ctx, getMessageShared, id)
+	var i Message
+	err := row.Scan(
+		&i.ID,
+		&i.RoomID,
+		&i.AuthorID,
+		&i.Content,
+		&i.ReplyToID,
+		&i.Nonce,
+		&i.CreatedAt,
+		&i.EditedAt,
+		&i.DeletedAt,
+		&i.PinnedAt,
+		&i.PinnedBy,
+		&i.EmbedsHidden,
+		&i.Kind,
+		&i.Payload,
+		&i.StickerID,
+		&i.ForwardedFrom,
+		&i.ForwardAuthorID,
+		&i.ForwardSentAt,
+		&i.InlineKeyboard,
+		&i.KeyboardRevision,
+	)
+	return i, err
+}
+
 const insertAttachment = `-- name: InsertAttachment :exec
 INSERT INTO message_attachments (message_id, file_id, position) VALUES ($1, $2, $3)
 `
@@ -823,6 +857,16 @@ func (q *Queries) ListReadStates(ctx context.Context, arg ListReadStatesParams) 
 		return nil, err
 	}
 	return items, nil
+}
+
+const lockMessage = `-- name: LockMessage :exec
+SELECT 1 FROM messages WHERE id = $1 FOR NO KEY UPDATE
+`
+
+// Waits for the forwards in flight of the message and keeps new ones off until commit.
+func (q *Queries) LockMessage(ctx context.Context, id uuid.UUID) error {
+	_, err := q.db.Exec(ctx, lockMessage, id)
+	return err
 }
 
 const lockMessageReactions = `-- name: LockMessageReactions :exec

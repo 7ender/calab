@@ -267,6 +267,10 @@ func (s *Service) attachAudio(ctx context.Context, rec sqlc.RoomRecording) (sqlc
 		if err := q.InsertAttachment(ctx, sqlc.InsertAttachmentParams{MessageID: *rec.MessageID, FileID: file.ID, Position: 0}); err != nil {
 			return err
 		}
+		// A forward in flight either sees the attachment or its copy exists for the next statement.
+		if err := q.LockMessage(ctx, *rec.MessageID); err != nil {
+			return err
+		}
 		// Copies forwarded before the audio was kept show it too (ADR-0033 §4).
 		if err := q.AttachToForwardedCopies(ctx, sqlc.AttachToForwardedCopiesParams{FileID: file.ID, MessageID: *rec.MessageID}); err != nil {
 			return err
