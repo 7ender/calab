@@ -1061,6 +1061,59 @@ describe('per-user volume and local mute (docs/09 #20)', () => {
       expect(updateSelf).toHaveBeenLastCalledWith({ muted: false, deafened: false, musician: false });
     });
 
+    /**
+     * Chromium mixes every remote WebRTC audio receiver into one output; muting an element only
+     * zeroes the receivers that element plays, and a receiver no element plays yet is at full gain
+     * (LiveKit defers / drops its TrackSubscribed: Reconnecting, publication not found). So
+     * deafened = nothing received: no mic or stream-audio subscription at all.
+     */
+    it('deafen → no remote audio is received: mics and stream audio unsubscribed, back on undeafen', async () => {
+      type Pub = { source: string; trackSid: string; kind: string; isMuted: boolean; isSubscribed: boolean; setSubscribed: ReturnType<typeof vi.fn>; setEnabled: () => void };
+      const pub = (source: string, trackSid: string): Pub => ({ source, trackSid, kind: source === 'screen_share' ? 'video' : 'audio', isMuted: false, isSubscribed: false, setSubscribed: vi.fn(), setEnabled: () => undefined });
+      const participant = (identity: string, pubs: Pub[]) => ({
+        identity,
+        trackPublications: new Map(pubs.map((p) => [p.trackSid, p])),
+        getTrackPublication: (source: string) => pubs.find((p) => p.source === source),
+        getTrackPublicationBySid: (sid: string) => pubs.find((p) => p.trackSid === sid),
+      });
+      const last = (p: Pub): unknown => p.setSubscribed.mock.calls.at(-1)?.[0];
+      await voice.join('A', 'ws');
+      const room = FakeRoom.all.at(-1);
+      const micB = pub('microphone', 'TR_mic_b');
+      const screen = pub('screen_share', 'TR_scr_c');
+      const screenAudio = pub('screen_share_audio', 'TR_sa_c');
+      const micC = pub('microphone', 'TR_mic_c');
+      room?.remoteParticipants.set('u2:b', participant('u2:b', [micB]));
+      room?.remoteParticipants.set('u3:c', participant('u3:c', [micC, screen, screenAudio]));
+      for (const p of [micB, micC, screen, screenAudio]) room?.emit('TrackPublished', p, room.remoteParticipants.get(p === micB ? 'u2:b' : 'u3:c'));
+      expect(useVoice.getState().watching).toBe('TR_scr_c'); // a new stream shows in the PiP
+      expect([last(micB), last(micC), last(screenAudio)]).toEqual([true, true, true]);
+
+      voice.toggleDeafen();
+      expect([last(micB), last(micC), last(screenAudio)]).toEqual([false, false, false]);
+      expect(last(screen)).toBe(true); // the picture stays
+
+      // Someone joins while I am deafened: their mic is not subscribed either.
+      const micD = pub('microphone', 'TR_mic_d');
+      room?.remoteParticipants.set('u4:d', participant('u4:d', [micD]));
+      room?.emit('TrackPublished', micD, room.remoteParticipants.get('u4:d'));
+      expect(micD.setSubscribed).not.toHaveBeenCalledWith(true);
+
+      voice.toggleDeafen();
+      expect([last(micB), last(micC), last(micD), last(screenAudio)]).toEqual([true, true, true, true]);
+    });
+
+    it('detached remote audio leaves the DOM (LiveKit detaches before TrackUnsubscribed)', async () => {
+      await voice.join('A', 'ws');
+      const room = FakeRoom.all.at(-1);
+      const el = new FakeAudioEl();
+      const removed = vi.spyOn(el, 'remove');
+      const track = { kind: 'audio', sid: 'TR_a', attach: () => el, detach: () => [] as FakeAudioEl[] };
+      room?.emit('TrackSubscribed', track, { source: 'microphone' }, { identity: 'u2:phone' });
+      room?.emit('TrackUnsubscribed', track, { source: 'microphone' });
+      expect(removed).toHaveBeenCalled();
+    });
+
     it('PTT while deafened: nothing on air, no activation sound (#12)', async () => {
       usePrefs.getState().setPrefs({ micMode: 'ptt', pttReleaseMs: 0, pttBinding: { kind: 'key', code: 66, label: 'F8', mode: 'hold' } });
       await voice.join('A', 'ws');

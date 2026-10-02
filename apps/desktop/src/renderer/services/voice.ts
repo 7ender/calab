@@ -280,6 +280,11 @@ class VoiceEngine {
       const kind: StuckKind | null = s.joining !== null || s.phase === 'connecting' ? 'connecting' : s.phase === 'reconnecting' ? 'reconnecting' : null;
       this.watchdog.update(kind, s.joining?.roomId ?? s.roomId);
       if (s.phase === 'connected' && s.joining === null) this.stuckRetries = 0;
+      // Deafen, from wherever it is written: the elements at once, then the subscriptions.
+      if (s.deafened !== p.deafened) {
+        this.applyVolumes();
+        this.applyAudioSubscriptions();
+      }
     });
   }
 
@@ -1403,9 +1408,31 @@ class VoiceEngine {
    * preview strip — its 160×90 tiles make adaptive stream pick the low simulcast layer.
    */
   private onPublished(pub: RemoteTrackPublication): void {
-    if (pub.source === Track.Source.Microphone) pub.setSubscribed(true);
-    else if (pub.source === Track.Source.ScreenShare || pub.source === Track.Source.ScreenShareAudio) this.applyWatching();
+    // Deafened: not even subscribed (applyAudioSubscriptions); undeafen subscribes it.
+    if (pub.source === Track.Source.Microphone) {
+      if (!useVoice.getState().deafened) pub.setSubscribed(true);
+    } else if (pub.source === Track.Source.ScreenShare || pub.source === Track.Source.ScreenShareAudio) this.applyWatching();
     else if (pub.source === Track.Source.Camera) this.applyCameras();
+  }
+
+  /**
+   * Deafened = no remote audio is received at all (docs/02 «Deafen»): every mic and stream-audio
+   * subscription is dropped; undeafen takes them back (one signalling round trip). Muting the
+   * elements (RemoteAudioOut) stays the instant layer, but it is not enough on its own: Chromium
+   * mixes every remote WebRTC audio receiver into one output (WebRtcAudioRenderer) and an
+   * element's mute zeroes only the receivers that element plays — a receiver no element has
+   * played yet is at full gain, and LiveKit has paths where a subscribed track gets no element
+   * (TrackSubscribed deferred while Reconnecting, publication not found → TrackSubscriptionFailed).
+   * Unsubscribed, the SFU sends nothing: nothing to leak, and no Opus decode or traffic either.
+   */
+  private applyAudioSubscriptions(): void {
+    const room = this.room;
+    if (!room) return;
+    const on = !useVoice.getState().deafened;
+    for (const p of room.remoteParticipants.values()) {
+      for (const pub of p.trackPublications.values()) if (pub.source === Track.Source.Microphone) pub.setSubscribed(on);
+    }
+    this.applyWatching(); // the watched stream's own audio
   }
 
   private subscribe(pub: RemoteTrackPublication, on: boolean): void {
@@ -1458,7 +1485,7 @@ class VoiceEngine {
       const audio = p.getTrackPublication(Track.Source.ScreenShareAudio);
       const on = !!video && video.trackSid === watching;
       if (video) this.subscribe(video, on || previews);
-      if (audio) this.subscribe(audio, on);
+      if (audio) this.subscribe(audio, on && !useVoice.getState().deafened);
       // Adaptive stream pauses video while the main window is hidden (docs/02, «Перекрытое окно»);
       // a pop-out lives in another window, so the popped-out stream is forced on (review M7).
       // The rest follows the main window's visibility, as adaptive stream would do itself.
@@ -1710,7 +1737,9 @@ class VoiceEngine {
   }
 
   private detachAudio(track: RemoteTrack): void {
-    if (track.sid) this.audioOut.remove(track.sid);
+    // LiveKit detaches the track before TrackUnsubscribed (RemoteTrackPublication.setTrack), so
+    // track.detach() is usually empty here: our element is the one registered for the sid.
+    if (track.sid) this.audioOut.remove(track.sid)?.remove();
     for (const el of track.detach()) el.remove();
   }
 
@@ -2348,7 +2377,7 @@ class VoiceEngine {
     const v = useVoice.getState();
     // Muted / deafened: PTT off now, held key included (no cue — pttCue); a new press is ignored.
     if (v.muted || v.deafened) this.ptt.stop();
-    this.applyVolumes();
+    // Playback and subscriptions follow `deafened` in the store subscriber (constructor).
     this.applyTransmit();
     this.pushSelfState();
     this.syncTray();
