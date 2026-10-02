@@ -42,6 +42,7 @@ type Service struct {
 	ev    events.Publisher
 	plans *plans.Service
 	files Uploader
+	hooks *Webhooks // board webhooks (EnableWebhooks); nil = off
 	// PublicURL is PUBLIC_APP_URL: links to messages in «Создать задачу из сообщения».
 	PublicURL string
 	// CreateLimit / SearchLimit: per-user budgets of task creation and of ⌘K task search
@@ -102,6 +103,7 @@ func (s *Service) Routes(mux httpx.Router, wrap func(http.Handler) http.Handler)
 	h("GET /api/t/{key}", s.lookup)
 	h("GET /api/me/tasks", s.myTasks)
 	h("GET /api/workspaces/{id}/tasks/search", s.search)
+	s.webhookRoutes(mux, wrap)
 	for _, p := range contractStubRoutes {
 		h(p, notImplemented)
 	}

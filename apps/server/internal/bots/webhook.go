@@ -2,14 +2,8 @@ package bots
 
 import (
 	"context"
-	"crypto/rand"
-	"crypto/tls"
-	"crypto/x509"
-	"encoding/hex"
 	"log/slog"
 	"net/http"
-	"net/netip"
-	"strings"
 	"sync"
 	"time"
 	"unicode/utf8"
@@ -27,7 +21,7 @@ import (
 	"github.com/calaba/calaba/server/internal/httpx"
 	"github.com/calaba/calaba/server/internal/pbconv"
 	"github.com/calaba/calaba/server/internal/perm"
-	"github.com/calaba/calaba/server/internal/unfurl"
+	"github.com/calaba/calaba/server/internal/webhook"
 )
 
 // Webhooks (ADR-0031 §4). Events a bot would get from the gateway — messages and reactions
@@ -38,76 +32,29 @@ import (
 // backoff 1 min → 1 h for up to a day; a webhook failing for a day is disabled and the bot's
 // owner and managers get BOT_UPDATE with its state.
 
-// WebhookOptions tune delivery; zero values are the production defaults.
-type WebhookOptions struct {
-	// AllowAddr: which resolved addresses may be dialed (nil = unfurl.PublicAddr; tests
-	// allow loopback). Webhook URLs are https only.
-	AllowAddr func(netip.Addr) bool
-	// RootCAs trusts extra certificate authorities (tests: httptest TLS servers); nil = system.
-	RootCAs *x509.CertPool
-	// Poll: how often the worker looks for due deliveries (default 2 s).
-	Poll time.Duration
-	// Backoff: wait before retry attempt+1 (default 1 min doubling, at most 1 h).
-	Backoff func(attempt int32) time.Duration
-	// GiveUp: a delivery is dropped, and a webhook failing that long is disabled (default 24 h).
-	GiveUp time.Duration
-}
+// WebhookOptions tune delivery; zero values are the production defaults (webhook.Options).
+type WebhookOptions = webhook.Options
 
 // Backoff is the default retry schedule: 1 min doubling, capped at 1 h.
-func Backoff(attempt int32) time.Duration {
-	if attempt >= 6 {
-		return time.Hour
-	}
-	return min(time.Minute<<attempt, time.Hour)
-}
+func Backoff(attempt int32) time.Duration { return webhook.Backoff(attempt) }
 
 const (
-	webhookTimeout = 10 * time.Second
-	webhookLease   = 2 * time.Minute
-	webhookBatch   = 50
-	webhookWorkers = 8
-	hooksTTL       = 30 * time.Second
-	minSecret      = 16
-	maxSecret      = 256
-	maxWebhookURL  = 2048
-	lockKey        = "bots:webhook:worker"
+	hooksTTL  = 30 * time.Second
+	minSecret = 16
+	maxSecret = 256
+	lockKey   = "bots:webhook:worker"
 )
 
+// webhookWorker: the shared engine (internal/webhook) bound to the bots' outbox.
 type webhookWorker struct {
-	opts   WebhookOptions
-	client *http.Client
-	allow  func(netip.Addr) bool
-	wake   chan struct{}
-	token  string
+	tr     *webhook.Transport
+	opts   webhook.Options
+	worker *webhook.Worker // set by New
 }
 
 func newWebhookWorker(o WebhookOptions) webhookWorker {
-	if o.AllowAddr == nil {
-		o.AllowAddr = unfurl.PublicAddr
-	}
-	if o.Poll <= 0 {
-		o.Poll = 2 * time.Second
-	}
-	if o.Backoff == nil {
-		o.Backoff = Backoff
-	}
-	if o.GiveUp <= 0 {
-		o.GiveUp = 24 * time.Hour
-	}
-	tr := unfurl.SafeTransport(webhookTimeout, o.AllowAddr)
-	if o.RootCAs != nil {
-		tr.TLSClientConfig = &tls.Config{RootCAs: o.RootCAs, MinVersion: tls.VersionTLS12}
-	}
-	b := make([]byte, 16)
-	_, _ = rand.Read(b)
-	return webhookWorker{
-		opts: o, allow: o.AllowAddr, wake: make(chan struct{}, 1), token: hex.EncodeToString(b),
-		client: &http.Client{
-			Transport: tr, Timeout: webhookTimeout,
-			// A redirect is an answer, not a success: never follow it (SSRF).
-			CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse },
-		},
-	}
+	o = o.WithDefaults()
+	return webhookWorker{opts: o, tr: webhook.NewTransport(o)}
 }
 
 // ---- which bots have webhooks ----
@@ -388,36 +335,14 @@ func (s *Service) enqueue(ctx context.Context, targets []botEvent) {
 		slog.WarnContext(ctx, "bot webhook: enqueue", "bots", len(p.BotIds), "err", err)
 		return
 	}
-	select {
-	case s.wh.wake <- struct{}{}:
-	default:
-	}
+	s.wh.worker.Wake()
 }
 
 // ---- the bot's webhook endpoints ----
 
 // checkWebhookURL: absolute https URL without credentials; a literal IP address must be
 // allowed by the SSRF policy (host names are checked when dialing).
-func (s *Service) checkWebhookURL(raw string) (string, error) {
-	raw = strings.TrimSpace(raw)
-	if len(raw) > maxWebhookURL {
-		return "", httpx.Validation("url", "URL is too long")
-	}
-	u, err := unfurl.CheckURL(raw)
-	if err != nil || u.Scheme != "https" {
-		return "", httpx.Validation("url", "webhook URL must be an absolute https URL without credentials")
-	}
-	host := u.Hostname()
-	if a, err := netip.ParseAddr(host); err == nil && !s.wh.allow(a) {
-		return "", httpx.Validation("url", "webhook URL must point to a public address")
-	}
-	if h := strings.ToLower(host); h == "localhost" || strings.HasSuffix(h, ".localhost") {
-		if !s.wh.allow(netip.MustParseAddr("127.0.0.1")) {
-			return "", httpx.Validation("url", "webhook URL must point to a public address")
-		}
-	}
-	return u.String(), nil
-}
+func (s *Service) checkWebhookURL(raw string) (string, error) { return s.wh.tr.CheckURL(raw) }
 
 func (s *Service) webhookResponse(ctx context.Context, id uuid.UUID) (*v1.BotWebhookResponse, error) {
 	b, err := s.db.Q.GetBot(ctx, id)

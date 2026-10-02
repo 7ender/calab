@@ -34,6 +34,7 @@ import (
 	"github.com/calaba/calaba/server/internal/profile"
 	"github.com/calaba/calaba/server/internal/rooms"
 	"github.com/calaba/calaba/server/internal/sealbox"
+	"github.com/calaba/calaba/server/internal/webhook"
 	"github.com/calaba/calaba/server/internal/workspaces"
 )
 
@@ -73,6 +74,7 @@ type Service struct {
 func New(d *db.DB, r rueidis.Client, a *auth.Service, pl *plans.Service, secret []byte, o WebhookOptions) *Service {
 	s := &Service{db: d, redis: r, auth: a, plans: pl, box: sealbox.New("calaba/bot-webhook/v1", secret)}
 	s.wh = newWebhookWorker(o)
+	s.wh.worker = webhook.NewWorker(queue{s}, s.wh.tr, r, lockKey, s.wh.opts)
 	return s
 }
 

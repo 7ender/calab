@@ -115,6 +115,8 @@ type App struct {
 	Recording *recording.Service
 	// Bots: bots and the Bot API (ADR-0031), with the webhook worker.
 	Bots *bots.Service
+	// BoardWebhooks: the board webhook worker (ADR-0058 §4).
+	BoardWebhooks *boards.Webhooks
 	// Birthdays: the hourly birthday-card worker (docs/09 #76).
 	Birthdays *birthdays.Service
 	// Calls: one-to-one calls (ADR-0034) with their ring / lost timers.
@@ -157,6 +159,7 @@ func (a *App) Run(ctx context.Context) {
 	go a.Mail.Run(ctx) // returns at once without mail
 	go a.Recording.Run(ctx)
 	go a.Bots.Run(ctx) // bot webhook deliveries
+	go a.BoardWebhooks.Run(ctx)
 	go a.Birthdays.Run(ctx, time.Hour)
 	go a.Calls.Run(ctx)
 	go a.Calendar.Run(ctx, calendar.Tick)
@@ -413,6 +416,8 @@ func New(d Deps) *App {
 	boardSvc.CreateLimit = redisx.NewRateLimiter(d.Redis, "rl:task-create:", 60, 60) // 60 at once, one per second
 	boardSvc.SearchLimit = redisx.NewRateLimiter(d.Redis, "rl:task-search:", 30, 60) // ⌘K: 30 at once, one per second
 	msgHandlers.TaskHook = boardSvc.TaskHook
+	msgHandlers.TaskCommentHook = boardSvc.TaskCommentHook
+	boardHooks := boardSvc.EnableWebhooks(d.Redis, []byte(d.Config.JWTSecret), whOpts) // same delivery options as bots
 	msgHandlers.Routes(mux, private)
 	boardSvc.Routes(mux, private)
 	dms.NewHandlers(d.DB, pub, redisx.NewRateLimiter(d.Redis, "rl:dm-create:", 10, 0.5)).Routes(mux, private) // 10 at once, 30 per hour
@@ -502,6 +507,6 @@ func New(d Deps) *App {
 		events.Middleware, // one post-commit publish budget per request
 	)
 	return &App{SSO: rp, Directory: ds, OAuth: op, Handler: h, Auth: authSvc, Gateway: hub, Files: filesSvc, Guests: guestSvc, RTC: rtcSvc, Plans: planSvc, Mail: mailSvc,
-		Recording: recSvc, Bots: botSvc, Birthdays: bdSvc, Calls: callSvc, Calendar: calSvc, CalDAV: cdSvc, Boards: boardSvc, Rooms: roomHandlers, SIP: sipSvc, redis: d.Redis, identityDB: d.DB, Routes: mux.patterns,
+		Recording: recSvc, Bots: botSvc, Birthdays: bdSvc, Calls: callSvc, Calendar: calSvc, CalDAV: cdSvc, Boards: boardSvc, BoardWebhooks: boardHooks, Rooms: roomHandlers, SIP: sipSvc, redis: d.Redis, identityDB: d.DB, Routes: mux.patterns,
 		tempRetention: time.Duration(d.Config.TempRoomRetentionDays) * 24 * time.Hour}
 }

@@ -371,7 +371,7 @@ func (s *Service) setApprovers(w http.ResponseWriter, r *http.Request) error {
 	me := uid(r)
 	var c change
 	var taskID uuid.UUID
-	err := s.tx(r.Context(), func(q *sqlc.Queries, tx pgx.Tx) error {
+	err := s.taskTx(r.Context(), &c, func(q *sqlc.Queries, tx pgx.Tx) error {
 		t, acc, err := s.loadTask(r, tx, true)
 		if err != nil {
 			return err
@@ -447,7 +447,7 @@ func (s *Service) vote(w http.ResponseWriter, r *http.Request) error {
 	me := uid(r)
 	var c change
 	var taskID uuid.UUID
-	err := s.tx(r.Context(), func(q *sqlc.Queries, tx pgx.Tx) error {
+	err := s.taskTx(r.Context(), &c, func(q *sqlc.Queries, tx pgx.Tx) error {
 		t, acc, err := s.loadTask(r, tx, true)
 		if err != nil {
 			return err

@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	"github.com/jackc/pgx/v5"
 	"github.com/redis/rueidis"
 
 	v1 "github.com/calaba/calaba/server/gen/calaba/v1"
@@ -57,7 +58,7 @@ func (s *Service) Sweep(ctx context.Context) (int, error) {
 		}
 		var acts []sqlc.TaskActivity
 		var done []sqlc.ArchiveTasksRow
-		err = s.db.Tx(ctx, func(q *sqlc.Queries) error {
+		err = s.tx(ctx, func(q *sqlc.Queries, tx pgx.Tx) error {
 			var err error
 			if done, err = q.ArchiveTasks(ctx, ids); err != nil {
 				return err
@@ -70,7 +71,8 @@ func (s *Service) Sweep(ctx context.Context) (int, error) {
 				}
 				acts = append(acts, a)
 			}
-			return nil
+			_, err = s.webhookOutbox(ctx, q, tx, acts)
+			return err
 		})
 		if err != nil {
 			return total, err

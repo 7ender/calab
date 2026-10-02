@@ -25,11 +25,6 @@ var contractStubRoutes = []string{
 	"PATCH /api/checklist-items/{id}",
 	"DELETE /api/checklist-items/{id}",
 	"POST /api/checklist-items/{id}/convert",
-	// §4 board webhook (stage 3)
-	"GET /api/boards/{id}/webhook",
-	"PUT /api/boards/{id}/webhook",
-	"DELETE /api/boards/{id}/webhook",
-	"POST /api/boards/{id}/webhook/ping",
 }
 
 func notImplemented(http.ResponseWriter, *http.Request) error {
