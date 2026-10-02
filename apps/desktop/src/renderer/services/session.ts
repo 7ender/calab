@@ -42,6 +42,7 @@ import { recheckTimeZone, resetTimeZoneSync } from './timezone';
 import { voice } from './voice';
 import { platform } from '../platform';
 import { t } from '../i18n';
+import { clearAllDrafts } from '../features/chat/drafts';
 import { logoutToastKey } from './logoutNotice';
 
 const OFFLINE_RETRY_MS = 30_000;
@@ -201,6 +202,7 @@ export async function logout(allSessions = false): Promise<void> {
 
 async function endSession(reason: LogoutReason): Promise<void> {
   if (useSession.getState().status === 'anon') return;
+  clearAllDrafts();
   useIdentity.getState().reset();
   resetIdentityGate();
   stopGateway();

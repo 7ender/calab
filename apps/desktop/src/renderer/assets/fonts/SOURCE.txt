@@ -1,0 +1,6 @@
+Twemoji COLR font 15.0.3 (npm: twemoji-colr-font, built with mozilla/twemoji-colr).
+Fallback for emoji missing from the OS emoji font (Windows 10: Unicode 14+), see #44.
+Font build: SIL OFL 1.1 (LICENSE.txt, same dir).
+Emoji artwork: Twemoji, Copyright 2020 Twitter, Inc and other contributors, licensed under
+CC-BY 4.0 (https://creativecommons.org/licenses/by/4.0/, https://github.com/twitter/twemoji).
+Format: COLRv0 (works in every Chromium incl. Windows 10), woff2, 476 KB, 1438 cmap entries.
