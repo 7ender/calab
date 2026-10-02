@@ -1977,7 +1977,7 @@ const lockIdentityBoundary = `-- name: LockIdentityBoundary :one
 SELECT s.id FROM workspaces w JOIN workspace_members m ON m.workspace_id=w.id
 JOIN users u ON u.id=m.user_id JOIN sessions s ON s.user_id=u.id
 WHERE w.id=$1 AND u.id=$2 AND s.id=$3
-FOR UPDATE OF w,u,m,s
+FOR NO KEY UPDATE OF w,u,m,s
 `
 
 type LockIdentityBoundaryParams struct {
@@ -1986,6 +1986,9 @@ type LockIdentityBoundaryParams struct {
 	SessionID   uuid.UUID
 }
 
+// NO KEY UPDATE still conflicts with every UPDATE/DELETE of these rows (ban, member
+// removal, session revoke) and with the FOR SHARE admission locks, but not with
+// FK KEY SHARE inserts (messages, files, members) referencing the workspace/user.
 func (q *Queries) LockIdentityBoundary(ctx context.Context, arg LockIdentityBoundaryParams) (uuid.UUID, error) {
 	row := q.db.QueryRow(ctx, lockIdentityBoundary, arg.WorkspaceID, arg.UserID, arg.SessionID)
 	var id uuid.UUID
@@ -2084,7 +2087,7 @@ SELECT id FROM workspaces WHERE id=$1 FOR SHARE
 `
 
 // Admission locks are shared for ordinary resource writes. Revokers already
-// take LockOAuthWorkspace (FOR UPDATE); UPDATE of user/member/session rows also
+// take LockOAuthWorkspace (FOR NO KEY UPDATE); UPDATE of user/member/session rows also
 // conflicts with these locks. Acquire sorted workspaces, users, members, sessions.
 // Boundary-row mutations choose the exclusive mode before reading any source.
 func (q *Queries) LockIdentityWorkspaceShared(ctx context.Context, id uuid.UUID) (uuid.UUID, error) {

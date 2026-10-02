@@ -333,7 +333,15 @@ func (s *Service) LogoutWorkspace(ctx context.Context, id Identity, ws uuid.UUID
 		if err != nil {
 			return err
 		}
-		_, err = q.CreateIdentityInvalidation(ctx, sqlc.CreateIdentityInvalidationParams{WorkspaceID: ws, UserID: &row.UserID, SessionID: &row.ID, PolicyVersion: policy.Version, AccessVersion: 1, Reason: reason})
+		// The user's real access version: consumers compare it with that user's
+		// sessions. A missing row is the loader's default version 1.
+		accessVersion := int64(1)
+		if access, err := q.GetIdentityAccess(ctx, sqlc.GetIdentityAccessParams{WorkspaceID: ws, UserID: row.UserID}); err == nil {
+			accessVersion = access.Version
+		} else if !db.IsNotFound(err) {
+			return err
+		}
+		_, err = q.CreateIdentityInvalidation(ctx, sqlc.CreateIdentityInvalidationParams{WorkspaceID: ws, UserID: &row.UserID, SessionID: &row.ID, PolicyVersion: policy.Version, AccessVersion: accessVersion, Reason: reason})
 		return err
 	})
 	if err == nil {

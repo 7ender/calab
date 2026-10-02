@@ -192,7 +192,7 @@ func (s *Service) revokeGrant(ctx context.Context, q *sqlc.Queries, g sqlc.Oauth
 	if err != nil {
 		return err
 	}
-	return s.invalidate(ctx, q, g, reason)
+	return s.auditGrant(ctx, q, g, reason)
 }
 
 func (s *Service) ownPrincipal(r *http.Request) (identitypolicy.Principal, error) {

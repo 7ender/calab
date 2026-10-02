@@ -14,29 +14,34 @@ import (
 
 const bindOAuthRequest = `-- name: BindOAuthRequest :one
 WITH locked AS MATERIALIZED (
-    SELECT src.id, src.workspace_id, src.client_id, src.issuer, src.client_version, src.handle_hash, src.browser_hash, src.csrf_hash, src.session_id, src.user_id, src.redirect_uri, src.scopes, src.state, src.nonce, src.pkce_challenge, src.prompt, src.max_age_seconds, src.expires_at, src.consumed_at, src.created_at FROM oauth_authorization_requests AS src WHERE src.id=$1 AND src.browser_hash=$2 FOR UPDATE
+    SELECT src.id, src.workspace_id, src.client_id, src.issuer, src.client_version, src.handle_hash, src.browser_hash, src.csrf_hash, src.session_id, src.user_id, src.redirect_uri, src.scopes, src.state, src.nonce, src.pkce_challenge, src.prompt, src.max_age_seconds, src.expires_at, src.consumed_at, src.created_at, src.client_ip_hash, src.shown_client_name FROM oauth_authorization_requests AS src WHERE src.id=$5 AND src.browser_hash=$6 FOR UPDATE
 ), eligible AS MATERIALIZED (
-    SELECT locked.id FROM locked WHERE locked.session_id IS NULL AND locked.consumed_at IS NULL AND locked.expires_at>clock_timestamp()
+    SELECT locked.id FROM locked WHERE (locked.session_id IS NULL OR (locked.session_id=$1 AND locked.user_id=$2))
+    AND locked.consumed_at IS NULL AND locked.expires_at>clock_timestamp()
 )
-UPDATE oauth_authorization_requests AS t SET session_id=$3,user_id=$4,csrf_hash=$5
-FROM eligible WHERE t.id=eligible.id RETURNING t.id, t.workspace_id, t.client_id, t.issuer, t.client_version, t.handle_hash, t.browser_hash, t.csrf_hash, t.session_id, t.user_id, t.redirect_uri, t.scopes, t.state, t.nonce, t.pkce_challenge, t.prompt, t.max_age_seconds, t.expires_at, t.consumed_at, t.created_at
+UPDATE oauth_authorization_requests AS t SET session_id=$1,user_id=$2,csrf_hash=$3,shown_client_name=$4
+FROM eligible WHERE t.id=eligible.id RETURNING t.id, t.workspace_id, t.client_id, t.issuer, t.client_version, t.handle_hash, t.browser_hash, t.csrf_hash, t.session_id, t.user_id, t.redirect_uri, t.scopes, t.state, t.nonce, t.pkce_challenge, t.prompt, t.max_age_seconds, t.expires_at, t.consumed_at, t.created_at, t.client_ip_hash, t.shown_client_name
 `
 
 type BindOAuthRequestParams struct {
-	ID          uuid.UUID
-	BrowserHash []byte
-	SessionID   *uuid.UUID
-	UserID      *uuid.UUID
-	CsrfHash    []byte
+	SessionID       *uuid.UUID
+	UserID          *uuid.UUID
+	CsrfHash        []byte
+	ShownClientName *string
+	ID              uuid.UUID
+	BrowserHash     []byte
 }
 
+// The same session may bind again (consent page reload after a rename): the csrf
+// rotates and the shown client name is replaced. Another account needs a new request.
 func (q *Queries) BindOAuthRequest(ctx context.Context, arg BindOAuthRequestParams) (OauthAuthorizationRequest, error) {
 	row := q.db.QueryRow(ctx, bindOAuthRequest,
-		arg.ID,
-		arg.BrowserHash,
 		arg.SessionID,
 		arg.UserID,
 		arg.CsrfHash,
+		arg.ShownClientName,
+		arg.ID,
+		arg.BrowserHash,
 	)
 	var i OauthAuthorizationRequest
 	err := row.Scan(
@@ -60,6 +65,8 @@ func (q *Queries) BindOAuthRequest(ctx context.Context, arg BindOAuthRequestPara
 		&i.ExpiresAt,
 		&i.ConsumedAt,
 		&i.CreatedAt,
+		&i.ClientIpHash,
+		&i.ShownClientName,
 	)
 	return i, err
 }
@@ -147,12 +154,12 @@ func (q *Queries) ConsumeOAuthRefresh(ctx context.Context, arg ConsumeOAuthRefre
 
 const consumeOAuthRequest = `-- name: ConsumeOAuthRequest :one
 WITH locked AS MATERIALIZED (
-    SELECT src.id, src.workspace_id, src.client_id, src.issuer, src.client_version, src.handle_hash, src.browser_hash, src.csrf_hash, src.session_id, src.user_id, src.redirect_uri, src.scopes, src.state, src.nonce, src.pkce_challenge, src.prompt, src.max_age_seconds, src.expires_at, src.consumed_at, src.created_at FROM oauth_authorization_requests AS src WHERE src.id=$1 AND src.browser_hash=$2 AND src.csrf_hash=$3 AND src.session_id=$4 AND src.user_id=$5 FOR UPDATE
+    SELECT src.id, src.workspace_id, src.client_id, src.issuer, src.client_version, src.handle_hash, src.browser_hash, src.csrf_hash, src.session_id, src.user_id, src.redirect_uri, src.scopes, src.state, src.nonce, src.pkce_challenge, src.prompt, src.max_age_seconds, src.expires_at, src.consumed_at, src.created_at, src.client_ip_hash, src.shown_client_name FROM oauth_authorization_requests AS src WHERE src.id=$1 AND src.browser_hash=$2 AND src.csrf_hash=$3 AND src.session_id=$4 AND src.user_id=$5 FOR UPDATE
 ), eligible AS MATERIALIZED (
     SELECT locked.id FROM locked WHERE locked.consumed_at IS NULL AND locked.expires_at>clock_timestamp()
 )
 UPDATE oauth_authorization_requests AS t SET consumed_at=clock_timestamp()
-FROM eligible WHERE t.id=eligible.id RETURNING t.id, t.workspace_id, t.client_id, t.issuer, t.client_version, t.handle_hash, t.browser_hash, t.csrf_hash, t.session_id, t.user_id, t.redirect_uri, t.scopes, t.state, t.nonce, t.pkce_challenge, t.prompt, t.max_age_seconds, t.expires_at, t.consumed_at, t.created_at
+FROM eligible WHERE t.id=eligible.id RETURNING t.id, t.workspace_id, t.client_id, t.issuer, t.client_version, t.handle_hash, t.browser_hash, t.csrf_hash, t.session_id, t.user_id, t.redirect_uri, t.scopes, t.state, t.nonce, t.pkce_challenge, t.prompt, t.max_age_seconds, t.expires_at, t.consumed_at, t.created_at, t.client_ip_hash, t.shown_client_name
 `
 
 type ConsumeOAuthRequestParams struct {
@@ -193,8 +200,29 @@ func (q *Queries) ConsumeOAuthRequest(ctx context.Context, arg ConsumeOAuthReque
 		&i.ExpiresAt,
 		&i.ConsumedAt,
 		&i.CreatedAt,
+		&i.ClientIpHash,
+		&i.ShownClientName,
 	)
 	return i, err
+}
+
+const countPendingOAuthRequestsByIP = `-- name: CountPendingOAuthRequestsByIP :one
+SELECT count(*) FROM (SELECT 1 FROM oauth_authorization_requests
+WHERE client_ip_hash=$1 AND consumed_at IS NULL AND expires_at>clock_timestamp()
+LIMIT $2::int) AS pending
+`
+
+type CountPendingOAuthRequestsByIPParams struct {
+	ClientIpHash []byte
+	Cap          int32
+}
+
+// Bounded count: stops scanning at the cap.
+func (q *Queries) CountPendingOAuthRequestsByIP(ctx context.Context, arg CountPendingOAuthRequestsByIPParams) (int64, error) {
+	row := q.db.QueryRow(ctx, countPendingOAuthRequestsByIP, arg.ClientIpHash, arg.Cap)
+	var count int64
+	err := row.Scan(&count)
+	return count, err
 }
 
 const createOAuthClient = `-- name: CreateOAuthClient :one
@@ -460,9 +488,9 @@ func (q *Queries) CreateOAuthGrant(ctx context.Context, arg CreateOAuthGrantPara
 }
 
 const createOAuthRequest = `-- name: CreateOAuthRequest :one
-INSERT INTO oauth_authorization_requests (workspace_id, client_id, client_version, handle_hash, browser_hash, csrf_hash, session_id, user_id, redirect_uri, scopes, state, nonce, pkce_challenge, prompt, max_age_seconds, expires_at, issuer)
-VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17)
-RETURNING id, workspace_id, client_id, issuer, client_version, handle_hash, browser_hash, csrf_hash, session_id, user_id, redirect_uri, scopes, state, nonce, pkce_challenge, prompt, max_age_seconds, expires_at, consumed_at, created_at
+INSERT INTO oauth_authorization_requests (workspace_id, client_id, client_version, handle_hash, browser_hash, csrf_hash, session_id, user_id, redirect_uri, scopes, state, nonce, pkce_challenge, prompt, max_age_seconds, expires_at, issuer, client_ip_hash)
+VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18)
+RETURNING id, workspace_id, client_id, issuer, client_version, handle_hash, browser_hash, csrf_hash, session_id, user_id, redirect_uri, scopes, state, nonce, pkce_challenge, prompt, max_age_seconds, expires_at, consumed_at, created_at, client_ip_hash, shown_client_name
 `
 
 type CreateOAuthRequestParams struct {
@@ -483,6 +511,7 @@ type CreateOAuthRequestParams struct {
 	MaxAgeSeconds *int32
 	ExpiresAt     time.Time
 	Issuer        string
+	ClientIpHash  []byte
 }
 
 func (q *Queries) CreateOAuthRequest(ctx context.Context, arg CreateOAuthRequestParams) (OauthAuthorizationRequest, error) {
@@ -504,6 +533,7 @@ func (q *Queries) CreateOAuthRequest(ctx context.Context, arg CreateOAuthRequest
 		arg.MaxAgeSeconds,
 		arg.ExpiresAt,
 		arg.Issuer,
+		arg.ClientIpHash,
 	)
 	var i OauthAuthorizationRequest
 	err := row.Scan(
@@ -527,6 +557,8 @@ func (q *Queries) CreateOAuthRequest(ctx context.Context, arg CreateOAuthRequest
 		&i.ExpiresAt,
 		&i.ConsumedAt,
 		&i.CreatedAt,
+		&i.ClientIpHash,
+		&i.ShownClientName,
 	)
 	return i, err
 }
@@ -597,6 +629,19 @@ func (q *Queries) CreateOAuthToken(ctx context.Context, arg CreateOAuthTokenPara
 		&i.RevokedAt,
 	)
 	return i, err
+}
+
+const deleteEvictedOAuthRequests = `-- name: DeleteEvictedOAuthRequests :execrows
+DELETE FROM oauth_authorization_requests WHERE browser_hash=ANY($1::bytea[]) AND consumed_at IS NULL
+`
+
+// Requests whose browser binding fell out of the cookie can never be continued.
+func (q *Queries) DeleteEvictedOAuthRequests(ctx context.Context, browserHashes [][]byte) (int64, error) {
+	result, err := q.db.Exec(ctx, deleteEvictedOAuthRequests, browserHashes)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
 }
 
 const deleteExpiredOAuthAccessTokens = `-- name: DeleteExpiredOAuthAccessTokens :execrows
@@ -838,7 +883,7 @@ func (q *Queries) FindOAuthConsent(ctx context.Context, arg FindOAuthConsentPara
 }
 
 const findOAuthRequest = `-- name: FindOAuthRequest :one
-SELECT id, workspace_id, client_id, issuer, client_version, handle_hash, browser_hash, csrf_hash, session_id, user_id, redirect_uri, scopes, state, nonce, pkce_challenge, prompt, max_age_seconds, expires_at, consumed_at, created_at FROM oauth_authorization_requests WHERE handle_hash=$1 AND browser_hash=$2
+SELECT id, workspace_id, client_id, issuer, client_version, handle_hash, browser_hash, csrf_hash, session_id, user_id, redirect_uri, scopes, state, nonce, pkce_challenge, prompt, max_age_seconds, expires_at, consumed_at, created_at, client_ip_hash, shown_client_name FROM oauth_authorization_requests WHERE handle_hash=$1 AND browser_hash=$2
 `
 
 type FindOAuthRequestParams struct {
@@ -870,6 +915,8 @@ func (q *Queries) FindOAuthRequest(ctx context.Context, arg FindOAuthRequestPara
 		&i.ExpiresAt,
 		&i.ConsumedAt,
 		&i.CreatedAt,
+		&i.ClientIpHash,
+		&i.ShownClientName,
 	)
 	return i, err
 }
@@ -1180,7 +1227,7 @@ func (q *Queries) GetOAuthGrantForUpdate(ctx context.Context, arg GetOAuthGrantF
 }
 
 const getOAuthRequest = `-- name: GetOAuthRequest :one
-SELECT id, workspace_id, client_id, issuer, client_version, handle_hash, browser_hash, csrf_hash, session_id, user_id, redirect_uri, scopes, state, nonce, pkce_challenge, prompt, max_age_seconds, expires_at, consumed_at, created_at FROM oauth_authorization_requests WHERE workspace_id = $1 AND id = $2
+SELECT id, workspace_id, client_id, issuer, client_version, handle_hash, browser_hash, csrf_hash, session_id, user_id, redirect_uri, scopes, state, nonce, pkce_challenge, prompt, max_age_seconds, expires_at, consumed_at, created_at, client_ip_hash, shown_client_name FROM oauth_authorization_requests WHERE workspace_id = $1 AND id = $2
 `
 
 type GetOAuthRequestParams struct {
@@ -1212,6 +1259,8 @@ func (q *Queries) GetOAuthRequest(ctx context.Context, arg GetOAuthRequestParams
 		&i.ExpiresAt,
 		&i.ConsumedAt,
 		&i.CreatedAt,
+		&i.ClientIpHash,
+		&i.ShownClientName,
 	)
 	return i, err
 }
@@ -1753,6 +1802,36 @@ func (q *Queries) RevokeOAuthSessionGrants(ctx context.Context, arg RevokeOAuthS
 	return result.RowsAffected(), nil
 }
 
+const revokeReplacedOAuthGrants = `-- name: RevokeReplacedOAuthGrants :execrows
+UPDATE oauth_grants SET revoked_at=clock_timestamp(),revoked_reason='consent_replaced'
+WHERE workspace_id=$1 AND user_id=$2 AND client_id=$3
+AND revoked_at IS NULL AND (session_id=$4 OR consent_version<>$5)
+`
+
+type RevokeReplacedOAuthGrantsParams struct {
+	WorkspaceID    uuid.UUID
+	UserID         uuid.UUID
+	ClientID       uuid.UUID
+	SessionID      uuid.UUID
+	ConsentVersion int64
+}
+
+// Re-consent replaces the family of this device (session) only; families pinned to an
+// older consent version are dead anyway and are closed here as well.
+func (q *Queries) RevokeReplacedOAuthGrants(ctx context.Context, arg RevokeReplacedOAuthGrantsParams) (int64, error) {
+	result, err := q.db.Exec(ctx, revokeReplacedOAuthGrants,
+		arg.WorkspaceID,
+		arg.UserID,
+		arg.ClientID,
+		arg.SessionID,
+		arg.ConsentVersion,
+	)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
+}
+
 const revokeWorkspaceOAuthGrants = `-- name: RevokeWorkspaceOAuthGrants :execrows
 UPDATE oauth_grants SET revoked_at=clock_timestamp(),revoked_reason=$1
 WHERE workspace_id=$2 AND revoked_at IS NULL
@@ -1915,7 +1994,10 @@ func (q *Queries) UpdateOAuthClientName(ctx context.Context, arg UpdateOAuthClie
 const upsertOAuthConsent = `-- name: UpsertOAuthConsent :one
 INSERT INTO oauth_consents(workspace_id,user_id,client_id,scopes,refresh_allowed,client_name) VALUES($1,$2,$3,$4,$5,$6)
 ON CONFLICT(workspace_id,user_id,client_id) DO UPDATE SET scopes=EXCLUDED.scopes,refresh_allowed=EXCLUDED.refresh_allowed,
-client_name=EXCLUDED.client_name,version=oauth_consents.version+1,granted_at=clock_timestamp(),revoked_at=NULL RETURNING id, workspace_id, user_id, client_id, scopes, version, refresh_allowed, client_name, granted_at, revoked_at
+client_name=EXCLUDED.client_name,
+version=oauth_consents.version+CASE WHEN oauth_consents.revoked_at IS NULL AND EXCLUDED.scopes @> oauth_consents.scopes
+    AND EXCLUDED.refresh_allowed=oauth_consents.refresh_allowed THEN 0 ELSE 1 END,
+granted_at=clock_timestamp(),revoked_at=NULL RETURNING id, workspace_id, user_id, client_id, scopes, version, refresh_allowed, client_name, granted_at, revoked_at
 `
 
 type UpsertOAuthConsentParams struct {
@@ -1927,6 +2009,10 @@ type UpsertOAuthConsentParams struct {
 	ClientName     string
 }
 
+// The version (pinned by every grant) moves only when the new decision is not a
+// superset of a live previous one: narrower scopes, a changed refresh decision or
+// a revoked consent invalidate all families; a widening keeps other devices' grants,
+// which stay bounded by their own scopes.
 func (q *Queries) UpsertOAuthConsent(ctx context.Context, arg UpsertOAuthConsentParams) (OauthConsent, error) {
 	row := q.db.QueryRow(ctx, upsertOAuthConsent,
 		arg.WorkspaceID,

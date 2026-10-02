@@ -458,26 +458,28 @@ type OauthAuthorizationCode struct {
 }
 
 type OauthAuthorizationRequest struct {
-	ID            uuid.UUID
-	WorkspaceID   uuid.UUID
-	ClientID      uuid.UUID
-	Issuer        string
-	ClientVersion int64
-	HandleHash    []byte
-	BrowserHash   []byte
-	CsrfHash      []byte
-	SessionID     *uuid.UUID
-	UserID        *uuid.UUID
-	RedirectUri   string
-	Scopes        []string
-	State         string
-	Nonce         string
-	PkceChallenge string
-	Prompt        string
-	MaxAgeSeconds *int32
-	ExpiresAt     time.Time
-	ConsumedAt    *time.Time
-	CreatedAt     time.Time
+	ID              uuid.UUID
+	WorkspaceID     uuid.UUID
+	ClientID        uuid.UUID
+	Issuer          string
+	ClientVersion   int64
+	HandleHash      []byte
+	BrowserHash     []byte
+	CsrfHash        []byte
+	SessionID       *uuid.UUID
+	UserID          *uuid.UUID
+	RedirectUri     string
+	Scopes          []string
+	State           string
+	Nonce           string
+	PkceChallenge   string
+	Prompt          string
+	MaxAgeSeconds   *int32
+	ExpiresAt       time.Time
+	ConsumedAt      *time.Time
+	CreatedAt       time.Time
+	ClientIpHash    []byte
+	ShownClientName *string
 }
 
 type OauthClient struct {

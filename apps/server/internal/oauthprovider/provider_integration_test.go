@@ -17,7 +17,7 @@ import (
 	"net/http/cookiejar"
 	"net/http/httptest"
 	"net/url"
-	"os"
+
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -26,6 +26,7 @@ import (
 
 	v1 "github.com/calaba/calaba/server/gen/calaba/v1"
 	"github.com/calaba/calaba/server/internal/db"
+	"github.com/calaba/calaba/server/internal/db/dbtest"
 	"github.com/calaba/calaba/server/internal/identitypolicy"
 	"github.com/calaba/calaba/server/internal/oauthprovider/signing"
 	"github.com/golang-jwt/jwt/v5"
@@ -47,9 +48,12 @@ type providerFixture struct {
 
 func providerDB(t *testing.T) *db.DB {
 	t.Helper()
-	raw := os.Getenv("TEST_PG_URL")
-	if raw == "" {
-		raw = "postgres://identity_test:fixture-only-password@127.0.0.1:57418/identity_provider" // #nosec G101 -- Disposable local test fixture; never a production credential.
+	// Per-test database (tests assert table-wide counts and run the retention
+	// sweeper); the server comes from dbtest: TEST_DATABASE_URL or TEST_PG_URL, no
+	// built-in default address.
+	raw, err := dbtest.AdminURL()
+	if err != nil {
+		t.Fatal(err)
 	}
 	ctx := context.Background()
 	admin, err := pgx.Connect(ctx, raw)
@@ -475,10 +479,16 @@ func TestProviderConsentCSRFAndAccountBinding(t *testing.T) {
 		t.Fatal("missing browser cookie accepted")
 	}
 	req = f.bindRequest(req)
-	if st, _, _ := f.proto("POST", path, &v1.BindOAuthRequest{CsrfToken: req.handle}); st == 200 {
-		t.Fatal("request rebound")
+	// The same session may bind again (consent page reload); the csrf rotates.
+	stale := req.csrf
+	req = f.bindRequest(req)
+	if req.csrf == stale {
+		t.Fatal("rebind kept the csrf")
 	}
 	decisionPath := "/api/oauth/requests/" + req.handle + "/decision"
+	if st, _, _ := f.proto("POST", decisionPath, &v1.DecideOAuthRequest{Allow: true, CsrfToken: stale}); st == 200 {
+		t.Fatal("csrf of a superseded bind accepted")
+	}
 	if st, _, _ := f.proto("POST", decisionPath, &v1.DecideOAuthRequest{Allow: true, CsrfToken: opaque("calab_cs_")}); st == 200 {
 		t.Fatal("wrong decision CSRF accepted")
 	}
@@ -491,6 +501,10 @@ func TestProviderConsentCSRFAndAccountBinding(t *testing.T) {
 	st, _, _ = f.wire("POST", decisionPath, "application/json", input, "Bearer first_party_"+otherSession.String(), f.server.URL)
 	if st == 200 {
 		t.Fatal("account swap accepted")
+	}
+	input, _ = protojson.Marshal(&v1.BindOAuthRequest{CsrfToken: req.handle})
+	if st, _, _ = f.wire("POST", path, "application/json", input, "Bearer first_party_"+otherSession.String(), f.server.URL); st == 200 {
+		t.Fatal("request rebound by another account")
 	}
 	code := f.decision(req, true, false)
 	if st, _, _ := f.proto("POST", decisionPath, &v1.DecideOAuthRequest{Allow: true, CsrfToken: req.csrf}); st == 200 {

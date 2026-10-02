@@ -12,6 +12,7 @@ import (
 
 	v1 "github.com/calaba/calaba/server/gen/calaba/v1"
 	"github.com/calaba/calaba/server/internal/db/sqlc"
+	"github.com/calaba/calaba/server/internal/httpx"
 	"github.com/calaba/calaba/server/internal/identitypolicy"
 	"github.com/google/uuid"
 	"google.golang.org/protobuf/types/known/timestamppb"
@@ -24,6 +25,10 @@ import (
 const (
 	requestCookieName = "__Host-calab_oauth"
 	requestCookieMax  = 4
+	// pendingRequestsPerIP caps live, unconsumed authorization requests created from
+	// one client IP (on top of the integrator's rate limit). A browser keeping its
+	// cookie holds at most requestCookieMax rows: evicted bindings are deleted.
+	pendingRequestsPerIP = 100
 )
 
 type requestBinding struct{ key, browser string }
@@ -66,9 +71,17 @@ func setRequestBindings(w http.ResponseWriter, bindings []requestBinding) {
 	}
 	http.SetCookie(w, &http.Cookie{Name: requestCookieName, Value: strings.Join(entries, "."), Path: "/", Secure: true, HttpOnly: true, SameSite: http.SameSiteLaxMode, MaxAge: 600})
 }
-func addRequestBinding(w http.ResponseWriter, r *http.Request, handle, browser string) {
+
+// addRequestBinding returns the browser hashes of bindings pushed out of the cookie;
+// their requests can never be continued and are deleted by the caller.
+func addRequestBinding(w http.ResponseWriter, r *http.Request, handle, browser string) [][]byte {
 	bindings := append([]requestBinding{{key: requestKey(handle), browser: browser}}, requestBindings(r)...)
+	var evicted [][]byte
+	for _, b := range bindings[min(len(bindings), requestCookieMax):] {
+		evicted = append(evicted, hash(b.browser))
+	}
 	setRequestBindings(w, bindings[:min(len(bindings), requestCookieMax)])
+	return evicted
 }
 func removeRequestBinding(w http.ResponseWriter, r *http.Request, handle string) {
 	key := requestKey(handle)
@@ -296,6 +309,16 @@ func (s *Service) authorize(w http.ResponseWriter, r *http.Request) {
 	request.HandleHash = hash(handle)
 	request.BrowserHash = hash(browser)
 	request.ExpiresAt = s.c.Now().Add(10 * time.Minute)
+	request.ClientIpHash = hash("ip:" + httpx.ClientIP(r.Context()))
+	pending, err := s.c.DB.Q.CountPendingOAuthRequestsByIP(r.Context(), sqlc.CountPendingOAuthRequestsByIPParams{ClientIpHash: request.ClientIpHash, Cap: pendingRequestsPerIP})
+	if err != nil {
+		redirectError(err)
+		return
+	}
+	if pending >= pendingRequestsPerIP {
+		redirectError(&protocolError{code: "temporarily_unavailable", status: http.StatusServiceUnavailable})
+		return
+	}
 	// Anonymous: no transaction and no workspace/client lock. The row pins the
 	// client version it was validated against; bind and decide re-check client
 	// version, entitlement and policy under locks, so a concurrent disable or
@@ -304,7 +327,12 @@ func (s *Service) authorize(w http.ResponseWriter, r *http.Request) {
 		redirectError(err)
 		return
 	}
-	addRequestBinding(w, r, handle, browser)
+	if evicted := addRequestBinding(w, r, handle, browser); len(evicted) > 0 {
+		if _, err = s.c.DB.Q.DeleteEvictedOAuthRequests(r.Context(), evicted); err != nil {
+			redirectError(err)
+			return
+		}
+	}
 	http.Redirect(w, r, s.c.PublicOrigin+"/oauth/consent?request="+url.QueryEscape(handle), http.StatusSeeOther)
 }
 
@@ -363,7 +391,8 @@ func (s *Service) bind(w http.ResponseWriter, r *http.Request) {
 			return oauthError("login_required")
 		}
 		csrf := opaque("calab_cs_")
-		_, err = q.BindOAuthRequest(r.Context(), sqlc.BindOAuthRequestParams{ID: req.ID, BrowserHash: req.BrowserHash, SessionID: &p.SessionID, UserID: &p.UserID, CsrfHash: hash(csrf)})
+		shown := c.Name
+		_, err = q.BindOAuthRequest(r.Context(), sqlc.BindOAuthRequestParams{ID: req.ID, BrowserHash: req.BrowserHash, SessionID: &p.SessionID, UserID: &p.UserID, CsrfHash: hash(csrf), ShownClientName: &shown})
 		if err != nil && !errors.Is(err, dbNoRows()) {
 			return err
 		}
@@ -440,14 +469,20 @@ func (s *Service) decide(w http.ResponseWriter, r *http.Request) {
 		if input.AllowRefresh && !c.RefreshEnabled {
 			return oauthError("invalid_request")
 		}
+		// A rename does not bump the client version. The user must agree to the name
+		// the bind showed; otherwise nothing is consumed into a grant and the consent
+		// page binds again (same session) to show the current name.
+		if req.ShownClientName == nil || *req.ShownClientName != c.Name {
+			return &protocolError{code: "config_changed", status: http.StatusConflict}
+		}
 		consent, err := q.UpsertOAuthConsent(r.Context(), sqlc.UpsertOAuthConsentParams{WorkspaceID: req.WorkspaceID, UserID: p.UserID, ClientID: c.ID, Scopes: req.Scopes, RefreshAllowed: input.AllowRefresh, ClientName: c.Name})
 		if err != nil {
 			return err
 		}
-		// Re-consenting increments the consent version: existing families cannot
-		// silently retain a wider scope or an old refresh permission.
-		reason := "consent_replaced"
-		if _, err = q.RevokeWorkspaceOAuthGrants(r.Context(), sqlc.RevokeWorkspaceOAuthGrantsParams{WorkspaceID: req.WorkspaceID, UserID: &p.UserID, ClientID: &c.ID, Reason: &reason}); err != nil {
+		// Re-consent replaces this device's family only. A narrowing decision bumps
+		// the consent version (UpsertOAuthConsent), which also closes every other
+		// family: none can retain a wider scope or an old refresh permission.
+		if _, err = q.RevokeReplacedOAuthGrants(r.Context(), sqlc.RevokeReplacedOAuthGrantsParams{WorkspaceID: req.WorkspaceID, UserID: p.UserID, ClientID: c.ID, SessionID: p.SessionID, ConsentVersion: consent.Version}); err != nil {
 			return err
 		}
 		code, err := s.createCode(r.Context(), q, sqlc.CreateOAuthRequestParams{WorkspaceID: req.WorkspaceID, ClientID: req.ClientID, ClientVersion: req.ClientVersion, Issuer: req.Issuer, RedirectUri: req.RedirectUri, Scopes: req.Scopes, State: req.State, Nonce: req.Nonce, PkceChallenge: req.PkceChallenge}, st, d, consent)

@@ -351,7 +351,7 @@ func (s *Service) exchange(ctx context.Context, ws uuid.UUID, r *http.Request, f
 					if err != nil {
 						return err
 					}
-					if err = s.invalidate(ctx, q, g, "refresh_reuse"); err != nil {
+					if err = s.auditGrant(ctx, q, g, "refresh_reuse"); err != nil {
 						return err
 					}
 				}

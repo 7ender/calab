@@ -95,15 +95,20 @@ func (s *Service) management(_ http.ResponseWriter, r *http.Request, fn func(con
 	if err != nil {
 		return apiSessionError(err)
 	}
-	if r.Method != "GET" && !s.sameOrigin(r) {
+	if r.Method != http.MethodGet && !s.sameOrigin(r) {
 		return oauthError("invalid_request")
 	}
+	read := r.Method == http.MethodGet
 	return s.c.DB.Tx(r.Context(), func(q *sqlc.Queries) error {
-		if _, err := q.LockOAuthWorkspace(r.Context(), ws); err != nil {
-			return err
-		}
-		if _, err := q.EnsureIdentityPolicy(r.Context(), ws); err != nil {
-			return err
+		// Reads take no workspace lock and never create the policy row: the state
+		// loader defaults a missing row, and lazy creation stays with admin writes.
+		if !read {
+			if _, err := q.LockOAuthWorkspace(r.Context(), ws); err != nil {
+				return err
+			}
+			if _, err := q.EnsureIdentityPolicy(r.Context(), ws); err != nil {
+				return err
+			}
 		}
 		if st, d, err := s.state(r.Context(), q, p, ws, identitypolicy.ManageOAuth); err != nil {
 			return apiIdentityError(st, d, err)
@@ -246,15 +251,9 @@ func (s *Service) revokeClientGrants(ctx context.Context, q *sqlc.Queries, c sql
 	if _, err := q.RevokeWorkspaceOAuthGrants(ctx, sqlc.RevokeWorkspaceOAuthGrantsParams{WorkspaceID: c.WorkspaceID, ClientID: &c.ID, Reason: &reason}); err != nil {
 		return err
 	}
-	// One workspace event is sufficient for the integrator's durable invalidator.
-	_, d, err := s.state(ctx, q, p, c.WorkspaceID, identitypolicy.ManageOAuth)
-	if err != nil {
-		return err
-	}
-	_, err = q.CreateIdentityInvalidation(ctx, sqlc.CreateIdentityInvalidationParams{WorkspaceID: c.WorkspaceID, PolicyVersion: d.Versions.Policy, AccessVersion: d.Versions.Access, Reason: reason})
-	if err != nil {
-		return err
-	}
+	// No identity invalidation: OAuth grants are re-checked on every provider use,
+	// and gateway/RTC never accept provider tokens (a policy-less workspace notice
+	// would only wake their sweeps).
 	return s.audit(ctx, q, c.WorkspaceID, p.UserID, c.ID, reason)
 }
 
