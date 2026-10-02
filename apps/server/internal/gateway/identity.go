@@ -430,11 +430,6 @@ func (h *Hub) enforceIdentitySession(ctx context.Context, s *Session) {
 				delete(s.leases.workspaces, ws)
 			}
 		}
-		for ws := range s.leases.retry {
-			if !present[ws] {
-				delete(s.leases.retry, ws)
-			}
-		}
 		s.leases.mu.Unlock()
 	}
 	for ws := range old {
@@ -443,32 +438,28 @@ func (h *Hub) enforceIdentitySession(ctx context.Context, s *Session) {
 		}
 	}
 	slices.SortFunc(ids, func(a, b uuid.UUID) int { return bytes.Compare(a[:], b[:]) })
-	due, budget := s.dueWorkspaceChecks(ids, old)
+	due, probes := s.dueWorkspaceChecks(ids, old)
 	allowed := map[uuid.UUID]identitypolicy.Decision{}
-	// Rotation persists across canceled passes, so a slow first workspace cannot
-	// repeatedly starve the tail; the earliest-expiring leases go first.
-	for i := 0; i < min(len(due), budget) && ctx.Err() == nil; i++ {
-		ws := due[i]
+	check := func(ws uuid.UUID) {
 		gate, cancel := context.WithTimeout(ctx, 500*time.Millisecond)
 		decision, err := s.refreshWorkspaceLease(gate, ws)
 		cancel()
-		ok := err == nil && decision.Allowed && s.workspaceLeaseAllows(ws)
-		s.leases.mu.Lock()
-		s.leases.cursor = ws
-		if ok {
-			delete(s.leases.retry, ws)
-		} else {
-			if s.leases.retry == nil {
-				s.leases.retry = map[uuid.UUID]time.Time{}
-			}
-			s.leases.retry[ws] = time.Now().Add(identityDeniedRetry)
-		}
-		s.leases.mu.Unlock()
-		if ok {
+		if err == nil && decision.Allowed && s.workspaceLeaseAllows(ws) {
 			allowed[ws] = decision
 		} else if old[ws] {
 			h.identityRemoveWorkspace(s, ws, decision, err)
 		}
+	}
+	for i := 0; i < len(due) && ctx.Err() == nil; i++ {
+		check(due[i])
+	}
+	// Rotation persists across canceled passes, so a slow first workspace cannot
+	// repeatedly starve the tail of the probes.
+	for i := 0; i < len(probes) && ctx.Err() == nil; i++ {
+		check(probes[i])
+		s.leases.mu.Lock()
+		s.leases.cursor = probes[i]
+		s.leases.mu.Unlock()
 	}
 	for ws, decision := range allowed {
 		if old[ws] {
@@ -509,17 +500,20 @@ const (
 	// identityRefreshAhead: a lease is re-evaluated once it has less than this left, so
 	// each one gets about three passes to be refreshed before it lapses.
 	identityRefreshAhead = identitypolicy.ReadLeaseTTL / 2
-	// identityDeniedRetry spaces re-checks of a workspace the session may not read
-	// (SSO required, suspended, ...): enough to notice a step-up, not a DB query per pass.
-	identityDeniedRetry = 2 * identityPass
+	// identityProbes bounds the per-pass checks of workspaces the session holds no lease
+	// for (SSO required, suspended, left out of READY): a step-up is noticed within
+	// ⌈n/4⌉ passes without a DB query per such workspace per pass.
+	identityProbes = 4
 )
 
-// dueWorkspaceChecks lists the session's workspaces whose lease needs re-evaluation, the
-// earliest deadline first (missing/expired leases, then by expiry; ties by rotation from the
-// cursor), and the per-pass budget. Fresh leases are skipped, so DB cost follows lease
-// expiry (≈ one check per workspace per lease) rather than the pass rate; the budget covers
-// all workspaces within the refresh horizon (2·N·pass/horizon ≥ N/3 per pass), and caps bursts.
-func (s *Session) dueWorkspaceChecks(ids []uuid.UUID, subscribed map[uuid.UUID]bool) ([]uuid.UUID, int) {
+// dueWorkspaceChecks splits the session's workspaces into lease re-evaluations and probes.
+// due: subscribed workspaces whose lease is missing or expires within identityRefreshAhead
+// (earliest deadline first) and leased-but-undelivered ones, up to max(4, ⌈2N·pass/horizon⌉)
+// per pass, which covers all N within the horizon; fresh leases cost no query, so DB load
+// follows lease expiry (about one check per workspace per lease), not the pass rate.
+// probes: unsubscribed workspaces without a lease, at most identityProbes, rotating from
+// the cursor.
+func (s *Session) dueWorkspaceChecks(ids []uuid.UUID, subscribed map[uuid.UUID]bool) (due, probes []uuid.UUID) {
 	now := time.Now()
 	s.leases.mu.Lock()
 	cursor := s.leases.cursor
@@ -531,7 +525,7 @@ func (s *Session) dueWorkspaceChecks(ids []uuid.UUID, subscribed map[uuid.UUID]b
 		ws    uuid.UUID
 		until time.Time
 	}
-	due := make([]candidate, 0, len(ids))
+	refresh := make([]candidate, 0, len(ids))
 	for i := range ids {
 		ws := ids[(offset+i)%len(ids)]
 		l := s.leases.workspaces[ws]
@@ -540,24 +534,24 @@ func (s *Session) dueWorkspaceChecks(ids []uuid.UUID, subscribed map[uuid.UUID]b
 			until = l.until
 		}
 		switch {
-		case !subscribed[ws] && !until.IsZero():
-			// Leased but not delivered (left out of READY): re-add it now.
-			until = time.Time{}
-		case !until.IsZero() && until.Sub(now) > identityRefreshAhead:
-			continue
-		case until.IsZero() && now.Before(s.leases.retry[ws]):
-			continue
+		case !subscribed[ws] && until.IsZero():
+			if len(probes) < identityProbes {
+				probes = append(probes, ws)
+			}
+		case !subscribed[ws]:
+			refresh = append(refresh, candidate{ws, time.Time{}}) // leased, not delivered: re-add now
+		case until.IsZero() || until.Sub(now) <= identityRefreshAhead:
+			refresh = append(refresh, candidate{ws, until})
 		}
-		due = append(due, candidate{ws, until})
 	}
 	s.leases.mu.Unlock()
-	slices.SortStableFunc(due, func(a, b candidate) int { return a.until.Compare(b.until) })
-	out := make([]uuid.UUID, len(due))
-	for i, c := range due {
-		out[i] = c.ws
-	}
+	slices.SortStableFunc(refresh, func(a, b candidate) int { return a.until.Compare(b.until) })
 	budget := max(4, (2*len(ids)*int(identityPass)+int(identityRefreshAhead)-1)/int(identityRefreshAhead))
-	return out, budget
+	due = make([]uuid.UUID, 0, min(len(refresh), budget))
+	for _, c := range refresh[:min(len(refresh), budget)] {
+		due = append(due, c.ws)
+	}
+	return due, probes
 }
 
 func (h *Hub) identityRemoveWorkspace(s *Session, ws uuid.UUID, d identitypolicy.Decision, err error) {

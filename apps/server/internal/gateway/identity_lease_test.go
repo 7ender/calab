@@ -363,35 +363,38 @@ func TestIdentitySweepCoversAllWorkspacesWithinLease(t *testing.T) {
 	}
 }
 
-// A workspace the session may not read is re-checked at a bounded rate, not every pass.
-func TestIdentitySweepDeniedWorkspaceBackoff(t *testing.T) {
+// Workspaces the session may not read are probed a bounded number per pass, rotating, so a
+// step-up is noticed without a DB query per denied workspace per pass.
+func TestIdentitySweepDeniedWorkspaceProbesRotate(t *testing.T) {
 	h := leaseTestHub()
-	a, denied := uuid.New(), uuid.New()
-	s := leasedSession(h, a)
+	a := uuid.New()
+	leasedSession(h, a)
+	denied := map[uuid.UUID]bool{}
+	ids := []uuid.UUID{a}
+	for i := 0; i < 10; i++ {
+		ws := uuid.New()
+		denied[ws] = true
+		ids = append(ids, ws)
+	}
 	original := h.checkWorkspace
 	h.checkWorkspace = func(ctx context.Context, id auth.Identity, ws uuid.UUID) (identitypolicy.Decision, time.Time, error) {
-		if ws == denied {
+		if denied[ws] {
 			return identitypolicy.Decision{Reason: identitypolicy.SSORequired}, time.Now(), identitypolicy.ErrDenied
 		}
 		return original(ctx, id, ws)
 	}
-	h.identityWorkspaces = func(context.Context, uuid.UUID) ([]uuid.UUID, error) { return []uuid.UUID{a, denied}, nil }
-	seen, _, mu := countingChecks(h)
-	h.EnforceIdentity(context.Background())
-	h.EnforceIdentity(context.Background())
-	mu.Lock()
-	if seen[denied] != 1 || seen[a] != 0 {
-		t.Fatalf("checks: denied %d, leased %d", seen[denied], seen[a])
+	h.identityWorkspaces = func(context.Context, uuid.UUID) ([]uuid.UUID, error) { return append([]uuid.UUID{}, ids...), nil }
+	seen, total, mu := countingChecks(h)
+	for pass := 1; pass <= 3; pass++ {
+		h.EnforceIdentity(context.Background())
+		if n := total(); n != pass*identityProbes {
+			t.Fatalf("pass %d: %d checks", pass, n)
+		}
 	}
-	mu.Unlock()
-	s.leases.mu.Lock()
-	s.leases.retry[denied] = time.Now().Add(-time.Millisecond)
-	s.leases.mu.Unlock()
-	h.EnforceIdentity(context.Background())
 	mu.Lock()
 	defer mu.Unlock()
-	if seen[denied] != 2 {
-		t.Fatalf("denied workspace not re-checked after the backoff: %d", seen[denied])
+	if seen[a] != 0 || len(seen) != len(denied) {
+		t.Fatalf("probes did not rotate over all denied workspaces: %d of %d (leased checked %d)", len(seen), len(denied), seen[a])
 	}
 }
 

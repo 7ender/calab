@@ -20,12 +20,11 @@ type identityLease struct {
 type identityLeases struct {
 	refresh    sync.Mutex
 	revision   uint64
-	cursor     uuid.UUID
+	cursor     uuid.UUID // sweep rotation of probes (dueWorkspaceChecks)
 	mu         sync.Mutex
 	session    identityLease
 	workspaces map[uuid.UUID]identityLease
 	receipts   map[uuid.UUID]receiptPolicyState // actual own receipts only; never workspace access
-	retry      map[uuid.UUID]time.Time          // sweep: no re-check of a denied workspace before
 }
 
 func (s *Session) lease(d identitypolicy.Decision, ws uuid.UUID, started, evaluated time.Time, revision uint64) identityLease {
