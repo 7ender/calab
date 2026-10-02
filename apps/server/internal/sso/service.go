@@ -394,20 +394,7 @@ func (s *Service) Begin(ctx context.Context, p identitypolicy.Principal, ws uuid
 		if err != nil {
 			return err
 		}
-		c, err := q.GetActiveIdentityConnection(ctx, ws)
-		if what == "test" || what == "link" {
-			connections, e := q.ListIdentityConnections(ctx, ws)
-			if e != nil {
-				return e
-			}
-			for i := len(connections) - 1; i >= 0; i-- {
-				if connections[i].Status == "draft" || connections[i].Status == "tested" {
-					c = connections[i]
-					err = nil
-					break
-				}
-			}
-		}
+		c, err := s.flowConnection(ctx, q, ws, what, p.UserID)
 		if err != nil || c.DisabledAt != nil || (what != "test" && what != "link" && (c.Status != "active" || c.TestedVersion == nil || *c.TestedVersion != c.Version)) {
 			return classified(err, denied(identitypolicy.SSORequired))
 		}
@@ -481,6 +468,42 @@ func (s *Service) Begin(ctx context.Context, p identitypolicy.Principal, ws uuid
 		return nil
 	})
 	return out, err
+}
+
+// flowConnection picks the connection a flow authenticates against. Login and step-up use
+// the active connection. Test uses the newest draft/tested revision (the one about to be
+// activated), else the active one. Link prefers the active connection, so members can link
+// while an owner prepares a new draft; it falls back to the newest draft/tested revision only
+// when no usable active connection exists or the user is already linked to the active one
+// (an owner linking ahead to test a replacement).
+func (s *Service) flowConnection(ctx context.Context, q *sqlc.Queries, ws uuid.UUID, what string, user uuid.UUID) (sqlc.WorkspaceIdentityConnection, error) {
+	active, err := q.GetActiveIdentityConnection(ctx, ws)
+	if err != nil && !db.IsNotFound(err) {
+		return active, err
+	}
+	if what != "test" && what != "link" {
+		return active, err
+	}
+	usable := err == nil && active.Status == "active" && active.DisabledAt == nil && active.TestedVersion != nil && *active.TestedVersion == active.Version
+	if what == "link" && usable {
+		linked, e := q.FindUserExternalIdentity(ctx, sqlc.FindUserExternalIdentityParams{WorkspaceID: ws, ConnectionID: active.ID, UserID: user})
+		if e != nil && !db.IsNotFound(e) {
+			return active, e
+		}
+		if e != nil || linked.Status != "active" {
+			return active, nil
+		}
+	}
+	connections, e := q.ListIdentityConnections(ctx, ws)
+	if e != nil {
+		return active, e
+	}
+	for i := len(connections) - 1; i >= 0; i-- {
+		if connections[i].Status == "draft" || connections[i].Status == "tested" {
+			return connections[i], nil
+		}
+	}
+	return active, err
 }
 
 // BrowserStart consumes the native bootstrap exactly once without issuing credentials.
