@@ -102,6 +102,9 @@ func (s *Service) Routes(mux httpx.Router, wrap func(http.Handler) http.Handler)
 	h("GET /api/t/{key}", s.lookup)
 	h("GET /api/me/tasks", s.myTasks)
 	h("GET /api/workspaces/{id}/tasks/search", s.search)
+	for _, p := range contractStubRoutes {
+		h(p, notImplemented)
+	}
 }
 
 func uid(r *http.Request) uuid.UUID { return auth.MustFromContext(r.Context()).UserID }

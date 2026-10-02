@@ -37,6 +37,9 @@ const (
 	scopeApp
 	scopeMachine
 	scopeAdmission
+	scopeBoardCategory
+	scopeChecklist
+	scopeChecklistItem
 )
 
 // identityRoutes enumerates every route. Unknown paths fail closed; a new registration
@@ -352,6 +355,23 @@ var identityRoutes = map[string]identityScope{
 	"PUT /api/workspaces/{id}/roles/order":                                              scopeWorkspace,
 	"PUT /api/workspaces/{id}/rooms/order":                                              scopeWorkspace,
 	"PUT /api/workspaces/{id}/sip":                                                      scopeWorkspace,
+	// Boards 2.0 (ADR-0058).
+	"GET /api/workspaces/{id}/board-categories":  scopeWorkspace,
+	"POST /api/workspaces/{id}/board-categories": scopeWorkspace,
+	"PUT /api/workspaces/{id}/boards/order":      scopeWorkspace,
+	"PATCH /api/board-categories/{id}":           scopeBoardCategory,
+	"DELETE /api/board-categories/{id}":          scopeBoardCategory,
+	"POST /api/tasks/{id}/checklists":            scopeTask,
+	"PATCH /api/checklists/{id}":                 scopeChecklist,
+	"DELETE /api/checklists/{id}":                scopeChecklist,
+	"POST /api/checklists/{id}/items":            scopeChecklist,
+	"PATCH /api/checklist-items/{id}":            scopeChecklistItem,
+	"DELETE /api/checklist-items/{id}":           scopeChecklistItem,
+	"POST /api/checklist-items/{id}/convert":     scopeChecklistItem,
+	"GET /api/boards/{id}/webhook":               scopeBoard,
+	"PUT /api/boards/{id}/webhook":               scopeBoard,
+	"DELETE /api/boards/{id}/webhook":            scopeBoard,
+	"POST /api/boards/{id}/webhook/ping":         scopeBoard,
 }
 
 func identityGate(q *sqlc.Queries, a *auth.Service, next http.Handler) http.Handler {
@@ -511,6 +531,13 @@ func identityTarget(r *http.Request, q *sqlc.Queries, sc identityScope) (uuid.UU
 	case scopeCategory:
 		row, err := q.GetCategory(ctx, id)
 		return row.WorkspaceID, err
+	case scopeBoardCategory:
+		row, err := q.GetBoardCategory(ctx, id)
+		return row.WorkspaceID, err
+	case scopeChecklist:
+		return q.GetChecklistWorkspace(ctx, id)
+	case scopeChecklistItem:
+		return q.GetChecklistItemWorkspace(ctx, id)
 	case scopePack:
 		row, err := q.GetStickerPack(ctx, id)
 		if row.WorkspaceID != nil {
@@ -611,6 +638,12 @@ func IdentityRouteClass(pattern string) string {
 		return "file"
 	case scopeCategory:
 		return "category"
+	case scopeBoardCategory:
+		return "board_category"
+	case scopeChecklist:
+		return "checklist"
+	case scopeChecklistItem:
+		return "checklist_item"
 	case scopePack:
 		return "pack"
 	case scopeSticker:

@@ -192,6 +192,19 @@ func (h *Hub) routeBoards(st *wsState, wid, id uuid.UUID, sessions []*Session, e
 		}
 	case *v1.DispatchEvent_TaskActivity:
 		toBoard(parseID(e.TaskActivity.GetActivity().GetBoardId()))
+	case *v1.DispatchEvent_TaskChecklistUpdate:
+		toBoard(parseID(e.TaskChecklistUpdate.GetBoardId()))
+	case *v1.DispatchEvent_TaskChecklistDelete:
+		toBoard(parseID(e.TaskChecklistDelete.GetBoardId()))
+	case *v1.DispatchEvent_BoardCategoryCreate, *v1.DispatchEvent_BoardCategoryUpdate, *v1.DispatchEvent_BoardCategoryDelete:
+		// Board categories (ADR-0058 §1): names only, to every member who may see boards (guests
+		// never do); clients hide categories without visible boards.
+		shared := newScopedEnc(wid, ev)
+		for _, s := range sessions {
+			if st.role(s.user) != perm.RoleGuest {
+				s.dispatchEnc(id, shared)
+			}
+		}
 	default:
 		return false
 	}
