@@ -5,8 +5,8 @@ import { localePath } from '@/i18n/locales';
 import type { ScreenName } from '@/lib/screens';
 import { Container, Frame, Screen, cx } from './ui';
 
-// Swap to the 2.0 shots when they land (same names in public/screens/<lang>/).
-const shots = { voice: 'voice', chat: 'chat', calendar: 'findtime', kanban: 'kanban' } as const satisfies Record<string, ScreenName>;
+// 2.0 shots: boards with categories and checklist progress.
+const shots = { voice: 'voice', chat: 'chat', calendar: 'findtime', kanban: 'boards2' } as const satisfies Record<string, ScreenName>;
 const anchors = { voice: 'voice', chat: 'chat', calendar: 'calendar', kanban: 'boards' } as const;
 
 /** «How it looks»: four large screenshots in alternating text/screenshot rows. Static: no sticky, no scroll code. */

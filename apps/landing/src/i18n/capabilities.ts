@@ -68,7 +68,7 @@ const caps: Record<Locale, Capabilities> = {
           { t: 'События по WebSocket или webhook с подписью HMAC' },
           { t: 'SDK на TypeScript, примеры на Node и Python' },
           { t: 'Веб-приложения пространства (Grafana, вики, CRM) прямо в окне Calab' },
-          { t: 'Звонки на телефон через вашего SIP-провайдера' },
+          { t: 'Звонки на телефон через вашего SIP-провайдера', plan: 'business' },
         ] },
       { key: 'company', title: 'Для компаний и безопасность', alt: 'Доступ под вашим контролем',
         lines: [
@@ -133,7 +133,7 @@ const caps: Record<Locale, Capabilities> = {
           { t: 'Events over WebSocket or a webhook with an HMAC signature' },
           { t: 'A TypeScript SDK, examples in Node and Python' },
           { t: 'Workspace web apps (Grafana, wiki, CRM) right inside Calab' },
-          { t: 'Phone calls through your own SIP provider' },
+          { t: 'Phone calls through your own SIP provider', plan: 'business' },
         ] },
       { key: 'company', title: 'For companies and security', alt: 'Access under your control',
         lines: [
@@ -198,7 +198,7 @@ const caps: Record<Locale, Capabilities> = {
           { t: 'Eventos por WebSocket o webhook con firma HMAC' },
           { t: 'SDK en TypeScript, ejemplos en Node y Python' },
           { t: 'Aplicaciones web del espacio (Grafana, wiki, CRM) dentro de Calab' },
-          { t: 'Llamadas a teléfono con tu propio proveedor SIP' },
+          { t: 'Llamadas a teléfono con tu propio proveedor SIP', plan: 'business' },
         ] },
       { key: 'company', title: 'Para empresas y seguridad', alt: 'Acceso bajo tu control',
         lines: [
@@ -263,7 +263,7 @@ const caps: Record<Locale, Capabilities> = {
           { t: '通过 WebSocket 或带 HMAC 签名的 webhook 接收事件' },
           { t: 'TypeScript SDK，另有 Node 与 Python 示例' },
           { t: '空间网页应用（Grafana、Wiki、CRM）直接在 Calab 内打开' },
-          { t: '通过你自己的 SIP 服务商拨打电话' },
+          { t: '通过你自己的 SIP 服务商拨打电话', plan: 'business' },
         ] },
       { key: 'company', title: '企业与安全', alt: '由你掌控的访问权限',
         lines: [

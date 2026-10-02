@@ -325,25 +325,16 @@ footer { background: #0b0b0b; }
 }
 @media(prefers-reduced-motion:reduce) { .collage-card,.kinetic-arrow,.kinetic-label { transition:none; } .trail-sticker { display:none; } }
 
-@font-face { font-family:CalabManrope; src:url('/fonts/manrope-variable.woff2') format('woff2'); font-style:normal; font-weight:200 800; font-display:swap; }
-.living-title,.living-title .title-line-accent { font-family:CalabManrope,sans-serif; font-style:normal; font-weight:800; }
-.living-title .title-line-accent { font-weight:300; }
 .living-title .glyph-slot { position:relative; }
 .living-title .glyph-slot::before { content:attr(data-char); font-weight:800; visibility:hidden; }
 .living-title [data-glyph] { position:absolute; inset:0; display:flex; align-items:center; justify-content:center; transform:none; transition:font-weight .35s ease-out; }
 @media(prefers-reduced-motion:reduce) { .living-title [data-glyph] { transition:none; } }
-@font-face { font-family:CalabSourceSerif; src:url('/fonts/source-serif-variable-italic.ttf') format('truetype'); font-style:italic; font-weight:200 900; font-display:swap; }
-.living-title .title-line-accent { font-family:CalabSourceSerif,Georgia,serif; font-style:italic; font-weight:300; }
 
 /* Uppercase editorial pairing: naturally condensed sans + upright serif. */
-@font-face { font-family:CalabCondensed; src:url('/fonts/roboto-condensed-variable.ttf') format('truetype'); font-style:normal; font-weight:100 900; font-display:swap; }
-@font-face { font-family:CalabSourceSerif; src:url('/fonts/source-serif-variable.ttf') format('truetype'); font-style:normal; font-weight:200 900; font-display:swap; }
+@font-face { font-family:CalabCondensed; src:url('/fonts/roboto-condensed-variable.woff2') format('woff2'); font-style:normal; font-weight:100 900; font-display:swap; }
 .living-title { font-family:CalabCondensed,sans-serif; text-transform:uppercase; font-size:clamp(68px,11.4vw,168px); letter-spacing:-.035em; line-height:.94; }
-.living-title .title-line-accent { font-family:CalabSourceSerif,Georgia,serif; font-style:normal; letter-spacing:-.055em; }
 .nav-draw-link { font-family:CalabCondensed,sans-serif; }
 @media(max-width:639px) { .living-title { font-size:clamp(40px,10.5vw,67px); } }
-@font-face { font-family:CalabCormorant; src:url('/fonts/cormorant-variable.woff2') format('woff2'); font-style:normal; font-weight:300 700; font-display:swap; }
-.living-title .title-line-accent { font-family:CalabCormorant,Georgia,serif; letter-spacing:-.045em; }
 .story-hero-copy > p:first-child { font-size:14px; line-height:1.65; max-width:400px; }
 @media(max-width:639px) { }
 .platform-sticker { width:140px; height:140px; object-fit:contain; transform:rotate(-7deg); margin-top:-12px; }
@@ -371,11 +362,8 @@ footer { background: #0b0b0b; }
 .living-title { font-weight:900; }
 .living-title .glyph-slot::before { font-weight:900; }
 .living-title .title-line-accent .glyph-slot::before { font-weight:700; }
-@font-face { font-family:CalabRobotoSerif; src:url('/fonts/roboto-serif-variable.ttf') format('truetype'); font-style:normal; font-weight:100 900; font-display:swap; }
-.living-title .title-line-accent { font-family:CalabRobotoSerif,Georgia,serif; font-weight:100; font-variation-settings:'wght' 100,'wdth' 75,'opsz' 96; }
-.living-title .title-line-accent .glyph-slot::before { font-weight:900; font-variation-settings:'wght' 900,'wdth' 75,'opsz' 96; }
-@font-face { font-family:CalabPlayfair; src:url('/fonts/playfair-display-variable.ttf') format('truetype'); font-style:normal; font-weight:400 900; font-display:swap; }
-.living-title .title-line-accent { font-family:CalabPlayfair,Georgia,serif; font-weight:400; font-variation-settings:'wght' 400; letter-spacing:-.025em; }
+@font-face { font-family:CalabPlayfair; src:url('/fonts/playfair-display-variable.woff2') format('woff2'); font-style:normal; font-weight:400 900; font-display:swap; }
+.living-title .title-line-accent { font-family:CalabPlayfair,Georgia,serif; font-style:normal; font-weight:400; font-variation-settings:'wght' 400; letter-spacing:-.025em; }
 .living-title .title-line-accent .glyph-slot::before { font-weight:900; font-variation-settings:'wght' 900; }
 /* One top-bar family: compact white islands, condensed labels, blue motion. */
 .nav-island { height:42px; display:flex; align-items:center; }
@@ -453,7 +441,7 @@ footer { background: #0b0b0b; }
 .conference-heading { padding:0 24px; text-align:center; margin-bottom:24px; }
 .conference-heading h2 { font-size:clamp(27px,3.2vw,46px); font-weight:700; letter-spacing:-.045em; }
 .conference-heading p { margin-top:10px; color:#aaa; font-size:14px; }
-.conference-scroll { overflow:visible; padding:80px 0 85px; }
+.conference-scroll { overflow-x:clip; overflow-y:visible; padding:80px 0 85px; }
 .conference-row { display:flex; width:max-content; position:relative; left:50%; transform:translateX(calc(-50% + var(--track-shift,0px))); transition:transform .65s cubic-bezier(.22,.75,.2,1); }
 .conference-person { position:relative; display:block; flex:0 0 300px; width:300px; border:0; padding:0; background:none; cursor:pointer; text-align:center; }
 .conference-card { display:block; padding:16px 16px 0; background:#1748ff; pointer-events:none; transform:translate(var(--spread),var(--card-lift)) rotate(var(--card-angle)) scale(var(--card-scale)); transition:transform .65s cubic-bezier(.22,.75,.2,1); transform-origin:center; }
