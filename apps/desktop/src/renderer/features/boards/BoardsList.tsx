@@ -220,13 +220,13 @@ const BoardRow = memo(function BoardRow({ id, workspaceId, dragging, onPointerDo
               </>
             ) : null}
             <Dropdown.Item className={menuItem} onSelect={() => copyText(boardLink(id), t('boards.linkCopied'))}>
-              <Link2 className="size-4" aria-hidden /> {t('boards.copyBoardLink')}
+              <Link2 className="size-4" aria-hidden /> {t('boards.copyLink')}
             </Dropdown.Item>
             {manage ? (
               <>
                 <Dropdown.Separator className={menuSeparator} />
                 <Dropdown.Item className={cx(menuItem, 'text-danger-text')} onSelect={() => void archive()}>
-                  <Archive className="size-4" aria-hidden /> {t('boards.archiveBoard')}
+                  <Archive className="size-4" aria-hidden /> {t('boards.archive')}
                 </Dropdown.Item>
               </>
             ) : null}

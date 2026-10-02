@@ -771,7 +771,7 @@ test('m-settings-bots', async ({ page }) => {
   mock.seedBots();
   await page.getByRole('button', { name: 'Комнаты и пространства' }).first().tap();
   await page.getByTestId('mobile-nav').locator('button[aria-haspopup="menu"]', { hasText: 'Команда Calab' }).tap();
-  await page.getByRole('menuitem', { name: 'Настройки пространства' }).tap();
+  await page.getByRole('menuitem', { name: 'Настройки', exact: true }).tap();
   const dialog = page.getByRole('dialog');
   await dialog.getByRole('tab', { name: 'Боты' }).tap();
   await expect(dialog.getByTestId('bot-row')).toHaveCount(2);

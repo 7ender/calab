@@ -581,7 +581,7 @@ function StickerCell({
             ) : null}
             <Dropdown.Separator className={menuSeparator} />
             <Dropdown.Item className={cx(menuItem, 'text-danger-text')} onSelect={() => void onDelete()}>
-              <Trash2 className="size-4" aria-hidden /> {t('stk.deleteSticker')}
+              <Trash2 className="size-4" aria-hidden /> {t('common.delete')}
             </Dropdown.Item>
           </Dropdown.Content>
         </Dropdown.Portal>

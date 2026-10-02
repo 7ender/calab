@@ -93,7 +93,7 @@ export const esChat: DictShape<typeof enChat> = {
   'chat.notifyMuteForever': 'Para siempre',
   'chat.notifyMutedUntil': 'Silenciado hasta las {time}',
   'chat.notifyWsMutedUntil': 'Espacio silenciado hasta las {time}',
-  'chat.notifyUnmute': 'Activar notificaciones',
+  'chat.notifyUnmute': 'Activar',
   'chat.notifyFailed': 'No se pudo guardar la configuración de notificaciones',
   // mentions
   'chat.mentionUnknown': 'desconocido',

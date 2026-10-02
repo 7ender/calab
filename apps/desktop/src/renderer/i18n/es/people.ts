@@ -47,7 +47,7 @@ export const esPeople: DictShape<typeof enPeople> = {
   'people.menu.renameSelf': 'Cambiar apodo',
   'people.menu.promote': 'Hacer miembro',
   'people.menu.removeGuest': 'Quitar invitado',
-  'people.menu.kick': 'Quitar del espacio',
+  'people.menu.kick': 'Quitar',
   'people.menu.mention': 'Mencionar',
   'people.menu.deafen': 'No escuchar',
   'people.menu.deafenHint': 'Sin voz ni sonido de pantalla compartida — solo para ti',

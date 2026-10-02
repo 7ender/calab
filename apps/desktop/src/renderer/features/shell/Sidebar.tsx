@@ -609,7 +609,7 @@ function CategoryGroup({
               </ContextMenu.Item>
               <ContextMenu.Separator className={menuSeparator} />
               <ContextMenu.Item className={cx(menuItem, 'text-danger-text')} onSelect={() => void remove()}>
-                <Trash2 className="size-4" /> {t('shell.categoryDelete')}
+                <Trash2 className="size-4" /> {t('common.delete')}
               </ContextMenu.Item>
             </ContextMenu.Content>
           </ContextMenu.Portal>
@@ -853,7 +853,7 @@ function RoomMenu({
             className={menuItem}
             onSelect={() => (voiceRoom && inviteRoom ? open({ kind: 'room-invite', roomId: room.id }) : open({ kind: 'workspace-settings', workspaceId: room.workspaceId, tab: 'invites', roomId: room.id }))}
           >
-            <UserPlus className="size-4" /> {voiceRoom ? t('roomMenu.invite') : t('shell.invite')}
+            <UserPlus className="size-4" /> {t('shell.invite')}
           </ContextMenu.Item>
         );
       case 'record':
@@ -887,7 +887,7 @@ function RoomMenu({
       case 'settings':
         return (
           <ContextMenu.Item key={id} className={menuItem} onSelect={() => open({ kind: 'room-settings', roomId: room.id })}>
-            <Settings className="size-4" /> {t('room.settings')}
+            <Settings className="size-4" /> {t('roomMenu.settings')}
           </ContextMenu.Item>
         );
       case 'markRead':
@@ -925,7 +925,7 @@ function RoomMenu({
       case 'deleteRoom':
         return (
           <ContextMenu.Item key={id} className={cx(menuItem, 'text-danger-text')} data-testid="room-menu-delete" onSelect={() => void deleteTempRoom(room)}>
-            <Trash2 className="size-4" /> {t('temp.delete')}
+            <Trash2 className="size-4" /> {t('common.delete')}
           </ContextMenu.Item>
         );
       case 'moveUp':

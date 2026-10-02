@@ -40,7 +40,6 @@ export const ruDm = {
   'dm.archive': 'В архив',
   'dm.unarchive': 'Вернуть из архива',
   'dm.archiveSection': 'Архив — {n}',
-  'dm.delete': 'Удалить чат',
   'dm.deleteTitle': 'Удалить чат?',
   'dm.deleteConfirm': 'История будет удалена только у вас; у собеседника она останется.',
   'dm.errState': 'Не удалось изменить переписку',

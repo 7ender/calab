@@ -136,7 +136,6 @@ export const enVideo: DictShape<typeof ruVideo> = {
   // room «…» menu and meeting recording (docs/09 #30)
   'roomMenu.more': 'More',
   'roomMenu.moreOf': 'Actions for “{name}”',
-  'roomMenu.invite': 'Invite to room',
   'roomMenu.record': 'Record meeting',
   'rec.badge': 'REC',
   'rec.label': 'Recording',

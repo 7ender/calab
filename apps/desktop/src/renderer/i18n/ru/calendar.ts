@@ -52,6 +52,7 @@ export const ruCalendar = {
   'cal.edit': 'Изменить',
   'cal.duplicate': 'Дублировать',
   'cal.cancel': 'Отменить встречу',
+  'cal.cancelItem': 'Отменить',
   'cal.cancelOne': 'Отменить это вхождение',
   'cal.cancelAll': 'Отменить все повторы',
   'cal.cancelTitle': 'Отменить встречу «{title}»?',

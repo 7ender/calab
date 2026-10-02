@@ -13,7 +13,6 @@ export const zhNotes: DictShape<typeof ruNotes> = {
   'notes.rename': '重命名',
   'notes.changeEmoji': '更换表情',
   'notes.removeEmoji': '移除表情',
-  'notes.delete': '删除收纳夹',
   'notes.deleteTitle': '删除收纳夹“{name}”？',
   'notes.deleteConfirm': '收纳夹中的所有消息和文件都将被删除。已转发到其他聊天的副本会保留。',
   'notes.empty': '在这里为自己保存消息和文件',

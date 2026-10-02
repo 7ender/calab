@@ -69,7 +69,6 @@ export const esRecording: DictShape<typeof ruRecording> = {
   'rec.card.listen': 'Escuchar la grabación',
   'rec.card.pause': 'Pausa',
   'rec.card.transcript': 'Transcripción completa',
-  'rec.delete.item': 'Eliminar grabación',
   'rec.delete.title': '¿Eliminar la grabación de la reunión?',
   'rec.delete.text': 'La grabación, la transcripción y el resumen se eliminarán para todos.',
   'rec.delete.action': 'Eliminar',

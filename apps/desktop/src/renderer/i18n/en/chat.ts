@@ -93,7 +93,7 @@ export const enChat: DictShape<typeof ruChat> = {
   'chat.notifyMuteForever': 'Forever',
   'chat.notifyMutedUntil': 'Muted until {time}',
   'chat.notifyWsMutedUntil': 'Workspace muted until {time}',
-  'chat.notifyUnmute': 'Unmute notifications',
+  'chat.notifyUnmute': 'Unmute',
   'chat.notifyFailed': 'Couldn’t save notification settings',
   // mentions
   'chat.mentionUnknown': 'unknown',

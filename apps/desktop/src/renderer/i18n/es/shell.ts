@@ -58,7 +58,7 @@ export const esShell: DictShape<typeof enShell> = {
   'shell.create': 'Crear',
   'shell.categoryCreate': 'Crear categoría',
   'shell.categoryName': 'Nombre de la categoría',
-  'shell.categoryRename': 'Renombrar categoría',
+  'shell.categoryRename': 'Renombrar',
   'shell.categoryDelete': 'Eliminar categoría',
   'shell.categoryDeleteConfirm': '¿Eliminar la categoría «{name}»? Sus salas se conservarán, sin categoría.',
   'shell.categoryCollapse': 'Contraer «{name}»',
@@ -96,7 +96,6 @@ export const esShell: DictShape<typeof enShell> = {
   'shell.more': 'Más',
   'shell.voiceSettings': 'Ajustes de voz',
   'shell.connCheck': 'Probar conexión',
-  'shell.openRoom': 'Abrir chat de la sala',
 
   // self panel
   'shell.inVoiceStatus': 'En voz',
