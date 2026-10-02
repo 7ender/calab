@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"net/http"
 	"net/url"
 	"slices"
@@ -21,6 +22,13 @@ import (
 
 // ErrInvalidProof deliberately hides upstream tokens and provider diagnostics.
 var ErrInvalidProof = errors.New("SSO proof rejected")
+
+// ErrAuthTimeMissing is the one actionable proof diagnostic: every authorization request
+// carries max_age and prompt=login, but those travel in a browser-editable URL, so only the
+// signed auth_time bounds proof freshness; iat would only prove a live IdP session. It is
+// required from every provider. Entra v2 emits it only as an optional claim: app
+// registration → Token configuration → Add optional claim → ID → auth_time.
+var ErrAuthTimeMissing = fmt.Errorf("%w: ID token has no auth_time claim (Entra: add the optional ID token claim auth_time)", ErrInvalidProof)
 
 // EndpointPolicy is trusted operator configuration, never a workspace setting.
 // It receives the connection's workspace: an operator override may be bound to workspaces.
@@ -200,10 +208,10 @@ func (o *OIDC) Exchange(ctx context.Context, c sqlc.WorkspaceIdentityConnection,
 	if id.Claims(&claims) != nil || id.Issuer != c.Issuer || id.Subject == "" || len(id.Subject) > 512 || !identitycrypto.EqualHash(id.Nonce, nonceHash) || (len(id.Audience) > 1 && claims.AZP != c.ClientID) || (claims.AZP != "" && claims.AZP != c.ClientID) || id.IssuedAt.IsZero() || id.IssuedAt.After(now.Add(time.Minute)) || !id.Expiry.After(now) || id.Expiry.Before(id.IssuedAt) || claims.NBF > now.Add(time.Minute).Unix() || claims.AuthTime < 0 || (c.Provider == "entra" && claims.Tenant != c.TenantID) {
 		return Proof{}, ErrInvalidProof
 	}
-	auth, ok := authenticatedAt(c.Provider, claims.AuthTime, id.IssuedAt)
-	if !ok {
-		return Proof{}, ErrInvalidProof
+	if claims.AuthTime == 0 {
+		return Proof{}, ErrAuthTimeMissing
 	}
+	auth := time.Unix(claims.AuthTime, 0)
 	// Skew may validate the token, but never extends internal proof deadlines.
 	if auth.After(now.Add(time.Minute)) || !now.Before(auth.Add(time.Hour)) {
 		return Proof{}, ErrInvalidProof
@@ -212,22 +220,4 @@ func (o *OIDC) Exchange(ctx context.Context, c sqlc.WorkspaceIdentityConnection,
 		auth = now
 	}
 	return Proof{Issuer: id.Issuer, Subject: id.Subject, AuthenticatedAt: auth, PKCEAdvertised: p.pkceAdvertised}, nil
-}
-
-// authenticatedAt picks the authentication instant that bounds proof freshness.
-//
-// Every authorization request carries max_age=3600 and prompt=login, so OIDC Core requires
-// auth_time: generic providers and AD FS without it are rejected. Entra v2 is the one
-// exception: it emits auth_time only as an opt-in optional claim and does not implement
-// max_age, but it honours prompt=login by forcing an interactive sign-in for this request,
-// so the token's iat is no earlier than that sign-in. An Entra token without auth_time is
-// therefore accepted with iat as the authentication time; a present auth_time always wins.
-func authenticatedAt(provider string, authTime int64, issuedAt time.Time) (time.Time, bool) {
-	if authTime > 0 {
-		return time.Unix(authTime, 0), true
-	}
-	if provider == "entra" && authTime == 0 && !issuedAt.IsZero() {
-		return issuedAt, true
-	}
-	return time.Time{}, false
 }

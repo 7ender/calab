@@ -6,6 +6,7 @@ import (
 	"crypto/rsa"
 	"crypto/x509"
 	"encoding/json"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"net/netip"
@@ -148,7 +149,7 @@ func TestOIDCClaimProfile(t *testing.T) {
 		changes map[string]any
 		valid   bool
 	}{
-		{"valid", nil, true}, {"wrong_nonce", map[string]any{"nonce": "wrong"}, false}, {"wrong_issuer", map[string]any{"iss": "https://other.test"}, false}, {"wrong_audience", map[string]any{"aud": "other"}, false}, {"missing_azp", map[string]any{"aud": []string{"fixture-client", "other"}}, false}, {"wrong_azp", map[string]any{"azp": "other"}, false}, {"missing_auth_time", map[string]any{"auth_time": nil}, false}, {"stale_auth", map[string]any{"auth_time": time.Now().Add(-time.Hour).Unix()}, false}, {"future_iat", map[string]any{"iat": time.Now().Add(2 * time.Minute).Unix()}, false}, {"future_nbf", map[string]any{"nbf": time.Now().Add(2 * time.Minute).Unix()}, false}, {"expired", map[string]any{"exp": time.Now().Add(-time.Second).Unix()}, false}, {"blank_subject", map[string]any{"sub": ""}, false},
+		{"valid", nil, true}, {"wrong_nonce", map[string]any{"nonce": "wrong"}, false}, {"wrong_issuer", map[string]any{"iss": "https://other.test"}, false}, {"wrong_audience", map[string]any{"aud": "other"}, false}, {"missing_azp", map[string]any{"aud": []string{"fixture-client", "other"}}, false}, {"wrong_azp", map[string]any{"azp": "other"}, false}, {"missing_auth_time", map[string]any{"auth_time": nil}, false}, {"zero_auth_time", map[string]any{"auth_time": 0}, false}, {"stale_auth", map[string]any{"auth_time": time.Now().Add(-time.Hour).Unix()}, false}, {"future_iat", map[string]any{"iat": time.Now().Add(2 * time.Minute).Unix()}, false}, {"future_nbf", map[string]any{"nbf": time.Now().Add(2 * time.Minute).Unix()}, false}, {"expired", map[string]any{"exp": time.Now().Add(-time.Second).Unix()}, false}, {"blank_subject", map[string]any{"sub": ""}, false},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
@@ -197,30 +198,6 @@ func TestEntraIssuerRestriction(t *testing.T) {
 	}
 }
 
-func TestAuthTimeFallbackOnlyForEntra(t *testing.T) {
-	iat := time.Unix(1_700_000_000, 0)
-	for _, tc := range []struct {
-		provider string
-		authTime int64
-		want     time.Time
-		ok       bool
-	}{
-		{"generic", 1_699_999_000, time.Unix(1_699_999_000, 0), true},
-		{"entra", 1_699_999_000, time.Unix(1_699_999_000, 0), true}, // a present auth_time wins
-		{"entra", 0, iat, true},            // optional claim absent: prompt=login + iat
-		{"generic", 0, time.Time{}, false}, // max_age requested: auth_time required
-		{"adfs", 0, time.Time{}, false},
-		{"entra", -1, time.Time{}, false},
-	} {
-		got, ok := authenticatedAt(tc.provider, tc.authTime, iat)
-		if ok != tc.ok || !got.Equal(tc.want) {
-			t.Fatalf("%s auth_time=%d: got %v %v", tc.provider, tc.authTime, got, ok)
-		}
-	}
-	if _, ok := authenticatedAt("entra", 0, time.Time{}); ok {
-		t.Fatal("entra without iat accepted")
-	}
-}
 func TestPKCEDiscoveryRule(t *testing.T) {
 	exchange := func(f *fakeIDP, p *OIDC, c sqlc.WorkspaceIdentityConnection) (Proof, error) {
 		verifier, _ := identitycrypto.Secret()
@@ -261,4 +238,27 @@ func TestPKCEDiscoveryRule(t *testing.T) {
 			t.Fatalf("%s: discovery without S256 accepted", conn.Provider)
 		}
 	}
+}
+
+// auth_time is required from every provider: an ID token without it is refused with the
+// actionable ErrAuthTimeMissing, never accepted on iat (prompt=login/max_age travel in an
+// editable URL, so iat only proves a live IdP session).
+func TestAuthTimeRequiredFromEveryProvider(t *testing.T) {
+	f, p, c := newIDP(t)
+	for _, provider := range []string{"generic", "adfs"} {
+		c.Provider = provider
+		verifier, _ := identitycrypto.Secret()
+		nonce, _ := identitycrypto.Secret()
+		auth, err := p.Authorization(context.Background(), c, "state", nonce, verifier)
+		if err != nil {
+			t.Fatal(err)
+		}
+		code, _ := f.code(t, auth, "subject", map[string]any{"auth_time": nil})
+		_, err = p.Exchange(context.Background(), c, "secret", code, verifier, identitycrypto.Hash(nonce))
+		if !errors.Is(err, ErrAuthTimeMissing) || !errors.Is(err, ErrInvalidProof) {
+			t.Fatalf("%s without auth_time: %v", provider, err)
+		}
+	}
+	// Entra's fixed issuer cannot be served by the fixture; the claim check is
+	// provider-independent code (no provider branch remains in Exchange).
 }

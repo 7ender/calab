@@ -602,6 +602,12 @@ func (s *Service) Callback(ctx context.Context, connection uuid.UUID, state, bro
 		secret = string(raw)
 	}
 	proof, err := s.Protocol.Exchange(ctx, c, secret, code, payload.Verifier, t.NonceHash)
+	if errors.Is(err, ErrAuthTimeMissing) {
+		// Actionable for the owner (connection test included): the IdP must emit auth_time.
+		if _, e := s.DB.Q.CreateIdentityAudit(ctx, sqlc.CreateIdentityAuditParams{WorkspaceID: t.WorkspaceID, ActorID: t.UserID, Action: "auth_time_missing", TargetID: &c.ID, Outcome: "denied"}); e != nil {
+			return result, e
+		}
+	}
 	if err != nil {
 		return result, err
 	}

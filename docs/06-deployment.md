@@ -407,10 +407,13 @@ API/web: mixed versions и timeout rollback не являются успешно
    B, DM, заметки, global credentials/admin; local session сохраняется при step-up.
    Generic fixture evidence с Keycloak 26.4.7 — [отдельный RP run](plans/identity-v2-keycloak-evidence.md)
    на более раннем commit. Встроенные scopes `basic` + `profile` + `email` дают
-   требуемый `auth_time`. Запрос всегда несёт `max_age=3600` и `prompt=login`, поэтому
-   generic/AD FS без `auth_time` отклоняются; исключение — Entra v2 (там `auth_time` —
-   опциональный claim): без него временем входа считается `iat`, т.к. `prompt=login`
-   заставляет Entra провести интерактивный вход; присланный `auth_time` всегда главнее.
+   требуемый `auth_time`. `auth_time` обязателен для всех IdP, включая Entra: `max_age` и
+   `prompt=login` идут в URL, который браузер может изменить, поэтому свежесть входа
+   доказывает только подписанный `auth_time` (`iat` доказывает лишь живую сессию IdP).
+   Entra v2 выдаёт его только как optional claim — в app registration: Token configuration
+   → Add optional claim → ID → `auth_time`. Без него вход и тест connection отклоняются
+   (клиент видит 403 «identity access denied»), причина — запись audit
+   `auth_time_missing` (outcome `denied`) по этой connection.
    PKCE: если discovery перечисляет `code_challenge_methods_supported`, там обязан быть
    `S256`; AD FS обязан его перечислять; generic может не перечислять — S256 всё равно
    отправляется, а тест connection пишет в audit `connection_tested_pkce_unadvertised`.
