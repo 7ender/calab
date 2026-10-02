@@ -18,7 +18,6 @@ export const enBoards2: DictShape<typeof ruBoards2> = {
   'boards.cl.menu': 'Actions for checklist “{title}”',
   'boards.cl.itemMenu': 'Item actions',
   'boards.cl.rename': 'Rename',
-  'boards.cl.delete': 'Delete checklist',
   'boards.cl.deleteTitle': 'Delete the checklist “{title}”?',
   'boards.cl.deleteText': 'Its items are deleted with it.',
   'boards.cl.convert': 'Convert to subtask',

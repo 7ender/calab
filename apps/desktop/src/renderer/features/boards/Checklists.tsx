@@ -117,6 +117,7 @@ const ChecklistBlock = memo(function ChecklistBlock({ taskId, id, canEdit, subta
     const d = dragging;
     if (!d || d.taskId !== taskId) return;
     e.preventDefault();
+    dragging = null;
     void moveChecklistItem(taskId, d.itemId, id, c.items.filter((x) => x.id !== d.itemId).length);
   };
   return (
@@ -157,7 +158,7 @@ const ChecklistBlock = memo(function ChecklistBlock({ taskId, id, canEdit, subta
                 </Dropdown.Item>
                 <Dropdown.Separator className={menuSeparator} />
                 <Dropdown.Item className={cx(menuItem, 'text-danger-text')} onSelect={() => void remove()} data-testid="checklist-delete">
-                  <Trash2 className="size-4" aria-hidden /> {t('boards.cl.delete')}
+                  <Trash2 className="size-4" aria-hidden /> {t('common.delete')}
                 </Dropdown.Item>
               </Dropdown.Content>
             </Dropdown.Portal>
@@ -223,6 +224,7 @@ const ItemRow = memo(function ItemRow({ taskId, checklistId, itemId, canEdit, su
     if (!d || d.taskId !== taskId || !at) return;
     e.preventDefault();
     e.stopPropagation();
+    dragging = null;
     const items = checklistsOf(useBoards.getState(), taskId).find((c) => c.id === checklistId)?.items.filter((x) => x.id !== d.itemId) ?? [];
     const i = items.findIndex((x) => x.id === itemId);
     if (i >= 0) void moveChecklistItem(taskId, d.itemId, checklistId, at === 'before' ? i : i + 1);
@@ -352,13 +354,14 @@ function LineInput({ initial = '', placeholder, max, keepOpen = false, testId, o
   const done = useRef(false);
   const submit = (value: string | null): void => {
     if (done.current) return;
-    if (keepOpen && value) {
+    if (keepOpen && value?.trim()) {
       onSubmit(value.trim());
       setV('');
       return;
     }
     done.current = true;
-    onSubmit(value === null ? null : value.trim());
+    // An empty Enter (or Esc) in the keep-open field closes it: a finished field must not stay on screen.
+    onSubmit(keepOpen || value === null ? null : value.trim());
   };
   return (
     <input

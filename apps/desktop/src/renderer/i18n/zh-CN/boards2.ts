@@ -18,7 +18,6 @@ export const zhBoards2: DictShape<typeof ruBoards2> = {
   'boards.cl.menu': '清单“{title}”的操作',
   'boards.cl.itemMenu': '项目操作',
   'boards.cl.rename': '重命名',
-  'boards.cl.delete': '删除清单',
   'boards.cl.deleteTitle': '删除清单“{title}”？',
   'boards.cl.deleteText': '清单中的项目将一并删除。',
   'boards.cl.convert': '转为子任务',

@@ -18,7 +18,6 @@ export const esBoards2: DictShape<typeof ruBoards2> = {
   'boards.cl.menu': 'Acciones de la lista «{title}»',
   'boards.cl.itemMenu': 'Acciones del elemento',
   'boards.cl.rename': 'Renombrar',
-  'boards.cl.delete': 'Eliminar lista',
   'boards.cl.deleteTitle': '¿Eliminar la lista «{title}»?',
   'boards.cl.deleteText': 'Sus elementos se eliminan con ella.',
   'boards.cl.convert': 'Convertir en subtarea',

@@ -20,7 +20,6 @@ export const ruBoards2 = {
   'boards.cl.menu': 'Действия с чек-листом «{title}»',
   'boards.cl.itemMenu': 'Действия с пунктом',
   'boards.cl.rename': 'Переименовать',
-  'boards.cl.delete': 'Удалить чек-лист',
   'boards.cl.deleteTitle': 'Удалить чек-лист «{title}»?',
   'boards.cl.deleteText': 'Пункты чек-листа удалятся вместе с ним.',
   'boards.cl.convert': 'Сделать подзадачей',
