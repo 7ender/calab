@@ -23,7 +23,7 @@ import (
 func TestMain(m *testing.M) { os.Exit(dbtest.Run(m)) }
 
 // A session that may not read workspace B (e.g. password-only in an enforced workspace,
-// ADR-0054) gets no DM candidates, nickname matches or new DMs through B's membership.
+// ADR-0054) gets no DM candidates, nickname matches through B's membership.
 func TestCandidatesFollowIdentityPolicy(t *testing.T) {
 	d := dbtest.Connect(t)
 	ctx := context.Background()
@@ -101,15 +101,5 @@ func TestCandidatesFollowIdentityPolicy(t *testing.T) {
 	}
 	if got := request(nil, "zed"+tag); !has(got, carol) {
 		t.Fatal("nickname search broken without a gate")
-	}
-	gated := perm.WithAccessGuard(ctx, denyB)
-	if ok, err := h.shareReadableWorkspace(gated, me, bob); err != nil || ok {
-		t.Fatalf("new DM through an unreadable workspace: %v %v", ok, err)
-	}
-	if ok, err := h.shareReadableWorkspace(gated, me, carol); err != nil || !ok {
-		t.Fatalf("shared readable workspace refused: %v %v", ok, err)
-	}
-	if ok, err := h.shareReadableWorkspace(ctx, me, bob); err != nil || !ok {
-		t.Fatalf("ungated share: %v %v", ok, err)
 	}
 }

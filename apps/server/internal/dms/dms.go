@@ -173,7 +173,7 @@ func (h *Handlers) create(w http.ResponseWriter, r *http.Request) error {
 	case !db.IsNotFound(err):
 		return err
 	}
-	shared, err := h.shareReadableWorkspace(r.Context(), me, peerID)
+	shared, err := h.db.Q.ShareWorkspace(r.Context(), sqlc.ShareWorkspaceParams{UserID: me, OtherID: peerID})
 	if err != nil {
 		return err
 	}
@@ -342,6 +342,7 @@ func (h *Handlers) candidates(w http.ResponseWriter, r *http.Request) error {
 // identity policy (the request's access guard, ADR-0054): a password-only session does not
 // see an enforced workspace's members through DMs either. all: none is denied, so the plain
 // membership queries apply unchanged. A gate error counts as denied (fail closed).
+// Read-only requests only: the guard records each workspace into a mutation's admission.
 func readableWorkspaces(ctx context.Context, q *sqlc.Queries, me uuid.UUID) ([]uuid.UUID, bool, error) {
 	ids, err := q.ListUserWorkspaceIDs(ctx, me)
 	if err != nil {
@@ -394,35 +395,6 @@ func readableCandidates(ctx context.Context, q *sqlc.Queries, me uuid.UUID, read
 		}
 	}
 	return out, nil
-}
-
-// shareReadableWorkspace: both are full members (not the guest role) of a common workspace
-// this session may read (see readableWorkspaces).
-func (h *Handlers) shareReadableWorkspace(ctx context.Context, me, peer uuid.UUID) (bool, error) {
-	readable, all, err := readableWorkspaces(ctx, h.db.Q, me)
-	if err != nil {
-		return false, err
-	}
-	if all {
-		return h.db.Q.ShareWorkspace(ctx, sqlc.ShareWorkspaceParams{UserID: me, OtherID: peer})
-	}
-	for _, ws := range readable {
-		a, err := h.db.Q.GetMember(ctx, sqlc.GetMemberParams{WorkspaceID: ws, UserID: me})
-		if err != nil || a.Role == "guest" {
-			if err != nil && !db.IsNotFound(err) {
-				return false, err
-			}
-			continue
-		}
-		b, err := h.db.Q.GetMember(ctx, sqlc.GetMemberParams{WorkspaceID: ws, UserID: peer})
-		if err == nil && b.Role != "guest" {
-			return true, nil
-		}
-		if err != nil && !db.IsNotFound(err) {
-			return false, err
-		}
-	}
-	return false, nil
 }
 
 // ErrBotBlocked means the person blocked this bot (ADR-0031, POST /api/me/blocked-bots/{id}).
