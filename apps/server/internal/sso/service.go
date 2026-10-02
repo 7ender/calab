@@ -192,6 +192,10 @@ type completion struct {
 	Proof              Proof
 	IdentityID, UserID uuid.UUID
 	Versions           identitypolicy.Versions
+	// Link: the proof's subject is not linked yet. Only finish creates the identity, after the
+	// client that began the flow proved itself (native ticket + PKCE verifier, web flow
+	// cookie): whoever merely opened a start URL must not bind their subject to the initiator.
+	Link bool
 }
 
 // BeginResult includes the private browser cookie separately from the wire response.
@@ -596,11 +600,15 @@ func (s *Service) Callback(ctx context.Context, connection uuid.UUID, state, bro
 			done.Versions.Identity = linked.Version
 		} else {
 			identity, err := q.FindExternalIdentity(ctx, sqlc.FindExternalIdentityParams{WorkspaceID: t.WorkspaceID, ConnectionID: t.ConnectionID, Issuer: proof.Issuer, Subject: proof.Subject})
-			if db.IsNotFound(err) && t.Purpose == "link" {
-				identity, err = q.CreateExternalIdentity(ctx, sqlc.CreateExternalIdentityParams{WorkspaceID: t.WorkspaceID, ConnectionID: t.ConnectionID, UserID: *t.UserID, Issuer: proof.Issuer, Subject: proof.Subject, Status: "active"})
-				if err == nil {
-					err = Audit(ctx, q, t.WorkspaceID, t.UserID, "identity_linked", &identity.ID)
+			if db.IsNotFound(err) && t.Purpose == "link" && t.UserID != nil {
+				access, _, err := s.member(ctx, q, t.WorkspaceID, *t.UserID, true)
+				if err != nil {
+					return err
 				}
+				done.UserID = *t.UserID
+				done.Versions.Access = access
+				done.Link = true
+				return s.complete(ctx, q, t, done, &result)
 			}
 			if err != nil || identity.Status != "active" {
 				return classified(err, ErrNotLinked)
@@ -620,33 +628,38 @@ func (s *Service) Callback(ctx context.Context, connection uuid.UUID, state, bro
 			done.Versions.Access = access
 			done.Versions.Identity = identity.Version
 		}
-		encrypted, err := s.seal(t, "sso-completion", done)
+		return s.complete(ctx, q, t, done, &result)
+	})
+	return result, err
+}
+
+// complete seals the verified callback result for finish/exchange and mints the native ticket.
+func (s *Service) complete(ctx context.Context, q *sqlc.Queries, t sqlc.IdentityLoginTransaction, done completion, result *CallbackResult) error {
+	encrypted, err := s.seal(t, "sso-completion", done)
+	if err != nil {
+		return err
+	}
+	if _, err = q.CompleteIdentityLoginTransaction(ctx, sqlc.CompleteIdentityLoginTransactionParams{ID: t.ID, ResultBox: encrypted}); err != nil {
+		return err
+	}
+	*result = CallbackResult{FlowID: t.ID, Native: t.NativeChallenge != nil}
+	if result.Native {
+		ticket, err := identitycrypto.Secret()
 		if err != nil {
 			return err
 		}
-		if _, err = q.CompleteIdentityLoginTransaction(ctx, sqlc.CompleteIdentityLoginTransactionParams{ID: t.ID, ResultBox: encrypted}); err != nil {
+		databaseNow, err := q.IdentityDatabaseNow(ctx)
+		if err != nil {
 			return err
 		}
-		result = CallbackResult{FlowID: t.ID, Native: t.NativeChallenge != nil}
-		if result.Native {
-			ticket, err := identitycrypto.Secret()
-			if err != nil {
-				return err
-			}
-			databaseNow, err := q.IdentityDatabaseNow(ctx)
-			if err != nil {
-				return err
-			}
-			until := minTime(t.ExpiresAt, databaseNow.Add(time.Minute))
-			_, err = q.CreateIdentityNativeHandoff(ctx, sqlc.CreateIdentityNativeHandoffParams{TransactionID: t.ID, TicketHash: identitycrypto.Hash(ticket), Challenge: *t.NativeChallenge, ExpiresAt: until, ResultBox: encrypted})
-			if err != nil {
-				return err
-			}
-			result.Ticket = ticket
+		until := minTime(t.ExpiresAt, databaseNow.Add(time.Minute))
+		_, err = q.CreateIdentityNativeHandoff(ctx, sqlc.CreateIdentityNativeHandoffParams{TransactionID: t.ID, TicketHash: identitycrypto.Hash(ticket), Challenge: *t.NativeChallenge, ExpiresAt: until, ResultBox: encrypted})
+		if err != nil {
+			return err
 		}
-		return nil
-	})
-	return result, err
+		result.Ticket = ticket
+	}
+	return nil
 }
 
 // Finish and Exchange consume proof and all applicable policy epochs in the issuing transaction.
@@ -703,6 +716,26 @@ func (s *Service) finish(ctx context.Context, flow uuid.UUID, browser, ticket, v
 			}
 			out.Tested = true
 			return Audit(ctx, q, c.WorkspaceID, t.UserID, "connection_tested", &c.ID)
+		}
+		if done.Link {
+			// The initiating client has just proven itself: only now bind the subject.
+			if t.Purpose != "link" || t.UserID == nil || done.UserID != *t.UserID {
+				return ErrInvalid
+			}
+			linked, err := q.FindExternalIdentity(ctx, sqlc.FindExternalIdentityParams{WorkspaceID: t.WorkspaceID, ConnectionID: t.ConnectionID, Issuer: done.Proof.Issuer, Subject: done.Proof.Subject})
+			if db.IsNotFound(err) {
+				linked, err = q.CreateExternalIdentity(ctx, sqlc.CreateExternalIdentityParams{WorkspaceID: t.WorkspaceID, ConnectionID: t.ConnectionID, UserID: done.UserID, Issuer: done.Proof.Issuer, Subject: done.Proof.Subject, Status: "active"})
+				if err == nil {
+					err = Audit(ctx, q, t.WorkspaceID, t.UserID, "identity_linked", &linked.ID)
+				}
+			}
+			if err != nil || linked.Status != "active" {
+				return classified(err, ErrNotLinked)
+			}
+			if linked.UserID != done.UserID {
+				return denied(identitypolicy.ScopeDenied)
+			}
+			done.IdentityID, done.Versions.Identity = linked.ID, linked.Version
 		}
 		identity, err := q.GetExternalIdentity(ctx, sqlc.GetExternalIdentityParams{WorkspaceID: t.WorkspaceID, ID: done.IdentityID})
 		if err != nil || identity.Status != "active" || identity.Version != done.Versions.Identity || identity.UserID != done.UserID {
