@@ -79,6 +79,6 @@ export function stackInteraction(s: StackInteraction, e: StackInteractionEvent):
     // Hover is dropped (an unmounted element emits no pointerleave); a pointer still over the
     // stack re-arms it on its next move (onPointerMove). Focus is re-read from the live DOM.
     case 'items':
-      return s.hover === false && s.focus === e.focusInside ? s : { hover: false, focus: e.focusInside };
+      return !s.hover && s.focus === e.focusInside ? s : { hover: false, focus: e.focusInside };
   }
 }
