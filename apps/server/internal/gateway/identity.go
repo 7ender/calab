@@ -485,7 +485,7 @@ func (h *Hub) enforceIdentitySession(ctx context.Context, s *Session) {
 			access.Mode = v1.IdentityPolicyMode_IDENTITY_POLICY_MODE_OFF
 		}
 		snap.Workspace.IdentityAccess = access
-		h.fillLive(ctx, ws, snap)
+		h.fillLive(ctx, ws, s.user, snap)
 		h.joinWorkspace(s, ws)
 		h.ensureState(ctx, ws)
 		// The access status first: the client may hold a stale lock for this workspace

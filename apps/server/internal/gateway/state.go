@@ -28,10 +28,15 @@ type wsState struct {
 	roleDefs perm.Roles                          // role id -> position / permissions
 	roleIDs  map[uuid.UUID][]string              // member -> role ids
 	members  map[uuid.UUID]perm.Member           // derived from roleIDs + roleDefs
-	// viewers caches who can view each room, for guest visibility (review B2). Filled lazily
-	// and only under the write lock (the fan-out path); dropped per room by setRoom/delRoom
-	// and entirely by member and role changes.
-	viewers map[uuid.UUID]map[uuid.UUID]bool
+	// Guest visibility (perm.GuestVisible, ADR-0016 amended 2026-10-02): who is in which
+	// call (Redis at load, then VOICE_STATE_UPDATE), the message authors of rooms (Postgres
+	// for the rooms guests can view — authorsLoaded —, plus every MESSAGE_CREATE since load),
+	// and the visible set per guest, cached until any of its inputs changes (review B2: the
+	// fan-out path computes it once per change, not per event).
+	voiceRoom     map[uuid.UUID]uuid.UUID
+	authors       map[uuid.UUID]map[uuid.UUID]bool
+	authorsLoaded map[uuid.UUID]bool
+	guestVis      map[uuid.UUID]map[uuid.UUID]bool
 	// Task boards and task rooms (ADR-0042, boards.go).
 	boardState
 }
@@ -46,14 +51,14 @@ func (s *wsState) setMember(uid uuid.UUID, role perm.Role, ids []string) {
 	}
 	s.roleIDs[uid] = ids
 	s.members[uid] = s.roleDefs.Member(uid.String(), role, ids)
-	s.viewers = nil
+	s.guestVis = nil
 }
 
 func (s *wsState) delMember(uid uuid.UUID) {
 	if _, ok := s.members[uid]; ok {
 		delete(s.members, uid)
 		delete(s.roleIDs, uid)
-		s.viewers = nil
+		s.guestVis = nil
 	}
 }
 
@@ -84,25 +89,7 @@ func (s *wsState) rebuild() {
 	for u, m := range s.members {
 		s.members[u] = s.roleDefs.Member(m.UserID, m.Role, s.roleIDs[u])
 	}
-	s.viewers = nil
-}
-
-// roomViewers returns the members who can view room id (mu held for write).
-func (s *wsState) roomViewers(id uuid.UUID) map[uuid.UUID]bool {
-	if v, ok := s.viewers[id]; ok {
-		return v
-	}
-	v := map[uuid.UUID]bool{}
-	for u := range s.members {
-		if s.bits(id, u).Has(perm.ViewRoom) {
-			v[u] = true
-		}
-	}
-	if s.viewers == nil {
-		s.viewers = map[uuid.UUID]map[uuid.UUID]bool{}
-	}
-	s.viewers[id] = v
-	return v
+	s.guestVis = nil
 }
 
 // setRoom stores a room and its parsed overrides (mu held).
@@ -112,37 +99,111 @@ func (s *wsState) setRoom(id uuid.UUID, r *v1.Room) {
 	}
 	s.rooms[id] = r
 	s.targets[id] = pbconv.ProtoOverrideTargets(r.GetPermissionOverrides())
-	delete(s.viewers, id)
+	s.guestVis = nil
 }
 
 func (s *wsState) delRoom(id uuid.UUID) {
 	delete(s.rooms, id)
 	delete(s.targets, id)
-	delete(s.viewers, id)
+	delete(s.authors, id)
+	delete(s.authorsLoaded, id)
+	s.guestVis = nil
 }
 
-// coRoom reports whether a and b can both view at least one common room (mu held for
-// write): what a guest may see of another member (ADR-0016, security review M7).
-func (s *wsState) coRoom(a, b uuid.UUID) bool {
-	for id := range s.rooms {
-		if v := s.roomViewers(id); v[a] && v[b] {
-			return true
+// guestRooms returns the rooms in perm.GuestVisible form (mu held).
+func (s *wsState) guestRooms() []perm.GuestRoom {
+	out := make([]perm.GuestRoom, 0, len(s.rooms))
+	for id, r := range s.rooms {
+		gr := perm.GuestRoom{ID: id, Restricted: r.GetRestricted(), Overrides: s.targets[id]}
+		if c, err := uuid.Parse(r.GetCreatedBy()); err == nil {
+			gr.CreatedBy = c
 		}
+		out = append(out, gr)
 	}
-	return false
+	return out
 }
 
-// guestVisible returns the members a guest may see (mu held for write).
+// guestVisible returns the members a guest may see (perm.GuestVisible; mu held for write).
+// The result is cached: callers must not modify it.
 func (s *wsState) guestVisible(guest uuid.UUID) map[uuid.UUID]bool {
-	out := map[uuid.UUID]bool{guest: true}
-	for id := range s.rooms {
-		if v := s.roomViewers(id); v[guest] {
-			for u := range v {
-				out[u] = true
-			}
+	if v, ok := s.guestVis[guest]; ok {
+		return v
+	}
+	v := perm.GuestVisible(guest, s.members, s.guestRooms(), s.voiceRoom, s.authors)
+	if s.guestVis == nil {
+		s.guestVis = map[uuid.UUID]map[uuid.UUID]bool{}
+	}
+	s.guestVis[guest] = v
+	return v
+}
+
+// unloadedGuestRooms returns the rooms guest can view whose authors are not loaded (mu held).
+func (s *wsState) unloadedGuestRooms(guest uuid.UUID) []uuid.UUID {
+	m, ok := s.members[guest]
+	if !ok {
+		return nil
+	}
+	var out []uuid.UUID
+	for _, id := range perm.GuestRoomIDs(m, s.guestRooms()) {
+		if !s.authorsLoaded[id] {
+			out = append(out, id)
 		}
 	}
 	return out
+}
+
+// setVoice records the voice room of a user (uuid.Nil: not in voice) and reports whether it
+// changed (mu held).
+func (s *wsState) setVoice(user, room uuid.UUID) bool {
+	if s.voiceRoom[user] == room {
+		return false
+	}
+	if room == uuid.Nil {
+		delete(s.voiceRoom, user)
+	} else {
+		if s.voiceRoom == nil {
+			s.voiceRoom = map[uuid.UUID]uuid.UUID{}
+		}
+		s.voiceRoom[user] = room
+	}
+	s.guestVis = nil
+	return true
+}
+
+// isAuthor reports whether user is a known author of room (mu held).
+func (s *wsState) isAuthor(room, user uuid.UUID) bool { return s.authors[room][user] }
+
+// addAuthor records a message author of a room (mu held).
+func (s *wsState) addAuthor(room, user uuid.UUID) {
+	if s.authors[room][user] {
+		return
+	}
+	if s.authors == nil {
+		s.authors = map[uuid.UUID]map[uuid.UUID]bool{}
+	}
+	if s.authors[room] == nil {
+		s.authors[room] = map[uuid.UUID]bool{}
+	}
+	s.authors[room][user] = true
+	s.guestVis = nil
+}
+
+// loadedAuthors merges the authors read from Postgres for rooms (mu held).
+func (s *wsState) loadedAuthors(rooms []uuid.UUID, rows []sqlc.ListRoomAuthorsRow) {
+	if s.authorsLoaded == nil {
+		s.authorsLoaded = map[uuid.UUID]bool{}
+	}
+	for _, id := range rooms {
+		if s.rooms[id] != nil {
+			s.authorsLoaded[id] = true
+		}
+	}
+	for _, a := range rows {
+		if s.rooms[a.RoomID] != nil {
+			s.addAuthor(a.RoomID, a.AuthorID)
+		}
+	}
+	s.guestVis = nil
 }
 
 // sameVisibility reports whether replacing room id with r cannot change who sees what:
@@ -161,12 +222,12 @@ func (s *wsState) sameVisibility(id uuid.UUID, r *v1.Room) bool {
 }
 
 // hiddenFrom reports whether events about subject must not reach viewer: only guests are
-// restricted, to members who share a room with them (mu held for write).
+// restricted, to the people of their rooms (guestVisible; mu held for write).
 func (s *wsState) hiddenFrom(viewer, subject uuid.UUID) bool {
 	if viewer == subject || s.role(viewer) != perm.RoleGuest {
 		return false
 	}
-	return !s.coRoom(viewer, subject)
+	return !s.guestVisible(viewer)[subject]
 }
 
 func loadState(ctx context.Context, q *sqlc.Queries, wid uuid.UUID) (*wsState, error) {
@@ -204,6 +265,26 @@ func loadState(ctx context.Context, q *sqlc.Queries, wid uuid.UUID) (*wsState, e
 	}
 	if err := loadBoards(ctx, q, wid, st); err != nil {
 		return nil, err
+	}
+	// Message authors of the rooms guests can view (usually a few temporary rooms).
+	guestRooms := map[uuid.UUID]bool{}
+	for u, m := range st.members {
+		if m.Role == perm.RoleGuest {
+			for _, id := range st.unloadedGuestRooms(u) {
+				guestRooms[id] = true
+			}
+		}
+	}
+	if len(guestRooms) > 0 {
+		ids := make([]uuid.UUID, 0, len(guestRooms))
+		for id := range guestRooms {
+			ids = append(ids, id)
+		}
+		rows, err := q.ListRoomAuthors(ctx, ids)
+		if err != nil {
+			return nil, err
+		}
+		st.loadedAuthors(ids, rows)
 	}
 	return st, nil
 }

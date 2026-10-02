@@ -424,7 +424,7 @@ func (h *Hub) buildReady(ctx context.Context, s *Session, uid uuid.UUID) (*v1.Re
 		if access != nil {
 			snap.Workspace.IdentityAccess = access
 		}
-		h.fillLive(ctx, w.ID, snap)
+		h.fillLive(ctx, w.ID, uid, snap)
 		if u.IsBot {
 			snap.Apps = nil // web apps are for people (ADR-0050)
 		}

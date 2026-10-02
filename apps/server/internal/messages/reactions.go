@@ -103,34 +103,34 @@ func (h *Handlers) reaction(r *http.Request) (sqlc.Message, perm.RoomAccess, str
 // visibleReaction resolves {id}/{emoji} for reading the reactor list. The message must be in
 // the caller's visible history — the rules of `get` (VIEW_ROOM incl. an archived temporary
 // room, not before the cleared slice of a DM) — so 404 hides it the same way.
-func (h *Handlers) visibleReaction(r *http.Request) (sqlc.Message, string, error) {
+func (h *Handlers) visibleReaction(r *http.Request) (sqlc.Message, perm.RoomAccess, string, error) {
 	id, err := httpx.PathUUID(r, "id", "message")
 	if err != nil {
-		return sqlc.Message{}, "", err
+		return sqlc.Message{}, perm.RoomAccess{}, "", err
 	}
 	m, err := h.db.Q.GetMessage(r.Context(), id)
 	if db.IsNotFound(err) {
-		return m, "", httpx.NotFound("message")
+		return m, perm.RoomAccess{}, "", httpx.NotFound("message")
 	}
 	if err != nil {
-		return m, "", err
+		return m, perm.RoomAccess{}, "", err
 	}
 	acc, err := rooms.ReadAccess(r, m.RoomID)
 	if err != nil {
-		return m, "", httpx.NotFound("message")
+		return m, perm.RoomAccess{}, "", httpx.NotFound("message")
 	}
 	since, err := h.clearedBefore(r, acc, m.RoomID)
 	if err != nil {
-		return m, "", err
+		return m, perm.RoomAccess{}, "", err
 	}
 	if since != nil && bytes.Compare(m.ID[:], since[:]) <= 0 {
-		return m, "", httpx.NotFound("message")
+		return m, perm.RoomAccess{}, "", httpx.NotFound("message")
 	}
 	emoji := r.PathValue("emoji")
 	if !ValidEmoji(emoji) {
-		return m, "", httpx.Validation("emoji", "not an emoji")
+		return m, perm.RoomAccess{}, "", httpx.Validation("emoji", "not an emoji")
 	}
-	return m, emoji, nil
+	return m, acc, emoji, nil
 }
 
 // DefaultReactorPage is the page size of GET …/reactions/{emoji} without a limit (a tooltip
@@ -141,9 +141,16 @@ const DefaultReactorPage = 25
 // who reacted with an emoji. Pages are ordered by user id, `after` is the last id of the
 // previous page; limit 1..100, default 25.
 func (h *Handlers) listReactionUsers(w http.ResponseWriter, r *http.Request) error {
-	m, emoji, err := h.visibleReaction(r)
+	m, acc, emoji, err := h.visibleReaction(r)
 	if err != nil {
 		return err
+	}
+	// A guest sees only the people of its rooms (perm.GuestVisible): other reactors are left out.
+	var allowed map[uuid.UUID]bool
+	if acc.Role == perm.RoleGuest {
+		if allowed, err = rooms.GuestVisibleUsers(r.Context(), h.db.Q, nil, acc.WorkspaceID, uid(r)); err != nil {
+			return err
+		}
 	}
 	q := r.URL.Query()
 	lim := int32(DefaultReactorPage)
@@ -170,9 +177,11 @@ func (h *Handlers) listReactionUsers(w http.ResponseWriter, r *http.Request) err
 	if more {
 		rows = rows[:lim]
 	}
-	users := make([]*v1.User, len(rows))
-	for i, row := range rows {
-		users[i] = pbconv.User(row.User)
+	users := make([]*v1.User, 0, len(rows))
+	for _, row := range rows {
+		if allowed == nil || allowed[row.User.ID] {
+			users = append(users, pbconv.User(row.User))
+		}
 	}
 	httpx.Write(w, http.StatusOK, &v1.ListReactionUsersResponse{Users: users, HasMore: more})
 	return nil

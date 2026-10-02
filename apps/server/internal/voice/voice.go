@@ -225,6 +225,24 @@ func (s Store) SetServerMuted(ctx context.Context, wid, userID uuid.UUID, on boo
 	return c, err
 }
 
+// Rooms returns who is in a call of the workspace and where (user -> room), pending
+// devices included: the people a guest of that room sees (perm.GuestVisible).
+func (s Store) Rooms(ctx context.Context, wid uuid.UUID) (map[uuid.UUID]uuid.UUID, error) {
+	all, err := s.List(ctx, wid)
+	if err != nil {
+		return nil, err
+	}
+	out := make(map[uuid.UUID]uuid.UUID, len(all))
+	for _, vs := range AggregateAll(wid, all) {
+		u, uerr := uuid.Parse(vs.GetUserId())
+		r, rerr := uuid.Parse(vs.GetRoomId())
+		if uerr == nil && rerr == nil {
+			out[u] = r
+		}
+	}
+	return out, nil
+}
+
 // States returns every user's aggregated voice state in the workspace (READY snapshots).
 func (s Store) States(ctx context.Context, wid uuid.UUID) ([]*v1.VoiceState, error) {
 	all, err := s.List(ctx, wid)
