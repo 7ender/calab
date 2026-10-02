@@ -19,11 +19,15 @@ const ROW_IDS = Object.keys({
   stickers: 0,
   boards: 0,
   calendar: 0,
-  musician: 0,
   caldav: 0,
+  musician: 0,
+  checklists: 0,
+  approvals: 0,
+  webapps: 0,
+  sip: 0,
+  webhook: 0,
   sso: 0,
-  directory: 0,
-  oauth: 0,
+  whitelabel: 0,
   onprem: 0,
   support: 0,
   price: 0,
@@ -83,7 +87,7 @@ function Cell({ value, t }: { value: string; t: Dict['pricing']['table'] }) {
 
 /**
  * Plans (README «Тарифы», ADR-0024; Free · Team · Business · Enterprise = own server): four plan cards (Free is where to start) and one comparison
- * table from md up; on phones the table would need a sideways scroll, so each card carries its own
+ * table from md up, expanded by default; on phones the table would need a sideways scroll, so each card carries its own
  * values in a native <details> instead (no JS).
  */
 export function Pricing({ t }: { t: Dict['pricing'] }) {
@@ -93,10 +97,6 @@ export function Pricing({ t }: { t: Dict['pricing'] }) {
       <div className="sticker-section-heading">
       <SectionHeading id="pricing-title" eyebrow={t.eyebrow} title={t.title} lead={t.lead} />
         <img className="section-sticker" src="/editorial/sticker-pricing.webp" width={180} height={180} alt="" loading="lazy" />
-      </div>
-      <div className="mt-10 max-w-[860px] border-l-4 border-accent pl-6">
-        <h3 className="text-[20px] leading-7 font-semibold">{t.identity.title}</h3>
-        <p className="mt-3 text-[16px] leading-6 text-pretty text-fg-2">{t.identity.text}</p>
       </div>
       <ul className="mt-12 grid gap-4 sm:mt-16 md:grid-cols-2 lg:grid-cols-4">
         {PLAN_IDS.map((id, col) => {
@@ -140,9 +140,7 @@ export function Pricing({ t }: { t: Dict['pricing'] }) {
           );
         })}
       </ul>
-      <details className="mt-10 hidden md:block pricing-comparison">
-        <summary className="inline-flex cursor-pointer items-center gap-3 rounded-full bg-white px-6 py-3 font-semibold text-black">{tb.caption}<ChevronDown size={18} aria-hidden /></summary>
-      <div className="mt-6 overflow-hidden rounded-[24px]">
+      <div className="mt-10 hidden overflow-hidden rounded-[24px] md:block">
         <table className="w-full table-fixed border-collapse text-[15px] leading-6">
           <caption className="sr-only">{tb.caption}</caption>
           <colgroup>
@@ -177,7 +175,6 @@ export function Pricing({ t }: { t: Dict['pricing'] }) {
           </tbody>
         </table>
       </div>
-      </details>
       <p className="mt-10 max-w-[860px] border-l-4 border-accent pl-6 text-[14px] leading-5 text-pretty text-fg-2">
         {t.license}{' '}
         <a href={repoFile('LICENSE')} className="link">
