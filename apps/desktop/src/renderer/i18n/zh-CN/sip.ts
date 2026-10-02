@@ -105,4 +105,7 @@ export const zhSip = {
   'sip.journal.live': '进行中',
   'sip.journal.loadFailed': '无法加载通话记录',
   'roles.group.telephony': '电话',
+  'admin.limit.telephony': '电话 (SIP)',
+  'admin.limit.telephonyHint': '关闭后已保存的中继仍可查看，但无法拨打电话',
+  'plan.telephonyLocked': '电话功能适用于 Business 套餐',
 };

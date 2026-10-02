@@ -228,6 +228,22 @@ describe('ADR-0058 §5: checklists and board webhooks by plan', () => {
   });
 });
 
+describe('ADR-0046 (owner 02.10): telephony is Business only', () => {
+  it('planHas, the 409 text and a new CUSTOM form without telephony', () => {
+    const plan = (l: MessageInitShape<typeof PlanLimitsSchema>) => create(WorkspacePlanSchema, { plan: Plan.TEAM, limits: l });
+    expect(planHas(plan({ telephonyDisabled: true }), 'telephony')).toBe(false);
+    expect(planHas(plan({}), 'telephony')).toBe(true);
+    expect(planHas(undefined, 'telephony')).toBe(true);
+    const err = new ApiError('ERROR_CODE_CONFLICT', 'telephony is not included in the plan', 409, undefined, { reason: 'PLAN_LIMIT', used: 0, limit: 0 });
+    expect(planErrorNotice(err, Plan.TEAM)?.text).toBe(t('plan.telephonyLocked'));
+    const fresh = limitsFormFrom(Plan.TEAM, undefined);
+    expect(fresh.telephonyDisabled).toBe(true);
+    expect(limitsFormFrom(Plan.CUSTOM, create(PlanLimitsSchema, { telephonyDisabled: false })).telephonyDisabled).toBe(false);
+    const body = setPlanBody({ plan: Plan.CUSTOM, limits: fresh, validUntil: '', note: '' });
+    expect('body' in body && body.body.limits?.telephonyDisabled).toBe(true);
+  });
+});
+
 describe('planUsage', () => {
   it('fullest room, most streams in one room, members without guests', () => {
     const voice = [

@@ -42,6 +42,9 @@ type Limits struct {
 	// them a configured webhook stays but delivery pauses. The same kind of flag.
 	ChecklistsDisabled    bool
 	BoardWebhooksDisabled bool
+	// TelephonyDisabled: telephony SIP (ADR-0046) is Business only (owner, 02.10); without it a
+	// saved trunk stays readable but cannot be enabled, tested or called through.
+	TelephonyDisabled bool
 }
 
 // Built-in defaults; PLAN_FREE_LIMITS / PLAN_TEAM_LIMITS / PLAN_BUSINESS_LIMITS override them key by key.
@@ -49,17 +52,18 @@ var (
 	// DefaultFree (owner, 28.09): 5 in a room, 50 members, voice up to «Нормальное» (16 kbps),
 	// video up to 720p / 15 fps, one stream per room, 5 GiB of files, one sticker pack with 200
 	// stickers, one bot, no CalDAV (owner, 30.09), no musician mode (owner, 01.10, ADR-0052), no
-	// checklists and no board webhooks (owner, 02.10, ADR-0058 §5).
+	// checklists and no board webhooks (owner, 02.10, ADR-0058 §5), no telephony (owner, 02.10, ADR-0046).
 	DefaultFree = Limits{
 		RoomMembers: 5, Members: 50, AudioMaxKbps: 16,
 		StreamMaxPreset: v1.ScreenSharePreset_SCREEN_SHARE_PRESET_H720, StreamMaxFPS: 15,
 		CameraMaxPreset: v1.ScreenSharePreset_SCREEN_SHARE_PRESET_H720, CameraMaxFPS: 15,
 		StreamsPerRoom: 1, CamerasPerRoom: 3, StorageMB: 5 << 10, StickerPacks: 1, Stickers: 200, Bots: 1, Boards: 3, CalDAVDisabled: true,
-		MusicianDisabled: true, ChecklistsDisabled: true, BoardWebhooksDisabled: true,
+		MusicianDisabled: true, ChecklistsDisabled: true, BoardWebhooksDisabled: true, TelephonyDisabled: true,
 	}
 	// DefaultTeam (owner, 30.09): 15 in a room, 100 workspace members, 300 GiB of files, 5 bots, 30 boards;
-	// voice and video not limited by the plan; no board webhooks (ADR-0058 §5).
-	DefaultTeam = Limits{RoomMembers: 15, Members: 100, Bots: 5, Boards: 30, StorageMB: 300 << 10, StreamsPerRoom: 2, CamerasPerRoom: 10, BoardWebhooksDisabled: true}
+	// voice and video not limited by the plan; no board webhooks (ADR-0058 §5), no telephony (ADR-0046).
+	DefaultTeam = Limits{RoomMembers: 15, Members: 100, Bots: 5, Boards: 30, StorageMB: 300 << 10, StreamsPerRoom: 2, CamerasPerRoom: 10,
+		BoardWebhooksDisabled: true, TelephonyDisabled: true}
 	// DefaultBusiness (owner, 30.09) is the cloud tier stored as PLAN_ENTERPRISE: 50 in a room,
 	// 500 members, 20 bots, 50 boards (the hard cap), 5 streams and 25 cameras per room, 1 TiB of files; voice and video quality unlimited.
 	DefaultBusiness = Limits{RoomMembers: 50, Members: 500, Bots: 20, Boards: 50, StorageMB: 1 << 20, StreamsPerRoom: 5, CamerasPerRoom: 25}
@@ -67,8 +71,9 @@ var (
 
 // CustomBase is what a stored PLAN_CUSTOM row means for a key it lacks (rows written before the
 // key existed): no limit, except flags that are off unless granted (ADR-0058 §5: board webhooks
-// are Business only, so an older Custom row does not gain them silently; checklists default on).
-var CustomBase = Limits{BoardWebhooksDisabled: true}
+// and ADR-0046: telephony are Business only, so an older Custom row does not gain them silently;
+// checklists default on).
+var CustomBase = Limits{BoardWebhooksDisabled: true, TelephonyDisabled: true}
 
 // Upper bounds of every limit (validation of env and admin input).
 const (
@@ -126,6 +131,7 @@ type limitsJSON struct {
 	MusicianDisabled *bool   `json:"musician_disabled,omitempty"`
 	Checklists       *bool   `json:"checklists_disabled,omitempty"`
 	BoardWebhooks    *bool   `json:"board_webhooks_disabled,omitempty"`
+	Telephony        *bool   `json:"telephony_disabled,omitempty"`
 }
 
 // ParseLimits applies a JSON object over base: keys present replace the base value, absent
@@ -176,6 +182,9 @@ func ParseLimits(raw string, base Limits) (Limits, error) {
 	if j.BoardWebhooks != nil {
 		l.BoardWebhooksDisabled = *j.BoardWebhooks
 	}
+	if j.Telephony != nil {
+		l.TelephonyDisabled = *j.Telephony
+	}
 	for _, p := range []struct {
 		dst  *v1.ScreenSharePreset
 		v    *string
@@ -206,7 +215,7 @@ func (l Limits) MarshalJSON() ([]byte, error) {
 		CameraMaxPreset: &cp, CameraMaxFPS: &l.CameraMaxFPS, StreamsPerRoom: &l.StreamsPerRoom, CamerasPerRoom: &l.CamerasPerRoom,
 		StorageMB: &l.StorageMB, Members: &l.Members, StickerPacks: &l.StickerPacks, Stickers: &l.Stickers, Bots: &l.Bots,
 		AudioMaxKbps: &l.AudioMaxKbps, Boards: &l.Boards, CalDAVDisabled: &l.CalDAVDisabled, MusicianDisabled: &l.MusicianDisabled,
-		Checklists: &l.ChecklistsDisabled, BoardWebhooks: &l.BoardWebhooksDisabled,
+		Checklists: &l.ChecklistsDisabled, BoardWebhooks: &l.BoardWebhooksDisabled, Telephony: &l.TelephonyDisabled,
 	})
 	return bytes.TrimSpace(buf.Bytes()), err
 }
@@ -248,7 +257,7 @@ func (l Limits) Proto() *v1.PlanLimits {
 		CameraMaxPreset: l.CameraMaxPreset, CameraMaxFps: l.CameraMaxFPS, StreamsPerRoom: l.StreamsPerRoom, CamerasPerRoom: l.CamerasPerRoom,
 		StorageMb: l.StorageMB, Members: l.Members, StickerPacks: l.StickerPacks, Stickers: l.Stickers, Bots: l.Bots,
 		AudioTierMaxKbps: l.AudioMaxKbps, Boards: l.Boards, CaldavDisabled: l.CalDAVDisabled, MusicianDisabled: l.MusicianDisabled,
-		ChecklistsDisabled: l.ChecklistsDisabled, BoardWebhooksDisabled: l.BoardWebhooksDisabled,
+		ChecklistsDisabled: l.ChecklistsDisabled, BoardWebhooksDisabled: l.BoardWebhooksDisabled, TelephonyDisabled: l.TelephonyDisabled,
 	}
 }
 
@@ -259,7 +268,7 @@ func FromProto(p *v1.PlanLimits) Limits {
 		CameraMaxPreset: p.GetCameraMaxPreset(), CameraMaxFPS: p.GetCameraMaxFps(), StreamsPerRoom: p.GetStreamsPerRoom(), CamerasPerRoom: p.GetCamerasPerRoom(),
 		StorageMB: p.GetStorageMb(), Members: p.GetMembers(), StickerPacks: p.GetStickerPacks(), Stickers: p.GetStickers(), Bots: p.GetBots(),
 		AudioMaxKbps: p.GetAudioTierMaxKbps(), Boards: p.GetBoards(), CalDAVDisabled: p.GetCaldavDisabled(), MusicianDisabled: p.GetMusicianDisabled(),
-		ChecklistsDisabled: p.GetChecklistsDisabled(), BoardWebhooksDisabled: p.GetBoardWebhooksDisabled(),
+		ChecklistsDisabled: p.GetChecklistsDisabled(), BoardWebhooksDisabled: p.GetBoardWebhooksDisabled(), TelephonyDisabled: p.GetTelephonyDisabled(),
 	}
 }
 

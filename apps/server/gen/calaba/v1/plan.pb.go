@@ -98,6 +98,7 @@ type PlanLimits struct {
 	MusicianDisabled      bool                   `protobuf:"varint,28,opt,name=musician_disabled,json=musicianDisabled,proto3" json:"musician_disabled,omitempty"`                                // musician mode (ADR-0052) is not part of the plan (Free): VoiceState.musician refused
 	ChecklistsDisabled    bool                   `protobuf:"varint,29,opt,name=checklists_disabled,json=checklistsDisabled,proto3" json:"checklists_disabled,omitempty"`                          // task checklists (ADR-0058 §5) are Team and above: writes refused, reading stays
 	BoardWebhooksDisabled bool                   `protobuf:"varint,30,opt,name=board_webhooks_disabled,json=boardWebhooksDisabled,proto3" json:"board_webhooks_disabled,omitempty"`               // board webhooks (ADR-0058 §5) are Business only: setup refused, delivery paused
+	TelephonyDisabled     bool                   `protobuf:"varint,31,opt,name=telephony_disabled,json=telephonyDisabled,proto3" json:"telephony_disabled,omitempty"`                             // telephony SIP (ADR-0046) is Business only: trunk setup, test and calls refused, settings readable
 	unknownFields         protoimpl.UnknownFields
 	sizeCache             protoimpl.SizeCache
 }
@@ -258,6 +259,13 @@ func (x *PlanLimits) GetBoardWebhooksDisabled() bool {
 	return false
 }
 
+func (x *PlanLimits) GetTelephonyDisabled() bool {
+	if x != nil {
+		return x.TelephonyDisabled
+	}
+	return false
+}
+
 // The plan of a workspace as members see it (Workspace.plan).
 type WorkspacePlan struct {
 	state                protoimpl.MessageState         `protogen:"open.v1"`
@@ -339,7 +347,7 @@ var File_calaba_v1_plan_proto protoreflect.FileDescriptor
 
 const file_calaba_v1_plan_proto_rawDesc = "" +
 	"\n" +
-	"\x14calaba/v1/plan.proto\x12\tcalaba.v1\x1a\x1fgoogle/protobuf/timestamp.proto\x1a\x15calaba/v1/media.proto\x1a\x18calaba/v1/identity.proto\"\x89\x06\n" +
+	"\x14calaba/v1/plan.proto\x12\tcalaba.v1\x1a\x1fgoogle/protobuf/timestamp.proto\x1a\x15calaba/v1/media.proto\x1a\x18calaba/v1/identity.proto\"\xb8\x06\n" +
 	"\n" +
 	"PlanLimits\x12!\n" +
 	"\froom_members\x18\x01 \x01(\rR\vroomMembers\x12H\n" +
@@ -361,7 +369,8 @@ const file_calaba_v1_plan_proto_rawDesc = "" +
 	"\x0fcaldav_disabled\x18\x17 \x01(\bR\x0ecaldavDisabled\x12+\n" +
 	"\x11musician_disabled\x18\x1c \x01(\bR\x10musicianDisabled\x12/\n" +
 	"\x13checklists_disabled\x18\x1d \x01(\bR\x12checklistsDisabled\x126\n" +
-	"\x17board_webhooks_disabled\x18\x1e \x01(\bR\x15boardWebhooksDisabledJ\x04\b\x18\x10\x19J\x04\b\x19\x10\x1aJ\x04\b\x1a\x10\x1b\"\x99\x02\n" +
+	"\x17board_webhooks_disabled\x18\x1e \x01(\bR\x15boardWebhooksDisabled\x12-\n" +
+	"\x12telephony_disabled\x18\x1f \x01(\bR\x11telephonyDisabledJ\x04\b\x18\x10\x19J\x04\b\x19\x10\x1aJ\x04\b\x1a\x10\x1b\"\x99\x02\n" +
 	"\rWorkspacePlan\x12#\n" +
 	"\x04plan\x18\x01 \x01(\x0e2\x0f.calaba.v1.PlanR\x04plan\x12-\n" +
 	"\x06limits\x18\x02 \x01(\v2\x15.calaba.v1.PlanLimitsR\x06limits\x12;\n" +

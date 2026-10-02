@@ -131,6 +131,23 @@ func (s *Service) Routes(mux httpx.Router, wrap func(http.Handler) http.Handler)
 
 func uid(r *http.Request) uuid.UUID { return auth.MustFromContext(r.Context()).UserID }
 
+// planAllows refuses telephony outside its plans (Business and on-prem; owner, 02.10, ADR-0046):
+// 409 PLAN_LIMIT. Reading the settings and the journal, turning telephony off and hanging up stay
+// open, so a downgraded workspace keeps its trunk visible and live calls are not cut.
+func (s *Service) planAllows(ctx context.Context, wsID uuid.UUID) error {
+	if s.plans == nil {
+		return nil
+	}
+	l, err := s.plans.Effective(ctx, wsID)
+	if err != nil {
+		return err
+	}
+	if l.TelephonyDisabled {
+		return plans.FeatureError("telephony")
+	}
+	return nil
+}
+
 // manage resolves the workspace of the path for a MANAGE_INTEGRATIONS member (ADR-0048; 404 for
 // non-members): telephony settings and the connection test.
 func manage(r *http.Request) (uuid.UUID, error) {
@@ -338,6 +355,11 @@ func (s *Service) putSettings(w http.ResponseWriter, r *http.Request) error {
 	in, err := s.validate(r.Context(), &req)
 	if err != nil {
 		return err
+	}
+	if in.enabled {
+		if err := s.planAllows(r.Context(), wsID); err != nil {
+			return err
+		}
 	}
 	if in.enabled && s.sip == nil {
 		return httpx.Coded(http.StatusConflict, v1.ErrorCode_ERROR_CODE_SIP_DISABLED, "LiveKit is not configured on this server")

@@ -105,4 +105,7 @@ export const enSip = {
   'sip.journal.live': 'Ongoing',
   'sip.journal.loadFailed': 'Couldn’t load the call log',
   'roles.group.telephony': 'Telephony',
+  'admin.limit.telephony': 'Telephony (SIP)',
+  'admin.limit.telephonyHint': 'Off: a saved trunk stays visible, calls are unavailable',
+  'plan.telephonyLocked': 'Telephony is available on Business',
 };

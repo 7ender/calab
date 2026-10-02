@@ -5,6 +5,7 @@ import { memo, useEffect, useId, useState, type ReactNode } from 'react';
 import { Button, IconButton, Input, Tip, cx } from '../../components/ui';
 import { t } from '../../i18n';
 import { can, roomPerms } from '../../lib/permissions';
+import { planHas } from '../../lib/plan';
 import { formatPhone, isLiveStatus, maskEdit, mayDial, mayHangUp, reasonKey, statusKey, type LiveSipCall } from '../../lib/sip';
 import { hangUpSipCall, placeSipCall } from '../../services/sip';
 import { useRooms } from '../../stores/rooms';
@@ -21,6 +22,15 @@ import { formatDuration, useNow } from '../shell/voiceFormat';
  * per room and return primitives or the store's own call object; the talk timer is a leaf with
  * its own 1 s clock, mounted only while the line is ACTIVE.
  */
+
+/**
+ * Telephony is part of the workspace's plan (Business only, owner 02.10, ADR-0046). A primitive
+ * selector. Without it the header button is hidden and the room menu's item shows a lock: only a
+ * workspace downgraded with telephony still on gets there (below Business it can't be switched on).
+ */
+export function useTelephonyOnPlan(workspaceId: string): boolean {
+  return useWorkspaces((s) => planHas(s.byId[workspaceId]?.ws.plan, 'telephony'));
+}
 
 /**
  * «Позвонить на номер» is offered here (lib/sip mayDial; the server checks the same). `anyCall`:
@@ -49,7 +59,8 @@ export function useCanDial(workspaceId: string, roomId: string, anyCall = false)
  * header's 32 px icon, or a full-width button in the phone's members drawer.
  */
 export function SipDialButton({ workspaceId, roomId, variant }: { workspaceId: string; roomId: string; variant: 'header' | 'sheet' }): ReactNode {
-  const allowed = useCanDial(workspaceId, roomId);
+  const onPlan = useTelephonyOnPlan(workspaceId);
+  const allowed = useCanDial(workspaceId, roomId) && onPlan;
   const [open, setOpen] = useState(false);
   // «Позвонить на номер» from the room menu (stores/sipDial): open once the gate passes (the
   // join it started has connected); a primitive selector, the store never ticks.

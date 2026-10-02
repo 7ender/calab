@@ -105,4 +105,7 @@ export const esSip = {
   'sip.journal.live': 'En curso',
   'sip.journal.loadFailed': 'No se pudo cargar el registro',
   'roles.group.telephony': 'Telefonía',
+  'admin.limit.telephony': 'Telefonía (SIP)',
+  'admin.limit.telephonyHint': 'Desactivada: el troncal guardado sigue visible, las llamadas no están disponibles',
+  'plan.telephonyLocked': 'La telefonía está disponible en Business',
 };
