@@ -2,7 +2,8 @@
 
 **Статус: принято для 2.0.0, реализация не начата.** Уточняет ADR-0042 (доски), ADR-0049 (согласования),
 ADR-0031 §4 (очередь вебхуков ботов), ADR-0048 (права v2). Номера 0054–0056 заняты Identity 2.0, 0057 — встроенные стикеры (PR #57);
-миграции 00055–00057 — там же, наша — **00059**. Ветки — от `main` после тега `v2.0.0`.
+миграции 00055–00057 — там же, 00058 — стикеры, наша — **00059**. Ветки — от текущего `main` (доски входят в 2.0.0).
+Номера сверены с кодом при фиксации контракта (этап 0, 02.10).
 
 ## Контекст
 Владелец (02.10): «нужны категории как в голосовых каналах; чек-листы в тасках, чтобы задавать чек-лист и
@@ -14,10 +15,11 @@ ADR-0031 §4 (очередь вебхуков ботов), ADR-0048 (права 
 ## Решение
 
 ### 0. Общие правила (вытекают из кода, обязательны для всех этапов)
-- **Новые события и Identity 2.0.** В PR #52 `gateway/identity.go: knownScopedEvent` пропускает только
-  oneof-номера `2..85` — событие с новым номером **молча не доходит** до людей. Контракт (этап 0) заменяет
-  диапазон явным списком с тестом «каждый oneof `DispatchEvent` классифицирован» и включает 86–90. Новые
-  события идут по каналу пространства — DB-резолв `eventResources` (user-канал) их не касается.
+- **Новые события и Identity 2.0.** `gateway/identity.go: eventScope` — явный список всех oneof
+  `DispatchEvent` с `TestEventScopeClassified` (неклассифицированное событие молча не доходит и валит тест);
+  86 занят `WORKSPACE_IDENTITY_ACCESS_UPDATE`, наши — **87–91**, классифицированы в этапе 0. Новые события
+  идут по каналу пространства — DB-резолв `eventResources` (user-канал) их не касается. Маршрутизация в
+  `gateway/boards.go: routeBoards` (этап 0): категории — всем участникам, кроме гостей; чек-листы — зрителям доски.
 - **Admission-граница записи.** После PR #52 любая мутация — через `s.tx` (`db.TxRaw`) или `db.GuardValue`,
   никогда голым `s.db.Q.<Mutation>`. Outbox вебхука — **в той же** транзакции, что изменение.
 - Новых битов прав нет; `computePermissions` не меняется. Новые маршруты — в `botroutes.go`: категории,
@@ -33,13 +35,14 @@ ADR-0031 §4 (очередь вебхуков ботов), ADR-0048 (права 
   `MANAGE_BOARD` на ней (как `PUT /boards/{id}/position`). Категория — только имя, видна всем; клиент прячет
   категории без видимых досок (имя может намекать на закрытую доску — как у комнат; принято).
 - API (зеркало комнат): `GET/POST /api/workspaces/{id}/board-categories`, `PATCH/DELETE
-  /api/board-categories/{cid}` (удаление — доски в «без категории» хвостом, каждой `BOARD_UPDATE`);
+  /api/board-categories/{id}` (удаление — доски в «без категории» хвостом, каждой `BOARD_UPDATE`);
   `PUT /api/workspaces/{id}/boards/order {boards[{board_id, category_id, position}], categories[{category_id,
   position}]}` — один drag = одна транзакция и один `WorkspaceEvents`-пайплайн; `categories` требует
   `CREATE_BOARDS`, каждая доска — `MANAGE_BOARD` (невидимая → `422`, как у комнат). `PUT /boards/{id}/position`
-  остаётся, + `optional string category_id`.
+  остаётся, + `optional string category_id` (`SetBoardPositionRequest = 2`). Сообщения:
+  `SetBoardOrderRequest/Response`, `Create/UpdateBoardCategoryRequest`, `BoardCategoryResponse`.
 - Proto: `BoardCategory {id, workspace_id, name, position}`, `Board.category_id = 25`; события
-  `BOARD_CATEGORY_CREATE/UPDATE/DELETE = 86/87/88` всем участникам пространства; `WorkspaceSnapshot.
+  `BOARD_CATEGORY_CREATE/UPDATE/DELETE = 87/88/89` всем участникам пространства, кроме гостей; `WorkspaceSnapshot.
   board_categories = 20`. Свёрнутость — локально на клиенте.
 
 ### 2. Чек-листы задачи
@@ -52,13 +55,13 @@ ADR-0031 §4 (очередь вебхуков ботов), ADR-0048 (права 
   `TaskChecklistResponse {checklist, checklist_total, checklist_done}`.
 - Права — как у полей задачи (`requireEdit`: `EDIT_TASKS` любые, `CREATE_TASKS` — свои и назначенные);
   отметка пункта — то же право. Боты — так же. Фича `CHECKLISTS` (§3).
-- API: `POST /api/tasks/{id}/checklists {title}`, `PATCH /api/checklists/{cid} {title?, position?}`, `DELETE`;
-  `POST /api/checklists/{cid}/items {text, position?}`, `PATCH /api/checklist-items/{iid} {text?, done?,
-  position?, checklist_id?}` (перенос внутри задачи), `DELETE`; `POST /api/checklist-items/{iid}/convert` →
-  подзадача с текстом пункта (статус по умолчанию, без других полей), пункт удаляется; требует фичу
+- API: `POST /api/tasks/{id}/checklists {title}`, `PATCH /api/checklists/{id} {title?, position?}`, `DELETE`;
+  `POST /api/checklists/{id}/items {text, position?}`, `PATCH /api/checklist-items/{id} {text?, done?,
+  position?, checklist_id?}` (перенос внутри задачи), `DELETE`; `POST /api/checklist-items/{id}/convert` →
+  `ConvertChecklistItemResponse {task, checklist, счётчики}` — подзадача с текстом пункта (статус по умолчанию, без других полей), пункт удаляется; требует фичу
   `SUBTASKS` и что задача сама не подзадача (один уровень).
-- События: `TASK_CHECKLIST_UPDATE = 89 {workspace_id, board_id, task_id, checklist (полный, ≤ 100 пунктов),
-  checklist_total, checklist_done}` и `TASK_CHECKLIST_DELETE = 90 {…, checklist_id, счётчики}` зрителям доски.
+- События: `TASK_CHECKLIST_UPDATE = 90 {workspace_id, board_id, task_id, checklist (полный, ≤ 100 пунктов),
+  checklist_total, checklist_done}` и `TASK_CHECKLIST_DELETE = 91 {…, checklist_id, счётчики}` зрителям доски.
   **`TASK_UPDATE` на операции чек-листа не шлётся**: счётчики едут в самом событии (экономим `tasksProto` —
   6 запросов — и полную перерисовку карточки); клиент патчит два поля задачи (новый объект задачи — только при
   смене счётчиков). `tasks.updated_at` обновляется (`updated_after`, вебхук). Журнал `task_activity.kind =
@@ -76,7 +79,8 @@ ADR-0031 §4 (очередь вебхуков ботов), ADR-0048 (права 
   M=3, L=5, XL=8 — хранится число)}`, `Board.estimate_scale = 27`, БД `boards.estimate_scale text DEFAULT
   'fibonacci'`. Запись проверяет `estimate ∈ шкале` (`422 estimate`); смена шкалы задачи не переписывает,
   значение вне шкалы показывается числом до правки. CHECK `1..21` остаётся.
-- `PATCH /api/boards/{id} {set_disabled_features, disabled_features[], estimate_scale}` — `MANAGE_BOARD`;
+- `PATCH /api/boards/{id} {set_disabled_features, disabled_features[], estimate_scale}` (`UpdateBoardRequest`
+  10–12; `ESTIMATE_SCALE_UNSPECIFIED` не отправляется и в записи — `422`) — `MANAGE_BOARD`;
   едет в `BOARD_UPDATE` (редкое событие — полная перерисовка доски допустима).
 - **Сервер — один helper `requireFeature`** во всех путях записи (REST = Bot API, те же обработчики; «задача из
   сообщения» = `createTask`): запрос, **меняющий** поле выключенной фичи на непустое, → `409 CONFLICT`,
@@ -112,8 +116,9 @@ ADR-0031 §4 (очередь вебхуков ботов), ADR-0048 (права 
   воркер — фоновая работа без admission, постановка в очередь — внутри admission-транзакции изменения.
 - API: `GET/PUT/DELETE /api/boards/{id}/webhook` (`PUT` на отключённый — включает заново, как у ботов; `DELETE`
   — очередь помечается `failed`), `POST /api/boards/{id}/webhook/ping` — синхронная доставка события `ping`
-  тем же транспортом, ответ `{status, error}`, ≤ 1 раз в 10 с на доску. `BoardWebhook {url, has_secret,
-  enabled, disabled_at, failing_since, last_ok_at, last_error, pending, created_by, updated_at}`.
+  тем же транспортом, ответ `BoardWebhookPingResponse {ok, status, error}`, ≤ 1 раз в 10 с на доску.
+  `BoardWebhook {board_id, url, has_secret, enabled, disabled_at, failing_since, last_ok_at, last_error, pending,
+  created_by, created_at, updated_at, paused_reason}`; `GET` без вебхука — `BoardWebhookResponse` без `webhook`.
 - **Движок — общий с ботами, вынесенный, а не скопированный.** Сегодня `internal/bots` — post-commit
   `Publisher` + воркер, привязанный к `sqlc.BotWebhookDelivery`. Новый пакет `internal/webhook`: `Transport`
   (`unfurl.PublicAddr`/`SafeTransport`, только https, без редиректов, 10 с, `CheckURL`), `Options`
@@ -136,10 +141,13 @@ ADR-0031 §4 (очередь вебхуков ботов), ADR-0048 (права 
   {"id": "<uuid доставки — ключ идемпотентности>", "version": 1, "type": "task.updated", "sequence": 42,
    "occurred_at": "…", "workspace_id": "…", "board": {"id": "…", "key": "FNG", "name": "…"},
    "actor": {"id": "…", "name": "…", "is_bot": false},
-   "task": { …Task без viewer-полей, attachments и checklists (счётчики остаются)…, "url": "https://…/t/FNG-12"},
+   "task": { …Task без viewer-полей, attachments и checklists (счётчики остаются)… },
+   "task_url": "https://…/t/FNG-12",
    "changes": [{"field": "status", "before": {…}, "after": {…}}],
    "comment": {"id", "author_id", "text", "attachments": [{"name", "size", "mime"}], "created_at", "edited_at"}}
   ```
+  Ссылка — отдельное поле `task_url` (в `Task` поля `url` нет, контракт `Task` не засоряем); `sequence` —
+  `uint32` (число в JSON; `uint64` protojson отдал бы строкой), в БД `bigint`.
   `changes` = записи `task_activity` транзакции (`field` = kind, before/after = их jsonb) — журнал и вебхук не
   расходятся по определению. `version: 1` в теле и `X-Calab-Webhook-Version: 1`: контракт меняется только
   добавлением полей; смена `version` — только при ломающем изменении, с переходным периодом. Размер ограничен
@@ -156,6 +164,10 @@ ADR-0031 §4 (очередь вебхуков ботов), ADR-0048 (права 
 Как CalDAV/режим музыканта (ADR-0024, `plans/limits.go`): флаг в лимитах тарифа, отказ —
 `plans.FeatureError` (`409 CONFLICT`, `reason PLAN_LIMIT`, used = limit = 0), проверка на сервере в каждом
 пути записи (REST и Bot API); клиент показывает замок с названием тарифа.
+- Proto: `PlanLimits.checklists_disabled = 29`, `board_webhooks_disabled = 30` (24–26 — `reserved`, удалённые
+  флаги). Форма «Индивидуальный» суперадмина написана руками (`AdminWindow.tsx` + `lib/plan.ts`), не из proto, и
+  сейчас не передаёт флаги вовсе (как `caldav`/`musician`) — сохранение Custom пишет `false`; переключатели
+  добавляет этап 4, до него «по умолчанию» для Custom означает `false`.
 - **Чек-листы — с Team**: `checklists_disabled` — Free `true`; Team, Business (`PLAN_ENTERPRISE`) и
   on-prem — `false`; Custom — как сохранено (по умолчанию `false`). На тарифе без чек-листов уже созданные
   видны только для чтения (данные не удаляются, после апгрейда снова редактируемы); создание, правка,
@@ -173,8 +185,9 @@ ADR-0031 §4 (очередь вебхуков ботов), ADR-0048 (права 
 «на всё пространство».
 
 ## Последствия
-- Протокол: `boards.proto` (категории, чек-листы, фичи, вебхук, `BoardWebhookEvent`), `gateway.proto` (86–90,
-  `board_categories`), `knownScopedEvent`, миграция 00059, sqlc; один агент владеет контрактом, потребители
+- Протокол: `boards.proto` (категории, чек-листы, фичи, вебхук, `BoardWebhookEvent`), `gateway.proto` (87–91,
+  `board_categories`), `eventScope`, миграция 00059, sqlc, маршруты-заглушки `501`
+  (`internal/boards/contract_stubs.go`, этапы заменяют свои строки); один агент владеет контрактом, потребители
   стартуют после его фиксации. Docs: `docs/04`, `docs/05`, `docs/19` + `19.en` (маршруты, `FEATURE_DISABLED`,
   «Вебхук доски» с payload и референсной проверкой подписи), SDK `packages/bot-sdk`, CHANGELOG 2.0.0.
 - Безопасность — второе независимое ревью (CLAUDE.md п. 5): протокол (этап 0), вебхук (секреты, SSRF, вывод
@@ -184,5 +197,7 @@ ADR-0031 §4 (очередь вебхуков ботов), ADR-0048 (права 
   подписана только на два счётчика. Проверка `CALABA_REACT_PROFILING=1` + `tools/perf-call.ts` на доске 200
   задач: отметка пункта перерисовывает одну карточку и секцию панели, не доску.
 - Миграция 00059 только добавляет таблицы и столбцы с дефолтами (`ALTER TABLE boards ADD COLUMN … DEFAULT` —
-  metadata-only на PG ≥ 11), `tasks` не трогает, индексы — только на новых пустых таблицах; безопасна на
+  metadata-only на PG ≥ 11; FK `category_id` и CHECK `estimate_scale` проверяются проходом по `boards` — таблица
+  ≤ 50 строк на пространство, под `lock_timeout = 10s`), `tasks` не трогает, индексы — на новых пустых таблицах
+  и один частичный `boards (category_id) WHERE category_id IS NOT NULL`; безопасна на
   заполненной БД, проверяется на PG17 и PG18 (`internal/db` migrate-тест с данными).
