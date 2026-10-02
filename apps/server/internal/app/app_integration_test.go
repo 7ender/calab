@@ -344,6 +344,8 @@ func owner(t *testing.T) *user {
 	_ = testRedis.Do(context.Background(), testRedis.B().Del().Key(redisx.Key("rl:upload:"+bootstrapUser.id)).Build()).Error()
 	// Same for its meeting writes (30 at once, 120/h): calendar and identity tests share it.
 	_ = testRedis.Do(context.Background(), testRedis.B().Del().Key(redisx.Key("rl:event-write:"+bootstrapUser.id)).Build()).Error()
+	// And its task creation (60 at once): the boards feature and checklist tests create many.
+	_ = testRedis.Do(context.Background(), testRedis.B().Del().Key(redisx.Key("rl:task-create:"+bootstrapUser.id)).Build()).Error()
 	return bootstrapUser
 }
 
