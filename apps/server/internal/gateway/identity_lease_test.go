@@ -130,7 +130,7 @@ func TestIdentityLeaseExpiryInvalidationScopeAndPending(t *testing.T) {
 	s.principal.Authority = identitypolicy.WorkspaceSSO
 	s.principal.WorkspaceID = a
 	s.principal.ConnectionID = uuid.New()
-	global := newEnc(&v1.DispatchEvent{Event: &v1.DispatchEvent_PresenceUpdate{PresenceUpdate: &v1.PresenceUpdate{}}})
+	global := newEnc(&v1.DispatchEvent{Event: &v1.DispatchEvent_PresenceUpdate{PresenceUpdate: &v1.PresenceUpdate{Presence: &v1.Presence{UserId: s.user.String()}}}})
 	h.prepareEvent(context.Background(), global)
 	if s.allowsEvent(global) {
 		t.Fatal("scoped session saw global/DM authority")
@@ -268,7 +268,7 @@ func TestIdentityLeaseScopedInvalidationPreservesIndependentBAndDM(t *testing.T)
 	s := leasedSession(h, a)
 	h.joinWorkspace(s, b)
 	_, _ = s.refreshWorkspaceLease(context.Background(), b)
-	global := newEnc(&v1.DispatchEvent{Event: &v1.DispatchEvent_PresenceUpdate{PresenceUpdate: &v1.PresenceUpdate{}}})
+	global := newEnc(&v1.DispatchEvent{Event: &v1.DispatchEvent_PresenceUpdate{PresenceUpdate: &v1.PresenceUpdate{Presence: &v1.Presence{UserId: s.user.String()}}}})
 	h.prepareEvent(context.Background(), global)
 	before := s.leases.workspaces[b].until
 	payload := fmt.Sprintf(`{"workspace":%q,"policy_version":2}`, a.String())
@@ -495,5 +495,28 @@ func TestIdentityLeaseRefreshRetriesAfterConcurrentInvalidation(t *testing.T) {
 	d, err := s.refreshWorkspaceLease(context.Background(), ws)
 	if err != nil || !d.Allowed || !s.allowsEvent(leaseEvent(ws)) {
 		t.Fatalf("authorized refresh lost to a concurrent revision bump (calls %d)", calls)
+	}
+}
+
+// User-channel (unattributed) profile/presence events are only about the recipient; another
+// person's would bypass the lease of the workspace they share (ADR-0054).
+func TestIdentityUserChannelPresenceOnlyAboutSelf(t *testing.T) {
+	h := leaseTestHub()
+	s := leasedSession(h, uuid.New())
+	other := uuid.NewString()
+	for _, c := range []struct {
+		ev   *v1.DispatchEvent
+		want bool
+	}{
+		{&v1.DispatchEvent{Event: &v1.DispatchEvent_PresenceUpdate{PresenceUpdate: &v1.PresenceUpdate{Presence: &v1.Presence{UserId: s.user.String()}}}}, true},
+		{&v1.DispatchEvent{Event: &v1.DispatchEvent_PresenceUpdate{PresenceUpdate: &v1.PresenceUpdate{Presence: &v1.Presence{UserId: other}}}}, false},
+		{&v1.DispatchEvent{Event: &v1.DispatchEvent_UserUpdate{UserUpdate: &v1.UserUpdate{Me: &v1.Me{}}}}, true},
+		{&v1.DispatchEvent{Event: &v1.DispatchEvent_UserUpdate{UserUpdate: &v1.UserUpdate{User: &v1.User{Id: other}}}}, false},
+	} {
+		enc := newEnc(c.ev)
+		h.prepareEvent(context.Background(), enc)
+		if got := s.allowsEvent(enc); got != c.want {
+			t.Errorf("%v: allowed %v, want %v", c.ev, got, c.want)
+		}
 	}
 }

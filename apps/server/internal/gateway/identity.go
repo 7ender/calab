@@ -200,7 +200,7 @@ func (s *Session) allowsEvent(enc *encEvent) bool {
 	}
 	for _, ws := range enc.scopes {
 		if ws == uuid.Nil {
-			if s.principal.Authority != identitypolicy.LocalAccount {
+			if s.principal.Authority != identitypolicy.LocalAccount || !ownProfileOrPresence(s.user, ev) {
 				return false
 			}
 		} else if !s.workspaceLeaseAllows(ws) {
@@ -208,6 +208,19 @@ func (s *Session) allowsEvent(enc *encEvent) bool {
 		}
 	}
 	return len(enc.scopes) > 0
+}
+
+// ownProfileOrPresence: a profile/presence event without workspace attribution (user
+// channel) may only be about the recipient. Another person's profile or presence goes
+// through a shared workspace's lease, so it never bypasses that workspace's policy.
+func ownProfileOrPresence(user uuid.UUID, ev *v1.DispatchEvent) bool {
+	if p := ev.GetPresenceUpdate(); p != nil {
+		return parseID(p.GetPresence().GetUserId()) == user
+	}
+	if u := ev.GetUserUpdate(); u != nil && u.GetUser() != nil {
+		return parseID(u.GetUser().GetId()) == user
+	}
+	return true
 }
 
 // eventScope classifies every DispatchEvent variant by name. workspaceScoped variants may
