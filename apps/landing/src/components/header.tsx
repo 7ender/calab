@@ -9,8 +9,9 @@ import { Container } from './ui';
 export function Header({ t, locale, page = '' }: { t: Dict['header']; locale: Locale; page?: string }) {
   const home = page === '' ? '' : localePath(locale);
   const nav = [
-    { href: localePath(locale, 'features/'), label: t.nav.features },
+    { href: `${home}#features`, label: t.nav.features },
     { href: `${home}#pricing`, label: t.nav.pricing },
+    { href: localePath(locale, 'bots/'), label: t.nav.bots },
     { href: `${home}#download`, label: t.nav.download },
   ];
   return (
@@ -29,7 +30,7 @@ export function Header({ t, locale, page = '' }: { t: Dict['header']; locale: Lo
           <ul className="flex items-center gap-7 text-[14px] text-fg">
             {nav.map((n) => (
               <li key={n.href}>
-                <DrawnNavLink href={n.href} current={page === 'features/' && n.href === localePath(locale, 'features/')}>
+                <DrawnNavLink href={n.href} current={page === 'bots/' && n.href === localePath(locale, 'bots/')}>
                   {n.label}
                 </DrawnNavLink>
               </li>

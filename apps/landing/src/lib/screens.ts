@@ -16,6 +16,16 @@ export const SCREENS = {
   sipsettings: { width: 940, height: 660 },
   siplog: { width: 940, height: 660 },
   webapps: { width: 1440, height: 870 },
+  boards2: { width: 1440, height: 640 },
+  checklists: { width: 480, height: 870 },
+  boardfeatures: { width: 940, height: 660 },
+  boardhook: { width: 940, height: 660 },
+  sso: { width: 940, height: 660 },
+  ssopolicy: { width: 940, height: 660 },
+  consent: { width: 560, height: 480 },
+  stickerchat: { width: 1110, height: 870 },
+  stickerpicker: { width: 1110, height: 870 },
+  voicelist: { width: 340, height: 440 },
 } as const;
 
 export type ScreenName = keyof typeof SCREENS;

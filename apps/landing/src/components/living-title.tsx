@@ -2,7 +2,7 @@
 import { useEffect, useRef } from 'react';
 
 /** Reference proximity contract, with a finite animation loop instead of an idle ticker. */
-export function LivingTitle({ lines }: { lines: string[] }) {
+export function LivingTitle({ lines, className }: { lines: string[]; className?: string }) {
  const root = useRef<HTMLHeadingElement>(null);
  useEffect(() => {
    const node = root.current; if (!node) return;
@@ -18,6 +18,10 @@ export function LivingTitle({ lines }: { lines: string[] }) {
    let pointerY = 0;
    const tick = () => {
      frame = 0;
+     // Positions are read on demand (no scroll listener); a title far off screen is ignored.
+     const box = node.getBoundingClientRect();
+     if (box.bottom < -400 || box.top > window.innerHeight + 400) return;
+     measure();
      glyphs.forEach((g) => {
        const strength = Math.max(0, 1 - Math.hypot(pointerX - g.x, pointerY - g.y) / 400);
        const weight = g.rest + (g.near - g.rest) * strength;
@@ -37,13 +41,12 @@ export function LivingTitle({ lines }: { lines: string[] }) {
    const observer = new ResizeObserver(measure); observer.observe(node);
    document.fonts.ready.then(() => { if (!disposed) measure(); }).catch(() => {});
    window.addEventListener('pointermove', pointer, { passive: true });
-   window.addEventListener('scroll', measure, { passive: true });
    window.addEventListener('resize', measure);
    node.addEventListener('animationend', measure);
    media.addEventListener('change', reset);
-   return () => { disposed = true; reset(); observer.disconnect(); window.removeEventListener('pointermove', pointer); window.removeEventListener('scroll', measure); window.removeEventListener('resize', measure); node.removeEventListener('animationend', measure); media.removeEventListener('change', reset); };
+   return () => { disposed = true; reset(); observer.disconnect(); window.removeEventListener('pointermove', pointer); window.removeEventListener('resize', measure); node.removeEventListener('animationend', measure); media.removeEventListener('change', reset); };
  }, []);
- return <h1 ref={root} id="hero-title" className="story-hero-title living-title" aria-label={lines.join(' ')}>
- {lines.map((line,index) => <span key={line} className={`living-line ${index === 1 ? 'title-line-accent' : ''}`} aria-hidden="true">{Array.from(line.replace(/\.$/, '').toUpperCase()).map((char,i) => <span className="glyph-slot" data-char={char === ' ' ? '\u00a0' : char} key={i} style={{animationDelay:`${.15 + index * .14 + i * .025}s`}}><span data-glyph>{char === ' ' ? '\u00a0' : char}</span></span>)}</span>)}
+ return <h1 ref={root} id="hero-title" className={`story-hero-title living-title ${className ?? ''}`} aria-label={lines.join(' ')}>
+ {lines.map((line,index) => <span key={line} className={`living-line ${index === lines.length - 1 ? 'title-line-accent' : ''}`} aria-hidden="true">{Array.from(line.replace(/\.$/, '').toUpperCase()).map((char,i) => <span className="glyph-slot" data-char={char === ' ' ? '\u00a0' : char} key={i} style={{animationDelay:`${.15 + index * .14 + i * .025}s`}}><span data-glyph>{char === ' ' ? '\u00a0' : char}</span></span>)}</span>)}
  </h1>;
 }

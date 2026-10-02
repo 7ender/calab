@@ -1,35 +1,15 @@
 import { Plus } from 'lucide-react';
 import type { Dict } from '@/i18n';
 import { rich } from '@/lib/rich';
-import { CONTACT_EMAIL, repoFile } from '@/lib/site';
+import { CONTACT_EMAIL } from '@/lib/site';
 import { Section, SectionHeading } from './ui';
 
-const ORDER = [
-  'server',
-  'identity',
-  'recording',
-  'sip',
-  'traffic',
-  'updates',
-  'whatsNew',
-  'security',
-  'firewall',
-  'limits',
-  'roomLimit',
-  'license',
-  'enterprise',
-  'buyTeam',
-] as const;
+const ORDER = ['server', 'identity', 'recording', 'sip', 'security', 'firewall', 'enterprise', 'buy'] as const;
 
 export function Faq({ t }: { t: Dict['faq'] }) {
   const email = (
     <a href={`mailto:${CONTACT_EMAIL}`} className="link">
       {CONTACT_EMAIL}
-    </a>
-  );
-  const changelog = (
-    <a href={repoFile('CHANGELOG.md')} className="link">
-      {t.changelogLink}
     </a>
   );
   return (
@@ -45,7 +25,7 @@ export function Faq({ t }: { t: Dict['faq'] }) {
               <h3>{t.items[id].q}</h3>
               <span className="faq-toggle" aria-hidden="true"><Plus size={20} strokeWidth={1.75} /></span>
             </summary>
-            <div className="faq-answer"><p>{rich(t.items[id].a, { email, changelog })}</p></div>
+            <div className="faq-answer"><p>{rich(t.items[id].a, { email })}</p></div>
           </details>
         ))}
       </div>
