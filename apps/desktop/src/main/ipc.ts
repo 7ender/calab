@@ -167,7 +167,13 @@ export function registerIpc(): void {
     return beginSso({ workspaceId: str(r['workspaceId'], 128), purpose });
   });
   handle(IPC.authSsoCancel, (_e, a) => cancelSso(str(a, 128)));
-  handle(IPC.authRestore, () => restore());
+  // Safety net (incident 2.0.0): a restored session on another server than the page CSP was
+  // built for reloads the page like a login does — never a gateway blocked by connect-src.
+  handle(IPC.authRestore, async () => {
+    const s = await restore();
+    if (s) reloadIfServerChanged();
+    return s;
+  });
   // A login to another server changes the renderer CSP (review L3): reload after the reply.
   const afterAuth = <T extends { ok: boolean }>(r: T): T => {
     if (r.ok) reloadIfServerChanged();
