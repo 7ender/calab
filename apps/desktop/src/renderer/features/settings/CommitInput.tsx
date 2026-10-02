@@ -14,6 +14,7 @@ export function CommitInput({
   maxLength,
   placeholder,
   className,
+  validate,
 }: {
   value: string;
   onCommit: (v: string) => Promise<void> | void;
@@ -21,6 +22,8 @@ export function CommitInput({
   maxLength?: number;
   placeholder?: string;
   className?: string;
+  /** A message when the text must not be saved: shown under the field, nothing is sent. */
+  validate?: (v: string) => string | null;
 }): ReactNode {
   const [v, setV] = useState(value);
   const [prev, setPrev] = useState(value);
@@ -28,21 +31,31 @@ export function CommitInput({
     setPrev(value);
     setV(value);
   }
+  const [bad, setBad] = useState<string | null>(null);
   const commit = (): void => {
     const next = v.trim();
-    if (next === value) return;
+    if (next === value) {
+      setBad(null);
+      return;
+    }
+    const msg = validate?.(next) ?? null;
+    setBad(msg);
+    if (msg) return;
     void Promise.resolve(onCommit(next)).catch((e: unknown) => {
       toast.fail(e, t('err.ctx.save'));
       setV(value);
     });
   };
-  return (
+  const input = (
     <Input
       aria-label={label}
       value={v}
       maxLength={maxLength}
       placeholder={placeholder}
-      onChange={(e) => setV(e.target.value)}
+      onChange={(e) => {
+        setV(e.target.value);
+        setBad(null);
+      }}
       onBlur={commit}
       onKeyDown={(e) => {
         if (e.key === 'Enter') e.currentTarget.blur();
@@ -51,9 +64,22 @@ export function CommitInput({
           e.preventDefault();
           e.stopPropagation();
           setV(value);
+          setBad(null);
         }
       }}
       className={cx('w-60', className)}
+      aria-invalid={bad ? true : undefined}
     />
+  );
+  if (!validate) return input;
+  return (
+    <div className="flex flex-col items-end gap-1">
+      {input}
+      {bad ? (
+        <p className="max-w-72 text-right text-caption text-danger-text" role="alert">
+          {bad}
+        </p>
+      ) : null}
+    </div>
   );
 }

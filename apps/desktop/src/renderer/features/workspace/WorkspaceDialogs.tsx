@@ -1,4 +1,5 @@
 import { applyIdentityAccess } from '../../services/identity';
+import { slugError } from './slugError';
 import { WorkspaceVisibility } from '@calaba/protocol';
 import { useMutation, useQuery } from '@tanstack/react-query';
 import { useState, type ReactNode } from 'react';
@@ -94,6 +95,7 @@ export function CreateWorkspaceDialog({ onClose }: { onClose: () => void }): Rea
   const [visibility, setVisibility] = useState(WorkspaceVisibility.PRIVATE);
   const setWs = useUi((s) => s.setWorkspace);
   const effectiveSlug = slugTouched ? slug : slugify(name);
+  const slugErr = effectiveSlug ? slugError(effectiveSlug) : null;
   const m = useMutation({
     mutationFn: () => api.workspaces.create({ name: name.trim(), slug: effectiveSlug, visibility }),
     onSuccess: (r) => {
@@ -112,7 +114,7 @@ export function CreateWorkspaceDialog({ onClose }: { onClose: () => void }): Rea
           <Button variant="secondary" onClick={onClose}>
             {t('common.cancel')}
           </Button>
-          <Button busy={m.isPending} disabled={!name.trim()} onClick={() => m.mutate()}>
+          <Button busy={m.isPending} disabled={!name.trim() || !!slugErr} onClick={() => m.mutate()}>
             {t('common.create')}
           </Button>
         </>
@@ -122,7 +124,7 @@ export function CreateWorkspaceDialog({ onClose }: { onClose: () => void }): Rea
         <Field label={t('ws.name')}>
           <Input autoFocus value={name} maxLength={100} onChange={(e) => setName(e.target.value)} />
         </Field>
-        <Field label={t('ws.slug')} hint={t('ws.slugHint')} error={m.error ? errText(m.error) : null}>
+        <Field label={t('ws.slug')} hint={t('ws.slugHint')} error={slugErr ?? (m.error ? errText(m.error) : null)}>
           <Input
             value={effectiveSlug}
             placeholder="komanda"
