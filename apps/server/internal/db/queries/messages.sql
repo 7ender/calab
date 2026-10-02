@@ -242,3 +242,9 @@ WHERE message_id = sqlc.arg('from_id')::uuid;
 SELECT m.id, (CASE WHEN r.workspace_id IS NULL THEN NULL ELSE m.room_id END)::uuid AS room_id
 FROM messages m JOIN rooms r ON r.id = m.room_id
 WHERE m.id = ANY(sqlc.arg('ids')::uuid[]);
+
+-- name: ListRoomAuthors :many
+-- Distinct authors of the live messages of rooms (what a guest may see of them, ADR-0016);
+-- an index-only scan of messages_live_room_id_idx.
+SELECT DISTINCT room_id, author_id FROM messages
+WHERE room_id = ANY(sqlc.arg('room_ids')::uuid[]) AND deleted_at IS NULL;
