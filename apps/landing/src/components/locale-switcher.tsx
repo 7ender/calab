@@ -1,12 +1,12 @@
 'use client';
 
-import { ChevronDown, Globe } from 'lucide-react';
+import { Globe } from 'lucide-react';
 import { useEffect, useRef, type MouseEvent } from 'react';
 import { LOCALE_INFO, LOCALE_STORAGE_KEY, LOCALES, localePath, type Locale } from '@/i18n/locales';
 
 /**
- * Language pill in the header (ADR-0022 §3): a native <details> menu of plain links, so it works without JS.
- * With JS: remembers the explicit choice (read by the root redirect page), keeps the current page and #section,
+ * Icon-only language control in the header (ADR-0022 §3): a native <details> menu of plain links, so it works without JS.
+ * With JS: remembers the explicit choice (read by the root redirect page), keeps the current page and navigates to #top,
  * closes on outside click / Escape.
  */
 export function LocaleSwitcher({ locale, label, page = '' }: { locale: Locale; label: string; page?: string }) {
@@ -40,26 +40,24 @@ export function LocaleSwitcher({ locale, label, page = '' }: { locale: Locale; l
     }
     if (e.metaKey || e.ctrlKey || e.shiftKey || e.altKey || e.button !== 0) return;
     e.preventDefault();
-    window.location.assign(localePath(l, page) + window.location.hash);
+    window.location.assign(localePath(l, page) + '#top');
   };
 
   const current = LOCALE_INFO[locale];
   return (
-    <details ref={ref} className="relative">
+    <details ref={ref} className="locale-control relative">
       <summary
         aria-label={`${label}: ${current.name}`}
-        className="flex h-8 cursor-pointer items-center gap-1.5 rounded-full border border-line px-3 text-[14px] text-fg-2 select-none hover:text-fg motion-safe:transition-colors"
+        className="locale-globe"
+        title={`${label}: ${current.name}`}
       >
-        <Globe aria-hidden="true" className="size-4 shrink-0" strokeWidth={1.75} />
-        <span className="sm:hidden">{current.short}</span>
-        <span className="hidden sm:inline">{current.name}</span>
-        <ChevronDown aria-hidden="true" className="chevron size-3.5 shrink-0 motion-safe:transition-transform" strokeWidth={2} />
+        <Globe aria-hidden="true" size={21} strokeWidth={1.7} />
       </summary>
-      <ul className="absolute right-0 mt-2 min-w-40 rounded-xl border border-line bg-card-raised p-1 text-[14px] shadow-window">
+      <ul className="locale-menu absolute right-0 mt-2 min-w-40 p-1 text-[14px]">
         {LOCALES.map((l) => (
           <li key={l}>
             <a
-              href={localePath(l, page)}
+              href={localePath(l, page) + '#top'}
               hrefLang={LOCALE_INFO[l].lang}
               lang={LOCALE_INFO[l].lang}
               aria-current={l === locale ? 'page' : undefined}

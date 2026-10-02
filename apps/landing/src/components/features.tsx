@@ -41,7 +41,7 @@ function Intro({ id, icon: Icon, eyebrow, title, text, center }: { id: string; i
         </span>
         {eyebrow}
       </p>
-      <h2 id={id} className="mt-4 text-[30px] leading-[38px] font-semibold tracking-tight text-balance sm:text-[44px] sm:leading-[52px]">
+      <h2 id={id} className="editorial-title mt-5 text-balance">
         {title}
       </h2>
       <p className="mt-4 text-[17px] leading-7 text-pretty text-fg-2 sm:text-[19px] sm:leading-8">{text}</p>
@@ -65,7 +65,7 @@ function Points({ items, className }: { items: string[]; className?: string }) {
 /** Text beside a screenshot (40 / 60), stacked on phones; `flip` puts the picture first on wide screens. */
 function Split({ id, flip, alt, text, shot }: { id: string; flip?: boolean; alt?: boolean; text: ReactNode; shot: ReactNode }) {
   return (
-    <section id={id} aria-labelledby={`${id}-title`} className={cx('py-20 sm:py-28', alt && 'surface-alt bg-bg-alt')}>
+    <section id={id} aria-labelledby={`${id}-title`} className={cx('editorial-section py-20 sm:py-28', alt && 'surface-alt bg-bg-alt')}>
       <Container className="grid items-center gap-10 lg:grid-cols-12 lg:gap-14">
         <div className={cx('min-w-0 lg:col-span-5', flip && 'lg:order-2')}>{text}</div>
         <div className={cx('min-w-0 lg:col-span-7', flip && 'lg:order-1')}>{shot}</div>
@@ -82,7 +82,7 @@ const shot = (name: ScreenName, locale: Locale, alt: string, sizes = '(min-width
 
 function Card({ icon: Icon, title, text }: { icon: LucideIcon; title: string; text: string }) {
   return (
-    <li className="rounded-[18px] border border-line bg-card p-6">
+    <li className="rounded-[6px] border border-line bg-card p-6">
       <Icon aria-hidden="true" className="size-6 text-accent" strokeWidth={1.75} />
       <h3 className="mt-3 text-[17px] leading-6 font-semibold">{title}</h3>
       <p className="mt-1.5 text-[15px] leading-6 text-pretty text-fg-2">{text}</p>

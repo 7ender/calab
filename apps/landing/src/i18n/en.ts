@@ -25,7 +25,7 @@ const en: Dict = {
     language: 'Language',
   },
   hero: {
-    badge: 'New: phone calls, workspace web apps and Bot API v2',
+    badge: 'SSO · Active Directory · OAuth 2.0',
     title: 'Your whole team in one window',
     lead: 'Voice rooms, chat, meetings and tasks on your own server. Light like Discord, easy like Telegram.',
     download: 'Download',
@@ -285,6 +285,7 @@ const en: Dict = {
       contact: 'Contact us',
       license: 'Licence terms',
     },
+    identity: { title: "SSO, Active Directory and Sign in with Calab", text: "Business and Enterprise include employee sign-in via OpenID Connect (SSO), LDAPS synchronization of linked members’ status and direct Active Directory groups, and OAuth 2.0 / OpenID Connect for signing into your applications with Calab. Register OAuth clients in workspace settings; users consent to sharing a minimal profile. These clients do not grant access to the chat API." },
     table: {
       caption: 'Plan comparison',
       feature: 'Feature',
@@ -307,6 +308,9 @@ const en: Dict = {
         calendar: 'Calendar',
         musician: 'Musician mode',
         caldav: 'CalDAV',
+        sso: "SSO (OpenID Connect)",
+        directory: "Active Directory (LDAPS)",
+        oauth: "OAuth 2.0 / OIDC for applications",
         onprem: 'On-prem (your own server)',
         support: 'Support',
         price: 'Price',
@@ -325,6 +329,9 @@ const en: Dict = {
         calendar: ['✓', '✓', '✓', '✓'],
         musician: ['✗', '✓', '✓', '✓'],
         caldav: ['—', '✓', '✓', '✓'],
+        sso: ['✗', '✗', '✓', '✓'],
+        directory: ['✗', '✗', '✓', '✓'],
+        oauth: ['✗', '✗', '✓', '✓'],
         onprem: ['—', '—', '—', '✓'],
         support: ['—', '✓', 'priority', '✓'],
         price: ['free', 'on request', 'on request', 'BSL 1.1; commercial on request'],
@@ -338,6 +345,7 @@ const en: Dict = {
     eyebrow: 'FAQ',
     title: 'The short version',
     items: {
+      identity: { q: "How do I set up SSO, Active Directory and OAuth?", a: "Open SSO settings in your workspace to connect an OpenID Connect provider and an LDAPS directory, or OAuth clients to register an application with redirect URIs. Active Business or activated Enterprise access is required. Accounts are linked explicitly, never automatically by matching email. Directory sync does not create users or process nested groups." },
       server: {
         q: 'What do I need to run my own server?',
         a: 'A Linux host with Docker, a public IP and a domain. Open ports: 80 and 443 (TCP and UDP), 7881/TCP, 7882/UDP. A team of up to 30 people needs roughly 4 vCPUs and 8 GB of RAM; the exact figure depends on how many screens are shared at once.',

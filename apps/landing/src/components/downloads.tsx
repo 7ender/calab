@@ -1,21 +1,21 @@
-import { Laptop, Monitor, Terminal, type LucideIcon } from 'lucide-react';
+'use client';
+
+import { useSyncExternalStore } from 'react';
+import { detectOs } from '@/lib/detect-os';
 import type { Dict } from '@/i18n';
 import { rich } from '@/lib/rich';
 import { APP_URL, DOWNLOADS, REPO_URL, repoFile } from '@/lib/site';
-import { DownloadPrimary } from './download-primary';
-import { Button, Section, SectionHeading } from './ui';
+import { Button, Section } from './ui';
 
 // Direct links to the stable latest/ names (no directory listing, no redirect hop).
 const platforms: {
   id: keyof Dict['downloads']['platforms'];
-  icon: LucideIcon;
   name: string;
   variants: string;
   files: { label: string | ((t: Dict['downloads']) => string); href: string }[];
 }[] = [
   {
     id: 'mac',
-    icon: Laptop,
     name: 'macOS',
     variants: 'Apple Silicon · Intel',
     files: [
@@ -25,14 +25,12 @@ const platforms: {
   },
   {
     id: 'win',
-    icon: Monitor,
     name: 'Windows',
     variants: 'x64',
     files: [{ label: (t) => t.platforms.win.file, href: DOWNLOADS.win }],
   },
   {
     id: 'linux',
-    icon: Terminal,
     name: 'Linux',
     variants: 'AppImage · deb',
     files: [
@@ -42,15 +40,17 @@ const platforms: {
   },
 ];
 
+const noSubscribe = () => () => undefined;
+
 export function Downloads({ t }: { t: Dict['downloads'] }) {
+  const os = useSyncExternalStore(noSubscribe, detectOs, () => null);
   return (
     <Section id="download" labelledBy="download-title" alt>
-      <SectionHeading id="download-title" eyebrow={t.eyebrow} title={t.title} lead={t.lead} />
-      <DownloadPrimary t={t.primary} />
-      <ul className="mx-auto mt-10 grid max-w-[960px] gap-4 sm:mt-12 md:grid-cols-3 md:gap-6">
+      <h2 id="download-title" className="sr-only">{t.title}</h2>
+      <ul className="mx-auto grid max-w-[960px] gap-4 md:grid-cols-3 md:gap-6">
         {platforms.map((p) => (
-          <li key={p.id} className="flex flex-col items-center rounded-[20px] border border-line bg-card p-6 text-center sm:p-8">
-            <p.icon aria-hidden="true" className="size-8 text-fg" strokeWidth={1.5} />
+          <li key={p.id} data-current-os={p.id === os ? true : undefined} className="download-platform flex flex-col items-center rounded-[20px] border border-line bg-card p-6 text-center sm:p-8">
+            <img className="platform-sticker" src={`/editorial/sticker-${p.id === 'win' ? 'windows' : p.id}.webp`} width={140} height={140} alt="" loading="lazy" />
             <h3 className="mt-4 text-[21px] leading-7 font-semibold tracking-tight">{p.name}</h3>
             <p className="mt-1 text-[15px] leading-6 text-fg">{p.variants}</p>
             <p className="text-[14px] leading-5 text-fg-2">{t.platforms[p.id].format}</p>
@@ -59,7 +59,7 @@ export function Downloads({ t }: { t: Dict['downloads'] }) {
             </p>
             <div className="mt-auto flex w-full gap-2 pt-6">
               {p.files.map((f) => (
-                <Button key={f.href} href={f.href} variant="secondary" size="card" className="min-w-0 flex-1">
+                <Button key={f.href} href={f.href} variant={p.id === os ? 'primary' : 'secondary'} size="card" className="min-w-0 flex-1">
                   {typeof f.label === 'string' ? f.label : f.label(t)}
                   <span className="sr-only"> — {p.name}</span>
                 </Button>
