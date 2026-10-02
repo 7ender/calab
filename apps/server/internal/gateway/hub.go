@@ -36,6 +36,7 @@ import (
 type Config struct {
 	HeartbeatInterval  time.Duration  // docs/05: ~41 s
 	MaxSessionsPerUser int            // docs/05: 5
+	MaxTabsPerSession  int            // browser tabs of one auth session (#40, tabs.go): 8
 	ShutdownSpread     time.Duration  // RECONNECT spread on graceful shutdown
 	AllowedOrigins     []string       // web client origins (PUBLIC_APP_URL[_ALT]), see OriginAllowed
 	Plans              *plans.Service // Workspace.plan in snapshots (ADR-0024); nil = unset
@@ -83,6 +84,9 @@ func New(cfg Config, d *db.DB, r rueidis.Client, a *auth.Service, pub events.Pub
 	}
 	if cfg.MaxSessionsPerUser == 0 {
 		cfg.MaxSessionsPerUser = 5
+	}
+	if cfg.MaxTabsPerSession == 0 {
+		cfg.MaxTabsPerSession = 8
 	}
 	return &Hub{
 		cfg: cfg, instance: uuid.NewString(), db: d, redis: r, auth: a, pub: pub, identityWake: make(chan struct{}, 1), preparations: make(chan func(), bufferQueue),
@@ -1221,12 +1225,13 @@ func (h *Hub) onControl(msg string) {
 		if ch != nil {
 			close(ch)
 		}
-	case "kill":
+	case "kill", "evict":
 		h.mu.RLock()
 		s := h.sessions[gsid]
 		h.mu.RUnlock()
 		if s != nil {
-			go h.destroy(s, 4000, "replaced by a new session")
+			code, why := killClose(f[0] == "evict")
+			go h.destroy(s, code, why)
 		}
 	}
 }
