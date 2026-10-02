@@ -1,3 +1,4 @@
+import { ReconnectBanner } from './ReconnectBanner';
 import { WorkspaceLock, LockedWorkspacePicker } from '../identity/WorkspaceLock';
 import { useIdentity } from '../../stores/identity';
 import { accessLocked, localAuthority } from '../identity/model';
@@ -160,11 +161,7 @@ function ShellLayout(): ReactNode {
       {/* ADR-0023: «Подтвердите почту» over the main content until the code is entered. */}
       <VerifyBanner />
       <SuspendedBanner />
-      {showReconnect ? (
-        <div role="status" className="z-[var(--z-sticky)] bg-warn px-3 py-1 text-center text-caption font-medium text-black">
-          {t('gateway.reconnecting')}
-        </div>
-      ) : null}
+      {showReconnect ? <ReconnectBanner /> : null}
       {/* An update waits: the accent bar under the title bar (docs/08 «Обновление», docs/09 #125). */}
       <UpdateBar />
       {/* The rail sits on the window layer (same material as the title bar); the room column and

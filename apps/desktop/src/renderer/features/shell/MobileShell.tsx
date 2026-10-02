@@ -1,3 +1,4 @@
+import { ReconnectBanner } from './ReconnectBanner';
 import * as DialogP from '@radix-ui/react-dialog';
 import { Menu } from 'lucide-react';
 import { useRef, type ReactNode, type TouchEvent } from 'react';
@@ -68,11 +69,7 @@ export function MobileShell({
       style={{ ['--composer-safe' as string]: strip ? '0px' : 'var(--safe-bottom, 0px)' }}
       {...swipe}
     >
-      {showReconnect ? (
-        <div role="status" className="z-[var(--z-sticky)] bg-warn px-3 py-1 text-center text-caption font-medium text-black">
-          {t('gateway.reconnecting')}
-        </div>
-      ) : null}
+      {showReconnect ? <ReconnectBanner /> : null}
       {/* Web: «Доступна версия X · Обновить страницу» when the server is newer (docs/09 #125). */}
       <UpdateBar />
       <VerifyBanner />
