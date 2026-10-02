@@ -424,6 +424,26 @@ func (q *Queries) GetIdentityDirectoryForUpdate(ctx context.Context, workspaceID
 	return i, err
 }
 
+const getLastDirectorySuccessVersion = `-- name: GetLastDirectorySuccessVersion :one
+SELECT config_version FROM directory_sync_runs
+WHERE workspace_id=$1 AND directory_id=$2 AND status='succeeded' AND complete
+ORDER BY started_at DESC LIMIT 1
+`
+
+type GetLastDirectorySuccessVersionParams struct {
+	WorkspaceID uuid.UUID
+	DirectoryID uuid.UUID
+}
+
+// Config version of the directory's latest successful full scan (the shrink guard compares
+// it with the current version: the first scan after a configuration save is not guarded).
+func (q *Queries) GetLastDirectorySuccessVersion(ctx context.Context, arg GetLastDirectorySuccessVersionParams) (int64, error) {
+	row := q.db.QueryRow(ctx, getLastDirectorySuccessVersion, arg.WorkspaceID, arg.DirectoryID)
+	var config_version int64
+	err := row.Scan(&config_version)
+	return config_version, err
+}
+
 const getWorkspaceIdentityDirectory = `-- name: GetWorkspaceIdentityDirectory :one
 SELECT id, workspace_id, name, host, url, allowed_group_dns, generation, port, base_dn, bind_dn, bind_secret_box, ca_pem, sync_interval_seconds, max_staleness_seconds, version, last_success_at, cursor_box, last_error, disabled_at, created_at FROM workspace_directories WHERE workspace_id=$1
 `

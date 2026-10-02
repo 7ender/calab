@@ -2,6 +2,7 @@ package directory
 
 import (
 	"context"
+	"errors"
 	"net/url"
 	"sync"
 	"time"
@@ -306,16 +307,58 @@ func (s *Service) Sync(ctx context.Context, ws uuid.UUID) error {
 		err = s.publish(ctx, c, run, objects)
 	}
 	if err != nil {
+		status, message := "failed", "Directory synchronization unavailable"
+		if errors.Is(err, errShrunk) {
+			status, message = "quarantined", shrunkMessage
+		}
 		cleanup, cancel := context.WithTimeout(context.WithoutCancel(ctx), 5*time.Second)
 		defer cancel()
 		_ = s.Identity.DB.Tx(cleanup, func(q *sqlc.Queries) error {
-			if _, e := q.FinishDirectorySyncRun(cleanup, sqlc.FinishDirectorySyncRunParams{ID: run.ID, Status: "failed"}); e != nil {
+			if _, e := q.FinishDirectorySyncRun(cleanup, sqlc.FinishDirectorySyncRunParams{ID: run.ID, Status: status}); e != nil {
 				return e
 			}
-			return q.SetDirectoryError(cleanup, sqlc.SetDirectoryErrorParams{WorkspaceID: ws, ID: c.ID, LastError: "Directory synchronization unavailable"})
+			return q.SetDirectoryError(cleanup, sqlc.SetDirectoryErrorParams{WorkspaceID: ws, ID: c.ID, LastError: message})
 		})
 	}
 	return err
+}
+
+// errShrunk: a complete scan came back empty or sharply smaller than the published state —
+// typically a bind account that lost read rights, not a mass departure. The run is
+// quarantined and nothing is published; freshness is not renewed, so access still closes
+// after the staleness bound unless a later scan succeeds. Saving the directory settings
+// again acknowledges a real large change: the first scan of a new config version is not
+// guarded.
+var errShrunk = errors.New("directory snapshot shrank sharply")
+
+const shrunkMessage = "Directory scan returned far fewer accounts than before; the previous state is kept. Check the bind account's read access, or save the directory settings again to accept the change."
+
+// shrinkGuard counts, over the published objects, how many a scan would drop or close.
+type shrinkGuard struct {
+	enabled                              bool
+	present, dropped, linkedActive, lost int
+}
+
+func (g *shrinkGuard) observe(existing sqlc.DirectoryObject, inSnapshot bool, status string) {
+	if existing.Status != "deleted" {
+		g.present++
+		if !inSnapshot {
+			g.dropped++
+		}
+	}
+	if existing.UserID != nil && existing.Status == "active" {
+		g.linkedActive++
+		if status != "active" {
+			g.lost++
+		}
+	}
+}
+
+// sharp: at least two objects and more than 20 % of the base.
+func sharp(n, of int) bool { return n >= 2 && n*5 > of }
+
+func (g *shrinkGuard) shrunk(snapshot int) bool {
+	return g.enabled && (g.present > 0 && snapshot == 0 || sharp(g.dropped, g.present) || sharp(g.lost, g.linkedActive))
 }
 
 func (s *Service) publish(ctx context.Context, c sqlc.WorkspaceDirectory, run sqlc.DirectorySyncRun, objects []Object) error {
@@ -340,6 +383,13 @@ func (s *Service) publish(ctx context.Context, c sqlc.WorkspaceDirectory, run sq
 		if err != nil || current.Version != c.Version || current.Generation != c.Generation || current.DisabledAt != nil || !s.now().Before(run.LeaseUntil) {
 			return sso.ErrChanged
 		}
+		// The first complete scan after a configuration save is the owner's acknowledgement
+		// and is not guarded; later scans are (see shrinkGuard).
+		last, err := q.GetLastDirectorySuccessVersion(ctx, sqlc.GetLastDirectorySuccessVersionParams{WorkspaceID: c.WorkspaceID, DirectoryID: c.ID})
+		if err != nil && !db.IsNotFound(err) {
+			return err
+		}
+		guard := shrinkGuard{enabled: err == nil && last == c.Version}
 		for _, o := range objects {
 			if _, err = q.CreateDirectorySyncObject(ctx, sqlc.CreateDirectorySyncObjectParams{WorkspaceID: c.WorkspaceID, DirectoryID: c.ID, RunID: run.ID, ObjectGuid: o.GUID, DistinguishedName: o.DN, Eligible: o.Eligible, Disabled: o.Disabled}); err != nil {
 				return err
@@ -387,6 +437,7 @@ func (s *Service) publish(ctx context.Context, c sqlc.WorkspaceDirectory, run sq
 						status = "deleted"
 					}
 				}
+				guard.observe(existing, present, status)
 				if _, err = q.UpdateDirectoryObjectSnapshot(ctx, sqlc.UpdateDirectoryObjectSnapshotParams{WorkspaceID: c.WorkspaceID, DirectoryID: c.ID, ID: existing.ID, ExpectedVersion: existing.Version, DistinguishedName: dn, Status: status, LastSeenRunID: last, MissingFullScans: missing}); err != nil {
 					return err
 				}
@@ -401,6 +452,9 @@ func (s *Service) publish(ctx context.Context, c sqlc.WorkspaceDirectory, run sq
 			}
 			id := rows[len(rows)-1].ID
 			after = &id
+		}
+		if guard.shrunk(len(objects)) {
+			return errShrunk // the transaction rolls back every transition above
 		}
 		for _, o := range objects {
 			if !seen[o.GUID] {

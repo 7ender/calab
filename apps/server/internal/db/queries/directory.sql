@@ -90,3 +90,10 @@ AND version=sqlc.arg('expected_version') RETURNING *;
 SELECT * FROM workspace_directories WHERE disabled_at IS NULL
 AND (sqlc.narg('after_id')::uuid IS NULL OR id>sqlc.narg('after_id'))
 ORDER BY id LIMIT sqlc.arg('limit_count');
+
+-- name: GetLastDirectorySuccessVersion :one
+-- Config version of the directory's latest successful full scan (the shrink guard compares
+-- it with the current version: the first scan after a configuration save is not guarded).
+SELECT config_version FROM directory_sync_runs
+WHERE workspace_id=sqlc.arg('workspace_id') AND directory_id=sqlc.arg('directory_id') AND status='succeeded' AND complete
+ORDER BY started_at DESC LIMIT 1;

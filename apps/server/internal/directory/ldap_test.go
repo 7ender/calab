@@ -325,3 +325,22 @@ func TestLDAPOperatorCAIsTheOnlyAnchor(t *testing.T) {
 		t.Fatal("certificate outside the operator CA accepted")
 	}
 }
+
+func TestShrinkGuardThreshold(t *testing.T) {
+	for _, tc := range []struct {
+		g        shrinkGuard
+		snapshot int
+		want     bool
+	}{
+		{shrinkGuard{enabled: true, present: 10, dropped: 2}, 8, false},               // 20 %: not more
+		{shrinkGuard{enabled: true, present: 10, dropped: 3}, 7, true},                // 30 %
+		{shrinkGuard{enabled: true, present: 4, dropped: 1}, 3, false},                // a single departure
+		{shrinkGuard{enabled: true, present: 1}, 0, true},                             // empty after non-empty
+		{shrinkGuard{enabled: true, linkedActive: 5, lost: 2, present: 50}, 50, true}, // eligibility read lost
+		{shrinkGuard{enabled: false, present: 10, dropped: 10}, 0, false},             // acknowledged
+	} {
+		if got := tc.g.shrunk(tc.snapshot); got != tc.want {
+			t.Fatalf("%+v snapshot=%d: %v", tc.g, tc.snapshot, got)
+		}
+	}
+}

@@ -84,7 +84,7 @@ func TestDirectoryFirstAbsenceRevokesManagedAccess(t *testing.T) {
 		t.Fatalf("partial snapshot changed managed access: %v", err)
 	}
 	f.ldap.mu.Lock()
-	f.ldap.entries = nil
+	f.ldap.entries = bystanderOnly() // non-empty: an empty snapshot is quarantined
 	f.ldap.failPage = -1
 	f.ldap.mu.Unlock()
 	f.sync(t)
@@ -131,7 +131,7 @@ func TestDirectoryFirstAbsenceRevokesManagedAccess(t *testing.T) {
 		t.Fatal(err)
 	}
 	f.ldap.mu.Lock()
-	f.ldap.entries = nil
+	f.ldap.entries = bystanderOnly() // non-empty: an empty snapshot is quarantined
 	f.ldap.mu.Unlock()
 	f.sync(t)
 	f.ldap.mu.Lock()
