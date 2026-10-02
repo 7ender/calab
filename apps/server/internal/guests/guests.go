@@ -20,6 +20,7 @@ import (
 	"github.com/calaba/calaba/server/internal/db/sqlc"
 	"github.com/calaba/calaba/server/internal/events"
 	"github.com/calaba/calaba/server/internal/httpx"
+	"github.com/calaba/calaba/server/internal/identitypolicy"
 	"github.com/calaba/calaba/server/internal/moderation"
 	"github.com/calaba/calaba/server/internal/pbconv"
 	"github.com/calaba/calaba/server/internal/perm"
@@ -463,6 +464,15 @@ func (s *Service) join(w http.ResponseWriter, r *http.Request) error {
 	if auth.HasBearer(r) {
 		id, err := s.auth.Authenticate(r)
 		if err != nil {
+			return err
+		}
+		// Joining adds a global-account membership, like /api/invites/{code}/join: only a
+		// live local_account session (fresh from the database) may do it — never a
+		// workspace_sso session of another workspace or a recovery session (ADR-0054).
+		if id.Principal, err = s.auth.ResolvePrincipal(r.Context(), id); err != nil {
+			return err
+		}
+		if err := s.auth.CheckGlobal(r.Context(), id, identitypolicy.GlobalWrite); err != nil {
 			return err
 		}
 		var g granted
