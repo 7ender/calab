@@ -244,3 +244,41 @@ func TestIdentityCompatibilityPreviewChargedOnce(t *testing.T) {
 		t.Fatal("limited preview disclosed workspace metadata")
 	}
 }
+
+// Removing member A publishes A's per-user access version. Other members' live sessions
+// (and a fresh READY racing the notice) must keep their workspace: before the fix the
+// gateway compared A's version with B's lease, so B's next event closed the socket with
+// 4000 "identity resync required" (flaky CI: TestJoinRevalidation) and the sweep sent B
+// a WORKSPACE_DELETE.
+func TestIdentityMemberRemovalKeepsOtherMembersLeases(t *testing.T) {
+	o, bob, ws, _ := setupTeam(t)
+	alice := register(t, invite(t, o, ws.GetId()))
+	g := dialGW(t)
+	g.identify(bob.token)
+	o.must(204, "DELETE", "/api/workspaces/"+ws.GetId()+"/members/"+alice.id, nil, nil)
+	if err := testApp.DeliverIdentityInvalidations(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	time.Sleep(300 * time.Millisecond) // pubsub delivery to the gateway
+	var cr v1.CreateRoomResponse
+	o.must(201, "POST", "/api/workspaces/"+ws.GetId()+"/rooms", &v1.CreateRoomRequest{Type: v1.RoomType_ROOM_TYPE_TEXT, Name: "after-kick"}, &cr)
+	g.wait("ROOM_CREATE after another member was removed", func(e *v1.DispatchEvent) bool {
+		if e.GetWorkspaceDelete().GetWorkspaceId() == ws.GetId() {
+			t.Fatal("bob lost the workspace because alice was removed")
+		}
+		return e.GetRoomCreate().GetRoom().GetId() == cr.GetRoom().GetId()
+	})
+	// A full identity sweep (5 s) must not revoke bob either.
+	g.quiet("WORKSPACE_DELETE", 6*time.Second, func(e *v1.DispatchEvent) bool {
+		return e.GetWorkspaceDelete().GetWorkspaceId() == ws.GetId()
+	})
+	o.must(201, "POST", "/api/workspaces/"+ws.GetId()+"/rooms", &v1.CreateRoomRequest{Type: v1.RoomType_ROOM_TYPE_TEXT, Name: "after-sweep"}, &cr)
+	g.wait("ROOM_CREATE after the identity sweep", func(e *v1.DispatchEvent) bool { return e.GetRoomCreate().GetRoom().GetId() == cr.GetRoom().GetId() })
+	found := false
+	for _, s := range dialGW(t).identify(bob.token).GetWorkspaces() {
+		found = found || s.GetWorkspace().GetId() == ws.GetId()
+	}
+	if !found {
+		t.Fatal("fresh READY lost the workspace")
+	}
+}

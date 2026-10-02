@@ -2,12 +2,16 @@ package gateway
 
 import (
 	"context"
+	"errors"
 	"sync"
 	"time"
 
 	"github.com/calaba/calaba/server/internal/identitypolicy"
 	"github.com/google/uuid"
 )
+
+// errLeaseUnavailable: a positive decision whose lease could not be stored.
+var errLeaseUnavailable = errors.New("identity lease unavailable")
 
 // A lease is owned by one exact Session, never shared by user ID. until retains
 // time.Now's monotonic component; the absolute DB deadline can only shorten it.
@@ -72,9 +76,29 @@ func (s *Session) requestIdentityRefresh() {
 	default:
 	}
 }
+
+// refreshWorkspaceLease evaluates durable access and stores the lease. An evaluation
+// that raced an invalidation (revision bump) is discarded and re-run once more after
+// it, so a fresh, still-authorized connection is not left with a positive decision but
+// no lease (its READY would then be closed by allowsEvent). Bounded: a stream of
+// invalidations still fails closed.
 func (s *Session) refreshWorkspaceLease(ctx context.Context, ws uuid.UUID) (identitypolicy.Decision, error) {
 	s.leases.refresh.Lock()
 	defer s.leases.refresh.Unlock()
+	var d identitypolicy.Decision
+	var err error
+	for attempt := 0; attempt < 3; attempt++ {
+		var raced bool
+		if d, raced, err = s.refreshWorkspaceLeaseOnce(ctx, ws); !raced || err != nil {
+			break
+		}
+	}
+	return d, err
+}
+
+// refreshWorkspaceLeaseOnce is one evaluation; s.leases.refresh must be held. raced
+// reports that an invalidation arrived meanwhile and the result was not stored.
+func (s *Session) refreshWorkspaceLeaseOnce(ctx context.Context, ws uuid.UUID) (identitypolicy.Decision, bool, error) {
 	started := time.Now()
 	s.leases.mu.Lock()
 	revision := s.leases.revision
@@ -100,7 +124,7 @@ func (s *Session) refreshWorkspaceLease(ctx context.Context, ws uuid.UUID) (iden
 	s.leases.mu.Lock()
 	defer s.leases.mu.Unlock()
 	if s.leases.revision != revision {
-		return d, err
+		return d, true, err
 	}
 	if s.leases.workspaces == nil {
 		s.leases.workspaces = map[uuid.UUID]identityLease{}
@@ -123,7 +147,7 @@ func (s *Session) refreshWorkspaceLease(ctx context.Context, ws uuid.UUID) (iden
 		// fixed product cap that silently drops READY for supported memberships.
 		s.leases.workspaces[ws] = l
 	}
-	return d, err
+	return d, false, err
 }
 func (s *Session) refreshSessionLease(ctx context.Context) {
 	s.leases.refresh.Lock()

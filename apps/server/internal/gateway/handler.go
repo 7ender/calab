@@ -458,6 +458,13 @@ func (h *Hub) buildReady(ctx context.Context, s *Session, uid uuid.UUID) (*v1.Re
 				continue
 			}
 			decision, err := s.refreshWorkspaceLease(ctx, w.ID)
+			if err == nil && decision.Allowed && !s.workspaceLeaseAllows(w.ID) {
+				// Allowed but not leased (invalidations kept racing the evaluation): READY
+				// filtering would close the fresh connection. Leave the workspace out and
+				// unsubscribe; the identity sweep re-adds it with WORKSPACE_CREATE once leased.
+				err = errLeaseUnavailable
+				h.leaveWorkspace(s, w.ID)
+			}
 			access = identityAccessStatus(w.ID, decision, err, s.principal)
 			if policy, e := h.db.Q.GetIdentityPolicy(ctx, w.ID); e == nil {
 				access.Mode = identityMode(policy.Mode)

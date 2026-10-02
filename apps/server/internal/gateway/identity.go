@@ -481,10 +481,21 @@ func (h *Hub) IdentityChanged() {
 func (h *Hub) identityNotification(payload string) {
 	var notice struct {
 		Workspace uuid.UUID `json:"workspace"`
+		User      *string   `json:"user"` // absent: legacy publisher, access applies to everyone
 		Policy    int64     `json:"policy_version"`
 		Access    int64     `json:"access_version"`
 	}
 	if json.Unmarshal([]byte(payload), &notice) == nil && notice.Workspace != uuid.Nil {
+		// access_version is per (workspace, user): comparing user A's version with B's
+		// lease would tombstone B at a version B's own row never reaches, so B could not
+		// re-lease until reconnect (READY/events closed, spurious WORKSPACE_DELETE).
+		// Policy is workspace-wide and applies to every session of the workspace.
+		accessFor := func(s *Session) int64 {
+			if notice.User == nil || *notice.User == s.user.String() {
+				return notice.Access
+			}
+			return 0
+		}
 		// Receipts can outlive membership and have no byWS subscription. Only
 		// actually prepared receipts of this workspace track monotonic invalidations.
 		for _, s := range h.sessionsWhere(func(s *Session) bool { return !s.bot }) {
@@ -494,22 +505,24 @@ func (h *Hub) identityNotification(payload string) {
 					delete(s.leases.receipts, ws)
 				}
 			}
+			access := accessFor(s)
 			state, ok := s.leases.receipts[notice.Workspace]
-			if ok && (notice.Policy > state.policy || notice.Access > state.access) {
+			if ok && (notice.Policy > state.policy || access > state.access) {
 				state.policy = max(state.policy, notice.Policy)
-				state.access = max(state.access, notice.Access)
+				state.access = max(state.access, access)
 				state.epoch++
 				s.leases.receipts[notice.Workspace] = state
 			}
 			s.leases.mu.Unlock()
 		}
 		for _, s := range h.inWorkspace(notice.Workspace) {
+			access := accessFor(s)
 			s.leases.mu.Lock()
 			l := s.leases.workspaces[notice.Workspace]
-			if notice.Policy > l.versions.Policy || notice.Access > l.versions.Access {
+			if notice.Policy > l.versions.Policy || access > l.versions.Access {
 				l.until = time.Time{}
 				l.versions.Policy = max(l.versions.Policy, notice.Policy)
-				l.versions.Access = max(l.versions.Access, notice.Access)
+				l.versions.Access = max(l.versions.Access, access)
 				if l.session != uuid.Nil {
 					s.leases.workspaces[notice.Workspace] = l
 				}

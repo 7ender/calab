@@ -20,12 +20,19 @@ func (a *App) DeliverIdentityInvalidations(ctx context.Context) error {
 			return err
 		}
 		for _, row := range rows {
+			// access_version is the version of user's own access row ("" = workspace-wide
+			// notice, policy only); consumers compare it only with that user's sessions.
+			user := ""
+			if row.UserID != nil {
+				user = row.UserID.String()
+			}
 			payload, err := json.Marshal(struct {
 				ID            string `json:"id"`
 				Workspace     string `json:"workspace"`
+				User          string `json:"user"`
 				PolicyVersion int64  `json:"policy_version"`
 				AccessVersion int64  `json:"access_version"`
-			}{row.ID.String(), row.WorkspaceID.String(), row.PolicyVersion, row.AccessVersion})
+			}{row.ID.String(), row.WorkspaceID.String(), user, row.PolicyVersion, row.AccessVersion})
 			if err != nil {
 				return err
 			}
