@@ -291,12 +291,11 @@ STEPS="preflight build" VERSION=0.1.0 infra/docker/release.sh <commit> # лок�
 
 `infra/docker/compose.dev.yml`: postgres, valkey, livekit (dev-режим: `--dev`, ключи `devkey/secret`, без TLS, UDP mux 7882, Valkey DB 1), egress (в сетевом пространстве livekit; файлы — `apps/server/data/recordings`, это `RECORDINGS_PATH` API по умолчанию). Образ egress ~1.5 ГБ: `docker compose -f infra/docker/compose.dev.yml up -d` без имён сервисов его скачает — если запись не нужна, поднимать `postgres valkey livekit mailpit`. API и Electron — на хосте через pnpm; файлы API в dev — `STORAGE_DRIVER=fs` с локальным каталогом (`infra/docker/data/` в `.gitignore`). LiveKit в Docker на macOS не имеет host-сети → для локальных тестов медиа между двумя машинами в LAN LiveKit лучше запускать бинарником (`brew install livekit`), в Docker — только для одного клиента на localhost.
 
-## Потом: Kubernetes
+## Прод: Kubernetes (с 2026-10-02)
 
-Путь без переписывания:
-1. Уже сейчас: всё через env, API stateless, health-эндпоинты `/healthz` `/readyz`, миграции при старте под `pg_advisory_lock` (безопасно для нескольких реплик).
-2. k3s на одной ноде → Helm-чарты: свой `calaba-api`, официальный `livekit-server` (`hostNetwork`, Redis), `cloudnative-pg`, файлы — PVC (RWO, один API) или драйвер `s3` (Garage / внешний S3) при нескольких репликах, Traefik с `IngressRouteTCP HostSNI(turn.*)` passthrough. Запись встреч без общего диска с egress — только с драйвером `s3` («Записи встреч в S3»).
-3. Добавление нод: LiveKit масштабируется через Redis (комната закрепляется за нодой), API — обычными репликами, gateway — pub/sub уже через Redis.
+Продакшен работает в Kubernetes на PostgreSQL 17 (решение владельца, 2026-10-02). Релизы идут так: тег `v*` → зелёный CI → `.github/workflows/images.yml` (образы API и веба) → GitHub Deployment `calab-prod` → кластер забирает заявку сам (подробнее ниже). Конфигурация кластера (манифесты, Vault, Caddy, ingress) живёт вне этого репозитория; известные факты — в [операторском preflight](plans/identity-v2-operator-preflight.md). Расположение манифестов, число реплик, схема бэкапов БД кластера, версия и топология LiveKit/TURN в проде: TODO владелец.
+
+Docker compose в этом документе — тестовый стенд и вариант self-host; он остаётся на PostgreSQL 18 и не равен проду. Что давало бесшовный переход и остаётся в силе: всё через env, API stateless, `/healthz` `/readyz`, миграции при старте под `pg_advisory_lock` (безопасно для нескольких реплик), файлы и записи встреч — драйвер `s3` при нескольких репликах, gateway — pub/sub через Redis.
 
 Не использовать: private/serverless кластеры (NAT ломает WebRTC), LB перед 7881.
 
