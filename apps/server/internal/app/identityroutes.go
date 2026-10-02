@@ -3,6 +3,7 @@ package app
 import (
 	v1 "github.com/calaba/calaba/server/gen/calaba/v1"
 	"github.com/calaba/calaba/server/internal/auth"
+	"github.com/calaba/calaba/server/internal/builtinstickers"
 	"github.com/calaba/calaba/server/internal/db"
 	"github.com/calaba/calaba/server/internal/db/sqlc"
 	"github.com/calaba/calaba/server/internal/httpx"
@@ -41,6 +42,7 @@ const (
 // identityRoutes enumerates every route. Unknown paths fail closed; a new registration
 // always requires an explicit authority and resource classification.
 var identityRoutes = map[string]identityScope{
+	"GET /api/stickers/builtin/{name}":                                                  scopePublic,
 	"PUT /api/workspaces/{workspace_id}/identity/policy":                                scopePublic,
 	"PUT /api/workspaces/{workspace_id}/identity/directory/members/{user_id}":           scopePublic,
 	"PUT /api/workspaces/{workspace_id}/identity/directory":                             scopePublic,
@@ -360,6 +362,10 @@ func identityGate(q *sqlc.Queries, a *auth.Service, next http.Handler) http.Hand
 			httpx.WriteError(w, r, httpx.Forbidden("unclassified identity route"))
 			return
 		}
+		// Public catalog metadata is safe for scoped sessions, like the aggregate pack list.
+		if r.Pattern == "GET /api/sticker-packs/{id}" && strings.EqualFold(r.PathValue("id"), builtinstickers.PackID()) {
+			scope = scopeAggregate
+		}
 		op := identitypolicy.WorkspaceWrite
 		if r.Method == http.MethodGet || r.Method == http.MethodHead {
 			op = identitypolicy.WorkspaceRead
@@ -507,7 +513,10 @@ func identityTarget(r *http.Request, q *sqlc.Queries, sc identityScope) (uuid.UU
 		return row.WorkspaceID, err
 	case scopePack:
 		row, err := q.GetStickerPack(ctx, id)
-		return row.WorkspaceID, err
+		if row.WorkspaceID != nil {
+			return *row.WorkspaceID, err
+		}
+		return uuid.Nil, err
 	case scopeSticker:
 		row, err := q.GetSticker(ctx, id)
 		return row.WorkspaceID, err

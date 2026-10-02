@@ -60,3 +60,6 @@
 | [0054](0054-workspace-identity.md) | Workspace identity: корпоративный OIDC SSO, LDAPS lifecycle и OAuth/OIDC provider с общей границей доверия и отдельными токенами | принято, реализовано в 2.0.0 |
 | [0055](0055-scoped-session-reauthentication.md) | Same-session повторная SSO-аутентификация для OAuth consent без расширения authority или срока сессии | принято, реализовано в 2.0.0 |
 | [0056](0056-suspended-workspace-read-compatibility.md) | Сохранение прежнего чтения suspended workspace для local_account off/optional; passive gateway отдельно от публикации | принято, реализовано в 2.0.0 |
+
+
+- [0057 — Встроенный Calab Stikers](0057-built-in-stickers.md): глобальный неизменяемый пак, общие изображения клиента/сервера, вне квот.

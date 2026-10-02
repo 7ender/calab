@@ -1,5 +1,6 @@
 /** English UI strings — sticker packs (ADR-0030). Same keys as ru/stickers.ts. */
 export const enStickers = {
+  'stk.builtin': 'Built-in',
   'stk.tabStickers': 'Stickers',
   'stk.preview': '{emoji} Sticker',
   'stk.search': 'Search by emoji',

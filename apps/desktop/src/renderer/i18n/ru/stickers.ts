@@ -3,6 +3,7 @@
  * messages, «Настройки пространства → Стикеры», «Мои стикеры». Same rules as ru.ts.
  */
 export const ruStickers = {
+  'stk.builtin': 'Встроенный',
   'stk.tabStickers': 'Стикеры',
   'stk.preview': '{emoji} Стикер',
   'stk.search': 'Поиск по эмодзи',

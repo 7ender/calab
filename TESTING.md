@@ -2065,3 +2065,12 @@ CALABA_WEB_URL=http://127.0.0.1:39571 npx playwright test --config playwright.we
 - Invite preview учитывает неизвестные коды и не списывает успешный preview дважды; GET/HEAD file/thumbnail используют каждую разрешённую live reference через WithPolicy/CanRead.
 
 - Suspended workspace: `TestWorkspaceSuspension|TestIdentitySuspensionLocalReadIsolation|TestGatewayFlow` (PG18 race) сохраняют local off/optional history/member/READY; проверяют scoped/recovery/enforced/ACL/directory-denials и запрет TYPING при receive lease (ADR-0056).
+
+### Built-in Calab Stikers (ADR-0057)
+
+- `go test ./internal/builtinstickers ./internal/stickers ./internal/pbconv ./internal/messages` in `apps/server`: embedded WebP validation and public allowlist/cache.
+- PG17 + Valkey 9/Redis 7.4: `go test -tags integration -run 'Test(BuiltinStickers|Sticker)' ./internal/app` with isolated TEST_PG_URL / TEST_REDIS_URL.
+- Desktop Vitest: `src/renderer/lib/{stickers,builtinStickers,stickerSuggest}.test.ts`; build:web + build:app include the same 16 assets.
+- Manual: fresh account → stickers → Calab Stikers; emoji search, send to room and DM, reload history, view pack, check fixed built-in label in My stickers.
+- Guest with SEND_MESSAGES: send and forward succeed; without SEND_MESSAGES: send rejected. Free workspace: custom pack allowance unchanged.
+- Unknown asset ID: 404; public built-in route never serves uploads.

@@ -176,6 +176,9 @@ func (h *Handlers) sticker(ctx context.Context, raw string, acc perm.RoomAccess,
 	if err != nil {
 		return nil, err
 	}
+	if s.WorkspaceID == uuid.Nil {
+		return &s, nil
+	}
 	users, ws := []uuid.UUID{author}, s.WorkspaceID
 	if acc.DM {
 		users = acc.Members

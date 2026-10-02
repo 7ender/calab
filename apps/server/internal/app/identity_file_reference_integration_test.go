@@ -151,11 +151,12 @@ func TestIdentityFileReferencesCanRead(t *testing.T) {
 func TestIdentityFileReferencesStickerCanRead(t *testing.T) {
 	f := identitySetup(t, "optional")
 	file := identityReferenceFile(t, f.local, f.b.Id)
-	pack, err := testDB.Q.InsertStickerPack(t.Context(), sqlc.InsertStickerPackParams{WorkspaceID: uuid.MustParse(f.b.Id), Name: "References", ShortName: "ref" + strings.ReplaceAll(uuid.NewString(), "-", "")[:16]})
+	wid := uuid.MustParse(f.b.Id)
+	pack, err := testDB.Q.InsertStickerPack(t.Context(), sqlc.InsertStickerPackParams{WorkspaceID: &wid, Name: "References", ShortName: "ref" + strings.ReplaceAll(uuid.NewString(), "-", "")[:16]})
 	if err != nil {
 		t.Fatal(err)
 	}
-	sticker, err := testDB.Q.InsertSticker(t.Context(), sqlc.InsertStickerParams{PackID: pack.ID, FileID: file.ID, Emoji: "x", Width: 16, Height: 16})
+	sticker, err := testDB.Q.InsertSticker(t.Context(), sqlc.InsertStickerParams{PackID: pack.ID, FileID: &file.ID, Emoji: "x", Width: 16, Height: 16})
 	if err != nil {
 		t.Fatal(err)
 	}

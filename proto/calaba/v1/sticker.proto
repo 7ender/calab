@@ -34,6 +34,8 @@ message StickerPack {
   string created_by = 7;
   google.protobuf.Timestamp created_at = 8;
   google.protobuf.Timestamp updated_at = 9;
+  // Global immutable pack, always available; not part of workspace or install quotas.
+  bool builtin = 10;
 }
 
 // GET /api/workspaces/{id}/sticker-packs (any member, guests included): live packs, oldest

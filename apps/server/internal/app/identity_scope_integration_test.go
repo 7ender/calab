@@ -154,11 +154,12 @@ func TestIdentityRouteInventoryAndCrossWorkspace(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	pack, err := testDB.Q.InsertStickerPack(context.Background(), sqlc.InsertStickerPackParams{WorkspaceID: ws, Name: "Denied pack", ShortName: "i" + strings.ReplaceAll(uuid.NewString(), "-", "")[:16]})
+	pack, err := testDB.Q.InsertStickerPack(context.Background(), sqlc.InsertStickerPackParams{WorkspaceID: &ws, Name: "Denied pack", ShortName: "i" + strings.ReplaceAll(uuid.NewString(), "-", "")[:16]})
 	if err != nil {
 		t.Fatal(err)
 	}
-	sticker, err := testDB.Q.InsertSticker(context.Background(), sqlc.InsertStickerParams{PackID: pack.ID, FileID: uuid.MustParse(file.Id), Emoji: "x", Width: 16, Height: 16})
+	fid := uuid.MustParse(file.Id)
+	sticker, err := testDB.Q.InsertSticker(context.Background(), sqlc.InsertStickerParams{PackID: pack.ID, FileID: &fid, Emoji: "x", Width: 16, Height: 16})
 	if err != nil {
 		t.Fatal(err)
 	}
