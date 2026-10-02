@@ -210,8 +210,7 @@ async function recordingCard(win: Page, mock: MockServer): Promise<Locator> {
     result: true,
   });
   const sidebar = win.locator('aside').first();
-  await sidebar.getByRole('button', { name: /^Переговорка/ }).first().hover();
-  await sidebar.getByRole('button', { name: 'Чат комнаты «Переговорка»' }).click();
+  await sidebar.getByRole('button', { name: /^Переговорка/ }).click();
   await expect(win.getByRole('heading', { name: 'Переговорка' })).toBeVisible();
   const card = win.getByTestId('recording-card');
   await expect(card).toHaveCount(1);

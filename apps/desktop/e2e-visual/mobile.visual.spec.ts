@@ -627,7 +627,7 @@ test('m-voice', async ({ page }) => {
   await settings.getByRole('button', { name: 'Закрыть', exact: true }).tap();
   await expect(settings).toHaveCount(0);
   await page.getByRole('button', { name: 'Комнаты и пространства' }).first().tap();
-  await page.getByTestId('mobile-nav').locator('aside button', { hasText: 'Созвон' }).first().tap();
+  await page.getByTestId('mobile-nav').getByRole('button', { name: 'Войти в голос «Созвон»' }).tap();
   const strip = page.getByTestId('mobile-voice-strip');
   await expect(strip.getByTestId('ptt-hold')).toBeVisible({ timeout: 30_000 });
   // The voice room itself (the strip's room line): its chat, the composer, the strip under it.
@@ -645,7 +645,7 @@ test('m-voice-soundboard', async ({ page }) => {
   mock.addSound(IDS.workspaces.main, 'Фанфары', '🎺');
   await signedIn(page);
   await page.getByRole('button', { name: 'Комнаты и пространства' }).first().tap();
-  await page.getByTestId('mobile-nav').locator('aside button', { hasText: 'Созвон' }).first().tap();
+  await page.getByTestId('mobile-nav').getByRole('button', { name: 'Войти в голос «Созвон»' }).tap();
   const strip = page.getByTestId('mobile-voice-strip');
   await expect(strip.getByTestId('mobile-soundboard-button')).toBeEnabled({ timeout: 30_000 });
   await strip.getByTestId('mobile-soundboard-button').tap();

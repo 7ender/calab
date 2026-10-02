@@ -153,7 +153,7 @@ test('phone: sign in → rooms drawer → message → voice → PTT hold', async
 
   // Voice: join «Созвон» from the drawer → the compact strip at the bottom.
   await page.getByRole('button', { name: 'Комнаты и пространства' }).tap();
-  await page.getByTestId('mobile-nav').locator('aside button', { hasText: 'Созвон' }).first().tap();
+  await page.getByTestId('mobile-nav').getByRole('button', { name: 'Войти в голос «Созвон»' }).tap();
   const strip = page.getByTestId('mobile-voice-strip');
   await expect(strip.getByText('Голос подключён')).toBeVisible({ timeout: 30_000 });
   await expect(page.getByTestId('mobile-nav')).toHaveCount(0);

@@ -68,7 +68,8 @@ test('deafen: a participant who joins later stays silent; undeafen restores soun
   await page.getByLabel('Пароль', { exact: true }).fill('password123');
   await page.getByRole('button', { name: 'Войти', exact: true }).click();
 
-  await page.locator('aside button', { hasText: 'Созвон' }).first().click();
+  await page.locator('aside button', { hasText: 'Созвон' }).first().hover();
+  await page.getByRole('button', { name: 'Войти в голос «Созвон»' }).click();
   await expect(page.getByText('Голос подключён')).toBeVisible({ timeout: 30_000 });
 
   // Mic off first, then deafen: undeafen must bring back «off», not turn the mic on (#11).

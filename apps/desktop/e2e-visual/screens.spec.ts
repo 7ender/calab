@@ -1931,11 +1931,11 @@ test('voice-room-status', async ({ open, win, mock, shot }) => {
   await editRoomStatus(win, true);
   // Just joined (docs/09 #10): the invite row is in its 30 s window.
   await expect(win.getByTestId('voice-invite-row')).toBeVisible();
-  // Card actions (docs/09 #30): only «чат» and «…»; «…» opens the room menu with «Запись встречи»
+  // Card actions (docs/09 #30): «Войти» and «…»; «…» opens the room menu with «Запись встречи»
   // (ADR-0025: enabled — the room allows recording).
   const card = win.getByTestId('voice-room-card');
   await card.hover();
-  await expect(card.getByRole('button', { name: /^Чат комнаты/ })).toBeVisible();
+  await expect(card.getByTestId('room-join')).toBeVisible();
   await card.getByTestId('room-more').click();
   const record = win.getByTestId('room-menu-record');
   await expect(record).toBeVisible();
@@ -2107,13 +2107,14 @@ test('voice-room-chat-preview', async ({ open, win, mock, shot }) => {
   mock.injectMessage({ roomId: IDS.rooms.meeting, authorId: IDS.users.boris, content: 'Заходите, обсуждаем план релиза' });
   mock.injectMessage({ roomId: IDS.rooms.meeting, authorId: IDS.users.vera, content: 'Показываю экран с макетами' });
   const sidebar = win.locator('aside').first();
-  await sidebar.getByRole('button', { name: /^Созвон/ }).first().click();
+  await sidebar.getByRole('button', { name: /^Созвон/ }).first().hover();
+  await sidebar.getByRole('button', { name: 'Войти в голос «Созвон»' }).click();
   await expect(win.getByText('Голос подключён')).toBeVisible({ timeout: 30_000 });
   await win.keyboard.press(`${MOD}+Shift+m`);
   await expect(win.getByRole('button', { name: 'Включить микрофон' }).first()).toBeVisible();
   await expect(win.getByRole('button', { name: /^Качество связи: Хорошее/ })).toBeVisible({ timeout: 15_000 });
   await sidebar.getByRole('button', { name: /^Переговорка/ }).first().hover();
-  await sidebar.getByRole('button', { name: 'Чат комнаты «Переговорка»' }).click();
+  await sidebar.getByRole('button', { name: /^Переговорка/ }).first().click();
   await expect(win.getByRole('heading', { name: 'Переговорка' })).toBeVisible();
   const preview = win.getByTestId('voice-preview');
   await expect(preview).toContainText('Вы не в голосе');
@@ -2140,7 +2141,7 @@ test('chat-recording-card', async ({ open, win, mock, shot }) => {
   mock.injectRecordingCard({ roomId: IDS.rooms.meeting, byUserId: IDS.users.boris, durationSec: 27 * 60, status: RecordingStatus.FAILED, error: 'internal', webUrl: web });
   const sidebar = win.locator('aside').first();
   await sidebar.getByRole('button', { name: /^Переговорка/ }).first().hover();
-  await sidebar.getByRole('button', { name: 'Чат комнаты «Переговорка»' }).click();
+  await sidebar.getByRole('button', { name: /^Переговорка/ }).first().click();
   await expect(win.getByRole('heading', { name: 'Переговорка' })).toBeVisible();
   const cards = win.getByTestId('recording-card');
   await expect(cards).toHaveCount(4);
@@ -2319,7 +2320,7 @@ async function doneCard(win: Page, mock: MockServer): Promise<Locator> {
   });
   const sidebar = win.locator('aside').first();
   await sidebar.getByRole('button', { name: /^Переговорка/ }).first().hover();
-  await sidebar.getByRole('button', { name: 'Чат комнаты «Переговорка»' }).click();
+  await sidebar.getByRole('button', { name: /^Переговорка/ }).first().click();
   await expect(win.getByRole('heading', { name: 'Переговорка' })).toBeVisible();
   const card = win.getByTestId('recording-card');
   await expect(card).toHaveCount(1);

@@ -1089,8 +1089,7 @@ function useRoomDrag(room: Room, enabled: boolean): ReturnType<typeof useDraggab
  * plain row), shown on hover / keyboard focus and while the menu is open (the call timer stands
  * there otherwise).
  */
-function CardActions({ room, workspaceId }: { room: Room; workspaceId: string }): ReactNode {
-  const openRoom = useUi((s) => s.openRoom);
+function CardActions({ room }: { room: Room }): ReactNode {
   const btn =
     'grid size-6 place-items-center rounded-[var(--radius-icon)] text-muted transition-colors duration-[var(--motion-fast)] hover:bg-[var(--color-fill-hover)] hover:text-fg';
   // «…» opens the row's own context menu (RoomMenu) under the button: one menu for the click, the
@@ -1101,11 +1100,6 @@ function CardActions({ room, workspaceId }: { room: Room; workspaceId: string })
   };
   return (
     <span className="hidden shrink-0 items-center gap-0.5 group-focus-within/row:flex group-hover/row:flex group-data-[state=open]/row:flex">
-      <Tip label={t('shell.roomChat')}>
-        <button type="button" className={btn} aria-label={t('shell.roomChatOf', { name: room.name })} onClick={() => openRoom(workspaceId, room.id)}>
-          <MessageCircle className="size-[18px]" aria-hidden />
-        </button>
-      </Tip>
       <Tip label={t('roomMenu.more')}>
         <button type="button" className={btn} aria-label={t('roomMenu.moreOf', { name: room.name })} aria-haspopup="menu" data-testid="room-more" onClick={openMenu}>
           <Ellipsis className="size-[18px]" aria-hidden />
@@ -1114,6 +1108,29 @@ function CardActions({ room, workspaceId }: { room: Room; workspaceId: string })
     </span>
   );
 }
+
+/**
+ * «Войти» (owner, 02.10): the voice room row's way into the call (the row itself opens the chat).
+ * Shown on hover / focus-within, always when people are inside or on touch; when hidden it is
+ * `sr-only`, so Tab still reaches it (and focus reveals it).
+ */
+const JoinButton = memo(function JoinButton({ name, onJoin, always }: { name: string; onJoin: () => void; always: boolean }): ReactNode {
+  useLocale();
+  return (
+    <Button
+      size="sm"
+      aria-label={t('shell.joinVoiceOf', { name })}
+      data-testid="room-join"
+      onClick={onJoin}
+      className={cx(
+        'h-5 px-2 text-micro mobile:h-6',
+        always ? '' : 'sr-only group-focus-within/row:not-sr-only group-hover/row:not-sr-only',
+      )}
+    >
+      {t('shell.joinVoiceShort')}
+    </Button>
+  );
+});
 
 function MentionBadge({ n }: { n: number }): ReactNode {
   if (n <= 0) return null;
@@ -1215,6 +1232,7 @@ function VoiceRoomRow({
 } & RowOrder): ReactNode {
   const active = useUi((s) => s.lastRoom[workspaceId] === room.id && s.activeWorkspaceId === workspaceId);
   const openRoom = useUi((s) => s.openRoom);
+  const mobile = useMobile();
   const inRoom = useVoice((s) => s.roomId === room.id);
   const connecting = useVoice((s) => s.roomId === room.id && s.phase === 'connecting');
   const unread = useRooms((s) => showsUnread(room.id, s));
@@ -1255,12 +1273,20 @@ function VoiceRoomRow({
     [setNodeRef, setDragRef],
   );
 
-  const click = (): void => {
-    openRoom(workspaceId, room.id);
+  // The row opens the room's chat and never joins (owner, 02.10); «Войти» is the one way into the voice.
+  const click = (): void => openRoom(workspaceId, room.id);
+  const join = (): void => {
     const next = joinOutcome({ inRoom, canConnect, canMove, people: people.length, limit });
     if (next === 'full') toast.info(t('shell.roomFull'));
-    else if (next === 'join') void voice.join(room.id, workspaceId);
+    else if (next === 'join') {
+      void voice.join(room.id, workspaceId);
+      // Nothing open in this workspace yet: show the room's chat next to the call.
+      if (!useUi.getState().lastRoom[workspaceId]) openRoom(workspaceId, room.id);
+      // The phone's drawer gives way to the call strip (the old click closed it by opening the room).
+      if (mobile) useUi.getState().setNavDrawer(false);
+    }
   };
+  const showJoin = !inRoom && canConnect;
 
   return (
     <div
@@ -1345,9 +1371,10 @@ function VoiceRoomRow({
                   {people.length ? <CallTimer roomId={room.id} className={card ? cx('text-[13px]', inRoom ? 'text-[var(--color-green-text)]' : 'text-fg') : undefined} /> : null}
                   {limit > 0 || people.length > 0 ? <PeoplePill n={people.length} max={limit} /> : null}
                 </span>
-                {/* Same two actions (chat · «…») whether the room is active (card) or not, on hover
+                {/* The «…» action whether the room is active (card) or not, on hover
                     (owner, Discord reference): no separate action set for either. */}
-                <CardActions room={room} workspaceId={workspaceId} />
+                {showJoin ? <JoinButton name={room.name} onJoin={join} always={people.length > 0 || mobile} /> : null}
+                <CardActions room={room} />
               </span>
             </div>
             {card ? (

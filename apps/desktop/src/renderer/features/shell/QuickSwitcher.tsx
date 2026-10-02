@@ -161,7 +161,7 @@ export function QuickSwitcher({ onClose, initialQuery = '' }: { onClose: () => v
     } else if (it.kind === 'room') {
       const r = it.room;
       openRoom(r.workspaceId, r.id);
-      // «Подключиться» = a click on the room in the sidebar (same rights / limit checks);
+      // «Подключиться» = the sidebar row's «Войти» button (same rights / limit checks);
       // «Открыть чат» only opens its feed — a call elsewhere stays as it is (docs/09 #14, #66).
       if (act === 'join') joinVoice(r);
       onClose();
@@ -320,7 +320,7 @@ function rowKindNow(it: Item): SwitcherRowKind {
   return rowKind(it, canConnectNow(it), it.kind === 'member' && canDmNow(it.member.workspaceId, it.member.user?.id ?? ''), person !== '' && canCallNow(person));
 }
 
-/** The sidebar's click on a voice room (joinOutcome: CONNECT, the user limit, MOVE_MEMBERS). */
+/** The sidebar row's «Войти» on a voice room (joinOutcome: CONNECT, the user limit, MOVE_MEMBERS). */
 function joinVoice(r: Room): void {
   const entry = useWorkspaces.getState().byId[r.workspaceId];
   const me = useSession.getState().me?.user?.id ?? '';

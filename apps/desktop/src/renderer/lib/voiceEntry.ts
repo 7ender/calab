@@ -3,10 +3,10 @@ import { RoomType } from '@calaba/protocol';
 /**
  * Voice rooms: joining and reading their chat without joining (docs/09 #14).
  *
- * A click on a voice room joins it (docs/08: one click, one action); the «чат» action (hover on
- * the row, «Открыть чат» in its context menu on the phone) only opens the room's text feed —
- * a call in another room stays as it is. The header of such a feed says «Вы не в голосе» and
- * offers «Войти в голос», which goes through the same `joinOutcome` as the row.
+ * A click on a voice room's row opens its chat and never joins (owner, 02.10); the row's «Войти»
+ * button (hover / focus / always when people are inside or on touch) joins. A call in another
+ * room stays as it is until a join. The chat header of such a room says «Вы не в голосе» and
+ * offers «Войти в голос», which goes through the same `joinOutcome` as the row's button.
  */
 
 /** What «join this voice room» does: nothing (already in / no right), join, or «Комната заполнена». */

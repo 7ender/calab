@@ -26,7 +26,8 @@ const MOD = process.platform === 'darwin' ? 'Meta' : 'Control';
 async function inVoice(page: Page): Promise<void> {
   await page.locator('aside').getByRole('button', { name: /общий/ }).first().click();
   await expect(page.getByRole('heading', { name: 'общий' })).toBeVisible();
-  await page.locator('aside').getByRole('button', { name: /Переговорка/ }).first().click();
+  await page.locator('aside').getByRole('button', { name: /Переговорка/ }).first().hover();
+  await page.getByRole('button', { name: 'Войти в голос «Переговорка»' }).click();
   await expect(page.getByText('Голос подключён')).toBeVisible({ timeout: 30_000 });
   await page.keyboard.press(`${MOD}+Shift+m`);
   await expect(page.getByRole('button', { name: 'Включить микрофон' }).first()).toBeVisible();
