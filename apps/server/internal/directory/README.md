@@ -7,14 +7,18 @@ Failed scans are throttled and cannot block healthy directories indefinitely.
 
 `LDAP` requires an exact operator host allowlist and permitted network prefixes;
 custom trust anchors come only from operator configuration. Only LDAPS port 636
-with certificate/hostname verification is accepted. The bind account is read-only;
-referrals, anonymous binds, request-provided filters, CA settings and host grants
-are not accepted. Test loopback allowances are explicit fixture-only settings.
+with certificate/hostname verification is accepted; a configured operator CA is the
+only trust anchor. The bind account is read-only; continuation referrals are ignored
+(never followed), anonymous binds, request-provided filters, CA settings and host
+grants are not accepted. Allowed groups also match nested membership through the
+in-chain matching rule. Test loopback allowances are explicit fixture-only settings.
 Paged BER responses and full scans have bounds before LDAP library allocation.
 
 A successful full snapshot publishes eligibility atomically under a renewable
 lease. Object GUID is the stable key, disabled UAC accounts lose eligibility, and
-absence needs two successful reconciliations before tombstoning. Failed pages,
+absence needs two successful reconciliations before tombstoning. An empty or
+sharply shrunken snapshot is quarantined (nothing published) unless it is the first
+scan after a configuration save. Failed pages,
 expired leases and outages publish no deletion or freshness. Configuration
 changes clear freshness. Access fails closed after one hour without success.
 Manual bans and membership roles are preserved; re-enable never clears a ban,

@@ -407,21 +407,41 @@ API/web: mixed versions и timeout rollback не являются успешно
    B, DM, заметки, global credentials/admin; local session сохраняется при step-up.
    Generic fixture evidence с Keycloak 26.4.7 — [отдельный RP run](plans/identity-v2-keycloak-evidence.md)
    на более раннем commit. Встроенные scopes `basic` + `profile` + `email` дают
-   требуемый `auth_time`; `iat` не заменяет его. Live Entra/AD FS/Windows AD acceptance
-   отсутствует. Entra требует exact tenant-specific issuer/tid, AD FS 2019+ — S256;
-   целевой живой Microsoft стенд проверяется отдельно, а не объявляется passed.
+   требуемый `auth_time`. Запрос всегда несёт `max_age=3600` и `prompt=login`, поэтому
+   generic/AD FS без `auth_time` отклоняются; исключение — Entra v2 (там `auth_time` —
+   опциональный claim): без него временем входа считается `iat`, т.к. `prompt=login`
+   заставляет Entra провести интерактивный вход; присланный `auth_time` всегда главнее.
+   PKCE: если discovery перечисляет `code_challenge_methods_supported`, там обязан быть
+   `S256`; AD FS обязан его перечислять; generic может не перечислять — S256 всё равно
+   отправляется, а тест connection пишет в audit `connection_tested_pkce_unadvertised`.
+   Live Entra/AD FS/Windows AD acceptance отсутствует. Entra требует exact
+   tenant-specific issuer/tid, AD FS 2019+ — S256; целевой живой Microsoft стенд
+   проверяется отдельно, а не объявляется passed. Link идёт в активную connection
+   (в draft — только если активной нет или пользователь уже связан с активной), test —
+   в последний draft.
 3. Для LDAPS — read-only bind, `ldaps://host:636`, проверяемый сертификат/hostname,
-   явная связь immutable AD `objectGUID` с существующим member. В v1 группы только
-   direct `memberOf`; JIT, nested groups, group-to-role, SCIM/cloud connector отсутствуют.
-   Disabled/missing в полном снимке или потеря allowed group закрывают managed доступ.
-   Sync 5 минут, stale после 1 часа; неполный scan/ошибка сети не означает массовое
-   удаление. Disable/unlink каталога не снимает suspensions автоматически: нужен
+   явная связь immutable AD `objectGUID` с существующим member. Allowed groups
+   учитываются и транзитивно (вложенные группы, `LDAP_MATCHING_RULE_IN_CHAIN`
+   1.2.840.113556.1.4.1941, вычисляет DC); JIT, group-to-role, SCIM/cloud connector
+   отсутствуют. Continuation referrals (base DN в корне домена → DNS-партиции)
+   игнорируются и не открываются. Если у хоста задан `ca_pem`, доверяется только этот CA
+   (системный пул не используется). Disabled/missing в полном снимке или потеря allowed
+   group закрывают managed доступ. Sync 5 минут, stale после 1 часа; неполный
+   scan/ошибка сети не означает массовое удаление. Полный, но пустой снимок или резкое
+   сокращение (> 20 % и ≥ 2 объектов либо связанных активных участников) помещается в
+   карантин: прежнее состояние сохраняется, `last_error` объясняет причину; принять
+   реальное крупное изменение — повторно сохранить настройки каталога (первый scan
+   новой версии не проверяется). Disable/unlink каталога не снимает suspensions автоматически: нужен
    явный audited detach после проверки, затем новый вход; old grants не оживают.
 4. Проверить recovery kit (10 codes, показаны один раз, срок 365 дней), сохранить
    у независимого владельца; перед enforced нужны его свежие local и SSO proofs
    (≤5 минут), проверенная активная connection и действующий kit. Проверить обычные
    REST, READY/RESUME, файлы и уже открытый RTC при отзыве/потере pubsub, а не только
    новый login endpoint. Assurance максимум 1 час; refresh её не продлевает.
+
+CalDAV push, удержанный политикой, удаляет ранее выгруженную копию встречи и
+догоняет (повторный push) после возвращения SSO assurance — проверка раз в 10 минут,
+запись в Valkey до 30 дней.
 
 Enforced invite preview возвращает `SSO_REQUIRED` без данных workspace. Локальный
 verified human может завершить приглашение/onboarding и подготовить membership;
