@@ -69,7 +69,7 @@ KV-хранилище — **Valkey (совместим с Redis)**, ADR-0017. В
 | `TRUSTED_PROXIES` | `127.0.0.1/32,::1/128` | кому верить в `X-Forwarded-For` (Caddy) |
 | `PUBLIC_APP_URL` | `http://localhost:3000` | внешний URL веб-клиента; его origin разрешён для cookie-auth (CSRF) и WS-апгрейда |
 | `PUBLIC_APP_URL_ALT` | — | запасной домен веб-клиента (совместимость), разрешён так же |
-| `PUBLIC_APP_URLS` | — | все origin веб-клиента через запятую (`https://app.calab.ru,https://colaba.gptunnel.ai,…`); разрешённый список = `PUBLIC_APP_URL` + `PUBLIC_APP_URL_ALT` + этот; `PUBLIC_APP_URL` остаётся основным (ссылки) |
+| `PUBLIC_APP_URLS` | — | все origin веб-клиента через запятую (`https://app.calab.io,https://colaba.gptunnel.ai,…`); разрешённый список = `PUBLIC_APP_URL` + `PUBLIC_APP_URL_ALT` + этот; `PUBLIC_APP_URL` остаётся основным (ссылки) |
 | `LOG_LEVEL` | `info` | `debug`\|`info`\|`warn`\|`error`, JSON в stdout |
 | `MIGRATE_ON_START` | `true` | применять миграции при `serve` |
 | `STORAGE_DRIVER` / `STORAGE_PATH` | `fs` / `./data/files` (образ: `/data/files`) | хранилище файлов (ADR-0011): `fs` — каталог, `s3` — бакет S3 (`STORAGE_S3_*`, docs/06 «Файлы в S3») |
@@ -87,7 +87,7 @@ KV-хранилище — **Valkey (совместим с Redis)**, ADR-0017. В
 | `SMTP_PORT` | по `SMTP_TLS` | 465 `tls` / 587 `starttls` / 25 `none` |
 | `SMTP_TLS` | `starttls` | `tls` (implicit, 465) \| `starttls` \| `none` (только Mailpit / локальный релей) |
 | `SMTP_USER` / `SMTP_PASSWORD` | — | AUTH PLAIN (только по TLS); пусто = без AUTH |
-| `SMTP_FROM` | — | обязателен при `SMTP_HOST`: `Calab <noreply@calab.ru>` |
+| `SMTP_FROM` | — | обязателен при `SMTP_HOST`: `Calab <noreply@calab.io>` |
 | `MAIL_PER_ADDRESS_PER_HOUR` / `MAIL_PER_HOUR` | `3` / `200` | писем на адрес и на сервер в час (Valkey) |
 | `MAIL_EVENTS_PER_ADDRESS_PER_HOUR` | `10` | писем встреч (приглашение/изменение/отмена) на адрес в час — отдельно от кодов |
 | `CALDAV_SYNC_INTERVAL` | `15m` | как часто импортируется занятость подключённого CalDAV-календаря пользователя (ADR-0041), 1m..24h |

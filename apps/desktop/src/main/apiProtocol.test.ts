@@ -25,7 +25,7 @@ vi.mock('./apiTransport', () => ({
 
 vi.mock('./auth', () => ({
   currentServerUrl: () => 'https://api.calab.test',
-  getAccessToken: vi.fn(() => Promise.resolve('token')),
+  identityAccessToken: vi.fn(() => Promise.resolve('token')),
   forceRefresh: vi.fn(() => Promise.resolve(null)),
 }));
 

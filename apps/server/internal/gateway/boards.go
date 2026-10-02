@@ -97,13 +97,14 @@ func (s *wsState) boardBits(boardID, userID uuid.UUID) perm.Bits {
 	return perm.ComputeBoardIn(m, b.GetIsPrivate(), b.GetRestricted(), s.btargets[boardID])
 }
 
-// taskRoomBits: a member's bits in a task's comment room (0 = not a task room of a live board).
+// taskRoomBits: a member's bits in a task's comment room (0 = not a task room of a live board);
+// read-only with the board's COMMENTS feature off (ADR-0058 §3).
 func (s *wsState) taskRoomBits(roomID, userID uuid.UUID) perm.Bits {
 	tr, ok := s.taskRooms[roomID]
 	if !ok {
 		return 0
 	}
-	return perm.TaskRoom(s.boardBits(tr.board, userID), tr.archived)
+	return perm.TaskRoom(s.boardBits(tr.board, userID), tr.archived, boards.CommentsOff(s.boards[tr.board]))
 }
 
 // forRecipient is a board event as one recipient gets it: with their bits.
@@ -138,7 +139,7 @@ func boardTransition(before, after perm.Bits, board *v1.Board, wid uuid.UUID, ch
 // routeBoards delivers board and task events (st.mu held); false = not a board event.
 func (h *Hub) routeBoards(st *wsState, wid, id uuid.UUID, sessions []*Session, ev *v1.DispatchEvent) bool {
 	toBoard := func(boardID uuid.UUID) {
-		shared := newEnc(ev)
+		shared := newScopedEnc(wid, ev)
 		for _, s := range sessions {
 			if st.boardBits(boardID, s.user).Has(perm.ViewBoard) {
 				s.dispatchEnc(id, shared)
@@ -164,7 +165,7 @@ func (h *Hub) routeBoards(st *wsState, wid, id uuid.UUID, sessions []*Session, e
 				changed = nil
 			}
 			if out := boardTransition(before[s], after, b, wid, changed); out != nil {
-				s.dispatch(id, out)
+				s.dispatchScoped(wid, id, out)
 			}
 		}
 	case *v1.DispatchEvent_BoardDelete:
@@ -192,6 +193,19 @@ func (h *Hub) routeBoards(st *wsState, wid, id uuid.UUID, sessions []*Session, e
 		}
 	case *v1.DispatchEvent_TaskActivity:
 		toBoard(parseID(e.TaskActivity.GetActivity().GetBoardId()))
+	case *v1.DispatchEvent_TaskChecklistUpdate:
+		toBoard(parseID(e.TaskChecklistUpdate.GetBoardId()))
+	case *v1.DispatchEvent_TaskChecklistDelete:
+		toBoard(parseID(e.TaskChecklistDelete.GetBoardId()))
+	case *v1.DispatchEvent_BoardCategoryCreate, *v1.DispatchEvent_BoardCategoryUpdate, *v1.DispatchEvent_BoardCategoryDelete:
+		// Board categories (ADR-0058 §1): names only, to every member who may see boards (guests
+		// never do); clients hide categories without visible boards.
+		shared := newScopedEnc(wid, ev)
+		for _, s := range sessions {
+			if st.role(s.user) != perm.RoleGuest {
+				s.dispatchEnc(id, shared)
+			}
+		}
 	default:
 		return false
 	}
@@ -216,7 +230,7 @@ func (h *Hub) reviewBoards(st *wsState, wid uuid.UUID, sessions []*Session, who 
 	for s, was := range before {
 		for bid, b := range st.boards {
 			if out := boardTransition(was[bid], st.boardBits(bid, s.user), b, wid, nil); out != nil {
-				s.dispatch(uuid.New(), out)
+				s.dispatchScoped(wid, uuid.New(), out)
 			}
 		}
 	}

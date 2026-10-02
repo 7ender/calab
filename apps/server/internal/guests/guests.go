@@ -20,6 +20,7 @@ import (
 	"github.com/calaba/calaba/server/internal/db/sqlc"
 	"github.com/calaba/calaba/server/internal/events"
 	"github.com/calaba/calaba/server/internal/httpx"
+	"github.com/calaba/calaba/server/internal/identitypolicy"
 	"github.com/calaba/calaba/server/internal/moderation"
 	"github.com/calaba/calaba/server/internal/pbconv"
 	"github.com/calaba/calaba/server/internal/perm"
@@ -201,10 +202,12 @@ func (s *Service) create(w http.ResponseWriter, r *http.Request) error {
 		if err != nil {
 			return err
 		}
-		inv, err := s.db.Q.CreateRoomInvite(r.Context(), sqlc.CreateRoomInviteParams{
-			RoomID: roomID, Code: code, CreatedBy: uid, ExpiresAt: expires,
-			MaxUses: int32(req.GetMaxUses()), AllowGuests: !membersOnly && orDefault(req.AllowGuests, true), AllowBits: int64(bits), //nolint:gosec // bounded
-			RequireApproval: req.RequireApproval, MembersOnly: membersOnly,
+		inv, err := db.GuardValue(r.Context(), s.db, func(guarded *sqlc.Queries) (sqlc.RoomInvite, error) {
+			return guarded.CreateRoomInvite(r.Context(), sqlc.CreateRoomInviteParams{
+				RoomID: roomID, Code: code, CreatedBy: uid, ExpiresAt: expires,
+				MaxUses: int32(req.GetMaxUses()), AllowGuests: !membersOnly && orDefault(req.AllowGuests, true), AllowBits: int64(bits), //nolint:gosec // bounded
+				RequireApproval: req.RequireApproval, MembersOnly: membersOnly,
+			})
 		})
 		if db.UniqueViolation(err) != "" {
 			continue
@@ -260,7 +263,9 @@ func (s *Service) update(w http.ResponseWriter, r *http.Request) error {
 	if !req.GetInheritApproval() && req.RequireApproval == nil {
 		return httpx.Validation("requireApproval", "nothing to change")
 	}
-	inv, err := s.db.Q.SetRoomInviteApproval(r.Context(), sqlc.SetRoomInviteApprovalParams{ID: invID, RoomID: roomID, RequireApproval: req.RequireApproval})
+	inv, err := db.GuardValue(r.Context(), s.db, func(guarded *sqlc.Queries) (sqlc.RoomInvite, error) {
+		return guarded.SetRoomInviteApproval(r.Context(), sqlc.SetRoomInviteApprovalParams{ID: invID, RoomID: roomID, RequireApproval: req.RequireApproval})
+	})
 	if db.IsNotFound(err) {
 		return httpx.NotFound("invite")
 	}
@@ -281,7 +286,9 @@ func (s *Service) revoke(w http.ResponseWriter, r *http.Request) error {
 		return err
 	}
 	// INVITE_MEMBERS alone revokes members-only links only; others answer 404 as if absent.
-	n, err := s.db.Q.RevokeRoomInvite(r.Context(), sqlc.RevokeRoomInviteParams{ID: invID, RoomID: roomID, OnlyMembersOnly: !rights.guests})
+	n, err := db.GuardValue(r.Context(), s.db, func(guarded *sqlc.Queries) (int64, error) {
+		return guarded.RevokeRoomInvite(r.Context(), sqlc.RevokeRoomInviteParams{ID: invID, RoomID: roomID, OnlyMembersOnly: !rights.guests})
+	})
 	if err != nil {
 		return err
 	}
@@ -337,12 +344,35 @@ type granted struct {
 	fresh   bool // the knock is new (deciders are told)
 }
 
+// linkCapability gates a room link by the workspace identity policy (ADR-0054). An enforced
+// workspace refuses links as public capabilities; assured (nil for an account-less join)
+// may still admit a caller whose own session holds a current SSO assurance for the
+// workspace — a member with valid SSO keeps using room links.
+func linkCapability(ctx context.Context, q *sqlc.Queries, ws uuid.UUID, assured func(context.Context) error) error {
+	err := auth.CheckPublicCapability(ctx, q, ws)
+	if err == nil || assured == nil {
+		return err
+	}
+	policy, e := q.GetIdentityPolicy(ctx, ws)
+	if e != nil || policy.Mode != string(identitypolicy.Enforced) {
+		return err
+	}
+	return assured(ctx)
+}
+
 // grant gives userID access to the room inside q: membership as `guest` if needed and a
 // user override with the link's bits — or, when the link requires approval (ADR-0040) and the
 // user is not a member (a guest at most), the membership without the override and a pending
 // knock. It consumes one use of the link only when access or the knock actually changes.
-func (s *Service) grant(ctx context.Context, q *sqlc.Queries, row sqlc.GetRoomInviteByCodeRow, userID uuid.UUID) (granted, error) {
+// assured: see linkCapability.
+func (s *Service) grant(ctx context.Context, q *sqlc.Queries, row sqlc.GetRoomInviteByCodeRow, userID uuid.UUID, assured func(context.Context) error) (granted, error) {
 	wsID, roomID := row.Workspace.ID, row.Room.ID
+	if _, err := q.LockOAuthWorkspace(ctx, wsID); err != nil {
+		return granted{}, err
+	}
+	if err := linkCapability(ctx, q, wsID, assured); err != nil {
+		return granted{}, err
+	}
 	member, err := q.GetMember(ctx, sqlc.GetMemberParams{WorkspaceID: wsID, UserID: userID})
 	isMember := err == nil
 	if err != nil && !db.IsNotFound(err) {
@@ -453,10 +483,23 @@ func (s *Service) join(w http.ResponseWriter, r *http.Request) error {
 		if err != nil {
 			return err
 		}
+		// Joining adds a global-account membership, like /api/invites/{code}/join: only a
+		// live local_account session (fresh from the database) may do it — never a
+		// workspace_sso session of another workspace or a recovery session (ADR-0054).
+		// In an enforced workspace the local session must also hold a current SSO
+		// assurance for it (checked inside the transaction, after the workspace lock).
+		if id.Principal, err = s.auth.ResolvePrincipal(r.Context(), id); err != nil {
+			return err
+		}
+		if err := s.auth.CheckGlobal(r.Context(), id, identitypolicy.GlobalWrite); err != nil {
+			return err
+		}
 		var g granted
 		err = s.db.Tx(r.Context(), func(q *sqlc.Queries) error {
 			var err error
-			g, err = s.grant(r.Context(), q, row, id.UserID)
+			g, err = s.grant(r.Context(), q, row, id.UserID, func(ctx context.Context) error {
+				return s.auth.CheckWorkspace(ctx, id, row.Workspace.ID, identitypolicy.WorkspaceWrite)
+			})
 			return err
 		})
 		if err != nil {
@@ -497,7 +540,7 @@ func (s *Service) join(w http.ResponseWriter, r *http.Request) error {
 		if err != nil {
 			return err
 		}
-		g, err = s.grant(r.Context(), q, row, user.ID)
+		g, err = s.grant(r.Context(), q, row, user.ID, nil)
 		return err
 	})
 	if err != nil {

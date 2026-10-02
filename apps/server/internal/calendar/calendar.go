@@ -19,6 +19,7 @@ import (
 	"github.com/calaba/calaba/server/internal/db/sqlc"
 	"github.com/calaba/calaba/server/internal/events"
 	"github.com/calaba/calaba/server/internal/httpx"
+	"github.com/calaba/calaba/server/internal/identitypolicy"
 	"github.com/calaba/calaba/server/internal/mail"
 	"github.com/calaba/calaba/server/internal/pbconv"
 	"github.com/calaba/calaba/server/internal/perm"
@@ -78,6 +79,16 @@ type Service struct {
 	// AllowsCalDAV tells whether the plans of a user's workspaces include CalDAV; the external
 	// busy time of a user without it is not shown (ADR-0024, 30.09). nil = always.
 	AllowsCalDAV func(ctx context.Context, user uuid.UUID) (bool, error)
+	// Identity keeps meeting content inside the workspace identity policy when it leaves Calab
+	// without a request (ADR-0054): the CalDAV push and the meeting mails. nil fails closed —
+	// nothing is pushed and mails carry no meeting details; the app always sets it.
+	Identity IdentityGate
+}
+
+// IdentityGate is the background side of the identity policy (identitypolicy.Delivery).
+type IdentityGate interface {
+	Mode(ctx context.Context, ws uuid.UUID) (identitypolicy.Mode, error)
+	Check(ctx context.Context, user, ws uuid.UUID) (identitypolicy.Decision, error)
 }
 
 // New creates the service. m may be disabled (no SMTP): no mail is sent then.

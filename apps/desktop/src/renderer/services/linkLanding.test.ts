@@ -15,16 +15,16 @@ describe('link landing (docs/09 #53)', () => {
   });
 
   it('recognises web /join and /r links only', () => {
-    expect(landingFor('https://app.calab.ru/join/calaba-team-2026')).toEqual({ kind: 'join', code: 'calaba-team-2026', url: 'https://app.calab.ru/join/calaba-team-2026' });
-    expect(landingFor('https://app.calab.ru/r/call-guest-link')).toMatchObject({ kind: 'r', code: 'call-guest-link' });
+    expect(landingFor('https://app.calab.io/join/calaba-team-2026')).toEqual({ kind: 'join', code: 'calaba-team-2026', url: 'https://app.calab.io/join/calaba-team-2026' });
+    expect(landingFor('https://app.calab.io/r/call-guest-link')).toMatchObject({ kind: 'r', code: 'call-guest-link' });
     expect(landingFor('calaba-team-2026')).toBeNull(); // a bare code is not a link
-    expect(landingFor('https://app.calab.ru/rooms/x')).toBeNull();
+    expect(landingFor('https://app.calab.io/rooms/x')).toBeNull();
   });
 
   it('continue in the browser hands the link to the app flow and clears the card', () => {
     const replaceState = vi.fn();
     vi.stubGlobal('history', { replaceState });
-    expect(showLinkLanding('https://app.calab.ru/r/call-guest-link')).toBe(true);
+    expect(showLinkLanding('https://app.calab.io/r/call-guest-link')).toBe(true);
     expect(useLinkLanding.getState().link?.code).toBe('call-guest-link');
     continueInBrowser();
     expect(useLinkLanding.getState().link).toBeNull();

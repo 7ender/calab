@@ -77,7 +77,7 @@ export function RailContextMenu({ workspaceId, tip, children }: { workspaceId: s
             <>
               <ContextMenu.Separator className={menuSeparator} />
               <ContextMenu.Item className={cx(menuItem, 'text-danger-text')} onSelect={() => void leave()}>
-                <LogOut className="size-4" aria-hidden /> {t('ws.leave')}
+                <LogOut className="size-4" aria-hidden /> {t('ws.leaveItem')}
               </ContextMenu.Item>
             </>
           ) : null}

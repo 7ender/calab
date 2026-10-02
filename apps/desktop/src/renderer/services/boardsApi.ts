@@ -1,5 +1,20 @@
 import { toJson, type MessageInitShape } from '@bufbuild/protobuf';
 import {
+  BoardCategoryResponseSchema,
+  BoardWebhookPingResponseSchema,
+  BoardWebhookResponseSchema,
+  ConvertChecklistItemResponseSchema,
+  CreateBoardCategoryRequestSchema,
+  CreateTaskChecklistItemRequestSchema,
+  CreateTaskChecklistRequestSchema,
+  ListBoardCategoriesResponseSchema,
+  SetBoardOrderRequestSchema,
+  SetBoardOrderResponseSchema,
+  SetBoardWebhookRequestSchema,
+  TaskChecklistResponseSchema,
+  UpdateBoardCategoryRequestSchema,
+  UpdateTaskChecklistItemRequestSchema,
+  UpdateTaskChecklistRequestSchema,
   BoardPermissionsResponseSchema,
   BoardResponseSchema,
   BoardViewResponseSchema,
@@ -67,8 +82,32 @@ export const boardsApi = {
   remove: (boardId: string, purge = false) => callEmpty('DELETE', `/api/boards/${boardId}${qs({ purge: purge ? 1 : undefined })}`),
   /** Back from the archive (MANAGE_BOARD). */
   restore: (boardId: string) => call('POST', `/api/boards/${boardId}/restore`, BoardResponseSchema),
-  move: (boardId: string, position: number) =>
-    call('PUT', `/api/boards/${boardId}/position`, BoardResponseSchema, body(SetBoardPositionRequestSchema, { position })),
+  /** `categoryId` set: into that category ('' = none) at `position` there (ADR-0058 §1). */
+  move: (boardId: string, position: number, categoryId?: string) =>
+    call('PUT', `/api/boards/${boardId}/position`, BoardResponseSchema, body(SetBoardPositionRequestSchema, { position, ...(categoryId !== undefined ? { categoryId } : {}) })),
+  /** One drag & drop of the boards list (ADR-0058 §1): boards (MANAGE_BOARD each) and categories (CREATE_BOARDS). */
+  setOrder: (workspaceId: string, init: MessageInitShape<typeof SetBoardOrderRequestSchema>) =>
+    call('PUT', `/api/workspaces/${workspaceId}/boards/order`, SetBoardOrderResponseSchema, body(SetBoardOrderRequestSchema, init)),
+  categories: {
+    list: (workspaceId: string) => call('GET', `/api/workspaces/${workspaceId}/board-categories`, ListBoardCategoriesResponseSchema),
+    /** CREATE_BOARDS; 409 BOARD_CATEGORY_LIMIT over 50. */
+    create: (workspaceId: string, init: MessageInitShape<typeof CreateBoardCategoryRequestSchema>) =>
+      call('POST', `/api/workspaces/${workspaceId}/board-categories`, BoardCategoryResponseSchema, body(CreateBoardCategoryRequestSchema, init)),
+    update: (categoryId: string, init: MessageInitShape<typeof UpdateBoardCategoryRequestSchema>) =>
+      call('PATCH', `/api/board-categories/${categoryId}`, BoardCategoryResponseSchema, body(UpdateBoardCategoryRequestSchema, init)),
+    /** Its boards move to «без категории» at the end. */
+    remove: (categoryId: string) => callEmpty('DELETE', `/api/board-categories/${categoryId}`),
+  },
+  /** The board webhook (ADR-0058 §4): MANAGE_BOARD + MANAGE_INTEGRATIONS, Business plan. */
+  webhook: {
+    get: (boardId: string, signal?: AbortSignal) => call('GET', `/api/boards/${boardId}/webhook`, BoardWebhookResponseSchema, undefined, signal),
+    /** Creates, replaces or re-enables; `secret` '' = the server generates one (returned once). */
+    set: (boardId: string, url: string, secret: string) =>
+      call('PUT', `/api/boards/${boardId}/webhook`, BoardWebhookResponseSchema, body(SetBoardWebhookRequestSchema, { url, secret })),
+    remove: (boardId: string) => callEmpty('DELETE', `/api/boards/${boardId}/webhook`),
+    /** A synchronous «ping» delivery; 429 more often than once per 10 s. */
+    ping: (boardId: string) => call('POST', `/api/boards/${boardId}/webhook/ping`, BoardWebhookPingResponseSchema),
+  },
   permissions: (boardId: string) => call('GET', `/api/boards/${boardId}/permissions`, BoardPermissionsResponseSchema),
   setPermissions: (boardId: string, init: MessageInitShape<typeof SetBoardPermissionsRequestSchema>) =>
     call('PUT', `/api/boards/${boardId}/permissions`, BoardPermissionsResponseSchema, body(SetBoardPermissionsRequestSchema, init)),
@@ -147,6 +186,23 @@ export const boardsApi = {
     /** ⌘K: live tasks of every board the caller sees, by key and words. */
     search: (workspaceId: string, q: string, signal?: AbortSignal) =>
       call('GET', `/api/workspaces/${workspaceId}/tasks/search${qs({ q })}`, SearchTasksResponseSchema, undefined, signal),
+    /** Checklists (ADR-0058 §2); every write answers the checklist and the task's counters. */
+    checklists: {
+      create: (taskId: string, title: string) =>
+        call('POST', `/api/tasks/${taskId}/checklists`, TaskChecklistResponseSchema, body(CreateTaskChecklistRequestSchema, { title })),
+      update: (checklistId: string, init: MessageInitShape<typeof UpdateTaskChecklistRequestSchema>) =>
+        call('PATCH', `/api/checklists/${checklistId}`, TaskChecklistResponseSchema, body(UpdateTaskChecklistRequestSchema, init)),
+      /** Answers the counters without a checklist. */
+      remove: (checklistId: string) => call('DELETE', `/api/checklists/${checklistId}`, TaskChecklistResponseSchema),
+      addItem: (checklistId: string, init: MessageInitShape<typeof CreateTaskChecklistItemRequestSchema>) =>
+        call('POST', `/api/checklists/${checklistId}/items`, TaskChecklistResponseSchema, body(CreateTaskChecklistItemRequestSchema, init)),
+      /** text / done / position; `checklistId` moves the item to another checklist of the task. */
+      updateItem: (itemId: string, init: MessageInitShape<typeof UpdateTaskChecklistItemRequestSchema>) =>
+        call('PATCH', `/api/checklist-items/${itemId}`, TaskChecklistResponseSchema, body(UpdateTaskChecklistItemRequestSchema, init)),
+      removeItem: (itemId: string) => call('DELETE', `/api/checklist-items/${itemId}`, TaskChecklistResponseSchema),
+      /** The item becomes a subtask (SUBTASKS on, the task not a subtask itself). */
+      convert: (itemId: string) => call('POST', `/api/checklist-items/${itemId}/convert`, ConvertChecklistItemResponseSchema),
+    },
     mine: (workspaceId: string, scope: TaskScope, open = true, signal?: AbortSignal) =>
       call('GET', `/api/me/tasks${qs({ workspace_id: workspaceId, scope, open: open ? 1 : undefined })}`, MyTasksResponseSchema, undefined, signal),
   },

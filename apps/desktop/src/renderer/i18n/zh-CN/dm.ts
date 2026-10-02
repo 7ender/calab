@@ -40,7 +40,6 @@ export const zhDm: DictShape<typeof enDm> = {
   'dm.archive': '归档',
   'dm.unarchive': '取消归档',
   'dm.archiveSection': '归档 — {n}',
-  'dm.delete': '删除聊天',
   'dm.deleteTitle': '删除聊天？',
   'dm.deleteConfirm': '聊天记录只会为你删除，对方仍会保留。',
   'dm.errState': '无法更新对话',

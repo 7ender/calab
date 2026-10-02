@@ -493,6 +493,11 @@ export const FREE_PLAN_LIMITS: PlanLimits = create(PlanLimitsSchema, {
   stickers: 200,
   audioTierMaxKbps: 16,
   caldavDisabled: true,
+  // ADR-0058 §5: no checklists below Team, no board webhooks below Business.
+  checklistsDisabled: true,
+  boardWebhooksDisabled: true,
+  // ADR-0046 (owner 02.10): telephony is Business only.
+  telephonyDisabled: true,
 });
 /** Team (owner 30.09): 15 in a room, 100 members, 300 GB, 5 bots, 30 boards, 2 streams / 10 cameras; CalDAV yes. */
 export const TEAM_PLAN_LIMITS: PlanLimits = create(PlanLimitsSchema, {
@@ -503,6 +508,8 @@ export const TEAM_PLAN_LIMITS: PlanLimits = create(PlanLimitsSchema, {
   streamsPerRoom: 2,
   camerasPerRoom: 10,
   storageMb: 300n * 1024n,
+  boardWebhooksDisabled: true,
+  telephonyDisabled: true,
 });
 /** Business = PLAN_ENTERPRISE (owner 30.09): 50 in a room, 500 members, 20 bots, 50 boards, 5 streams / 25 cameras, 1 TB. */
 export const ENTERPRISE_PLAN_LIMITS: PlanLimits = create(PlanLimitsSchema, {

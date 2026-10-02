@@ -73,7 +73,7 @@ import { useUi } from '../../stores/ui';
 import { useVoice } from '../../stores/voice';
 import { memberName, rolesOf, useMemberRoles, useWorkspaces } from '../../stores/workspaces';
 import { useConnectingRing, useVoiceStates } from '../../stores/voicePending';
-import { joinOutcome } from '../../lib/voiceEntry';
+import { joinButton, joinOutcome } from '../../lib/voiceEntry';
 import { formatDuration, pad2, useNow } from './voiceFormat';
 import { menuBox, menuItem, menuLabel, menuSeparator } from './menu';
 import { useBoards, workspaceBoards } from '../../stores/boards';
@@ -96,7 +96,8 @@ import { roomMenuGroups, type RoomMenuItem } from '../../lib/roomMenu';
 import { RoomRecBadge } from '../voice/Recording';
 import { useRecordings } from '../../stores/recordings';
 import { useSipCalls } from '../../stores/sipCalls';
-import { SipCallRow, useCanDial } from '../voice/Sip';
+import { SipCallRow, useCanDial, useTelephonyOnPlan } from '../voice/Sip';
+import { planToast } from '../../services/plan';
 import { dialFromMenu } from '../../lib/dialFromMenu';
 import { useSipDial } from '../../stores/sipDial';
 import { startRecording, stopRecording } from '../../services/recording';
@@ -185,14 +186,16 @@ export function Sidebar({ workspaceId }: { workspaceId: string }): ReactNode {
     return { groups: groupRooms(rooms, cats, manageRooms), temps: sortTempRooms(rooms.filter((r) => !!r.expiresAt)) };
   }, [roomsById, categoriesById, workspaceId, manageRooms, hideMuted, notify, activeRoom, voiceRoom]);
   if (!entry) return null;
+  // Calendar mode (owner, 02.10): the column is the header and the mini calendar only — no room list.
+  const calList = calOpen && !guest && !boards;
   const empty = groups.length === 0 && temps.length === 0;
 
   return (
     <aside className="mat-sidebar island-fade flex w-[var(--sidebar-width)] shrink-0 flex-col" aria-label={t('room.list')}>
       <WorkspaceHeader workspaceId={workspaceId} onCreateCategory={() => setCatDialog(true)} />
-      {calOpen && !guest && !boards ? <MiniCalendar workspaceId={workspaceId} /> : null}
+      {calList ? <MiniCalendar workspaceId={workspaceId} /> : null}
       {boards ? <BoardsList workspaceId={workspaceId} /> : null}
-      {boards ? null : (
+      {boards || calList ? null : (
       <SidebarDnd workspaceId={workspaceId} listRef={listRef}>
         <SidebarMenu workspaceId={workspaceId} onCreateCategory={() => setCatDialog(true)}>
           {/* The bottom island (AppShell) floats over the column's foot: the list ends above it. */}
@@ -607,7 +610,7 @@ function CategoryGroup({
               </ContextMenu.Item>
               <ContextMenu.Separator className={menuSeparator} />
               <ContextMenu.Item className={cx(menuItem, 'text-danger-text')} onSelect={() => void remove()}>
-                <Trash2 className="size-4" /> {t('shell.categoryDelete')}
+                <Trash2 className="size-4" /> {t('common.delete')}
               </ContextMenu.Item>
             </ContextMenu.Content>
           </ContextMenu.Portal>
@@ -820,6 +823,8 @@ function RoomMenu({
   const recording = useRecordings((s) => !!s.byRoom[room.id]);
   // «Позвонить на номер» (ADR-0046): the header button's gate minus «I am in the call».
   const dial = useCanDial(room.workspaceId, room.id, true) && voiceRoom;
+  // Business only (ADR-0046, owner 02.10): a downgraded workspace sees the item locked.
+  const dialOnPlan = useTelephonyOnPlan(room.workspaceId);
   // Categories are read when the menu renders (it mounts on open), like RoomOrderItems.
   const groups = roomMenuGroups({
     voice: voiceRoom,
@@ -851,7 +856,7 @@ function RoomMenu({
             className={menuItem}
             onSelect={() => (voiceRoom && inviteRoom ? open({ kind: 'room-invite', roomId: room.id }) : open({ kind: 'workspace-settings', workspaceId: room.workspaceId, tab: 'invites', roomId: room.id }))}
           >
-            <UserPlus className="size-4" /> {voiceRoom ? t('roomMenu.invite') : t('shell.invite')}
+            <UserPlus className="size-4" /> {t('shell.invite')}
           </ContextMenu.Item>
         );
       case 'record':
@@ -876,6 +881,15 @@ function RoomMenu({
           </ContextMenu.Item>
         );
       case 'dial':
+        if (!dialOnPlan) {
+          const locked = t('plan.lockedFrom', { plan: t('plan.name.enterprise') });
+          return (
+            <ContextMenu.Item key={id} className={cx(menuItem, 'text-muted')} data-testid="room-menu-dial-locked" title={locked} onSelect={() => planToast(locked)}>
+              <Phone className="size-4" /> <span className="flex-1">{t('sip.dial')}</span>
+              <Lock className="size-3.5" aria-label={locked} />
+            </ContextMenu.Item>
+          );
+        }
         // In this room's call: the dial popover; otherwise join first, then the popover (lib/dialFromMenu).
         return (
           <ContextMenu.Item key={id} className={menuItem} data-testid="room-menu-dial" onSelect={() => void dialFromRoomMenu(room)}>
@@ -885,7 +899,7 @@ function RoomMenu({
       case 'settings':
         return (
           <ContextMenu.Item key={id} className={menuItem} onSelect={() => open({ kind: 'room-settings', roomId: room.id })}>
-            <Settings className="size-4" /> {t('room.settings')}
+            <Settings className="size-4" /> {t('roomMenu.settings')}
           </ContextMenu.Item>
         );
       case 'markRead':
@@ -923,7 +937,7 @@ function RoomMenu({
       case 'deleteRoom':
         return (
           <ContextMenu.Item key={id} className={cx(menuItem, 'text-danger-text')} data-testid="room-menu-delete" onSelect={() => void deleteTempRoom(room)}>
-            <Trash2 className="size-4" /> {t('temp.delete')}
+            <Trash2 className="size-4" /> {t('common.delete')}
           </ContextMenu.Item>
         );
       case 'moveUp':
@@ -1087,8 +1101,7 @@ function useRoomDrag(room: Room, enabled: boolean): ReturnType<typeof useDraggab
  * plain row), shown on hover / keyboard focus and while the menu is open (the call timer stands
  * there otherwise).
  */
-function CardActions({ room, workspaceId }: { room: Room; workspaceId: string }): ReactNode {
-  const openRoom = useUi((s) => s.openRoom);
+function CardActions({ room }: { room: Room }): ReactNode {
   const btn =
     'grid size-6 place-items-center rounded-[var(--radius-icon)] text-muted transition-colors duration-[var(--motion-fast)] hover:bg-[var(--color-fill-hover)] hover:text-fg';
   // «…» opens the row's own context menu (RoomMenu) under the button: one menu for the click, the
@@ -1099,11 +1112,6 @@ function CardActions({ room, workspaceId }: { room: Room; workspaceId: string })
   };
   return (
     <span className="hidden shrink-0 items-center gap-0.5 group-focus-within/row:flex group-hover/row:flex group-data-[state=open]/row:flex">
-      <Tip label={t('shell.roomChat')}>
-        <button type="button" className={btn} aria-label={t('shell.roomChatOf', { name: room.name })} onClick={() => openRoom(workspaceId, room.id)}>
-          <MessageCircle className="size-[18px]" aria-hidden />
-        </button>
-      </Tip>
       <Tip label={t('roomMenu.more')}>
         <button type="button" className={btn} aria-label={t('roomMenu.moreOf', { name: room.name })} aria-haspopup="menu" data-testid="room-more" onClick={openMenu}>
           <Ellipsis className="size-[18px]" aria-hidden />
@@ -1112,6 +1120,29 @@ function CardActions({ room, workspaceId }: { room: Room; workspaceId: string })
     </span>
   );
 }
+
+/**
+ * «Войти» (owner, 02.10): the voice room row's way into the call (the row itself opens the chat).
+ * Shown on hover / focus-within (always on touch, never in a full room without MOVE_MEMBERS); when hidden it is
+ * `sr-only`, so Tab still reaches it (and focus reveals it).
+ */
+const JoinButton = memo(function JoinButton({ name, onJoin, always }: { name: string; onJoin: () => void; always: boolean }): ReactNode {
+  useLocale();
+  return (
+    <Button
+      size="sm"
+      aria-label={t('shell.joinVoiceOf', { name })}
+      data-testid="room-join"
+      onClick={onJoin}
+      className={cx(
+        'h-5 px-2 text-micro mobile:h-6',
+        always ? '' : 'sr-only group-focus-within/row:not-sr-only group-hover/row:not-sr-only',
+      )}
+    >
+      {t('shell.joinVoiceShort')}
+    </Button>
+  );
+});
 
 function MentionBadge({ n }: { n: number }): ReactNode {
   if (n <= 0) return null;
@@ -1213,6 +1244,7 @@ function VoiceRoomRow({
 } & RowOrder): ReactNode {
   const active = useUi((s) => s.lastRoom[workspaceId] === room.id && s.activeWorkspaceId === workspaceId);
   const openRoom = useUi((s) => s.openRoom);
+  const mobile = useMobile();
   const inRoom = useVoice((s) => s.roomId === room.id);
   const connecting = useVoice((s) => s.roomId === room.id && s.phase === 'connecting');
   const unread = useRooms((s) => showsUnread(room.id, s));
@@ -1253,12 +1285,20 @@ function VoiceRoomRow({
     [setNodeRef, setDragRef],
   );
 
-  const click = (): void => {
-    openRoom(workspaceId, room.id);
+  // The row opens the room's chat and never joins (owner, 02.10); «Войти» is the one way into the voice.
+  const click = (): void => openRoom(workspaceId, room.id);
+  const join = (): void => {
     const next = joinOutcome({ inRoom, canConnect, canMove, people: people.length, limit });
     if (next === 'full') toast.info(t('shell.roomFull'));
-    else if (next === 'join') void voice.join(room.id, workspaceId);
+    else if (next === 'join') {
+      void voice.join(room.id, workspaceId);
+      // Nothing open in this workspace yet: show the room's chat next to the call.
+      if (!useUi.getState().lastRoom[workspaceId]) openRoom(workspaceId, room.id);
+      // The phone's drawer gives way to the call strip (the old click closed it by opening the room).
+      if (mobile) useUi.getState().setNavDrawer(false);
+    }
   };
+  const joinUi = joinButton({ inRoom, canConnect, canMove, people: people.length, limit, touch: mobile });
 
   return (
     <div
@@ -1343,9 +1383,10 @@ function VoiceRoomRow({
                   {people.length ? <CallTimer roomId={room.id} className={card ? cx('text-[13px]', inRoom ? 'text-[var(--color-green-text)]' : 'text-fg') : undefined} /> : null}
                   {limit > 0 || people.length > 0 ? <PeoplePill n={people.length} max={limit} /> : null}
                 </span>
-                {/* Same two actions (chat · «…») whether the room is active (card) or not, on hover
+                {/* The «…» action whether the room is active (card) or not, on hover
                     (owner, Discord reference): no separate action set for either. */}
-                <CardActions room={room} workspaceId={workspaceId} />
+                {joinUi.shown ? <JoinButton name={room.name} onJoin={join} always={joinUi.always} /> : null}
+                <CardActions room={room} />
               </span>
             </div>
             {card ? (

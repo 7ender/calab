@@ -32,6 +32,7 @@ type Session struct {
 	CreatedAt     *timestamppb.Timestamp `protobuf:"bytes,5,opt,name=created_at,json=createdAt,proto3" json:"created_at,omitempty"`
 	LastSeenAt    *timestamppb.Timestamp `protobuf:"bytes,6,opt,name=last_seen_at,json=lastSeenAt,proto3" json:"last_seen_at,omitempty"`
 	ExpiresAt     *timestamppb.Timestamp `protobuf:"bytes,7,opt,name=expires_at,json=expiresAt,proto3" json:"expires_at,omitempty"`
+	Authority     *SessionAuthority      `protobuf:"bytes,9,opt,name=authority,proto3" json:"authority,omitempty"`
 	Current       bool                   `protobuf:"varint,8,opt,name=current,proto3" json:"current,omitempty"` // true for the session that made the request
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
@@ -116,6 +117,13 @@ func (x *Session) GetExpiresAt() *timestamppb.Timestamp {
 	return nil
 }
 
+func (x *Session) GetAuthority() *SessionAuthority {
+	if x != nil {
+		return x.Authority
+	}
+	return nil
+}
+
 func (x *Session) GetCurrent() bool {
 	if x != nil {
 		return x.Current
@@ -131,6 +139,7 @@ type AuthTokens struct {
 	RefreshToken     string                 `protobuf:"bytes,3,opt,name=refresh_token,json=refreshToken,proto3" json:"refresh_token,omitempty"` // opaque, single use (rotated on every refresh)
 	RefreshExpiresAt *timestamppb.Timestamp `protobuf:"bytes,4,opt,name=refresh_expires_at,json=refreshExpiresAt,proto3" json:"refresh_expires_at,omitempty"`
 	SessionId        string                 `protobuf:"bytes,5,opt,name=session_id,json=sessionId,proto3" json:"session_id,omitempty"`
+	Authority        *SessionAuthority      `protobuf:"bytes,6,opt,name=authority,proto3" json:"authority,omitempty"`
 	unknownFields    protoimpl.UnknownFields
 	sizeCache        protoimpl.SizeCache
 }
@@ -200,6 +209,74 @@ func (x *AuthTokens) GetSessionId() string {
 	return ""
 }
 
+func (x *AuthTokens) GetAuthority() *SessionAuthority {
+	if x != nil {
+		return x.Authority
+	}
+	return nil
+}
+
+// First-party SSO completion preserves proof/test results without widening authority.
+type SSOCompleteResponse struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Tokens        *AuthTokens            `protobuf:"bytes,1,opt,name=tokens,proto3" json:"tokens,omitempty"`
+	Assurance     *WorkspaceAssurance    `protobuf:"bytes,2,opt,name=assurance,proto3" json:"assurance,omitempty"`
+	Tested        bool                   `protobuf:"varint,3,opt,name=tested,proto3" json:"tested,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *SSOCompleteResponse) Reset() {
+	*x = SSOCompleteResponse{}
+	mi := &file_calaba_v1_auth_proto_msgTypes[2]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *SSOCompleteResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*SSOCompleteResponse) ProtoMessage() {}
+
+func (x *SSOCompleteResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_calaba_v1_auth_proto_msgTypes[2]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use SSOCompleteResponse.ProtoReflect.Descriptor instead.
+func (*SSOCompleteResponse) Descriptor() ([]byte, []int) {
+	return file_calaba_v1_auth_proto_rawDescGZIP(), []int{2}
+}
+
+func (x *SSOCompleteResponse) GetTokens() *AuthTokens {
+	if x != nil {
+		return x.Tokens
+	}
+	return nil
+}
+
+func (x *SSOCompleteResponse) GetAssurance() *WorkspaceAssurance {
+	if x != nil {
+		return x.Assurance
+	}
+	return nil
+}
+
+func (x *SSOCompleteResponse) GetTested() bool {
+	if x != nil {
+		return x.Tested
+	}
+	return false
+}
+
 // POST /api/auth/register
 type RegisterRequest struct {
 	state       protoimpl.MessageState `protogen:"open.v1"`
@@ -227,7 +304,7 @@ type RegisterRequest struct {
 
 func (x *RegisterRequest) Reset() {
 	*x = RegisterRequest{}
-	mi := &file_calaba_v1_auth_proto_msgTypes[2]
+	mi := &file_calaba_v1_auth_proto_msgTypes[3]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -239,7 +316,7 @@ func (x *RegisterRequest) String() string {
 func (*RegisterRequest) ProtoMessage() {}
 
 func (x *RegisterRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_calaba_v1_auth_proto_msgTypes[2]
+	mi := &file_calaba_v1_auth_proto_msgTypes[3]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -252,7 +329,7 @@ func (x *RegisterRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use RegisterRequest.ProtoReflect.Descriptor instead.
 func (*RegisterRequest) Descriptor() ([]byte, []int) {
-	return file_calaba_v1_auth_proto_rawDescGZIP(), []int{2}
+	return file_calaba_v1_auth_proto_rawDescGZIP(), []int{3}
 }
 
 func (x *RegisterRequest) GetEmail() string {
@@ -317,7 +394,7 @@ type RegisterResponse struct {
 
 func (x *RegisterResponse) Reset() {
 	*x = RegisterResponse{}
-	mi := &file_calaba_v1_auth_proto_msgTypes[3]
+	mi := &file_calaba_v1_auth_proto_msgTypes[4]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -329,7 +406,7 @@ func (x *RegisterResponse) String() string {
 func (*RegisterResponse) ProtoMessage() {}
 
 func (x *RegisterResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_calaba_v1_auth_proto_msgTypes[3]
+	mi := &file_calaba_v1_auth_proto_msgTypes[4]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -342,7 +419,7 @@ func (x *RegisterResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use RegisterResponse.ProtoReflect.Descriptor instead.
 func (*RegisterResponse) Descriptor() ([]byte, []int) {
-	return file_calaba_v1_auth_proto_rawDescGZIP(), []int{3}
+	return file_calaba_v1_auth_proto_rawDescGZIP(), []int{4}
 }
 
 func (x *RegisterResponse) GetTokens() *AuthTokens {
@@ -378,7 +455,7 @@ type LoginRequest struct {
 
 func (x *LoginRequest) Reset() {
 	*x = LoginRequest{}
-	mi := &file_calaba_v1_auth_proto_msgTypes[4]
+	mi := &file_calaba_v1_auth_proto_msgTypes[5]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -390,7 +467,7 @@ func (x *LoginRequest) String() string {
 func (*LoginRequest) ProtoMessage() {}
 
 func (x *LoginRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_calaba_v1_auth_proto_msgTypes[4]
+	mi := &file_calaba_v1_auth_proto_msgTypes[5]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -403,7 +480,7 @@ func (x *LoginRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use LoginRequest.ProtoReflect.Descriptor instead.
 func (*LoginRequest) Descriptor() ([]byte, []int) {
-	return file_calaba_v1_auth_proto_rawDescGZIP(), []int{4}
+	return file_calaba_v1_auth_proto_rawDescGZIP(), []int{5}
 }
 
 func (x *LoginRequest) GetEmail() string {
@@ -437,7 +514,7 @@ type LoginResponse struct {
 
 func (x *LoginResponse) Reset() {
 	*x = LoginResponse{}
-	mi := &file_calaba_v1_auth_proto_msgTypes[5]
+	mi := &file_calaba_v1_auth_proto_msgTypes[6]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -449,7 +526,7 @@ func (x *LoginResponse) String() string {
 func (*LoginResponse) ProtoMessage() {}
 
 func (x *LoginResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_calaba_v1_auth_proto_msgTypes[5]
+	mi := &file_calaba_v1_auth_proto_msgTypes[6]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -462,7 +539,7 @@ func (x *LoginResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use LoginResponse.ProtoReflect.Descriptor instead.
 func (*LoginResponse) Descriptor() ([]byte, []int) {
-	return file_calaba_v1_auth_proto_rawDescGZIP(), []int{5}
+	return file_calaba_v1_auth_proto_rawDescGZIP(), []int{6}
 }
 
 func (x *LoginResponse) GetTokens() *AuthTokens {
@@ -492,7 +569,7 @@ type RefreshRequest struct {
 
 func (x *RefreshRequest) Reset() {
 	*x = RefreshRequest{}
-	mi := &file_calaba_v1_auth_proto_msgTypes[6]
+	mi := &file_calaba_v1_auth_proto_msgTypes[7]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -504,7 +581,7 @@ func (x *RefreshRequest) String() string {
 func (*RefreshRequest) ProtoMessage() {}
 
 func (x *RefreshRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_calaba_v1_auth_proto_msgTypes[6]
+	mi := &file_calaba_v1_auth_proto_msgTypes[7]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -517,7 +594,7 @@ func (x *RefreshRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use RefreshRequest.ProtoReflect.Descriptor instead.
 func (*RefreshRequest) Descriptor() ([]byte, []int) {
-	return file_calaba_v1_auth_proto_rawDescGZIP(), []int{6}
+	return file_calaba_v1_auth_proto_rawDescGZIP(), []int{7}
 }
 
 func (x *RefreshRequest) GetRefreshToken() string {
@@ -536,7 +613,7 @@ type RefreshResponse struct {
 
 func (x *RefreshResponse) Reset() {
 	*x = RefreshResponse{}
-	mi := &file_calaba_v1_auth_proto_msgTypes[7]
+	mi := &file_calaba_v1_auth_proto_msgTypes[8]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -548,7 +625,7 @@ func (x *RefreshResponse) String() string {
 func (*RefreshResponse) ProtoMessage() {}
 
 func (x *RefreshResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_calaba_v1_auth_proto_msgTypes[7]
+	mi := &file_calaba_v1_auth_proto_msgTypes[8]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -561,7 +638,7 @@ func (x *RefreshResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use RefreshResponse.ProtoReflect.Descriptor instead.
 func (*RefreshResponse) Descriptor() ([]byte, []int) {
-	return file_calaba_v1_auth_proto_rawDescGZIP(), []int{7}
+	return file_calaba_v1_auth_proto_rawDescGZIP(), []int{8}
 }
 
 func (x *RefreshResponse) GetTokens() *AuthTokens {
@@ -584,7 +661,7 @@ type LogoutRequest struct {
 
 func (x *LogoutRequest) Reset() {
 	*x = LogoutRequest{}
-	mi := &file_calaba_v1_auth_proto_msgTypes[8]
+	mi := &file_calaba_v1_auth_proto_msgTypes[9]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -596,7 +673,7 @@ func (x *LogoutRequest) String() string {
 func (*LogoutRequest) ProtoMessage() {}
 
 func (x *LogoutRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_calaba_v1_auth_proto_msgTypes[8]
+	mi := &file_calaba_v1_auth_proto_msgTypes[9]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -609,7 +686,7 @@ func (x *LogoutRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use LogoutRequest.ProtoReflect.Descriptor instead.
 func (*LogoutRequest) Descriptor() ([]byte, []int) {
-	return file_calaba_v1_auth_proto_rawDescGZIP(), []int{8}
+	return file_calaba_v1_auth_proto_rawDescGZIP(), []int{9}
 }
 
 func (x *LogoutRequest) GetAllSessions() bool {
@@ -636,7 +713,7 @@ type ListSessionsResponse struct {
 
 func (x *ListSessionsResponse) Reset() {
 	*x = ListSessionsResponse{}
-	mi := &file_calaba_v1_auth_proto_msgTypes[9]
+	mi := &file_calaba_v1_auth_proto_msgTypes[10]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -648,7 +725,7 @@ func (x *ListSessionsResponse) String() string {
 func (*ListSessionsResponse) ProtoMessage() {}
 
 func (x *ListSessionsResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_calaba_v1_auth_proto_msgTypes[9]
+	mi := &file_calaba_v1_auth_proto_msgTypes[10]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -661,7 +738,7 @@ func (x *ListSessionsResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ListSessionsResponse.ProtoReflect.Descriptor instead.
 func (*ListSessionsResponse) Descriptor() ([]byte, []int) {
-	return file_calaba_v1_auth_proto_rawDescGZIP(), []int{9}
+	return file_calaba_v1_auth_proto_rawDescGZIP(), []int{10}
 }
 
 func (x *ListSessionsResponse) GetSessions() []*Session {
@@ -693,7 +770,7 @@ type VerifyEmailRequest struct {
 
 func (x *VerifyEmailRequest) Reset() {
 	*x = VerifyEmailRequest{}
-	mi := &file_calaba_v1_auth_proto_msgTypes[10]
+	mi := &file_calaba_v1_auth_proto_msgTypes[11]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -705,7 +782,7 @@ func (x *VerifyEmailRequest) String() string {
 func (*VerifyEmailRequest) ProtoMessage() {}
 
 func (x *VerifyEmailRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_calaba_v1_auth_proto_msgTypes[10]
+	mi := &file_calaba_v1_auth_proto_msgTypes[11]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -718,7 +795,7 @@ func (x *VerifyEmailRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use VerifyEmailRequest.ProtoReflect.Descriptor instead.
 func (*VerifyEmailRequest) Descriptor() ([]byte, []int) {
-	return file_calaba_v1_auth_proto_rawDescGZIP(), []int{10}
+	return file_calaba_v1_auth_proto_rawDescGZIP(), []int{11}
 }
 
 func (x *VerifyEmailRequest) GetCode() string {
@@ -740,7 +817,7 @@ type VerifyEmailResponse struct {
 
 func (x *VerifyEmailResponse) Reset() {
 	*x = VerifyEmailResponse{}
-	mi := &file_calaba_v1_auth_proto_msgTypes[11]
+	mi := &file_calaba_v1_auth_proto_msgTypes[12]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -752,7 +829,7 @@ func (x *VerifyEmailResponse) String() string {
 func (*VerifyEmailResponse) ProtoMessage() {}
 
 func (x *VerifyEmailResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_calaba_v1_auth_proto_msgTypes[11]
+	mi := &file_calaba_v1_auth_proto_msgTypes[12]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -765,7 +842,7 @@ func (x *VerifyEmailResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use VerifyEmailResponse.ProtoReflect.Descriptor instead.
 func (*VerifyEmailResponse) Descriptor() ([]byte, []int) {
-	return file_calaba_v1_auth_proto_rawDescGZIP(), []int{11}
+	return file_calaba_v1_auth_proto_rawDescGZIP(), []int{12}
 }
 
 func (x *VerifyEmailResponse) GetMe() *Me {
@@ -793,7 +870,7 @@ type ForgotPasswordRequest struct {
 
 func (x *ForgotPasswordRequest) Reset() {
 	*x = ForgotPasswordRequest{}
-	mi := &file_calaba_v1_auth_proto_msgTypes[12]
+	mi := &file_calaba_v1_auth_proto_msgTypes[13]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -805,7 +882,7 @@ func (x *ForgotPasswordRequest) String() string {
 func (*ForgotPasswordRequest) ProtoMessage() {}
 
 func (x *ForgotPasswordRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_calaba_v1_auth_proto_msgTypes[12]
+	mi := &file_calaba_v1_auth_proto_msgTypes[13]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -818,7 +895,7 @@ func (x *ForgotPasswordRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ForgotPasswordRequest.ProtoReflect.Descriptor instead.
 func (*ForgotPasswordRequest) Descriptor() ([]byte, []int) {
-	return file_calaba_v1_auth_proto_rawDescGZIP(), []int{12}
+	return file_calaba_v1_auth_proto_rawDescGZIP(), []int{13}
 }
 
 func (x *ForgotPasswordRequest) GetEmail() string {
@@ -841,7 +918,7 @@ type ForgotPasswordResponse struct {
 
 func (x *ForgotPasswordResponse) Reset() {
 	*x = ForgotPasswordResponse{}
-	mi := &file_calaba_v1_auth_proto_msgTypes[13]
+	mi := &file_calaba_v1_auth_proto_msgTypes[14]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -853,7 +930,7 @@ func (x *ForgotPasswordResponse) String() string {
 func (*ForgotPasswordResponse) ProtoMessage() {}
 
 func (x *ForgotPasswordResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_calaba_v1_auth_proto_msgTypes[13]
+	mi := &file_calaba_v1_auth_proto_msgTypes[14]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -866,7 +943,7 @@ func (x *ForgotPasswordResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ForgotPasswordResponse.ProtoReflect.Descriptor instead.
 func (*ForgotPasswordResponse) Descriptor() ([]byte, []int) {
-	return file_calaba_v1_auth_proto_rawDescGZIP(), []int{13}
+	return file_calaba_v1_auth_proto_rawDescGZIP(), []int{14}
 }
 
 func (x *ForgotPasswordResponse) GetSimilarAccount() bool {
@@ -891,7 +968,7 @@ type ResetPasswordRequest struct {
 
 func (x *ResetPasswordRequest) Reset() {
 	*x = ResetPasswordRequest{}
-	mi := &file_calaba_v1_auth_proto_msgTypes[14]
+	mi := &file_calaba_v1_auth_proto_msgTypes[15]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -903,7 +980,7 @@ func (x *ResetPasswordRequest) String() string {
 func (*ResetPasswordRequest) ProtoMessage() {}
 
 func (x *ResetPasswordRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_calaba_v1_auth_proto_msgTypes[14]
+	mi := &file_calaba_v1_auth_proto_msgTypes[15]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -916,7 +993,7 @@ func (x *ResetPasswordRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ResetPasswordRequest.ProtoReflect.Descriptor instead.
 func (*ResetPasswordRequest) Descriptor() ([]byte, []int) {
-	return file_calaba_v1_auth_proto_rawDescGZIP(), []int{14}
+	return file_calaba_v1_auth_proto_rawDescGZIP(), []int{15}
 }
 
 func (x *ResetPasswordRequest) GetEmail() string {
@@ -940,11 +1017,72 @@ func (x *ResetPasswordRequest) GetPassword() string {
 	return ""
 }
 
+// Session credentials are returned only to the bound initiating client.
+type SSOFinishResponse struct {
+	state         protoimpl.MessageState   `protogen:"open.v1"`
+	Tokens        *AuthTokens              `protobuf:"bytes,1,opt,name=tokens,proto3" json:"tokens,omitempty"`
+	Access        *WorkspaceIdentityAccess `protobuf:"bytes,2,opt,name=access,proto3" json:"access,omitempty"`
+	Me            *Me                      `protobuf:"bytes,3,opt,name=me,proto3" json:"me,omitempty"` // restricted profile for workspace_sso/recovery
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *SSOFinishResponse) Reset() {
+	*x = SSOFinishResponse{}
+	mi := &file_calaba_v1_auth_proto_msgTypes[16]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *SSOFinishResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*SSOFinishResponse) ProtoMessage() {}
+
+func (x *SSOFinishResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_calaba_v1_auth_proto_msgTypes[16]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use SSOFinishResponse.ProtoReflect.Descriptor instead.
+func (*SSOFinishResponse) Descriptor() ([]byte, []int) {
+	return file_calaba_v1_auth_proto_rawDescGZIP(), []int{16}
+}
+
+func (x *SSOFinishResponse) GetTokens() *AuthTokens {
+	if x != nil {
+		return x.Tokens
+	}
+	return nil
+}
+
+func (x *SSOFinishResponse) GetAccess() *WorkspaceIdentityAccess {
+	if x != nil {
+		return x.Access
+	}
+	return nil
+}
+
+func (x *SSOFinishResponse) GetMe() *Me {
+	if x != nil {
+		return x.Me
+	}
+	return nil
+}
+
 var File_calaba_v1_auth_proto protoreflect.FileDescriptor
 
 const file_calaba_v1_auth_proto_rawDesc = "" +
 	"\n" +
-	"\x14calaba/v1/auth.proto\x12\tcalaba.v1\x1a\x1fgoogle/protobuf/timestamp.proto\x1a\x14calaba/v1/user.proto\"\xb7\x02\n" +
+	"\x14calaba/v1/auth.proto\x12\tcalaba.v1\x1a\x1fgoogle/protobuf/timestamp.proto\x1a\x14calaba/v1/user.proto\x1a\x18calaba/v1/identity.proto\"\xf2\x02\n" +
 	"\aSession\x12\x0e\n" +
 	"\x02id\x18\x01 \x01(\tR\x02id\x12\x1f\n" +
 	"\vdevice_name\x18\x02 \x01(\tR\n" +
@@ -957,8 +1095,9 @@ const file_calaba_v1_auth_proto_rawDesc = "" +
 	"\flast_seen_at\x18\x06 \x01(\v2\x1a.google.protobuf.TimestampR\n" +
 	"lastSeenAt\x129\n" +
 	"\n" +
-	"expires_at\x18\a \x01(\v2\x1a.google.protobuf.TimestampR\texpiresAt\x12\x18\n" +
-	"\acurrent\x18\b \x01(\bR\acurrent\"\x85\x02\n" +
+	"expires_at\x18\a \x01(\v2\x1a.google.protobuf.TimestampR\texpiresAt\x129\n" +
+	"\tauthority\x18\t \x01(\v2\x1b.calaba.v1.SessionAuthorityR\tauthority\x12\x18\n" +
+	"\acurrent\x18\b \x01(\bR\acurrent\"\xc0\x02\n" +
 	"\n" +
 	"AuthTokens\x12!\n" +
 	"\faccess_token\x18\x01 \x01(\tR\vaccessToken\x12F\n" +
@@ -966,7 +1105,12 @@ const file_calaba_v1_auth_proto_rawDesc = "" +
 	"\rrefresh_token\x18\x03 \x01(\tR\frefreshToken\x12H\n" +
 	"\x12refresh_expires_at\x18\x04 \x01(\v2\x1a.google.protobuf.TimestampR\x10refreshExpiresAt\x12\x1d\n" +
 	"\n" +
-	"session_id\x18\x05 \x01(\tR\tsessionId\"\xf4\x01\n" +
+	"session_id\x18\x05 \x01(\tR\tsessionId\x129\n" +
+	"\tauthority\x18\x06 \x01(\v2\x1b.calaba.v1.SessionAuthorityR\tauthority\"\x99\x01\n" +
+	"\x13SSOCompleteResponse\x12-\n" +
+	"\x06tokens\x18\x01 \x01(\v2\x15.calaba.v1.AuthTokensR\x06tokens\x12;\n" +
+	"\tassurance\x18\x02 \x01(\v2\x1d.calaba.v1.WorkspaceAssuranceR\tassurance\x12\x16\n" +
+	"\x06tested\x18\x03 \x01(\bR\x06tested\"\xf4\x01\n" +
 	"\x0fRegisterRequest\x12\x14\n" +
 	"\x05email\x18\x01 \x01(\tR\x05email\x12\x1a\n" +
 	"\bpassword\x18\x02 \x01(\tR\bpassword\x12!\n" +
@@ -1010,7 +1154,11 @@ const file_calaba_v1_auth_proto_rawDesc = "" +
 	"\x14ResetPasswordRequest\x12\x14\n" +
 	"\x05email\x18\x01 \x01(\tR\x05email\x12\x12\n" +
 	"\x04code\x18\x02 \x01(\tR\x04code\x12\x1a\n" +
-	"\bpassword\x18\x03 \x01(\tR\bpasswordB\x97\x01\n" +
+	"\bpassword\x18\x03 \x01(\tR\bpassword\"\x9d\x01\n" +
+	"\x11SSOFinishResponse\x12-\n" +
+	"\x06tokens\x18\x01 \x01(\v2\x15.calaba.v1.AuthTokensR\x06tokens\x12:\n" +
+	"\x06access\x18\x02 \x01(\v2\".calaba.v1.WorkspaceIdentityAccessR\x06access\x12\x1d\n" +
+	"\x02me\x18\x03 \x01(\v2\r.calaba.v1.MeR\x02meB\x97\x01\n" +
 	"\rcom.calaba.v1B\tAuthProtoP\x01Z6github.com/calaba/calaba/server/gen/calaba/v1;calabav1\xa2\x02\x03CXX\xaa\x02\tCalaba.V1\xca\x02\tCalaba\\V1\xe2\x02\x15Calaba\\V1\\GPBMetadata\xea\x02\n" +
 	"Calaba::V1b\x06proto3"
 
@@ -1026,44 +1174,56 @@ func file_calaba_v1_auth_proto_rawDescGZIP() []byte {
 	return file_calaba_v1_auth_proto_rawDescData
 }
 
-var file_calaba_v1_auth_proto_msgTypes = make([]protoimpl.MessageInfo, 15)
+var file_calaba_v1_auth_proto_msgTypes = make([]protoimpl.MessageInfo, 17)
 var file_calaba_v1_auth_proto_goTypes = []any{
-	(*Session)(nil),                // 0: calaba.v1.Session
-	(*AuthTokens)(nil),             // 1: calaba.v1.AuthTokens
-	(*RegisterRequest)(nil),        // 2: calaba.v1.RegisterRequest
-	(*RegisterResponse)(nil),       // 3: calaba.v1.RegisterResponse
-	(*LoginRequest)(nil),           // 4: calaba.v1.LoginRequest
-	(*LoginResponse)(nil),          // 5: calaba.v1.LoginResponse
-	(*RefreshRequest)(nil),         // 6: calaba.v1.RefreshRequest
-	(*RefreshResponse)(nil),        // 7: calaba.v1.RefreshResponse
-	(*LogoutRequest)(nil),          // 8: calaba.v1.LogoutRequest
-	(*ListSessionsResponse)(nil),   // 9: calaba.v1.ListSessionsResponse
-	(*VerifyEmailRequest)(nil),     // 10: calaba.v1.VerifyEmailRequest
-	(*VerifyEmailResponse)(nil),    // 11: calaba.v1.VerifyEmailResponse
-	(*ForgotPasswordRequest)(nil),  // 12: calaba.v1.ForgotPasswordRequest
-	(*ForgotPasswordResponse)(nil), // 13: calaba.v1.ForgotPasswordResponse
-	(*ResetPasswordRequest)(nil),   // 14: calaba.v1.ResetPasswordRequest
-	(*timestamppb.Timestamp)(nil),  // 15: google.protobuf.Timestamp
-	(*Me)(nil),                     // 16: calaba.v1.Me
+	(*Session)(nil),                 // 0: calaba.v1.Session
+	(*AuthTokens)(nil),              // 1: calaba.v1.AuthTokens
+	(*SSOCompleteResponse)(nil),     // 2: calaba.v1.SSOCompleteResponse
+	(*RegisterRequest)(nil),         // 3: calaba.v1.RegisterRequest
+	(*RegisterResponse)(nil),        // 4: calaba.v1.RegisterResponse
+	(*LoginRequest)(nil),            // 5: calaba.v1.LoginRequest
+	(*LoginResponse)(nil),           // 6: calaba.v1.LoginResponse
+	(*RefreshRequest)(nil),          // 7: calaba.v1.RefreshRequest
+	(*RefreshResponse)(nil),         // 8: calaba.v1.RefreshResponse
+	(*LogoutRequest)(nil),           // 9: calaba.v1.LogoutRequest
+	(*ListSessionsResponse)(nil),    // 10: calaba.v1.ListSessionsResponse
+	(*VerifyEmailRequest)(nil),      // 11: calaba.v1.VerifyEmailRequest
+	(*VerifyEmailResponse)(nil),     // 12: calaba.v1.VerifyEmailResponse
+	(*ForgotPasswordRequest)(nil),   // 13: calaba.v1.ForgotPasswordRequest
+	(*ForgotPasswordResponse)(nil),  // 14: calaba.v1.ForgotPasswordResponse
+	(*ResetPasswordRequest)(nil),    // 15: calaba.v1.ResetPasswordRequest
+	(*SSOFinishResponse)(nil),       // 16: calaba.v1.SSOFinishResponse
+	(*timestamppb.Timestamp)(nil),   // 17: google.protobuf.Timestamp
+	(*SessionAuthority)(nil),        // 18: calaba.v1.SessionAuthority
+	(*WorkspaceAssurance)(nil),      // 19: calaba.v1.WorkspaceAssurance
+	(*Me)(nil),                      // 20: calaba.v1.Me
+	(*WorkspaceIdentityAccess)(nil), // 21: calaba.v1.WorkspaceIdentityAccess
 }
 var file_calaba_v1_auth_proto_depIdxs = []int32{
-	15, // 0: calaba.v1.Session.created_at:type_name -> google.protobuf.Timestamp
-	15, // 1: calaba.v1.Session.last_seen_at:type_name -> google.protobuf.Timestamp
-	15, // 2: calaba.v1.Session.expires_at:type_name -> google.protobuf.Timestamp
-	15, // 3: calaba.v1.AuthTokens.access_expires_at:type_name -> google.protobuf.Timestamp
-	15, // 4: calaba.v1.AuthTokens.refresh_expires_at:type_name -> google.protobuf.Timestamp
-	1,  // 5: calaba.v1.RegisterResponse.tokens:type_name -> calaba.v1.AuthTokens
-	16, // 6: calaba.v1.RegisterResponse.me:type_name -> calaba.v1.Me
-	1,  // 7: calaba.v1.LoginResponse.tokens:type_name -> calaba.v1.AuthTokens
-	16, // 8: calaba.v1.LoginResponse.me:type_name -> calaba.v1.Me
-	1,  // 9: calaba.v1.RefreshResponse.tokens:type_name -> calaba.v1.AuthTokens
-	0,  // 10: calaba.v1.ListSessionsResponse.sessions:type_name -> calaba.v1.Session
-	16, // 11: calaba.v1.VerifyEmailResponse.me:type_name -> calaba.v1.Me
-	12, // [12:12] is the sub-list for method output_type
-	12, // [12:12] is the sub-list for method input_type
-	12, // [12:12] is the sub-list for extension type_name
-	12, // [12:12] is the sub-list for extension extendee
-	0,  // [0:12] is the sub-list for field type_name
+	17, // 0: calaba.v1.Session.created_at:type_name -> google.protobuf.Timestamp
+	17, // 1: calaba.v1.Session.last_seen_at:type_name -> google.protobuf.Timestamp
+	17, // 2: calaba.v1.Session.expires_at:type_name -> google.protobuf.Timestamp
+	18, // 3: calaba.v1.Session.authority:type_name -> calaba.v1.SessionAuthority
+	17, // 4: calaba.v1.AuthTokens.access_expires_at:type_name -> google.protobuf.Timestamp
+	17, // 5: calaba.v1.AuthTokens.refresh_expires_at:type_name -> google.protobuf.Timestamp
+	18, // 6: calaba.v1.AuthTokens.authority:type_name -> calaba.v1.SessionAuthority
+	1,  // 7: calaba.v1.SSOCompleteResponse.tokens:type_name -> calaba.v1.AuthTokens
+	19, // 8: calaba.v1.SSOCompleteResponse.assurance:type_name -> calaba.v1.WorkspaceAssurance
+	1,  // 9: calaba.v1.RegisterResponse.tokens:type_name -> calaba.v1.AuthTokens
+	20, // 10: calaba.v1.RegisterResponse.me:type_name -> calaba.v1.Me
+	1,  // 11: calaba.v1.LoginResponse.tokens:type_name -> calaba.v1.AuthTokens
+	20, // 12: calaba.v1.LoginResponse.me:type_name -> calaba.v1.Me
+	1,  // 13: calaba.v1.RefreshResponse.tokens:type_name -> calaba.v1.AuthTokens
+	0,  // 14: calaba.v1.ListSessionsResponse.sessions:type_name -> calaba.v1.Session
+	20, // 15: calaba.v1.VerifyEmailResponse.me:type_name -> calaba.v1.Me
+	1,  // 16: calaba.v1.SSOFinishResponse.tokens:type_name -> calaba.v1.AuthTokens
+	21, // 17: calaba.v1.SSOFinishResponse.access:type_name -> calaba.v1.WorkspaceIdentityAccess
+	20, // 18: calaba.v1.SSOFinishResponse.me:type_name -> calaba.v1.Me
+	19, // [19:19] is the sub-list for method output_type
+	19, // [19:19] is the sub-list for method input_type
+	19, // [19:19] is the sub-list for extension type_name
+	19, // [19:19] is the sub-list for extension extendee
+	0,  // [0:19] is the sub-list for field type_name
 }
 
 func init() { file_calaba_v1_auth_proto_init() }
@@ -1072,13 +1232,14 @@ func file_calaba_v1_auth_proto_init() {
 		return
 	}
 	file_calaba_v1_user_proto_init()
+	file_calaba_v1_identity_proto_init()
 	type x struct{}
 	out := protoimpl.TypeBuilder{
 		File: protoimpl.DescBuilder{
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_calaba_v1_auth_proto_rawDesc), len(file_calaba_v1_auth_proto_rawDesc)),
 			NumEnums:      0,
-			NumMessages:   15,
+			NumMessages:   17,
 			NumExtensions: 0,
 			NumServices:   0,
 		},

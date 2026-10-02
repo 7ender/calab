@@ -1,3 +1,4 @@
+import { enIdentity } from './identity';
 import type { Dict } from '../types';
 import { enApp } from './app';
 import { enChat } from './chat';
@@ -16,6 +17,7 @@ import { enPicker } from './picker';
 import { enRoles } from './roles';
 import { enCalendar } from './calendar';
 import { enBoards } from './boards';
+import { enBoards2 } from './boards2';
 import { enPlan } from './plan';
 import { enShell } from './shell';
 import { enVideo } from './video';
@@ -29,6 +31,7 @@ import { enWebApps } from './webapps';
 
 /** English UI strings (ADR-0022): same keys and placeholders as `ru`; glossary docs/i18n-glossary.md. */
 export const en: Dict = {
+  ...enIdentity,
   ...enShell,
   ...enChat,
   ...enPeople,
@@ -56,6 +59,7 @@ export const en: Dict = {
   ...enRoles,
   ...enCalendar,
   ...enBoards,
+  ...enBoards2,
   'voice.pendingMember': 'Connecting…',
   // common
   'common.cancel': 'Cancel',
@@ -146,11 +150,12 @@ export const en: Dict = {
   'ws.timeFormat.auto': 'Auto',
   'ws.timeFormat.h24': '24 h',
   'ws.timeFormat.h12': '12 h',
-  'ws.settings': 'Workspace settings',
+  'ws.settings': 'Settings',
   'ws.settingsTitle': 'Settings: {name}',
-  'ws.invite': 'Invite people',
+  'ws.invite': 'Invite',
   'ws.members': 'Members',
   'ws.leave': 'Leave workspace',
+  'ws.leaveItem': 'Leave',
   'ws.leaveConfirm': 'Leave “{name}”? You can only come back with an invite.',
   'ws.tabGeneral': 'General',
   'ws.tabMedia': 'Voice & screen share',
@@ -238,6 +243,7 @@ export const en: Dict = {
   'room.whoSeesRemove': 'Remove from the list: {name}',
   'room.whoSeesFooter': 'The list is the “{perm}” permission on the “{tab}” tab',
   'room.settings': 'Room settings',
+  'roomMenu.settings': 'Settings',
   'room.settingsTitle': 'Room: {name}',
   'room.tabPerms': 'Permissions',
   'room.mediaText': '“Workspace default” uses the workspace setting.',
@@ -251,6 +257,7 @@ export const en: Dict = {
   'media.maxPreset': 'Max screen share quality',
   'media.maxStreams': 'Simultaneous screen shares',
   'media.maxStreamsHint': 'How many people can share their screen at once (0 — not allowed)',
+  'media.planClamp': 'Applied as min(value, plan limit): {limit}',
   'media.default': 'Workspace default ({v})',
   'audioTier.8': 'Low',
   'audioTier.16': 'Normal',

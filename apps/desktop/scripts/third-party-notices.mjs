@@ -104,6 +104,18 @@ if (existsSync(MODEL_SOURCE)) {
   });
 }
 
+// Bundled emoji fallback font (#44): OFL font build + CC-BY 4.0 Twemoji artwork (attribution).
+const FONT_DIR = join(here, '..', 'src', 'renderer', 'assets', 'fonts');
+if (existsSync(join(FONT_DIR, 'LICENSE.txt'))) {
+  pkgs.set('twemoji-colr-font', {
+    name: 'Twemoji COLR font',
+    version: '15.0.3',
+    license: 'OFL-1.1 (font), CC-BY-4.0 (Twemoji artwork, Copyright 2020 Twitter, Inc and other contributors)',
+    url: 'https://github.com/mrdrogdrog/twemoji-color-font',
+    texts: [readFileSync(join(FONT_DIR, 'SOURCE.txt'), 'utf8').trim(), readFileSync(join(FONT_DIR, 'LICENSE.txt'), 'utf8').trim()],
+  });
+}
+
 for (const p of pkgs.values()) {
   const extra = EMBEDDED[p.name];
   if (extra) {

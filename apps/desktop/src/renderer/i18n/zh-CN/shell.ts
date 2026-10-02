@@ -44,8 +44,8 @@ export const zhShell: DictShape<typeof enShell> = {
   'shell.ownerCannotLeave': '所有者不能离开工作区',
   'shell.invite': '邀请',
   'shell.inviteTo': '邀请加入"{name}"',
-  'shell.roomChat': '房间聊天',
-  'shell.roomChatOf': '"{name}"的聊天',
+  'shell.joinVoiceShort': '加入',
+  'shell.joinVoiceOf': '加入"{name}"的语音',
   'shell.roomSettingsOf': '编辑"{name}"',
   // voice room rows under the room I am in (docs/09 #48)
   'shell.voiceStatus.label': '房间状态',
@@ -58,7 +58,7 @@ export const zhShell: DictShape<typeof enShell> = {
   'shell.create': '创建',
   'shell.categoryCreate': '创建分类',
   'shell.categoryName': '分类名称',
-  'shell.categoryRename': '重命名分类',
+  'shell.categoryRename': '重命名',
   'shell.categoryDelete': '删除分类',
   'shell.categoryDeleteConfirm': '删除分类"{name}"？其中的房间将保留，但不再归属分类。',
   'shell.categoryCollapse': '折叠"{name}"',
@@ -96,7 +96,6 @@ export const zhShell: DictShape<typeof enShell> = {
   'shell.more': '更多',
   'shell.voiceSettings': '语音设置',
   'shell.connCheck': '测试连接',
-  'shell.openRoom': '打开房间聊天',
 
   // self panel
   'shell.inVoiceStatus': '语音中',

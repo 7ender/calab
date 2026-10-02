@@ -41,6 +41,12 @@ const NUMBERS: Record<Short, string[]> = {
   zh: ['+861055550134', '+8613800000123', '+862155550187', '+861055550199'],
 };
 const NUMBER_TYPED: Record<Short, string> = { ru: '+7 495 123-45-67', en: '+1 415 555-0134', es: '+34 910 000-123', zh: '+86 10 5555-0134' };
+/** A private LiveKit (MOCK_LIVEKIT_URL / _KEY / _SECRET), when the default dev one on :7880 is not the one to use. */
+const lkOpts = (): { livekitUrl?: string; livekitKey?: string; livekitSecret?: string } => ({
+  ...(process.env['MOCK_LIVEKIT_URL'] ? { livekitUrl: process.env['MOCK_LIVEKIT_URL'] } : {}),
+  ...(process.env['MOCK_LIVEKIT_KEY'] ? { livekitKey: process.env['MOCK_LIVEKIT_KEY'] } : {}),
+  ...(process.env['MOCK_LIVEKIT_SECRET'] ? { livekitSecret: process.env['MOCK_LIVEKIT_SECRET'] } : {}),
+});
 const PREFIX = process.env['MOCK_LIVEKIT_ROOM_PREFIX'] || 'landing_';
 
 interface Ctx {
@@ -57,10 +63,10 @@ const aside = (page: Page) => page.locator('aside').first();
 async function boot(short: Short, seed?: (mock: MockServer, c: Copy) => void, size = SIZE): Promise<Ctx> {
   expect(existsSync(join(DIST, 'index.html')), 'dist-web is missing: run `pnpm build:web` first').toBe(true);
   const browser = await chromium.launch({
-    args: ['--use-fake-device-for-media-stream', '--use-fake-ui-for-media-stream', '--mute-audio', '--autoplay-policy=no-user-gesture-required'],
+    args: ['--use-fake-device-for-media-stream', '--use-fake-ui-for-media-stream', '--mute-audio', '--autoplay-policy=no-user-gesture-required', '--allow-loopback-in-peer-connection', '--disable-features=WebRtcHideLocalIpsWithMdns', '--force-webrtc-ip-handling-policy=default_public_and_private_interfaces'],
   });
   const c = COPY[short];
-  const mock = await startMockServer({ port: 0, scenario: 'data', staticDir: DIST });
+  const mock = await startMockServer({ port: 0, scenario: 'data', staticDir: DIST, ...lkOpts() });
   mock.setClock(NOW.getTime());
   seedScene(mock, c, await drawArt(browser, c));
   seed?.(mock, c);
@@ -128,7 +134,9 @@ async function fakeCamera(page: Page, png: Buffer): Promise<void> {
 /** In «Переговорка», muted (the fake mic beeps), a room status, steady «good» signal. */
 async function joinMeeting(ctx: Ctx): Promise<void> {
   const { page, c } = ctx;
+  // 2.0: the room row opens the chat, «Войти» is the way into the call.
   await aside(page).getByRole('button', { name: new RegExp(c.rooms.meeting) }).first().click();
+  await aside(page).getByRole('button', { name: `Войти в голос «${c.rooms.meeting}»` }).click();
   await expect(page.getByText('Голос подключён')).toBeVisible({ timeout: 30_000 });
   await page.keyboard.press(`${MOD}+Shift+m`);
   await expect(page.getByRole('button', { name: 'Включить микрофон' }).first()).toBeVisible();
@@ -205,7 +213,7 @@ const scenes: Record<string, (ctx: Ctx) => Promise<void>> = {
     call(n[2] ?? '', U.vera, SipCallStatus.ENDED, 'remote', 6 * 60_000);
     await setLocale(page, short);
     await page.getByTestId('titlebar-title').or(aside(page).getByRole('button').first()).first().click();
-    await page.getByRole('menuitem', { name: /Настройки пространства|Workspace settings|Ajustes del espacio|工作区设置/ }).first().click();
+    await page.getByRole('menuitem', { name: /^(Настройки|Settings|Ajustes|设置)$/ }).first().click();
     await page.getByRole('dialog').getByRole('tab').filter({ hasText: /Телефония|Telephony|Telefonía|电话/ }).first().click();
     await expect(page.getByTestId('sip-form')).toBeVisible();
     await page.getByTestId('sip-test').click();

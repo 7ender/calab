@@ -18,9 +18,9 @@ import (
 	"github.com/calaba/calaba/server/internal/db/sqlc"
 	"github.com/calaba/calaba/server/internal/events"
 	"github.com/calaba/calaba/server/internal/httpx"
+	"github.com/calaba/calaba/server/internal/identitypolicy"
 	"github.com/calaba/calaba/server/internal/pbconv"
 	"github.com/calaba/calaba/server/internal/redisx"
-	"github.com/calaba/calaba/server/internal/superadmin"
 )
 
 // Admin serves /api/admin/* (ADR-0024): superadmins only, everyone else gets 404 so the
@@ -90,7 +90,9 @@ func (a *Admin) setStorageQuota(w http.ResponseWriter, r *http.Request) error {
 		v := int64(req.GetQuotaBytes()) //nolint:gosec // checked above
 		quota = &v
 	}
-	if _, err := a.db.Q.SetUserStorageQuota(r.Context(), sqlc.SetUserStorageQuotaParams{ID: id, Quota: quota}); err != nil {
+	if _, err := db.GuardValue(r.Context(), a.db, func(guarded *sqlc.Queries) (*int64, error) {
+		return guarded.SetUserStorageQuota(r.Context(), sqlc.SetUserStorageQuotaParams{ID: id, Quota: quota})
+	}); err != nil {
 		if db.IsNotFound(err) {
 			return httpx.NotFound("user")
 		}
@@ -105,13 +107,10 @@ const maxNote = 500
 // guard lets superadmins through (email re-read on every request) and rate-limits them.
 func (a *Admin) guard(next httpx.HandlerFunc) httpx.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) error {
-		uid := auth.MustFromContext(r.Context()).UserID
-		u, err := a.db.Q.GetUser(r.Context(), uid)
-		if err != nil && !db.IsNotFound(err) {
-			return err
-		}
-		// Only a verified address counts (ADR-0023): anyone can register an unverified one.
-		if err != nil || u.EmailVerifiedAt == nil || !superadmin.IsPtr(u.Email) {
+		id := auth.MustFromContext(r.Context())
+		uid := id.UserID
+		// The app has checked the UUID or trusted local legacy source and recent local proof.
+		if id.IsBot || id.Principal.Authority != identitypolicy.LocalAccount {
 			return httpx.NotFound("route")
 		}
 		if a.limiter != nil {
@@ -300,7 +299,7 @@ func (a *Admin) setPlan(w http.ResponseWriter, r *http.Request) error {
 	var ws sqlc.Workspace
 	err = a.db.Tx(r.Context(), func(q *sqlc.Queries) error {
 		var err error
-		if ws, err = q.GetWorkspace(r.Context(), id); err != nil {
+		if ws, err = q.LockOAuthWorkspace(r.Context(), id); err != nil {
 			if db.IsNotFound(err) {
 				return httpx.NotFound("workspace")
 			}
@@ -309,6 +308,21 @@ func (a *Admin) setPlan(w http.ResponseWriter, r *http.Request) error {
 		if _, err := q.UpsertWorkspacePlan(r.Context(), sqlc.UpsertWorkspacePlanParams{
 			WorkspaceID: id, Plan: plan, Limits: stored, ValidUntil: until, Note: note, UpdatedBy: &actor,
 		}); err != nil {
+			return err
+		}
+		for _, feature := range []identitypolicy.Feature{identitypolicy.SSO, identitypolicy.DirectorySync, identitypolicy.OAuthProvider} {
+			current, err := q.GetIdentityGrant(r.Context(), sqlc.GetIdentityGrantParams{WorkspaceID: id, Feature: string(feature)})
+			if err != nil && !db.IsNotFound(err) {
+				return err
+			}
+			if err == nil && current.Source == "onprem_enterprise" {
+				continue
+			} // plan edits cannot replace an operator grant
+			if _, err := q.UpsertIdentityGrant(r.Context(), sqlc.UpsertIdentityGrantParams{WorkspaceID: id, Feature: string(feature), Enabled: plan == "enterprise", Source: "cloud_business", ValidUntil: until, UpdatedBy: &actor}); err != nil {
+				return err
+			}
+		}
+		if err := auth.InvalidateIdentity(r.Context(), q, id, nil, &actor, "plan_changed"); err != nil {
 			return err
 		}
 		return q.InsertPlanLog(r.Context(), sqlc.InsertPlanLogParams{
@@ -351,7 +365,7 @@ func (a *Admin) log(w http.ResponseWriter, r *http.Request) error {
 	}
 	out := make([]*v1.PlanLogEntry, 0, len(rows))
 	for _, row := range rows {
-		l, err := ParseLimits(string(row.Limits), Limits{})
+		l, err := ParseLimits(string(row.Limits), CustomBase)
 		if err != nil {
 			slog.WarnContext(r.Context(), "invalid plan log limits", "id", row.ID, "err", err)
 		}
@@ -401,7 +415,7 @@ func (a *Admin) setSuspension(w http.ResponseWriter, r *http.Request) error {
 	actor := auth.MustFromContext(r.Context()).UserID
 	var ws sqlc.Workspace
 	err = a.db.Tx(r.Context(), func(q *sqlc.Queries) error {
-		cur, err := q.GetWorkspace(r.Context(), id)
+		cur, err := q.LockOAuthWorkspace(r.Context(), id)
 		if err != nil {
 			if db.IsNotFound(err) {
 				return httpx.NotFound("workspace")
@@ -419,6 +433,9 @@ func (a *Admin) setSuspension(w http.ResponseWriter, r *http.Request) error {
 			p.SuspendedAt, p.SuspendedBy = &at, &actor
 		}
 		if ws, err = q.SetWorkspaceSuspension(r.Context(), p); err != nil {
+			return err
+		}
+		if err := auth.InvalidateIdentity(r.Context(), q, id, nil, &actor, "workspace_"+action); err != nil {
 			return err
 		}
 		return q.InsertAdminLog(r.Context(), sqlc.InsertAdminLogParams{WorkspaceID: id, ActorID: &actor, Action: action, Reason: reason})

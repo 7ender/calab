@@ -9,6 +9,7 @@ import (
 	"google.golang.org/protobuf/types/known/timestamppb"
 
 	v1 "github.com/calaba/calaba/server/gen/calaba/v1"
+	"github.com/calaba/calaba/server/internal/httpx"
 )
 
 var env = FilterEnv{Viewer: uuid.MustParse("00000000-0000-0000-0000-00000000000a"), Today: time.Date(2026, 9, 30, 0, 0, 0, 0, time.UTC)}
@@ -235,5 +236,73 @@ func TestReorder(t *testing.T) {
 	}
 	if got := reorder([]uuid.UUID{a, b, c}, a, 99); got[2] != a {
 		t.Fatalf("%v", got)
+	}
+}
+
+// Board features (ADR-0058 §3): the stored mask round-trips, unknown values are 422, the check
+// passes clearing / repeats and refuses a new value with reason FEATURE_DISABLED and the field.
+func TestFeatureMask(t *testing.T) {
+	all := make([]v1.BoardFeature, 0, 13)
+	for f := v1.BoardFeature_BOARD_FEATURE_ESTIMATE; f <= v1.BoardFeature_BOARD_FEATURE_TIMELINE; f++ {
+		all = append(all, f)
+	}
+	m, err := FeatureMask(all)
+	if err != nil || m != 0x3FFE {
+		t.Fatalf("mask %x %v", m, err)
+	}
+	if got := FeaturesProto(m); len(got) != 13 || got[0] != v1.BoardFeature_BOARD_FEATURE_ESTIMATE || got[12] != v1.BoardFeature_BOARD_FEATURE_TIMELINE {
+		t.Fatalf("features %v", got)
+	}
+	if FeaturesProto(0) != nil {
+		t.Fatal("no features")
+	}
+	for _, bad := range []v1.BoardFeature{0, 14, 99} {
+		if _, err := FeatureMask([]v1.BoardFeature{bad}); err == nil {
+			t.Fatalf("feature %d accepted", bad)
+		}
+	}
+	d := featureBit(v1.BoardFeature_BOARD_FEATURE_DUE_DATE)
+	if requireFeature(d, v1.BoardFeature_BOARD_FEATURE_DUE_DATE, "dueOn", false) != nil ||
+		requireFeature(d, v1.BoardFeature_BOARD_FEATURE_ESTIMATE, "estimate", true) != nil {
+		t.Fatal("clearing or another feature refused")
+	}
+	e := httpx.AsError(requireFeature(d, v1.BoardFeature_BOARD_FEATURE_DUE_DATE, "dueOn", true))
+	if e == nil || e.Status != 409 || e.Reason != ReasonFeatureDisabled || e.Field != "dueOn" || e.Proto().GetReason() != ReasonFeatureDisabled {
+		t.Fatalf("refusal %+v", e)
+	}
+	if !CommentsOff(&v1.Board{DisabledFeatures: []v1.BoardFeature{v1.BoardFeature_BOARD_FEATURE_COMMENTS}}) || CommentsOff(&v1.Board{}) {
+		t.Fatal("CommentsOff")
+	}
+}
+
+func TestEstimateScales(t *testing.T) {
+	cases := []struct {
+		scale string
+		in    []int16
+		out   []int16
+	}{
+		{"fibonacci", []int16{1, 2, 3, 5, 8, 13, 21}, []int16{4, 6, 10, 20}},
+		{"linear", []int16{1, 4, 7, 10}, []int16{11, 13, 21}},
+		{"tshirt", []int16{1, 2, 3, 5, 8}, []int16{4, 13, 21}},
+	}
+	for _, c := range cases {
+		for _, n := range c.in {
+			if !InScale(c.scale, n) {
+				t.Errorf("%s: %d refused", c.scale, n)
+			}
+		}
+		for _, n := range c.out {
+			if InScale(c.scale, n) {
+				t.Errorf("%s: %d accepted", c.scale, n)
+			}
+		}
+	}
+	for k, v := range estimateScales {
+		if EstimateScaleFromDB(v) != k {
+			t.Errorf("scale %s", v)
+		}
+	}
+	if EstimateScaleFromDB("") != v1.EstimateScale_ESTIMATE_SCALE_FIBONACCI {
+		t.Error("default scale")
 	}
 }

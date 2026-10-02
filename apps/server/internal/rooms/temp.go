@@ -61,6 +61,7 @@ var ErrRoomArchived = httpx.Coded(http.StatusGone, v1.ErrorCode_ERROR_CODE_ROOM_
 type Meetings interface {
 	CreateRoomMeeting(ctx context.Context, q *sqlc.Queries, wsID, organizer, roomID uuid.UUID, title string, start, end time.Time) (*v1.CalendarEvent, func(context.Context), error)
 	CloseRoomMeetings(ctx context.Context, q *sqlc.Queries, roomID uuid.UUID) (func(context.Context), error)
+	FollowRoomExpiry(ctx context.Context, q *sqlc.Queries, roomID uuid.UUID, oldEnd, newEnd time.Time) (func(context.Context), error)
 }
 
 // MayManage is the one MANAGE_ROOM check of a room (ADR-0044): the bit in the room, or — on a
@@ -419,7 +420,7 @@ func (h *Handlers) PurgeTempRooms(ctx context.Context, before time.Time) (int, e
 	}
 	n := 0
 	for _, id := range ids {
-		k, err := h.db.Q.DeleteArchivedTempRoom(ctx, id)
+		k, err := db.GuardValue(ctx, h.db, func(guarded *sqlc.Queries) (int64, error) { return guarded.DeleteArchivedTempRoom(ctx, id) })
 		if err != nil {
 			return n, err
 		}

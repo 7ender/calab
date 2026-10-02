@@ -43,7 +43,6 @@ export const enDm: DictShape<typeof ruDm> = {
   'dm.archive': 'Archive',
   'dm.unarchive': 'Unarchive',
   'dm.archiveSection': 'Archive — {n}',
-  'dm.delete': 'Delete chat',
   'dm.deleteTitle': 'Delete chat?',
   'dm.deleteConfirm': 'The history will be deleted only for you; the other person keeps it.',
   'dm.errState': 'Couldn’t update the conversation',

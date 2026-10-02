@@ -34,6 +34,7 @@ import (
 	"github.com/calaba/calaba/server/internal/profile"
 	"github.com/calaba/calaba/server/internal/rooms"
 	"github.com/calaba/calaba/server/internal/sealbox"
+	"github.com/calaba/calaba/server/internal/webhook"
 	"github.com/calaba/calaba/server/internal/workspaces"
 )
 
@@ -73,6 +74,7 @@ type Service struct {
 func New(d *db.DB, r rueidis.Client, a *auth.Service, pl *plans.Service, secret []byte, o WebhookOptions) *Service {
 	s := &Service{db: d, redis: r, auth: a, plans: pl, box: sealbox.New("calaba/bot-webhook/v1", secret)}
 	s.wh = newWebhookWorker(o)
+	s.wh.worker = webhook.NewWorker(queue{s}, s.wh.tr, r, lockKey, s.wh.opts)
 	return s
 }
 
@@ -476,7 +478,9 @@ func (s *Service) clearAvatar(w http.ResponseWriter, r *http.Request) error {
 	if err != nil {
 		return err
 	}
-	u, err := s.db.Q.UpdateUser(r.Context(), sqlc.UpdateUserParams{ID: b.UserID, SetAvatar: true})
+	u, err := db.GuardValue(r.Context(), s.db, func(guarded *sqlc.Queries) (sqlc.User, error) {
+		return guarded.UpdateUser(r.Context(), sqlc.UpdateUserParams{ID: b.UserID, SetAvatar: true})
+	})
 	if err != nil {
 		return err
 	}
@@ -877,7 +881,9 @@ func (s *Service) block(w http.ResponseWriter, r *http.Request) error {
 	if err != nil {
 		return err
 	}
-	if err := s.db.Q.BlockBot(r.Context(), sqlc.BlockBotParams{UserID: identity(r).UserID, BotUserID: id}); err != nil {
+	if err := db.GuardExec(r.Context(), s.db, func(guarded *sqlc.Queries) error {
+		return guarded.BlockBot(r.Context(), sqlc.BlockBotParams{UserID: identity(r).UserID, BotUserID: id})
+	}); err != nil {
 		return err
 	}
 	httpx.NoContent(w)
@@ -889,7 +895,9 @@ func (s *Service) unblock(w http.ResponseWriter, r *http.Request) error {
 	if err != nil {
 		return err
 	}
-	if err := s.db.Q.UnblockBot(r.Context(), sqlc.UnblockBotParams{UserID: identity(r).UserID, BotUserID: id}); err != nil {
+	if err := db.GuardExec(r.Context(), s.db, func(guarded *sqlc.Queries) error {
+		return guarded.UnblockBot(r.Context(), sqlc.UnblockBotParams{UserID: identity(r).UserID, BotUserID: id})
+	}); err != nil {
 		return err
 	}
 	httpx.NoContent(w)

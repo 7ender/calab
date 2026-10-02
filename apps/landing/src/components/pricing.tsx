@@ -19,8 +19,15 @@ const ROW_IDS = Object.keys({
   stickers: 0,
   boards: 0,
   calendar: 0,
-  musician: 0,
   caldav: 0,
+  musician: 0,
+  checklists: 0,
+  approvals: 0,
+  webapps: 0,
+  sip: 0,
+  webhook: 0,
+  sso: 0,
+  whitelabel: 0,
   onprem: 0,
   support: 0,
   price: 0,
@@ -80,14 +87,17 @@ function Cell({ value, t }: { value: string; t: Dict['pricing']['table'] }) {
 
 /**
  * Plans (README «Тарифы», ADR-0024; Free · Team · Business · Enterprise = own server): four plan cards (Free is where to start) and one comparison
- * table from md up; on phones the table would need a sideways scroll, so each card carries its own
+ * table from md up, expanded by default; on phones the table would need a sideways scroll, so each card carries its own
  * values in a native <details> instead (no JS).
  */
 export function Pricing({ t }: { t: Dict['pricing'] }) {
   const tb = t.table;
   return (
     <Section id="pricing" labelledBy="pricing-title">
+      <div className="sticker-section-heading">
       <SectionHeading id="pricing-title" eyebrow={t.eyebrow} title={t.title} lead={t.lead} />
+        <img className="section-sticker" src="/editorial/sticker-pricing.webp" width={180} height={180} alt="" loading="lazy" />
+      </div>
       <ul className="mt-12 grid gap-4 sm:mt-16 md:grid-cols-2 lg:grid-cols-4">
         {PLAN_IDS.map((id, col) => {
           const plan = t.plans[id];
@@ -96,7 +106,7 @@ export function Pricing({ t }: { t: Dict['pricing'] }) {
             <li
               key={id}
               className={
-                'relative flex flex-col rounded-[20px] border bg-card p-6 ' + (start ? 'border-2 border-accent' : 'border-line')
+                'relative flex flex-col rounded-[24px] border bg-card p-6 ' + (start ? 'border-2 border-accent' : 'border-line')
               }
             >
               {start && (
@@ -130,7 +140,7 @@ export function Pricing({ t }: { t: Dict['pricing'] }) {
           );
         })}
       </ul>
-      <div className="mt-8 hidden overflow-hidden rounded-[20px] border border-line md:block">
+      <div className="mt-10 hidden overflow-hidden rounded-[24px] md:block">
         <table className="w-full table-fixed border-collapse text-[15px] leading-6">
           <caption className="sr-only">{tb.caption}</caption>
           <colgroup>
@@ -165,7 +175,7 @@ export function Pricing({ t }: { t: Dict['pricing'] }) {
           </tbody>
         </table>
       </div>
-      <p className="mx-auto mt-8 max-w-[760px] text-center text-[14px] leading-5 text-pretty text-fg-2">
+      <p className="mt-10 max-w-[860px] border-l-4 border-accent pl-6 text-[14px] leading-5 text-pretty text-fg-2">
         {t.license}{' '}
         <a href={repoFile('LICENSE')} className="link">
           {t.licenseLink}

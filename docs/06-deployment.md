@@ -1,6 +1,12 @@
 # 06 — Деплой
 
-## Сейчас: docker compose на одном хосте
+Production API/web сейчас выпускаются через [`images.yml`](../.github/workflows/images.yml)
+и GitHub Deployment `calab-prod`; конфигурацией управляет платформа кластера.
+Для 2.0 сначала закрыть [identity gates](#identity-20-настройка-и-приёмка).
+Compose/SSH ниже — отдельная self-hosted установка и исторический запасной путь,
+не второй параллельный деплой production.
+
+## Docker compose на одном хосте
 
 Тестовый стенд: `root@141.105.69.177` (Debian 13, 32 vCPU, 123 GB RAM, 1.2 TB свободно, Docker 29, Compose v5).
 
@@ -70,7 +76,7 @@ mkdir -p /opt/calaba
 
 - Код: `/opt/calaba` (копия рабочего дерева через `sync.sh`), секреты: `/opt/calaba/infra/docker/.env` (`chmod 600`, root; сгенерированы `openssl rand` по `.env.example`, `REGISTRATION_MODE=open`). `sync.sh` этот файл никогда не перезаписывает и не удаляет.
 - Ключ/секрет LiveKit для тестов (`lk`, load-test) брать оттуда: `ssh root@141.105.69.177 'grep ^LIVEKIT_API_ /opt/calaba/infra/docker/.env'` — не коммитить и не вставлять в отчёты.
-- **Домены (docs/10-branding.md):** целевая схема — `DOMAIN=calab.ru` (`rtc.calab.ru`, `turn.calab.ru`; TURN анонсируется по нему), `APP_HOST=app.calab.ru` (веб-клиент, API, gateway, `/download/`), `LANDING_HOST=calab.ru` (статика `apps/landing/out` → `/opt/calaba/landing`, bind `../../landing:/srv/landing:ro`; там же `/download/` — те же релизы), `DOMAIN_ALT=app.calab.ru` и `DOMAIN_LEGACY=meet.gptunnel.ru` — дополнительные хосты приложения (их `rtc.`/`turn.` тоже обслуживаются на переходный период). `entrypoint.sh` Caddy собирает из этого списки хостов и генерирует сайт лендинга (`/tmp/landing.caddy`, пустой при `LANDING_HOST=`); `PUBLIC_APP_URL=https://${APP_HOST}`, `PUBLIC_APP_URL_ALT=https://${DOMAIN_ALT}` (до серверного `PUBLIC_APP_URLS` origin `DOMAIN_LEGACY` не проходит CSRF/Origin-проверку веб-клиента — десктоп не затронут).
+- **Домены (docs/10-branding.md; с 2.0.0 — `calab.io` + алиасы `calab.ru`, см. «Домены: calab.io…» ниже):** схема — `DOMAIN=calab.io` (`rtc.calab.io`, `turn.calab.io`; TURN анонсируется по нему), `APP_HOST=app.calab.io` (веб-клиент, API, gateway, `/download/`), `LANDING_HOST=calab.io` (статика `apps/landing/out` → `/opt/calaba/landing`, bind `../../landing:/srv/landing:ro`; там же `/download/` — те же релизы), `DOMAIN_ALT=meet.gptunnel.ru` и `DOMAIN_LEGACY=app.calab.ru` — дополнительные хосты приложения (их `rtc.`/`turn.` тоже обслуживаются на переходный период). `entrypoint.sh` Caddy собирает из этого списки хостов и генерирует сайт лендинга (`/tmp/landing.caddy`, пустой при `LANDING_HOST=`); `PUBLIC_APP_URL=https://${APP_HOST}`, `PUBLIC_APP_URL_ALT=https://${DOMAIN_ALT}` (до серверного `PUBLIC_APP_URLS` origin `DOMAIN_LEGACY` не проходит CSRF/Origin-проверку веб-клиента — десктоп не затронут).
   - **Состояние 2026-09-26:** стенд на `calab.ru` (делегирование `.ru` ~08:22): `.env` — `DOMAIN=calab.ru`, `APP_HOST=app.calab.ru`, `LANDING_HOST=calab.ru`, `DOMAIN_ALT=meet.gptunnel.ru`, `DOMAIN_LEGACY=` (пусто), `RELEASES_HOST=releases.calab.ru`, `S3_PUBLIC_URL=https://storage.yandexcloud.net/calaba` (бакет `calaba`, Yandex Object Storage, публичное чтение). Сертификаты LE: `calab.ru`, `app.`, `rtc.`, `turn.`, `releases.calab.ru`, `meet.gptunnel.ru`; LiveKit анонсирует `turn.calab.ru`; `PUBLIC_APP_URLS=https://app.calab.ru,https://meet.gptunnel.ru` (чужой Origin — 403); `/download/…` на приложении и лендинге → 302 на `releases.calab.ru` (прокси в бакет). Лендинг опубликован (`apps/landing`, b9467d1). Алиасы `colaba.gptunnel.ai/.ru` и их `rtc.`/`turn.` сняты (DNS-записи удалены, Caddy их не обслуживает; старые сертификаты просто истекут).
   - Лендинг: не SPA — `/foo` → `foo.html` или `foo/index.html` (static export с `trailingSlash`), неизвестный путь → `404.html` со статусом 404; `/_next/static/*` — `immutable` только если файл есть, страницы — `no-cache`; CSP лендинга допускает inline-скрипты (`script-src 'self' 'unsafe-inline'` — гидрация Next.js static export без сервера для nonce), без connect-целей кроме self; HSTS, `X-Frame-Options DENY`, `Permissions-Policy` без камеры/микрофона. `sync.sh`: `LANDING_DIST` (по умолчанию `apps/landing/out`), `SKIP_LANDING=1`; без сборки — заглушка.
 - История: до переименования (2026-09-25…26) стенд жил на `colaba.gptunnel.ai` (основной) + `colaba.gptunnel.ru`; сертификаты Let's Encrypt на все имена выпускает Caddy (volume `calaba_caddy_data`).
@@ -146,7 +152,7 @@ ACL SETUSER calab on >ПАРОЛЬ resetkeys resetchannels ~calab:* &calab:* db=
 
 ### Релизы десктопа: `/download/` (фид electron-updater)
 
-- `https://<домен>/download/` → статика из `/opt/calaba/releases` (bind mount `../../releases:/srv/releases:ro` в caddy), листинг каталога (`file_server browse`) включён только здесь; `/download` → 308 на `/download/`. Это же — фид electron-updater (generic provider, `url: https://app.calab.ru/download/`).
+- `https://<домен>/download/` → статика из `/opt/calaba/releases` (bind mount `../../releases:/srv/releases:ro` в caddy), листинг каталога (`file_server browse`) включён только здесь; `/download` → 308 на `/download/`. Это же — фид electron-updater старых сборок (generic provider, `url: https://<app host>/download/`; с `RELEASES_HOST` — 302 туда).
 - Кэш: `latest*.yml`, `*.yaml`, `*.json` и листинги — `no-cache` (меняются на месте); установщики и `*.blockmap` (версия в имени) — `public, max-age=31536000, immutable`. Типы: `*.yml` — `text/yaml`, `*.dmg/*.AppImage/*.deb/*.exe/*.blockmap` — `application/octet-stream` (в MIME-таблице Go их нет), `*.zip` — `application/zip`. Range (206) работает — докачка и differential-обновления. Сжатие здесь выключено.
 - Публикация: `sync.sh` — если локально есть `apps/desktop/dist-release/`, копирует `*.dmg *.zip *.AppImage *.deb *.exe *.blockmap latest*.yml *.json` в `/opt/calaba/releases` **без `--delete`** (старые версии остаются доступными) и с `--delay-updates` (`latest*.yml` появляется вместе с установщиками, updater не увидит ссылку на ещё не залитый файл). `SKIP_RELEASES=1` — пропустить. Основной `rsync` репо каталог `/releases/` не трогает. Удалять старые версии — вручную на хосте.
 - Имена файлов с версией обязательны (immutable-кэш): перезалить тот же файл с тем же именем нельзя — только новая версия.
@@ -163,8 +169,8 @@ ACL SETUSER calab on >ПАРОЛЬ resetkeys resetchannels ~calab:* &calab:* db=
 - **Linux (AppImage + deb, x64)** — в Docker `electronuserland/builder:wine` (Ubuntu 22.04, Node 24; запинен по digest): исходники копируются в контейнер (без `node_modules`), `pnpm install --frozen-lockfile --ignore-scripts`, `electron-vite build`, установка X11-заголовков, `electron-builder --linux` с `npmRebuild` — `uiohook` компилируется под Electron в контейнере. Затем **smoke** в том же контейнере: AppImage распаковывается (squashfs по смещению из ELF), приложение стартует под Xvfb, проверка — процесс жив через 20 с и есть X-окно «Calaba» (`xwininfo`); `SMOKE=0` — пропустить.
 - **Удалённый хост** (`BUILD_DOCKER_HOST`, для Windows-только — `WIN_DOCKER_HOST`): исходники, скрипт контейнера и env-файл уходят `rsync` в `/tmp/calaba-release-<pid>-<platform>`, контейнер запускается одной ssh-сессией (`docker run -i … bash -s < script`; `DOCKER_HOST=ssh://` открывает много сессий и упирается в `MaxStartups` sshd) с `--cpus 4 --memory 6g --cpu-shares 128 --blkio-weight 10` (`REMOTE_CPUS`/`REMOTE_MEMORY`), артефакты возвращаются, каталог удаляется; ssh/rsync — с повторами. Кэши — docker volumes `calaba-release-pnpm-store`, `calaba-release-electron-cache` на хосте сборки; образ остаётся для повторов.
 - **Windows (NSIS, x64)** — только на x86_64-хосте (`BUILD_DOCKER_HOST`): на Apple Silicon NSIS под wine невозможен (стаб 32-битный, Rosetta в Docker — только x86_64, qemu-i386 падает). Нативный модуль: node-gyp не умеет собирать win32 вне Windows, поэтому **для Windows (решение 2026-09-26, вариант b) в пакет возвращается upstream N-API prebuild `prebuilds/win32-x64`** — наш патч меняет только darwin-код libuiohook (+ константа, используемая там же), на Windows модуль идентичен. Задано в `electron-builder.yml` как `win.files` FileSet (`[{from: ., filter: [prebuilds, prebuilds/win32-x64/**]}]`) — для node_modules electron-builder берёт из строковых `files` только исключения, включение возможно лишь FileSet-ом; для коммитов без этой настройки скрипт генерирует то же в `electron-builder.win.yml` (`extends: ./electron-builder.yml`) внутри копии исходников. Для macOS/Linux политика «только пропатченная сборка из исходников» не меняется. Проверка скрипта «в пакете есть `.node`» остаётся (в инсталляторе ровно `app.asar.unpacked/node_modules/uiohook-napi/prebuilds/win32-x64/uiohook-napi.node`).
-- **CI: `.github/workflows/release.yml`** (репозиторий `github.com/itrcz/calab`, `RELEASE_REPO`; фид по умолчанию `https://app.calab.ru/download/`) — по тегу `v*` или вручную (`workflow_dispatch`, `version`, `publish_stand`): матрица macos-latest (arm64 + x64), ubuntu-22.04, windows-latest — везде нативно, поэтому пропатченный модуль компилируется из исходников и на Windows (MSVC раннера), без override. Артефакты → GitHub Release (`gh release create`, для ручного запуска — draft) и, если заданы секреты `STAND_SSH_KEY`/`STAND_HOST`/`STAND_KNOWN_HOSTS` (отдельный deploy-пользователь с правом записи только в `/opt/calaba/releases`, host key запинен), — `rsync --delay-updates` без `--delete` на `/download/`. Там же — место для подписи (stage 4). Actions запинены по SHA.
-- **Результат** — `apps/desktop/dist-release/` (в `.gitignore`): `Calab-<ver>-arm64.dmg/.zip`, `Calab-<ver>-x64.dmg/.zip`, `Calab-<ver>-x86_64.AppImage`, `calab_<ver>_amd64.deb`, `Calab-Setup-<ver>-x64.exe` (продукт — Calab, docs/10; внутренние имена `calaba-*` остаются), `*.blockmap`, `latest-mac.yml`, `latest-linux.yml`, `latest.yml`. Имена без пробелов и с версией (`/download/` кэширует установщики как immutable). В `app-update.yml`/`latest*.yml` — generic-фид `UPDATE_URL` (по умолчанию `https://app.calab.ru/download/`).
+- **CI: `.github/workflows/release.yml`** (репозиторий `github.com/itrcz/calab`, `RELEASE_REPO`; фид по умолчанию `https://releases.calab.io/`) — по тегу `v*` или вручную (`workflow_dispatch`, `version`, `publish_stand`): матрица macos-latest (arm64 + x64), ubuntu-22.04, windows-latest — везде нативно, поэтому пропатченный модуль компилируется из исходников и на Windows (MSVC раннера), без override. Артефакты → GitHub Release (`gh release create`, для ручного запуска — draft) и, если заданы секреты `STAND_SSH_KEY`/`STAND_HOST`/`STAND_KNOWN_HOSTS` (отдельный deploy-пользователь с правом записи только в `/opt/calaba/releases`, host key запинен), — `rsync --delay-updates` без `--delete` на `/download/`. Там же — место для подписи (stage 4). Actions запинены по SHA.
+- **Результат** — `apps/desktop/dist-release/` (в `.gitignore`): `Calab-<ver>-arm64.dmg/.zip`, `Calab-<ver>-x64.dmg/.zip`, `Calab-<ver>-x86_64.AppImage`, `calab_<ver>_amd64.deb`, `Calab-Setup-<ver>-x64.exe` (продукт — Calab, docs/10; внутренние имена `calaba-*` остаются), `*.blockmap`, `latest-mac.yml`, `latest-linux.yml`, `latest.yml`. Имена без пробелов и с версией (`/download/` кэширует установщики как immutable). В `app-update.yml`/`latest*.yml` — generic-фид `UPDATE_URL` (по умолчанию `https://releases.calab.io/`).
 - **Публикация** — `SKIP_WEB=1 infra/docker/sync.sh` (копирует `dist-release` в `/opt/calaba/releases`, без удаления старых версий). Перед публикацией поднять версию (`VERSION=`): electron-updater обновляет только на бо́льшую.
 - **Замеры (2026-09-26, коммит 63524d5, v0.0.1):** macOS arm64+x64 — 48 с (прогретый кэш Electron); dmg 125/129 MB, zip 125/128 MB. Linux на стенде — 2 мин 15 с (с компиляцией uiohook и smoke); AppImage 122 MB, deb 97 MB. Windows на стенде — 55 с (с upstream prebuild win32-x64); NSIS 109 MB, не подписан. Нагрузка стенда во время сборок: load average 3.3 → 3.9–4.7 из 32 CPU, GPU-задача не затронута.
 
@@ -173,9 +179,9 @@ ACL SETUSER calab on >ПАРОЛЬ resetkeys resetchannels ~calab:* &calab:* db=
 - Windows: без подписи SmartScreen «Windows защитила ваш компьютер» → «Подробнее» → «Выполнить в любом случае»; репутация копится только у подписанных сборок. Нужно: сертификат подписи кода (OV/EV; с 2023 ключ только на токене/HSM — практичнее облачная подпись: Azure Trusted Signing, SSL.com eSigner, DigiCert KeyLocker) → `win.azureSignOptions`/`signtoolOptions` в `electron-builder.yml`, секреты в env. Облачную подпись удобно делать в том же Windows-раннере CI.
 - Linux: подпись не нужна (AppImage/deb без подписи — норма; при желании GPG-подпись .deb/репозитория).
 
-### Релизы: GitHub Actions → S3 → releases.calab.ru
+### Релизы: GitHub Actions → S3 → releases.calab.io
 
-Основной путь выпуска (решение владельца 2026-09-26): сборка в GitHub Actions на нативных раннерах, хранение в S3-совместимом бакете, фид автообновления `https://releases.calab.ru/`. `build-release.sh`/`release.sh` с Mac остаются запасным путём и для проверок стенда.
+Основной путь выпуска (решение владельца 2026-09-26): сборка в GitHub Actions на нативных раннерах, хранение в S3-совместимом бакете, фид автообновления `https://releases.calab.io/` (сборки до 2.0.0 — `https://releases.calab.ru/`, тот же бакет; «Домены: calab.io…»). `build-release.sh`/`release.sh` с Mac остаются запасным путём и для проверок стенда.
 
 **Выпуск:** `git tag v0.1.0 && git push origin v0.1.0` → `.github/workflows/release.yml`:
 1. `build` — матрица macos-latest (arm64 + x64), ubuntu-22.04 (AppImage + deb), windows-latest (NSIS); пропатченный `uiohook` компилируется из исходников везде; проверка «в пакете есть `.node`».
@@ -190,7 +196,7 @@ ACL SETUSER calab on >ПАРОЛЬ resetkeys resetchannels ~calab:* &calab:* db=
 - Windows: `WIN_CERT_P12_BASE64` + `WIN_CERT_PASSWORD` → signtool на windows-раннере.
 Материал передаётся в electron-builder файлами из `RUNNER_TEMP` через `GITHUB_ENV` (`CSC_LINK`, `CSC_KEY_PASSWORD`, `APPLE_API_KEY*`).
 
-**Фид `releases.calab.ru` (Caddy):** хост `RELEASES_HOST` (по умолчанию `releases.<DOMAIN>`; пусто — выключен). Если задан `S3_PUBLIC_URL` — публичный базовый URL бакета (Yandex Object Storage path-style `https://storage.yandexcloud.net/<bucket>` или virtual-hosted без пути) — `reverse_proxy` в него (`Host` апстрима, префикс пути из URL), `/` → `index.html` (при заданном `LANDING_HOST` — редирект на лендинг, см. ниже); `*.yml` и `index.html` — `no-cache`, остальное — `immutable` (заголовки ставит Caddy поверх ответа S3). Без S3 — раздаёт `/srv/releases` (то же, что `/download/`). При заданном `RELEASES_HOST` `/download/*` на приложении и лендинге — **302 на тот же путь** хоста релизов: старые клиенты с фидом `<сервер>/download/` продолжают обновляться (electron-updater разрешает `releases/<ver>/…` относительно своего фида и идёт по редиректу). Исключения из «тот же путь» (`/tmp/download.caddy`, генерирует `entrypoint.sh`): `/download/mac-arm64|mac-x64|win|linux|deb` → 302 на `https://<RELEASES_HOST>/latest/<файл>`; `/download/` (и `/download` через 308) — по `User-Agent`: `Macintosh` → mac-arm64, `Windows` → win, `Linux`/`X11` (кроме Android/ChromeOS) → AppImage, иначе → `https://<LANDING_HOST>/#download`. На самом хосте релизов корень, листинги (`*/`) и `/index.html` → 302 на `https://<LANDING_HOST>/#download` (если лендинг задан); `latest/*` — `no-cache` и `Access-Control-Allow-Origin: *` (лендинг читает `latest/VERSION`; его CSP `connect-src` включает `RELEASES_HOST`). Лендинг ссылается прямо на `latest/<файл>` и сам выбирает ОС в браузере. Без `RELEASES_HOST` (локальный `/srv/releases`) коротких путей нет. DNS: `releases.calab.ru` A → 141.105.69.177 (Cloudflare, DNS-only) — заведён вместе с зоной. На стенде до переключения на calab.ru `RELEASES_HOST=` (пусто, `/download/` локально).
+**Фид `releases.calab.io` (Caddy):** хост `RELEASES_HOST` (по умолчанию `releases.<DOMAIN>`; пусто — выключен) и `RELEASES_HOST_ALIASES` (тот же фид, напр. `releases.calab.ru`). Если задан `S3_PUBLIC_URL` — публичный базовый URL бакета (Yandex Object Storage path-style `https://storage.yandexcloud.net/<bucket>` или virtual-hosted без пути) — `reverse_proxy` в него (`Host` апстрима, префикс пути из URL), `/` → `index.html` (при заданном `LANDING_HOST` — редирект на лендинг, см. ниже); `*.yml` и `index.html` — `no-cache`, остальное — `immutable` (заголовки ставит Caddy поверх ответа S3). Без S3 — раздаёт `/srv/releases` (то же, что `/download/`). При заданном `RELEASES_HOST` `/download/*` на приложении и лендинге — **302 на тот же путь** хоста релизов: старые клиенты с фидом `<сервер>/download/` продолжают обновляться (electron-updater разрешает `releases/<ver>/…` относительно своего фида и идёт по редиректу). Исключения из «тот же путь» (`/tmp/download.caddy`, генерирует `entrypoint.sh`): `/download/mac-arm64|mac-x64|win|linux|deb` → 302 на `https://<RELEASES_HOST>/latest/<файл>`; `/download/` (и `/download` через 308) — по `User-Agent`: `Macintosh` → mac-arm64, `Windows` → win, `Linux`/`X11` (кроме Android/ChromeOS) → AppImage, иначе → `https://<LANDING_HOST>/#download`. На самом хосте релизов корень, листинги (`*/`) и `/index.html` → 302 на `https://<LANDING_HOST>/#download` (если лендинг задан); `latest/*` — `no-cache` и `Access-Control-Allow-Origin: *` (лендинг читает `latest/VERSION`; его CSP `connect-src` включает `RELEASES_HOST`). Лендинг ссылается прямо на `latest/<файл>` и сам выбирает ОС в браузере. Без `RELEASES_HOST` (локальный `/srv/releases`) коротких путей нет. DNS: `releases.calab.ru` A → 141.105.69.177 (Cloudflare, DNS-only) — заведён вместе с зоной; `releases.calab.io` — CNAME на него (2026-10-02). На стенде до переключения на calab.ru `RELEASES_HOST=` (пусто, `/download/` локально).
 
 **Что нужно от владельца** (в корневой `.env` репо — не коммитится; имена ключей — как у владельца):
 | Ключ | Что |
@@ -202,13 +208,51 @@ ACL SETUSER calab on >ПАРОЛЬ resetkeys resetchannels ~calab:* &calab:* db=
 | `WIN_CERT_P12_BASE64`, `WIN_CERT_PASSWORD` | сертификат подписи кода Windows (.pfx/.p12, base64) |
 | `GITHUB_TOKEN` | только для авторизации `gh` в `set-secrets.sh`; в секреты **не** кладётся |
 | `STAND_SSH_KEY`, `STAND_HOST`, `STAND_KNOWN_HOSTS` | (необязательно) запасная публикация на стенд — отдельный deploy-пользователь |
-На стенд (`infra/docker/.env`): `RELEASES_HOST=releases.calab.ru`, `S3_PUBLIC_URL=…` → `sync.sh caddy`.
+На стенд (`infra/docker/.env`): `RELEASES_HOST=releases.calab.io`, `RELEASES_HOST_ALIASES=releases.calab.ru`, `S3_PUBLIC_URL=…` → `sync.sh caddy`.
 
 **Секреты в GitHub:** `infra/ci/set-secrets.sh [--dry-run] [.env]` — читает `.env` без `source` (никакого выполнения), берёт только ключи из таблицы (прочее, напр. `CFTOKEN`, игнорирует), ставит через `gh secret set --repo itrcz/calab`; авторизация — `GITHUB_TOKEN` из `.env`/окружения (как `GH_TOKEN`) или `gh auth login`. Для base64-сертификатов сообщает `valid`/`INVALID (…)` (та же проверка, что в workflow), значения не печатает; `--dry-run` — только имена, длины и валидность. Секреты передаются в `gh secret set` через stdin (флаг `--body -` сохранил бы буквальный «-» — так было до исправления, из-за чего rc.4/rc.5 собрались без подписи). На 2026-09-26 поставлены S3 (5) и Apple (6, включая `APPLE_TEAM_ID`); Windows — без сертификата, собирается неподписанным.
 
-### Релиз: runbook (v0.1.0)
+### Релиз 2.0.0: текущий порядок
 
-Одна команда на один коммит (`infra/docker/release.sh`); запуск — по решению лида, с указанием коммита. Серверная часть (API, веб, лендинг) выкатывается с Mac на стенд; установщики десктопа собирает и публикует **только** GitHub Actions (`release.yml`, запускается push-ем тега) → S3 → `https://releases.calab.ru/`. С Mac ничего десктопного не публикуется.
+Выпущено 2026-10-02 с PR #52 + исправлениями ревью (`34c2270a`): первое ревью (4 направления) и второе
+независимое security-ревью исправлений — без blocker/major; CI на PostgreSQL 17 зелёный. Порядок ниже
+сохраняется для следующих identity-релизов.
+
+1. На конечном SHA: scope/ADR сверены, нет blocker/major, генерация без drift,
+   обязательные CI checks и целевые PG17 проверки зелёные, один полный server
+   integration прогон и два независимых review подтверждены на этом SHA.
+   Исторические результаты и skipped тесты не заменяют эти evidence.
+2. Оператор закрывает [preflight](plans/identity-v2-operator-preflight.md): источник
+   platform manifests, полный keyring/config, DB+key backup, cluster Caddy port/pins,
+   все front-proxy/logging gates и identity-aware fallback. Это отдельная доставка
+   конфигурации, не действие `images.yml`. Изменения production — только в
+   разрешённое лидом окно. Начальный режим workspace — off.
+3. Назначенный релизный агент проверяет диск, CHANGELOG **этого commit** и usage
+   evidence; затем только по поручению лида публикует тег `v2.0.0` с этим SHA.
+   Версии инжектируются из тега/`VERSION` при сборке, package versions в исходниках
+   для этой подготовки не поднимаются. Дождаться зелёного CI тега до image rollout.
+4. `release.yml` собирает установщики/черновик Release и update feeds;
+   `images.yml` создаёт `calab-prod` с API/web digests после зелёного tag CI.
+   Проверить фактические rollout/readiness обоих компонентов и `/api/version`,
+   а не только факт создания Deployment. Не запускать поверх этого SSH `deploy`.
+5. Проверить smoke API/web, identity routing, synthetic log sentinels, pilot
+   SSO/consent/revoke/recovery, установщики и checksums, версии трёх `latest*.yml`,
+   опубликованный GitHub Release с CHANGELOG того же SHA. Optional pilot разрешён
+   после этих gates; enforced — после проверки recovery и живого целевого IdP.
+6. Завершить выпуск анонсом через существующего бота по точной версии:
+   `tools/release-announce.py 2.0.0` из релизного commit либо отдельным
+   `STEPS=announce VERSION=2.0.0 infra/docker/release.sh <release-commit>`.
+   `nonce=release-2.0.0` делает повтор идемпотентным; записать posted/updated/unchanged,
+   message id и по возможности прочитать сообщение обратно. Skipped, отсутствие
+   токена/прав или непроверенная доставка — незавершённый анонс, не успех релиза.
+   Обычный выпуск не использует `--all`/`--purge`.
+
+Эта подготовка не создаёт тег, Release, Deployment или сообщение бота. Команды
+ниже описывают действия будущего авторизованного релизного агента.
+
+### Исторический compose/SSH runbook (v0.1.0, отдельная установка)
+
+Одна команда на один коммит (`infra/docker/release.sh`); запуск — по решению лида, с указанием коммита и **отдельного compose-окружения**. Этот путь выкатывает API/веб/лендинг с Mac на стенд и не управляет текущим production-кластером. Полный запуск нельзя использовать для текущего 2.0 production: он создаёт неконтролируемый второй деплой. Установщики публикует GitHub Actions → S3 → `https://releases.calab.io/`; для кластерного релиза из `release.sh` допустим отдельно порученный шаг публикации/анонса, без SSH deploy.
 
 ```sh
 VERSION=0.1.0 infra/docker/release.sh <commit>          # preflight → web → deploy → (verify ∥ desktop) → announce
@@ -224,11 +268,11 @@ STEPS="preflight build" VERSION=0.1.0 infra/docker/release.sh <commit> # лок�
 | build | *(не по умолчанию)* `build-release.sh mac linux win` с `SIGN=1 NOTARIZE=1`, `SRC_REF=<commit>`, Linux/Windows на стенде → `$WORK_DIR/dist-release`; только для проверки, не публикуется | ошибка сборки |
 | web | чистый экспорт коммита (`git archive` + `pnpm install --frozen-lockfile`, переиспользуется от `build`) → `build:web` → `dist-web`; при `LANDING_HOST` — `pnpm -F @calaba/landing build` → `apps/landing/out` | нет `index.html` |
 | deploy | `sync.sh` с `SYNC_REF=<commit>`, `VERSION`, `WEB_DIST` и `LANDING_DIST` из этого экспорта (лендинг — всегда из релизного коммита, не из рабочей копии), `SKIP_RELEASES=1`: весь стек (api с build info; неизменённые сервисы не трогаются), веб, лендинг | ошибка деплоя |
-| verify | все HTTP-проверки и e2e — напрямую на IP стенда (`curl --resolve`, принудительный DNS в браузере); smoke на `app.calab.ru` и `meet.gptunnel.ru`: `/healthz`, `/api/version` = `$VERSION/<commit>`, TLS (curl проверяет цепочку и имя, срок — из сертификата); лендинг — 200; `/download/latest.yml` на приложении, алиасе и лендинге — 302 на `https://releases.calab.ru/latest.yml`; `rtc.` — 200, `/readyz` изнутри; `e2e:web` **только на `app.calab.ru` и только Chromium** (Firefox и алиас — в nightly), аккаунт `e2e-app@calaba.test`, пространства `Web …` удаляются; сценарий перемещения M.1 (`move.web.spec.ts`, если есть в коммите; второй аккаунт `e2e-app2@calaba.test`; спек переиспользует «E2E web»); спеки и конфиг — из экспорта релизного коммита, не из рабочей копии; аккаунты создаются один раз по инвайту владельца, пароли — только в `.env.accounts`; relay-check tls/udp/any с токеном join из API + публикатор `lk load-test`; нет ERROR в api и «failed to send webhook» в LiveKit; чужая GPU-задача та же; **бэкап после** | считаются провалы |
-| desktop | только если провалов нет: `git tag -a v$VERSION <commit>` и `git push origin v$VERSION` → ждёт прогон `release.yml` этого тега (опрос раз в 20 с, ~8 мин; нотаризация mac бывает до 60 мин). **По умолчанию тег пушится сразу после deploy, verify (~3 мин) идёт, пока собирается `release.yml`**: цепочка короче на время verify. Провал verify после тега — громкое сообщение; прогон `release.yml` отменяется, если `publish-s3` ещё не начался (иначе сказано, что фид уже может отдавать версию), GitHub Release остаётся черновиком, анонса нет; тег остаётся (следующая версия или `git push origin :refs/tags/v$VERSION`). `RELEASE_SERIAL=1` — прежний порядок; затем фид на `releases.calab.ru` (через IP стенда): `latest-mac/linux.yml`, `latest.yml` с `version: $VERSION`, каждый файл из них — 200 и размер из yml (≥ 5 файлов), `sha512` пересчитан **на стенде** (скачивает с `releases.calab.ru`); затем публикует GitHub Release токеном владельца: `release.yml` оставляет его черновиком (токен Actions получает 403 при публикации релиза тега, коммит которого меняет `.github/workflows`, — v0.1.0), тело — секция версии из `CHANGELOG.md`; если черновика нет — создаёт релиз из артефактов прогона; проверка: опубликован (не draft) | считаются провалы |
+| verify | все HTTP-проверки и e2e — напрямую на IP стенда (`curl --resolve`, принудительный DNS в браузере); smoke на `app.calab.io`, `meet.gptunnel.ru` и `LEGACY_APP_HOST` (`app.calab.ru`): `/healthz`, `/api/version` = `$VERSION/<commit>`, TLS (curl проверяет цепочку и имя, срок — из сертификата); лендинг — 200; `/download/latest.yml` на приложении, алиасе и лендинге — 302 на `https://releases.calab.io/latest.yml`; `rtc.` — 200, `/readyz` изнутри; `e2e:web` **только на `app.calab.io` и только Chromium** (Firefox и алиас — в nightly), аккаунт `e2e-app@calaba.test`, пространства `Web …` удаляются; сценарий перемещения M.1 (`move.web.spec.ts`, если есть в коммите; второй аккаунт `e2e-app2@calaba.test`; спек переиспользует «E2E web»); спеки и конфиг — из экспорта релизного коммита, не из рабочей копии; аккаунты создаются один раз по инвайту владельца, пароли — только в `.env.accounts`; relay-check tls/udp/any с токеном join из API + публикатор `lk load-test`; нет ERROR в api и «failed to send webhook» в LiveKit; чужая GPU-задача та же; **бэкап после** | считаются провалы |
+| desktop | только если провалов нет: `git tag -a v$VERSION <commit>` и `git push origin v$VERSION` → ждёт прогон `release.yml` этого тега (опрос раз в 20 с, ~8 мин; нотаризация mac бывает до 60 мин). **По умолчанию тег пушится сразу после deploy, verify (~3 мин) идёт, пока собирается `release.yml`**: цепочка короче на время verify. Провал verify после тега — громкое сообщение; прогон `release.yml` отменяется, если `publish-s3` ещё не начался (иначе сказано, что фид уже может отдавать версию), GitHub Release остаётся черновиком, анонса нет; тег остаётся (следующая версия или `git push origin :refs/tags/v$VERSION`). `RELEASE_SERIAL=1` — прежний порядок; затем фид на `releases.calab.io` (через IP стенда; `latest*.yml` — только относительные URL и байт-в-байт как на `LEGACY_RELEASES_HOST` = `releases.calab.ru`): `latest-mac/linux.yml`, `latest.yml` с `version: $VERSION`, каждый файл из них — 200 и размер из yml (≥ 5 файлов), `sha512` пересчитан **на стенде** (скачивает с `releases.calab.ru`); затем публикует GitHub Release токеном владельца: `release.yml` оставляет его черновиком (токен Actions получает 403 при публикации релиза тега, коммит которого меняет `.github/workflows`, — v0.1.0), тело — секция версии из `CHANGELOG.md`; если черновика нет — создаёт релиз из артефактов прогона; проверка: опубликован (не draft) | считаются провалы |
 | announce | только если провалов нет и задан `CALAB_RELEASE_BOT_TOKEN` (иначе «announce: skipped»): бот публикует секцию версии из `CHANGELOG.md` релизного коммита в комнату «Calab - что нового? ✨» — `tools/release-announce.py` | ошибка HTTP — провал |
 
-**Анонс релиза.** `tools/release-announce.py <версия> [--dry-run]` (python3, только stdlib) берёт секцию `## [<версия>]` из `CHANGELOG.md` и собирает сообщение в markdown-lite чата: «🚀 **Calab <версия>** — <дата>», разделы «Добавлено» ✨, «Изменено» 🔧, «Исправлено» 🐞 строками «• …», пустая строка до и после каждого заголовка раздела и перед финальной строкой (ссылки вида `(#82)`/`(ADR-…)` и хвосты «Миграция NNNNN» убираются, раздел «Обновление» не публикуется), в конце — «Обновление придёт само»; длиннее 4000 символов — целые пункты отбрасываются с конца, «…и ещё пунктов: N — полный список в CHANGELOG.md». Комнату ищет по точному имени (`CALAB_RELEASE_ROOM`) среди пространств бота через Bot API (docs/19); не видит — просит админа добавить бота в пространство и дать `VIEW_ROOM` + `SEND_MESSAGES`. `nonce = release-<версия>`: повторный запуск не создаёт дубль (сервер дедуплицирует по автору и nonce и возвращает прежний пост), а правит его (`PATCH /api/messages/{id}`) до текущего шаблона — в логе «posted» / «updated» / «unchanged»; nonce удалённого поста занят навсегда (409), поэтому берётся следующий `release-<версия>-r2`, … `--all` публикует все выпущенные версии из CHANGELOG (без `[Unreleased]`), от старой к новой, раз в ~1 с (лимит сообщений 1/с). `--purge --yes` перед этим удаляет все сообщения комнаты: свои — всегда, чужие — если у бота `MANAGE_MESSAGES`, иначе печатает id/дату/первую строку для ручного удаления; без `--yes` не запускается, шаг `announce` в release.sh публикует только свою версию и никогда не чистит. `--env-file <путь>` читает `CALAB_*` из dotenv, не печатая значений. Токен — `CALAB_RELEASE_BOT_TOKEN` в корневом `.env` (release.sh читает его сам, не печатает); `CALAB_API_URL` — по умолчанию `https://$APP_HOST`. Руками: `STEPS=announce VERSION=<версия> infra/docker/release.sh <commit>`.
+**Анонс релиза.** `tools/release-announce.py <версия> [--dry-run]` (python3, только stdlib) берёт секцию `## [<версия>]` из `CHANGELOG.md`. **Если в секции есть блок `### Коротко` (3–7 однострочных пунктов простым языком, без ADR/env/миграций; с 2.0 его пишет агент подготовки релиза), публикуется только он:** «🚀 **Calab <версия>** — <дата>», пункты «• …», «Подробнее: <ссылка>» (по умолчанию `https://github.com/itrcz/calab/releases/tag/v<версия>`, шаблон переопределяется `CALAB_RELEASE_NOTES_URL` с `{version}`), «Обновление придёт само» (цель ≤ ~800 символов; «Коротко» длиннее 4000 — ошибка, а не обрезка). «Коротко» никогда не входит в полный рендер. Без блока (старые версии, `--all`) — прежнее поведение: сообщение в markdown-lite чата: «🚀 **Calab <версия>** — <дата>», разделы «Добавлено» ✨, «Изменено» 🔧, «Исправлено» 🐞 строками «• …», пустая строка до и после каждого заголовка раздела и перед финальной строкой (ссылки вида `(#82)`/`(ADR-…)` и хвосты «Миграция NNNNN» убираются, раздел «Обновление» не публикуется), в конце — «Обновление придёт само»; длиннее 4000 символов — целые пункты отбрасываются с конца, «…и ещё пунктов: N — полный список в CHANGELOG.md». Комнату ищет по точному имени (`CALAB_RELEASE_ROOM`) среди пространств бота через Bot API (docs/19); не видит — просит админа добавить бота в пространство и дать `VIEW_ROOM` + `SEND_MESSAGES`. `nonce = release-<версия>`: повторный запуск не создаёт дубль (сервер дедуплицирует по автору и nonce и возвращает прежний пост), а правит его (`PATCH /api/messages/{id}`) до текущего шаблона — в логе «posted» / «updated» / «unchanged»; nonce удалённого поста занят навсегда (409), поэтому берётся следующий `release-<версия>-r2`, … `--all` публикует все выпущенные версии из CHANGELOG (без `[Unreleased]`), от старой к новой, раз в ~1 с (лимит сообщений 1/с). `--purge --yes` перед этим удаляет все сообщения комнаты: свои — всегда, чужие — если у бота `MANAGE_MESSAGES`, иначе печатает id/дату/первую строку для ручного удаления; без `--yes` не запускается, шаг `announce` в release.sh публикует только свою версию и никогда не чистит. `--env-file <путь>` читает `CALAB_*` из dotenv, не печатая значений. Токен — `CALAB_RELEASE_BOT_TOKEN` в корневом `.env` (release.sh читает его сам, не печатает); `CALAB_API_URL` — по умолчанию `https://$APP_HOST`. Руками: `STEPS=announce VERSION=<версия> infra/docker/release.sh <commit>`.
 
 Логи e2e/relay/публикатора/Actions — рядом с `WORK_DIR` (`$TMPDIR/calaba-release-<ver>.*`). Секреты читаются по ssh в переменные и не печатаются. Нужны локально: `pnpm`, `gh`, `lk` (livekit-cli), Playwright-браузеры (`pnpm -F @calaba/desktop exec playwright install chromium firefox`); для `build` — Xcode CLT и сертификаты из `cert/`.
 
@@ -242,16 +286,38 @@ STEPS="preflight build" VERSION=0.1.0 infra/docker/release.sh <commit> # лок�
 
 Домены стенда — см. «Стенд: как он поднят» и docs/10-branding.md.
 
+### Домены: `calab.io` — основной, `calab.ru` — вечный алиас (с 2.0.0)
+
+Решение владельца 2026-10-02: основной домен — `calab.io` (`calab.io`, `app.`, `releases.`, `rtc.`, `turn.calab.io`; почта `noreply@calab.io`). Каждый хост `.ru` продолжает работать как алиас — **без срока**: в установленных клиентах он зашит или сохранён.
+
+| Хост `.ru` | Почему нельзя выключать | Как обслуживается |
+|---|---|---|
+| `app.calab.ru` | сохранённый сервер десктопа до 2.0.0 и веб-сессии; cookies и сессии привязаны к origin | тот же API/веб (`PUBLIC_APP_URLS` содержит оба origin) |
+| `releases.calab.ru` | фид автообновления, зашитый в сборки до 2.0.0 | тот же бакет, **тот же контент, без редиректа** |
+| `rtc.calab.ru`, `turn.calab.ru` | CSP сборок до 2.0.0 знает только `*.calab.ru` | тот же LiveKit |
+| `calab.ru` | старые ссылки | 301 на `https://calab.io` тот же путь |
+
+Правила:
+1. **Сохранённый адрес сервера никогда не мигрируется автоматически** (выход из аккаунта). Новый адрес по умолчанию (`MAIN_VITE_DEFAULT_SERVER_URL=https://app.calab.io`) действует только при первом запуске; сессия из keychain восстанавливается на свой origin.
+2. **CSP десктопа** (`apps/desktop/src/shared/csp.ts`): соседние хосты выводятся из сохранённого origin (`app.calab.ru` → `*.calab.ru`, `app.calab.io` → `*.calab.io`), никогда не до публичного суффикса; `MAIN_VITE_CSP_CONNECT` в `.env.production` перечисляет `rtc.`/`turn.` **обоих** семейств (тест `csp.test.ts` читает этот файл).
+3. **`LIVEKIT_URL` остаётся `wss://rtc.calab.ru`**, пока есть десктоп-сборки старше 2.0.0: их CSP не пустит на `rtc.calab.io`. Сборки ≥ 2.0.0 пускают оба. Переключать на `rtc.calab.io` — только когда доля < 2.0.0 пренебрежима (решение владельца). В compose — `RTC_PUBLIC_HOST`.
+4. **Фид:** новые сборки — `https://releases.calab.io/` (`release.yml` `UPDATE_URL`, `build-release.sh`), старые — `https://releases.calab.ru/`; оба проксируют один бакет. В `latest*.yml` — **только относительные** `url:`/`path:` (`releases/<ver>/…`): каждый клиент разрешает их от своего фида. `publish-s3` падает на абсолютном URL; `release.sh` (desktop) сверяет байты `latest*.yml` на обоих хостах.
+5. **Preflight релиза:** первый джоб `release.yml` проверяет TLS/HTTP `UPDATE_URL`, `latest.yml` на обоих фидах, `APP_ORIGIN/api/version` и сайт; провал — сборка не начинается (тег не выпустит клиентов на мёртвый хост).
+6. **`IDENTITY_PUBLIC_ORIGIN=https://app.calab.io`.** Identity в проде ещё не включён, поэтому issuer меняется сейчас; **после включения он не меняется никогда** (issuer в токенах и регистрациях у IdP). `app.calab.ru` — не алиас issuer.
+7. **Веб-клиент:** `app.calab.ru` и `app.calab.io` — разные origin (разные сессии и localStorage); редиректа между ними нет.
+8. **Почта:** `SMTP_FROM="Calab <noreply@calab.io>"`; SPF/DKIM/DMARC для `calab.io` (см. «Почта»).
+
+Compose (стенд/self-host): `APP_HOST=app.calab.io`, `LANDING_HOST=calab.io`, `RELEASES_HOST=releases.calab.io`, `DOMAIN=calab.io`, `DOMAIN_LEGACY=app.calab.ru`, `DOMAIN_ALIASES=calab.ru` (rtc./turn.), `RTC_PUBLIC_HOST=rtc.calab.ru`, `LANDING_HOST_ALIASES=calab.ru` (301), `RELEASES_HOST_ALIASES=releases.calab.ru` (тот же фид). Кластер (конфигурация вне репо) — те же правила: сертификаты и vhost'ы на все `.io` и `.ru` имена, `PUBLIC_APP_URL=https://app.calab.io`, `PUBLIC_APP_URLS` с обоими origin, `LIVEKIT_URL=wss://rtc.calab.ru`.
+
 ## Dev локально (macOS)
 
 `infra/docker/compose.dev.yml`: postgres, valkey, livekit (dev-режим: `--dev`, ключи `devkey/secret`, без TLS, UDP mux 7882, Valkey DB 1), egress (в сетевом пространстве livekit; файлы — `apps/server/data/recordings`, это `RECORDINGS_PATH` API по умолчанию). Образ egress ~1.5 ГБ: `docker compose -f infra/docker/compose.dev.yml up -d` без имён сервисов его скачает — если запись не нужна, поднимать `postgres valkey livekit mailpit`. API и Electron — на хосте через pnpm; файлы API в dev — `STORAGE_DRIVER=fs` с локальным каталогом (`infra/docker/data/` в `.gitignore`). LiveKit в Docker на macOS не имеет host-сети → для локальных тестов медиа между двумя машинами в LAN LiveKit лучше запускать бинарником (`brew install livekit`), в Docker — только для одного клиента на localhost.
 
-## Потом: Kubernetes
+## Прод: Kubernetes (с 2026-10-02)
 
-Путь без переписывания:
-1. Уже сейчас: всё через env, API stateless, health-эндпоинты `/healthz` `/readyz`, миграции при старте под `pg_advisory_lock` (безопасно для нескольких реплик).
-2. k3s на одной ноде → Helm-чарты: свой `calaba-api`, официальный `livekit-server` (`hostNetwork`, Redis), `cloudnative-pg`, файлы — PVC (RWO, один API) или драйвер `s3` (Garage / внешний S3) при нескольких репликах, Traefik с `IngressRouteTCP HostSNI(turn.*)` passthrough. Запись встреч без общего диска с egress — только с драйвером `s3` («Записи встреч в S3»).
-3. Добавление нод: LiveKit масштабируется через Redis (комната закрепляется за нодой), API — обычными репликами, gateway — pub/sub уже через Redis.
+Продакшен работает в Kubernetes на PostgreSQL 17 (решение владельца, 2026-10-02). Релизы идут так: тег `v*` → зелёный CI → `.github/workflows/images.yml` (образы API и веба) → GitHub Deployment `calab-prod` → кластер забирает заявку сам (подробнее ниже). Конфигурация кластера (манифесты, Vault, Caddy, ingress) живёт вне этого репозитория; известные факты — в [операторском preflight](plans/identity-v2-operator-preflight.md). Расположение манифестов, число реплик, схема бэкапов БД кластера, версия и топология LiveKit/TURN в проде: TODO владелец.
+
+Docker compose в этом документе — тестовый стенд и вариант self-host; он остаётся на PostgreSQL 18 и не равен проду. Что давало бесшовный переход и остаётся в силе: всё через env, API stateless, `/healthz` `/readyz`, миграции при старте под `pg_advisory_lock` (безопасно для нескольких реплик), файлы и записи встреч — драйвер `s3` при нескольких репликах, gateway — pub/sub через Redis.
 
 Не использовать: private/serverless кластеры (NAT ломает WebRTC), LB перед 7881.
 
@@ -267,16 +333,235 @@ Deployment `calab-prod` с digest обоих образов в payload: API и �
 - В кластер workflow не ходит. Выкатку делает кластер сам: забирает заявку, проверяет её и меняет образ по
   digest. Не раскаталось — возвращает прежний образ. Принимаются только заявки, созданные этим workflow
   для коммитов из `main`.
-- Статус и история — вкладка Deployments репо. Откат — перезапуск старого успешного прогона `images`.
+- История заявок — вкладка Deployments репо. По [операторскому preflight](plans/identity-v2-operator-preflight.md) текущий consumer не публикует GitHub deployment statuses, выкатывает компоненты последовательно и при ошибке может оставить смешанные версии. Требуются Kubernetes readiness и фактические digests API/web плюс version smoke; успешная заявка/CronJob сами по себе не подтверждают выкатку.
+- Откат — только на согласованный identity-aware digest с совместимой БД, ключами и platform config. После активации identity нельзя перезапускать старый успешный `images`, если он возвращает pre-identity бинарник. Down guard миграции не защищает от image-only rollback.
 - `YC_REGISTRY` и `YC_CI_SA_ID` — секреты репо: публичные логи их маскируют. Это не ключи, но внутренние id в
   открытых логах не нужны.
 - Конфиг Caddy в проде задаёт кластер, а не образ: правка `infra/docker/caddy/` в прод сама не попадает,
   её переносит владелец кластера (выкатка сообщает ему, что файлы изменились).
 - Прогоны идут строго по одному (`concurrency`), поэтому заявки создаются в порядке коммитов.
 
+### Identity 2.0: настройка и приёмка
+
+Контракт: [ADR-0054](adr/0054-workspace-identity.md), [Identity v1](plans/release-2.0-identity.md).
+Фактическая инфраструктура и оставшиеся operator inputs:
+[production preflight](plans/identity-v2-operator-preflight.md). Ревью пройдены (2.0.0); включение в проде —
+отдельный шаг оператора: без `IDENTITY_*`/`OAUTH_*` identity выключена (эндпоинты 503), политика пространств
+по умолчанию «Выключена» — пилот `optional`, `enforced` только после проверки recovery (ADR-0054).
+
+#### Grants, тарифы и ключи
+
+Доступ требует **положительного grant именно текущего workspace** для каждого
+`corporate_sso`, `directory_sync`, `oauth_provider`. В cloud дополнительно нужен
+действующий Business (`PLAN_ENTERPRISE`, SQL `enterprise`); в on-prem —
+`IDENTITY_EDITION=enterprise` и точный UUID в `IDENTITY_ENTERPRISE_WORKSPACE_IDS`.
+По умолчанию edition cloud, список пуст, features off. Free/Team, истёкший план
+и custom без Business/Enterprise основания не дают доступ. Управление тарифом
+не заменяет настройку зависимостей. OAuth provider на тех же тарифах — допущение
+ADR-0054, не дополнительное подтверждение владельца. Downgrade блокирует выдачи,
+не делает enforced необязательным; recovery и отзыв своего grant доступны.
+
+| Env | Требование оператора |
+| --- | --- |
+| `IDENTITY_PUBLIC_ORIGIN` | Точный HTTPS origin без path/query/fragment или завершающего `/`. Для текущей платформы — `https://app.calab.io` (решение владельца 2026-10-02, до включения identity; после включения не меняется никогда); Host/forwarded headers и алиасы (`app.calab.ru`) issuer не меняют. |
+| `IDENTITY_ENCRYPTION_KEYS` | JSON object `kid` → standard base64 ровно 32 независимых AES-256 bytes; шифрует upstream/LDAPS secrets и verifier с workspace/AAD. |
+| `IDENTITY_ENCRYPTION_ACTIVE_KID` | Идентификатор ключа для новых ciphertext; остальные нужные decrypt keys сохраняются. |
+| `OAUTH_SIGNING_KEYS` | JSON object `kid` → RSA PEM (2048–8192 bits, JSON-escaped newlines); private для подписи, public для prepublish/overlap. |
+| `OAUTH_SIGNING_ACTIVE_KID` | Выбирает private RSA key; JWKS содержит только публичные части. |
+| `IDENTITY_ENDPOINTS` | При необходимости JSON array `{url, approved_cidrs, private_cidrs, ca_pem, workspace_ids}`: исключение для точного полного HTTPS URL; обычные публичные IdP проходят защищённый transport без предварительного каталога всех URL. `workspace_ids` — точные UUID пространств, к connection которых исключение применяется (для остальных URL остаётся public-only). Запись с `private_cidrs` без `workspace_ids` допустима только при `IDENTITY_EDITION=enterprise` (on-prem); в cloud — отказ при старте. |
+| `IDENTITY_DIRECTORY_HOSTS` | Для LDAPS обязательный JSON array `{host, networks, ca_pem, workspace_ids}`: exact lowercase hostname и непустой CIDR allowlist, доверенная CA при необходимости. `workspace_ids` — точные UUID пространств, которым разрешён этот хост (настройка и sync других отклоняются). Без `workspace_ids` хост открыт всем пространствам установки — только при `IDENTITY_EDITION=enterprise` (on-prem); в cloud — отказ при старте. Пример: `[{"host":"dc1.corp.example","networks":["10.20.0.0/16"],"workspace_ids":["<workspace uuid>"]}]`. |
+
+Ключи предоставляет оператор, отдельно от `JWT_SECRET`; здесь нет secret values.
+Никаких insecure TLS, proxy-env обходов, loopback/metadata целей в production или
+редиректов upstream transport. Семь dependency env полностью отсутствуют → новый
+бинарник в существующей установке запускается с identity routes, возвращающими 503; частичная/невалидная
+конфигурация запрещает startup. Network arrays можно оставить пустыми, когда
+частные IdP/каталог не нужны, но origin и оба keyring с active kid нужны вместе.
+
+В текущем кластере keyrings/active kids доставляются **строками** из полного
+Vault KV v2 map `kv/app/calab` через `timenote/calab-env-sync` в `calab-env`.
+Не добавлять Secret-only keys: reconciler удаляет отсутствующие в Vault значения.
+JSON нельзя хранить вложенным Vault object: synchronizer превратит его в Python
+dict string, которую Go не прочитает. Origin/edition/network config — из platform
+источника `calab-api`; избегать одинаковых env names в ConfigMap/Secret.
+ConfigMap-only правка не меняет env-sync checksum и требует отдельного rollout.
+Stage полного config до нового identity-aware binary: эти две доставки не атомарны.
+CronJob success не равен доставке: проверить API readiness обеих реплик, реальный
+`env-sync/env-checksum`, approved digests и public kids, не печатая private keys.
+Источник актуальных platform manifests всё ещё не установлен: проверенный remote
+main кандидата `script-heads/cloud-infra` не содержит Calab/env-sync filename paths.
+
+#### Upgrade, routing и logging gates
+
+Перед rollout — protected DB backup вместе с restorable keyrings/Vault version и
+проверка восстановления в отдельной БД. Миграция `00055` выполняется при старте
+API под advisory lock; требуются evidence PG17 на конечном SHA. Старые
+сессии становятся `local_account` без свежего `local_authenticated_at` и assurance:
+для linking/admin нужен повторный независимый локальный вход/reauth. Старый клиент
+не поддерживает scope/bootstrap/consent UX; обновить web/desktop до identity-пилота.
+
+Платформа отдельно переносит provider `/oidc/workspaces/*` и
+`/.well-known/oauth-authorization-server/oidc/workspaces/*` **до SPA fallback**, а
+также no-store/no-referrer/frame-ancestors и безопасное логирование из infra change.
+Cluster Caddy — stock 2.11.4, HTTP `:8080`, upstream `api:3000`; host-network
+`caddy-l4` config не копируется туда целиком. Проверить rendering и обновить
+`UPSTREAM_PINS` `timenote/calab-deploy` по repo Caddyfile/entrypoint на release SHA.
+Pin check происходит после rollout и не откатывает уже запущенные образы.
+
+В preflight front ingress Nginx логирует request/Referer, в том числе в error logs;
+выключение access logs и правки Caddy этого не закрывают. До активации платформа
+должна принять Calab-scoped error isolation и доказать защиту ранних parser errors,
+upstream failures, LB/collectors на всех app aliases (варианты и ограничения — в
+preflight). Тестировать только synthetic code/state/ticket/request/consent/path/
+Referer sentinels. Gate пока открыт; текущему shared controller глобальные logging
+settings здесь не меняются. После rollout проверить реальные digests обеих реплик
+API/web: mixed versions и timeout rollback не являются успешной приёмкой.
+
+#### SSO, каталог и bootstrap
+
+1. Выдать нужные grants, оставить policy off; owner делает local reauth (≤5 минут).
+   Зарегистрировать у IdP exact callback
+   `https://app.calab.io/api/auth/sso/callback/<connection-id>` для текущей установки;
+   для self-hosted — её доверенный origin. Connection задаёт issuer/client id,
+   provider и secret для confidential подключения, затем явные link → test → activate текущих
+   id/version. Test не выдаёт сессию, смена draft не активирует её автоматически.
+2. Провести optional pilot web/native login и local step-up: `(connection,issuer,sub)`
+   связан явно, равный email ничего не объединяет. `workspace_sso(A)` не открывает
+   B, DM, заметки, global credentials/admin; local session сохраняется при step-up.
+   Generic fixture evidence с Keycloak 26.4.7 — [отдельный RP run](plans/identity-v2-keycloak-evidence.md)
+   на более раннем commit. Встроенные scopes `basic` + `profile` + `email` дают
+   требуемый `auth_time`. `auth_time` обязателен для всех IdP, включая Entra: `max_age` и
+   `prompt=login` идут в URL, который браузер может изменить, поэтому свежесть входа
+   доказывает только подписанный `auth_time` (`iat` доказывает лишь живую сессию IdP).
+   Entra v2 выдаёт его только как optional claim — в app registration: Token configuration
+   → Add optional claim → ID → `auth_time`. Без него вход и тест connection отклоняются
+   (клиент видит 403 «identity access denied»), причина — запись audit
+   `auth_time_missing` (outcome `denied`) по этой connection.
+   PKCE: если discovery перечисляет `code_challenge_methods_supported`, там обязан быть
+   `S256`; AD FS обязан его перечислять; generic может не перечислять — S256 всё равно
+   отправляется, а тест connection пишет в audit `connection_tested_pkce_unadvertised`.
+   Live Entra/AD FS/Windows AD acceptance отсутствует. Entra требует exact
+   tenant-specific issuer/tid, AD FS 2019+ — S256; целевой живой Microsoft стенд
+   проверяется отдельно, а не объявляется passed. Link идёт в активную connection
+   (в draft — только если активной нет или пользователь уже связан с активной), test —
+   в последний draft.
+3. Для LDAPS — read-only bind, `ldaps://host:636`, проверяемый сертификат/hostname,
+   явная связь immutable AD `objectGUID` с существующим member. Allowed groups
+   учитываются и транзитивно (вложенные группы, `LDAP_MATCHING_RULE_IN_CHAIN`
+   1.2.840.113556.1.4.1941, вычисляет DC); JIT, group-to-role, SCIM/cloud connector
+   отсутствуют. Continuation referrals (base DN в корне домена → DNS-партиции)
+   игнорируются и не открываются. Если у хоста задан `ca_pem`, доверяется только этот CA
+   (системный пул не используется). Disabled/missing в полном снимке или потеря allowed
+   group закрывают managed доступ. Sync 5 минут, stale после 1 часа; неполный
+   scan/ошибка сети не означает массовое удаление. Полный, но пустой снимок или резкое
+   сокращение (> 20 % и ≥ 2 объектов либо связанных активных участников) помещается в
+   карантин: прежнее состояние сохраняется, `last_error` объясняет причину; принять
+   реальное крупное изменение — повторно сохранить настройки каталога (первый scan
+   новой версии не проверяется). Disable/unlink каталога не снимает suspensions автоматически: нужен
+   явный audited detach после проверки, затем новый вход; old grants не оживают.
+4. Проверить recovery kit (10 codes, показаны один раз, срок 365 дней), сохранить
+   у независимого владельца; перед enforced нужны его свежие local и SSO proofs
+   (≤5 минут), проверенная активная connection и действующий kit. Проверить обычные
+   REST, READY/RESUME, файлы и уже открытый RTC при отзыве/потере pubsub, а не только
+   новый login endpoint. Assurance максимум 1 час; refresh её не продлевает.
+
+CalDAV push, удержанный политикой, удаляет ранее выгруженную копию встречи и
+догоняет (повторный push) после возвращения SSO assurance — проверка раз в 10 минут,
+запись в Valkey до 30 дней.
+
+Enforced invite preview возвращает `SSO_REQUIRED` без данных workspace. Локальный
+verified human может завершить приглашение/onboarding и подготовить membership;
+`JoinWorkspaceResponse.identityAccess` содержит workspace id, enforced/reason,
+а защищённые workspace/member отсутствуют. Дальше нужны local reauth и явный link,
+затем SSO. Bootstrap не даёт assurance, guest/open join при enforced закрыты.
+
+`SUPERADMIN_EMAILS` — отзывное legacy-основание: только independently local verified
+nonbot/nonguest account со свежим local proof. Env/email-change revocation сохраняется;
+UUID grant отдельный, автоматического постоянного backfill из email нет. SSO/recovery
+и IdP claims не получают product admin даже в `/me`, gateway и permission resolution.
+
+#### OAuth clients и точный DTO contract
+
+Issuer: `${IDENTITY_PUBLIC_ORIGIN}/oidc/workspaces/{workspace_uuid}`. Client принадлежит
+одному workspace; CRUD — builtin owner/admin с recent local reauth и требуемой
+assurance, одного custom MANAGE_INTEGRATIONS недостаточно. Types из generated
+`OAuthClientType`: confidential web (`client_secret_basic`), public native/SPA (`none`).
+Exact registered redirects, S256, обязательные state/nonce, explicit user consent;
+**nonce обязателен и в code flow** (OIDC Core §3.1.2.1 делает его там необязательным —
+наш профиль строже): authorize без `state` или `nonce` (1–512 байт) отвечает
+`invalid_request`; RP сверяет `nonce` в ID token и `state`/`iss` в redirect;
+scopes только `openid profile email`. Email claim только независимо локально verified;
+`sub` opaque/stable внутри workspace, разные workspace имеют разные subjects.
+Нет API scopes, client_credentials, offline_access, SAML, dynamic registration/SLO.
+
+First-party management/consent JSON — generated proto DTO, lowerCamelCase поля
+и generated enum names, не самодельные interfaces. Источники:
+[`auth.proto`](../proto/calaba/v1/auth.proto), [`identity.proto`](../proto/calaba/v1/identity.proto),
+[`oauth_client.proto`](../proto/calaba/v1/oauth_client.proto). В частности, connection
+использует `provider`, `clientSecret`, `version` (не design-proposal `preset/secret`);
+OAuth client update использует `version` (не `revision`); optional secret отсутствует
+для сохранения прежнего при той же issuer/client pair, пустой недопустим.
+
+- Web finish/native exchange/recovery: `SSOCompleteResponse {tokens, assurance, tested}`.
+  Standalone login даёт scoped tokens; link/step-up — assurance исходной local session;
+  test — только tested. Web refresh secret в HttpOnly cookie, не JSON; native — в main broker.
+- Native begin: `SSOBeginResponse {flowId, browserStartUrl, authorizationUrl, expiresAt}`;
+  browserStartUrl несёт одноразовый bootstrap handle для browser cookie. Handoff
+  ticket (60 секунд) требует verifier main-процесса, не выдаёт токены через deep link.
+- Consent URL `/oauth/consent?request=<opaque handle>` связывает HttpOnly browser cookie
+  и серверный snapshot. `POST /api/oauth/requests/{id}/bind`: bearer + exact Origin +
+  `BindOAuthRequest {csrfToken: <initial handle>}`; только после успешного bind UI
+  показывает `OAuthConsentSnapshot`. Его **новый** csrfToken идёт в
+  `DecideOAuthRequest {allow, allowRefresh, csrfToken}`; ответ `OAuthDecisionResponse {redirectUrl}`.
+  Scopes/client/redirect берутся с сервера; смена account требует нового request.
+  Повторный bind той же session разрешён (перезагрузка страницы): csrfToken ротируется.
+  Если клиента переименовали после bind, decision отвечает 409 `IDENTITY_CONFIG_CHANGED` —
+  страница делает bind заново и показывает новое имя. Незавершённых requests не больше
+  4 на браузер (вытесненные из cookie удаляются) и 100 на IP; сверх — redirect
+  `temporarily_unavailable`. Повторное согласие заменяет grant только этого устройства;
+  сужение scopes или смена решения о refresh закрывает grants клиента на всех устройствах.
+  Reauth/step-up возвращает только exact same-origin consent route в той же session;
+  arbitrary return URL запрещён, истёкший request (10 минут) требует нового authorize.
+- Recovery kit: `IdentityRecoveryKitResponse {codesOnce, expiresAt}`; не сохранять
+  plaintext в клиентских caches/logs. Provider token/UserInfo/revoke используют
+  стандартный OAuth JSON/form, не protojson и не first-party/bot/session tokens.
+
+Provider code 60 секунд, access/ID ≤5 минут с учётом исходных deadlines; refresh
+только с включённым client и явным consent, максимум 8 часов absolute/30 минут idle.
+Replay от правильного client отзывает family, retry grace нет: после потерянного
+ответа нужен новый вход. User revoke не зависит от платного entitlement. Уже выданный
+ID token и session стороннего RP нельзя мгновенно отозвать: RP отвечает за её срок.
+
+#### Ротация, recovery и restore
+
+Encryption: добавить новый kid вместе со старыми, доставить всем репликам, переключить
+active kid; старые удалять лишь после re-encryption всех зависимых ciphertext.
+Signing: prepublish next public key в JWKS всех реплик, дождаться минимум 60 секунд
+cache, затем доставить private key/active kid всем репликам. Old public key сохранять
+не меньше последнего old ID token TTL (≤5 минут) + 60 секунд skew + 60 секунд cache.
+Keyring snapshots immutable: изменение env требует контролируемого rollout.
+
+Upstream secret rotation той же issuer/client pair сохраняет tuple, но version++,
+draft и отзыв assurances/scoped sessions/provider grants/pending flows происходят
+сразу: возможен простой. Подготовить kit, свежие proofs и окно; после сохранения
+owner с local reauth проходит новый test и явную activate, не полагается на старую
+assurance. Новый issuer/client требует нового draft/явного link и нового secret;
+email и secret старой connection не наследуются. OAuth client secret — показ один
+раз, overlap 10 минут (или revokeOld для немедленного отзыва); security config
+changes инвалидируют grants/requests/codes, name-only rename этого не требует.
+
+IdP outage/downgrade не открывают enforced данные. Recovery: независимый local login
+владельца + одноразовый code → 10 минут только policy repair, без чатов/RTC/OAuth.
+Переход в optional/off — явный audited owner action; при потере local credential
+**и** kit — только отдельная audited operator/support процедура, не скрытый bypass.
+Restore выполнять с DB и нужными decrypt/public/private keyring версиями; проверить
+в изоляции ciphertext, public kids/JWKS, отзыв и восстановление до открытия трафика.
+Down guard не делает pre-identity image безопасным; fallback обязан проверять
+authority/policy. Не отключать enforcement автоматически ради rollback.
+
 ### Почта (ADR-0023)
-- `.env` стенда: `SMTP_HOST=mail.unne.ai`, `SMTP_PORT=465`, `SMTP_TLS=tls`, `SMTP_USER` = `SMTP_FROM`-адрес, `SMTP_PASSWORD`, `SMTP_FROM="Calab <noreply@calab.ru>"`. Проверка: регистрация → письмо с кодом; в логах API `mail sent` / `mail: giving up`.
-- **Владелец, DNS `calab.ru`**: SPF `v=spf1 include:<SPF почтового сервера mail.unne.ai> -all` (или `a:mail.unne.ai`); DKIM — TXT `<selector>._domainkey.calab.ru` с публичным ключом, которым подписывает mail.unne.ai; DMARC `_dmarc.calab.ru` → `v=DMARC1; p=quarantine; rua=mailto:<ящик отчётов>` (начать с `p=none` на неделю).
+- `.env` стенда: `SMTP_HOST=mail.unne.ai`, `SMTP_PORT=465`, `SMTP_TLS=tls`, `SMTP_USER` = `SMTP_FROM`-адрес, `SMTP_PASSWORD`, `SMTP_FROM="Calab <noreply@calab.io>"`. Проверка: регистрация → письмо с кодом; в логах API `mail sent` / `mail: giving up`.
+- **Владелец, DNS `calab.io`** (отправитель с 2.0.0): SPF `v=spf1 include:<SPF почтового сервера mail.unne.ai> -all` (или `a:mail.unne.ai`); DKIM — TXT `<selector>._domainkey.calab.io` с публичным ключом, которым подписывает mail.unne.ai (на mail.unne.ai — ключ для домена `calab.io`); DMARC `_dmarc.calab.io` → `v=DMARC1; p=quarantine; rua=mailto:<ящик отчётов>` (начать с `p=none` на неделю). Записи `calab.ru` не удалять, пока в очередях/ответах могут быть письма со старого адреса.
 
 ### Файлы в S3: драйвер `s3` (ADR-0011)
 

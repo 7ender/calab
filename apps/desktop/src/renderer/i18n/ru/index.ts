@@ -1,3 +1,4 @@
+import { ruIdentity } from './identity';
 import { ruApp } from './app';
 import { ruChat } from './chat';
 import { ruDm } from './dm';
@@ -15,6 +16,7 @@ import { ruPicker } from './picker';
 import { ruRoles } from './roles';
 import { ruCalendar } from './calendar';
 import { ruBoards } from './boards';
+import { ruBoards2 } from './boards2';
 import { ruPlan } from './plan';
 import { ruShell } from './shell';
 import { ruVideo } from './video';
@@ -28,6 +30,7 @@ import { ruWebApps } from './webapps';
 
 /** Russian UI strings. Keys are flat, dotted; `{param}` placeholders. Area files are merged in. */
 export const ru = {
+  ...ruIdentity,
   ...ruShell,
   ...ruChat,
   ...ruPeople,
@@ -55,6 +58,7 @@ export const ru = {
   ...ruRoles,
   ...ruCalendar,
   ...ruBoards,
+  ...ruBoards2,
   // common
   'common.cancel': 'Отмена',
   'common.create': 'Создать',
@@ -144,11 +148,12 @@ export const ru = {
   'ws.timeFormat.auto': 'Авто',
   'ws.timeFormat.h24': '24 ч',
   'ws.timeFormat.h12': '12 ч',
-  'ws.settings': 'Настройки пространства',
+  'ws.settings': 'Настройки',
   'ws.settingsTitle': 'Настройки: {name}',
-  'ws.invite': 'Пригласить людей',
+  'ws.invite': 'Пригласить',
   'ws.members': 'Участники',
   'ws.leave': 'Покинуть пространство',
+  'ws.leaveItem': 'Покинуть',
   'ws.leaveConfirm': 'Покинуть «{name}»? Вернуться можно будет только по приглашению.',
   'ws.tabGeneral': 'Общие',
   'ws.tabMedia': 'Голос и стрим',
@@ -236,6 +241,7 @@ export const ru = {
   'room.whoSeesRemove': 'Убрать из списка: {name}',
   'room.whoSeesFooter': 'Список — это разрешение «{perm}» во вкладке «{tab}»',
   'room.settings': 'Настройки комнаты',
+  'roomMenu.settings': 'Настройки',
   'room.settingsTitle': 'Комната: {name}',
   'room.tabPerms': 'Права',
   'room.mediaText': '«Как в пространстве» — действует настройка пространства.',
@@ -249,6 +255,7 @@ export const ru = {
   'media.maxPreset': 'Максимальное качество стрима',
   'media.maxStreams': 'Стримов одновременно',
   'media.maxStreamsHint': 'Сколько человек могут показывать экран одновременно (0 — запрещено)',
+  'media.planClamp': 'Применяется min(значение, лимит тарифа): {limit}',
   'media.default': 'Как в пространстве ({v})',
   'audioTier.8': 'Низкое',
   'audioTier.16': 'Нормальное',
@@ -716,4 +723,3 @@ export const ru = {
   'main.webAppCopyLink': 'Копировать адрес ссылки',
   'main.webAppOpenPage': 'Открыть страницу в браузере',
 } as const;
-

@@ -20,6 +20,19 @@ vi.stubGlobal('document', {
   hasFocus: () => true,
 });
 vi.stubGlobal('window', globalThis);
+/** One fake BroadcastChannel per engine (#40): Node's real one would cross-talk between the engines of resetModules. */
+class FakeChannel {
+  static all: FakeChannel[] = [];
+  onmessage: ((ev: { data: unknown }) => void) | null = null;
+  sent: unknown[] = [];
+  constructor(readonly name: string) {
+    FakeChannel.all.push(this);
+  }
+  postMessage(data: unknown): void {
+    this.sent.push(data);
+  }
+}
+vi.stubGlobal('BroadcastChannel', FakeChannel);
 const mem = new Map<string, string>();
 vi.stubGlobal('localStorage', {
   getItem: (k: string) => mem.get(k) ?? null,
@@ -269,6 +282,7 @@ beforeEach(async () => {
   vi.useFakeTimers();
   vi.resetModules();
   FakeRoom.all = [];
+  FakeChannel.all = [];
   FakeLocalAudioTrack.lockMs = 0;
   FakeLocalAudioTrack.failReplace = false;
   FakeRoom.disconnectGate = null;
@@ -1045,6 +1059,59 @@ describe('per-user volume and local mute (docs/09 #20)', () => {
       expect(useVoice.getState()).toMatchObject({ muted: false, deafened: false });
       expect(FakeRoom.all[0]?.published[0]?.isMuted).toBe(false);
       expect(updateSelf).toHaveBeenLastCalledWith({ muted: false, deafened: false, musician: false });
+    });
+
+    /**
+     * Chromium mixes every remote WebRTC audio receiver into one output; muting an element only
+     * zeroes the receivers that element plays, and a receiver no element plays yet is at full gain
+     * (LiveKit defers / drops its TrackSubscribed: Reconnecting, publication not found). So
+     * deafened = nothing received: no mic or stream-audio subscription at all.
+     */
+    it('deafen → no remote audio is received: mics and stream audio unsubscribed, back on undeafen', async () => {
+      type Pub = { source: string; trackSid: string; kind: string; isMuted: boolean; isSubscribed: boolean; setSubscribed: ReturnType<typeof vi.fn>; setEnabled: () => void };
+      const pub = (source: string, trackSid: string): Pub => ({ source, trackSid, kind: source === 'screen_share' ? 'video' : 'audio', isMuted: false, isSubscribed: false, setSubscribed: vi.fn(), setEnabled: () => undefined });
+      const participant = (identity: string, pubs: Pub[]) => ({
+        identity,
+        trackPublications: new Map(pubs.map((p) => [p.trackSid, p])),
+        getTrackPublication: (source: string) => pubs.find((p) => p.source === source),
+        getTrackPublicationBySid: (sid: string) => pubs.find((p) => p.trackSid === sid),
+      });
+      const last = (p: Pub): unknown => p.setSubscribed.mock.calls.at(-1)?.[0];
+      await voice.join('A', 'ws');
+      const room = FakeRoom.all.at(-1);
+      const micB = pub('microphone', 'TR_mic_b');
+      const screen = pub('screen_share', 'TR_scr_c');
+      const screenAudio = pub('screen_share_audio', 'TR_sa_c');
+      const micC = pub('microphone', 'TR_mic_c');
+      room?.remoteParticipants.set('u2:b', participant('u2:b', [micB]));
+      room?.remoteParticipants.set('u3:c', participant('u3:c', [micC, screen, screenAudio]));
+      for (const p of [micB, micC, screen, screenAudio]) room?.emit('TrackPublished', p, room.remoteParticipants.get(p === micB ? 'u2:b' : 'u3:c'));
+      expect(useVoice.getState().watching).toBe('TR_scr_c'); // a new stream shows in the PiP
+      expect([last(micB), last(micC), last(screenAudio)]).toEqual([true, true, true]);
+
+      voice.toggleDeafen();
+      expect([last(micB), last(micC), last(screenAudio)]).toEqual([false, false, false]);
+      expect(last(screen)).toBe(true); // the picture stays
+
+      // Someone joins while I am deafened: their mic is not subscribed either.
+      const micD = pub('microphone', 'TR_mic_d');
+      room?.remoteParticipants.set('u4:d', participant('u4:d', [micD]));
+      room?.emit('TrackPublished', micD, room.remoteParticipants.get('u4:d'));
+      expect(micD.setSubscribed).not.toHaveBeenCalledWith(true);
+
+      voice.toggleDeafen();
+      expect([last(micB), last(micC), last(micD), last(screenAudio)]).toEqual([true, true, true, true]);
+    });
+
+    it('detached remote audio leaves the DOM (LiveKit detaches before TrackUnsubscribed)', async () => {
+      await voice.join('A', 'ws');
+      const room = FakeRoom.all.at(-1);
+      const el = new FakeAudioEl();
+      const removed = vi.spyOn(el, 'remove');
+      const track = { kind: 'audio', sid: 'TR_a', attach: () => el, detach: () => [] as FakeAudioEl[] };
+      room?.emit('TrackSubscribed', track, { source: 'microphone' }, { identity: 'u2:phone' });
+      room?.emit('TrackUnsubscribed', track, { source: 'microphone' });
+      expect(removed).toHaveBeenCalled();
     });
 
     it('PTT while deafened: nothing on air, no activation sound (#12)', async () => {
@@ -1839,6 +1906,49 @@ describe('stuck «Подключение…» (docs/09 #131)', () => {
     useVoice.setState({ phase: 'reconnecting' });
     await vi.advanceTimersByTimeAsync(30_000);
     expect(useVoice.getState().phase).toBe('connected');
+    expect(joinVoice).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe('tabs of one browser share the voice seat (#40)', () => {
+  const session = async (id: string): Promise<void> => {
+    const { useSession } = await import('../stores/session');
+    useSession.setState({ sessionId: id });
+  };
+  const channel = (): FakeChannel => {
+    const ch = FakeChannel.all.at(-1);
+    if (!ch) throw new Error('no voice tab channel');
+    return ch;
+  };
+
+  it('a join announces itself; a newer join of another tab takes this one out locally, without /voice/leave', async () => {
+    await session('s1');
+    await voice.join('A', 'ws');
+    const mine = channel().sent[0] as { session: string; at: number };
+    expect(mine.session).toBe('s1');
+    channel().onmessage?.({ data: { session: 's1', at: mine.at + 1, nonce: 'x' } });
+    await settle();
+    expect(useVoice.getState()).toMatchObject({ phase: 'idle', roomId: null });
+    expect(leaveVoice).not.toHaveBeenCalled();
+    expect(voice.takenOverRoom).toBe('A');
+  });
+
+  it('an older claim or another auth session changes nothing', async () => {
+    await session('s1');
+    await voice.join('A', 'ws');
+    const mine = channel().sent[0] as { at: number };
+    channel().onmessage?.({ data: { session: 's1', at: mine.at - 1, nonce: 'x' } });
+    channel().onmessage?.({ data: { session: 's2', at: mine.at + 1, nonce: 'x' } });
+    await settle();
+    expect(useVoice.getState()).toMatchObject({ phase: 'connected', roomId: 'A' });
+  });
+
+  it('DUPLICATE_IDENTITY (the other tab connected to the same room): out without /voice/leave', async () => {
+    await voice.join('A', 'ws');
+    FakeRoom.all[0]?.emit('Disconnected', 'DUPLICATE_IDENTITY');
+    await settle();
+    expect(useVoice.getState()).toMatchObject({ phase: 'idle', roomId: null });
+    expect(leaveVoice).not.toHaveBeenCalled();
     expect(joinVoice).toHaveBeenCalledTimes(1);
   });
 });

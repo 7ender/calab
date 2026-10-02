@@ -122,6 +122,19 @@ describe('dispatch READY (re-IDENTIFY while the UI is up)', () => {
     expect(loadMentions).toHaveBeenCalled(); // the inbox list is refreshed
   });
 
+  it('the open history of an archived temporary room survives READY (#48)', async () => {
+    const { useArchiveView } = await import('../stores/archiveView');
+    applyDispatch(ready([room('a', id(5))]));
+    const old = create(RoomSchema, { id: 'old', workspaceId: WS, type: RoomType.TEXT, name: 'old' });
+    useArchiveView.getState().open(old);
+    useMessages.getState().setWindow('old', [create(MessageSchema, { id: id(3), roomId: 'old' })], false, false);
+    useMessages.getState().setWindow('gone', [create(MessageSchema, { id: id(4), roomId: 'gone' })], false, false);
+    applyDispatch(ready([room('a', id(5))]));
+    expect(useMessages.getState().rooms['old']?.items).toHaveLength(1);
+    expect(useMessages.getState().rooms['gone']).toBeUndefined();
+    useArchiveView.getState().close();
+  });
+
   it('a room without a read state keeps its live counters across READY', () => {
     applyDispatch(ready([room('a', id(5))]));
     useRooms.getState().addUnread('a', id(6), true);

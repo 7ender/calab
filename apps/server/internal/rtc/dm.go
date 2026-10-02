@@ -126,6 +126,9 @@ func (s *Service) joinDM(w http.ResponseWriter, r *http.Request, roomID uuid.UUI
 // in the DM's ACTIVE call (and the session is not revoked); otherwise it is removed.
 func (s *Service) dmParticipantJoined(ctx context.Context, rid, uid, sid uuid.UUID, lkRoom string, p *Participant) error {
 	reason := ""
+	if err := s.checkIdentity(ctx, rid, rid, uid, sid); err != nil {
+		reason = "identity access denied"
+	}
 	if s.Revoked != nil {
 		if revoked, err := s.Revoked(ctx, sid); err != nil {
 			return err

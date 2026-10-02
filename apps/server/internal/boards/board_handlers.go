@@ -386,6 +386,22 @@ func (s *Service) updateBoard(w http.ResponseWriter, r *http.Request) error {
 			p.DefaultViewID = &vid
 		}
 	}
+	// Board features (ADR-0058 §3): the disabled set and the estimate scale.
+	var features sqlc.SetBoardFeaturesParams
+	if req.GetSetDisabledFeatures() {
+		m, err := FeatureMask(req.GetDisabledFeatures())
+		if err != nil {
+			return err
+		}
+		features.DisabledFeatures = &m
+	}
+	if req.EstimateScale != nil {
+		sc, ok := estimateScales[req.GetEstimateScale()]
+		if !ok {
+			return httpx.Validation("estimateScale", "estimate scale must be FIBONACCI, LINEAR or TSHIRT")
+		}
+		features.EstimateScale = &sc
+	}
 	err = s.db.Tx(r.Context(), func(q *sqlc.Queries) error {
 		cur, err := q.GetBoardForUpdate(r.Context(), id)
 		if err != nil {
@@ -393,6 +409,12 @@ func (s *Service) updateBoard(w http.ResponseWriter, r *http.Request) error {
 		}
 		if err := s.restrict(r, q, cur, req.IsPrivate, req.Restricted, acc); err != nil {
 			return err
+		}
+		if features.DisabledFeatures != nil || features.EstimateScale != nil {
+			features.ID = id
+			if _, err := q.SetBoardFeatures(r.Context(), features); err != nil {
+				return err
+			}
 		}
 		if req.Key != nil {
 			k := strings.ToUpper(strings.TrimSpace(req.GetKey()))
@@ -459,7 +481,9 @@ func (s *Service) deleteBoard(w http.ResponseWriter, r *http.Request) error {
 		return err
 	}
 	if !purge {
-		if _, err := s.db.Q.SetBoardArchived(r.Context(), sqlc.SetBoardArchivedParams{ID: id, Archived: true}); err != nil {
+		if _, err := db.GuardValue(r.Context(), s.db, func(guarded *sqlc.Queries) (sqlc.Board, error) {
+			return guarded.SetBoardArchived(r.Context(), sqlc.SetBoardArchivedParams{ID: id, Archived: true})
+		}); err != nil {
 			return err
 		}
 	} else {
@@ -492,7 +516,9 @@ func (s *Service) restoreBoard(w http.ResponseWriter, r *http.Request) error {
 	if !acc.Archived {
 		return httpx.Conflict("the board is not archived")
 	}
-	if _, err := s.db.Q.SetBoardArchived(r.Context(), sqlc.SetBoardArchivedParams{ID: id, Archived: false}); err != nil {
+	if _, err := db.GuardValue(r.Context(), s.db, func(guarded *sqlc.Queries) (sqlc.Board, error) {
+		return guarded.SetBoardArchived(r.Context(), sqlc.SetBoardArchivedParams{ID: id, Archived: false})
+	}); err != nil {
 		return err
 	}
 	return s.respondBoard(w, r, id, acc, http.StatusCreated)
@@ -505,6 +531,9 @@ func reorder(ids []uuid.UUID, id uuid.UUID, pos int) []uuid.UUID {
 	return slices.Insert(out, pos, id)
 }
 
+// setBoardPosition: PUT /api/boards/{id}/position — the index within the board's container
+// (its category or «без категории»); category_id set moves it into that category first
+// (ADR-0058 §1). Boards that shift get BOARD_UPDATE.
 func (s *Service) setBoardPosition(w http.ResponseWriter, r *http.Request) error {
 	id, acc, err := manageBoard(r, false)
 	if err != nil {
@@ -523,16 +552,39 @@ func (s *Service) setBoardPosition(w http.ResponseWriter, r *http.Request) error
 		if err != nil {
 			return err
 		}
-		ids := make([]uuid.UUID, len(rows))
+		var cat *uuid.UUID
+		for _, b := range rows {
+			if b.ID == id {
+				cat = b.CategoryID
+			}
+		}
+		catChanged := false
+		if req.CategoryId != nil {
+			next, err := boardCategory(r.Context(), q, acc.WorkspaceID, req.GetCategoryId(), "categoryId")
+			if err != nil {
+				return err
+			}
+			catChanged, cat = !eqID(cat, next), next
+		}
+		var ids []uuid.UUID
 		pos := map[uuid.UUID]int32{}
-		for i, b := range rows {
-			ids[i], pos[b.ID] = b.ID, b.Position
+		for _, b := range rows {
+			if eqID(b.CategoryID, cat) || b.ID == id {
+				ids, pos[b.ID] = append(ids, b.ID), b.Position
+			}
 		}
 		for i, bid := range reorder(ids, id, int(req.GetPosition())) {
-			if pos[bid] == int32(i) { //nolint:gosec // ≤ 50
+			p := int32(i) //nolint:gosec // ≤ 50
+			if bid == id && catChanged {
+				if _, err := q.SetBoardPlacement(r.Context(), sqlc.SetBoardPlacementParams{ID: id, WorkspaceID: acc.WorkspaceID, Position: p, CategoryID: cat}); err != nil {
+					return err
+				}
 				continue
 			}
-			if err := q.SetBoardPosition(r.Context(), sqlc.SetBoardPositionParams{ID: bid, Position: int32(i)}); err != nil { //nolint:gosec // ≤ 50
+			if pos[bid] == p {
+				continue
+			}
+			if err := q.SetBoardPosition(r.Context(), sqlc.SetBoardPositionParams{ID: bid, Position: p}); err != nil {
 				return err
 			}
 			if bid != id {
@@ -544,9 +596,7 @@ func (s *Service) setBoardPosition(w http.ResponseWriter, r *http.Request) error
 	if err != nil {
 		return err
 	}
-	for _, bid := range moved {
-		s.publishBoard(r.Context(), acc.WorkspaceID, bid, false)
-	}
+	s.publishBoards(r.Context(), acc.WorkspaceID, moved)
 	return s.respondBoard(w, r, id, acc, http.StatusOK)
 }
 
@@ -880,7 +930,7 @@ func (s *Service) deleteStatus(w http.ResponseWriter, r *http.Request) error {
 	}
 	var moved []uuid.UUID
 	var c change
-	err = s.tx(r.Context(), func(q *sqlc.Queries, tx pgx.Tx) error {
+	err = s.taskTx(r.Context(), &c, func(q *sqlc.Queries, tx pgx.Tx) error {
 		if _, err := q.GetBoardForUpdate(r.Context(), id); err != nil {
 			return err
 		}
@@ -908,7 +958,7 @@ func (s *Service) deleteStatus(w http.ResponseWriter, r *http.Request) error {
 		}
 		// Moving the tasks forward is a status change like any other (ADR-0049 §2): refused
 		// while one of them waits for approval — pick another move_to.
-		if Forward(*from, *dst) {
+		if Forward(*from, *dst) && !Disabled(acc.DisabledFeatures, v1.BoardFeature_BOARD_FEATURE_APPROVALS) {
 			// Row locks: a vote / approvers change (which lock the task) cannot slip in
 			// between this check and the move.
 			rows, err := queryTasks(r.Context(), tx, "WHERE t.status_id = $1 ORDER BY t.id FOR UPDATE OF t", sid)
@@ -1065,7 +1115,9 @@ func (s *Service) deleteLabel(w http.ResponseWriter, r *http.Request) error {
 	if err != nil {
 		return err
 	}
-	n, err := s.db.Q.DeleteBoardLabel(r.Context(), sqlc.DeleteBoardLabelParams{ID: lid, BoardID: id})
+	n, err := db.GuardValue(r.Context(), s.db, func(guarded *sqlc.Queries) (int64, error) {
+		return guarded.DeleteBoardLabel(r.Context(), sqlc.DeleteBoardLabelParams{ID: lid, BoardID: id})
+	})
 	if err != nil {
 		return err
 	}
@@ -1182,7 +1234,9 @@ func (s *Service) deleteMilestone(w http.ResponseWriter, r *http.Request) error 
 	if err != nil {
 		return err
 	}
-	n, err := s.db.Q.DeleteBoardMilestone(r.Context(), sqlc.DeleteBoardMilestoneParams{ID: mid, BoardID: id})
+	n, err := db.GuardValue(r.Context(), s.db, func(guarded *sqlc.Queries) (int64, error) {
+		return guarded.DeleteBoardMilestone(r.Context(), sqlc.DeleteBoardMilestoneParams{ID: mid, BoardID: id})
+	})
 	if err != nil {
 		return err
 	}

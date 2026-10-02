@@ -25,6 +25,7 @@ import (
 	v1 "github.com/calaba/calaba/server/gen/calaba/v1"
 	"github.com/calaba/calaba/server/internal/auth"
 	"github.com/calaba/calaba/server/internal/blob"
+	"github.com/calaba/calaba/server/internal/builtinstickers"
 	"github.com/calaba/calaba/server/internal/db"
 	"github.com/calaba/calaba/server/internal/db/sqlc"
 	"github.com/calaba/calaba/server/internal/events"
@@ -63,8 +64,10 @@ func NewHandlers(d *db.DB, ev events.Publisher, fs *files.Service, ps *plans.Ser
 	return &Handlers{db: d, events: ev, files: fs, plans: ps, limiter: limiter}
 }
 
-// Routes registers authenticated routes; wrap must apply auth + perm resolver.
+// Routes registers authenticated pack routes and public built-in artwork.
+// wrap must apply auth + perm resolver.
 func (h *Handlers) Routes(mux httpx.Router, wrap func(http.Handler) http.Handler) {
+	mux.Handle("GET /api/stickers/builtin/{name}", http.HandlerFunc(builtinstickers.ServeHTTP))
 	handle := func(p string, f httpx.HandlerFunc) { mux.Handle(p, wrap(f)) }
 	handle("GET /api/workspaces/{id}/sticker-packs", h.list)
 	handle("POST /api/workspaces/{id}/sticker-packs", h.create)
@@ -117,10 +120,13 @@ func (h *Handlers) loadPack(r *http.Request) (sqlc.StickerPack, error) {
 	if err != nil {
 		return p, err
 	}
-	if _, err := member(r, p.WorkspaceID); err != nil {
+	if p.WorkspaceID == nil {
+		return p, httpx.Forbidden("built-in sticker pack is read-only")
+	}
+	if _, err := member(r, *p.WorkspaceID); err != nil {
 		return p, httpx.NotFound("sticker pack")
 	}
-	return p, h.manager(r, p.WorkspaceID)
+	return p, h.manager(r, *p.WorkspaceID)
 }
 
 // withStickers converts packs, loading the live stickers of all of them in one query.
@@ -164,7 +170,7 @@ func (h *Handlers) publishUpdate(r *http.Request, packID uuid.UUID) (*v1.Sticker
 	if err != nil {
 		return nil, err
 	}
-	h.events.Workspace(r.Context(), p.WorkspaceID, &v1.DispatchEvent{Event: &v1.DispatchEvent_StickerPackUpdate{
+	h.events.Workspace(r.Context(), *p.WorkspaceID, &v1.DispatchEvent{Event: &v1.DispatchEvent_StickerPackUpdate{
 		StickerPackUpdate: &v1.StickerPackUpdate{Pack: pb}}})
 	return pb, nil
 }
@@ -222,7 +228,7 @@ func (h *Handlers) list(w http.ResponseWriter, r *http.Request) error {
 	if _, err := member(r, wsID); err != nil {
 		return err
 	}
-	packs, err := h.db.Q.ListWorkspaceStickerPacks(r.Context(), wsID)
+	packs, err := h.db.Q.ListWorkspaceStickerPacks(r.Context(), &wsID)
 	if err != nil {
 		return err
 	}
@@ -241,6 +247,10 @@ func (h *Handlers) get(w http.ResponseWriter, r *http.Request) error {
 	if err != nil {
 		return err
 	}
+	if id.String() == builtinstickers.PackID() {
+		httpx.Write(w, http.StatusOK, &v1.StickerPackResponse{Pack: builtinstickers.Pack()})
+		return nil
+	}
 	p, err := h.db.Q.GetStickerPack(r.Context(), id)
 	if db.IsNotFound(err) {
 		return httpx.NotFound("sticker pack")
@@ -248,7 +258,10 @@ func (h *Handlers) get(w http.ResponseWriter, r *http.Request) error {
 	if err != nil {
 		return err
 	}
-	if _, err := member(r, p.WorkspaceID); err != nil {
+	if p.WorkspaceID == nil {
+		return httpx.Forbidden("built-in sticker pack is read-only")
+	}
+	if _, err := member(r, *p.WorkspaceID); err != nil {
 		return httpx.NotFound("sticker pack")
 	}
 	pb, err := h.packProto(r.Context(), p)
@@ -289,7 +302,7 @@ func (h *Handlers) create(w http.ResponseWriter, r *http.Request) error {
 			return err
 		}
 		var err error
-		p, err = q.InsertStickerPack(r.Context(), sqlc.InsertStickerPackParams{WorkspaceID: wsID, Name: name, ShortName: short, CreatedBy: &me})
+		p, err = q.InsertStickerPack(r.Context(), sqlc.InsertStickerPackParams{WorkspaceID: &wsID, Name: name, ShortName: short, CreatedBy: &me})
 		if db.IsNotFound(err) {
 			return httpx.Conflict("short name is taken in this workspace")
 		}
@@ -427,7 +440,7 @@ func (h *Handlers) delete(w http.ResponseWriter, r *http.Request) error {
 	if err != nil {
 		return err
 	}
-	h.events.Workspace(r.Context(), p.WorkspaceID, &v1.DispatchEvent{Event: &v1.DispatchEvent_StickerPackDelete{
+	h.events.Workspace(r.Context(), *p.WorkspaceID, &v1.DispatchEvent{Event: &v1.DispatchEvent_StickerPackDelete{
 		StickerPackDelete: &v1.StickerPackDelete{WorkspaceId: p.WorkspaceID.String(), PackId: p.ID.String()}}})
 	httpx.NoContent(w)
 	return nil
@@ -555,11 +568,11 @@ func (h *Handlers) upload(w http.ResponseWriter, r *http.Request) error {
 			return err
 		}
 	}
-	lim, err := h.limits(r.Context(), p.WorkspaceID)
+	lim, err := h.limits(r.Context(), *p.WorkspaceID)
 	if err != nil {
 		return err
 	}
-	recs, err := h.readBatch(w, r, p.WorkspaceID)
+	recs, err := h.readBatch(w, r, *p.WorkspaceID)
 	if err != nil {
 		h.discard(recs)
 		return err
@@ -567,7 +580,7 @@ func (h *Handlers) upload(w http.ResponseWriter, r *http.Request) error {
 	me := uid(r)
 	added := make([]*v1.Sticker, 0, len(recs))
 	err = h.db.Tx(r.Context(), func(q *sqlc.Queries) error {
-		if err := q.LockWorkspaceStickers(r.Context(), p.WorkspaceID); err != nil {
+		if err := q.LockWorkspaceStickers(r.Context(), *p.WorkspaceID); err != nil {
 			return err
 		}
 		if _, err := q.GetStickerPack(r.Context(), p.ID); err != nil {
@@ -596,14 +609,14 @@ func (h *Handlers) upload(w http.ResponseWriter, r *http.Request) error {
 		for _, rec := range recs {
 			total += rec.size
 		}
-		if err := h.files.ReserveWorkspace(r.Context(), q, p.WorkspaceID, total); err != nil {
+		if err := h.files.ReserveWorkspace(r.Context(), q, *p.WorkspaceID, total); err != nil {
 			return err
 		}
 		pos, err := q.NextStickerPosition(r.Context(), p.ID)
 		if err != nil {
 			return err
 		}
-		ws := p.WorkspaceID
+		ws := *p.WorkspaceID
 		for i, rec := range recs {
 			wd, ht := int32(rec.info.Width), int32(rec.info.Height) //nolint:gosec // 1..512
 			if _, err := q.InsertFile(r.Context(), sqlc.InsertFileParams{
@@ -613,7 +626,7 @@ func (h *Handlers) upload(w http.ResponseWriter, r *http.Request) error {
 				return err
 			}
 			s, err := q.InsertSticker(r.Context(), sqlc.InsertStickerParams{
-				PackID: p.ID, FileID: rec.id, Emoji: rec.emoji, Position: pos + int32(i), //nolint:gosec // ≤ 50
+				PackID: p.ID, FileID: &rec.id, Emoji: rec.emoji, Position: pos + int32(i), //nolint:gosec // ≤ 50
 				Width: wd, Height: ht, Animated: rec.info.Animated,
 			})
 			if err != nil {
@@ -659,7 +672,7 @@ func (h *Handlers) replaceSticker(w http.ResponseWriter, r *http.Request) error 
 			return err
 		}
 	}
-	rec, rawEmoji, err := h.readReplacement(w, r, p.WorkspaceID)
+	rec, rawEmoji, err := h.readReplacement(w, r, *p.WorkspaceID)
 	var recs []received
 	if rec != nil {
 		recs = []received{*rec}
@@ -680,7 +693,7 @@ func (h *Handlers) replaceSticker(w http.ResponseWriter, r *http.Request) error 
 	}
 	me := uid(r)
 	err = h.db.Tx(r.Context(), func(q *sqlc.Queries) error {
-		if err := q.LockWorkspaceStickers(r.Context(), p.WorkspaceID); err != nil {
+		if err := q.LockWorkspaceStickers(r.Context(), *p.WorkspaceID); err != nil {
 			return err
 		}
 		cur, err := q.GetSticker(r.Context(), sid)
@@ -691,10 +704,10 @@ func (h *Handlers) replaceSticker(w http.ResponseWriter, r *http.Request) error 
 			return err
 		}
 		if rec != nil {
-			if err := h.files.ReserveWorkspace(r.Context(), q, p.WorkspaceID, rec.size); err != nil {
+			if err := h.files.ReserveWorkspace(r.Context(), q, *p.WorkspaceID, rec.size); err != nil {
 				return err
 			}
-			ws := p.WorkspaceID
+			ws := *p.WorkspaceID
 			wd, ht := int32(rec.info.Width), int32(rec.info.Height) //nolint:gosec // 1..512
 			if _, err := q.InsertFile(r.Context(), sqlc.InsertFileParams{
 				ID: rec.id, WorkspaceID: &ws, UploaderID: me, Key: rec.key, Name: rec.name, Mime: "image/webp",
@@ -703,7 +716,7 @@ func (h *Handlers) replaceSticker(w http.ResponseWriter, r *http.Request) error 
 				return err
 			}
 			if _, err := q.ReplaceStickerFile(r.Context(), sqlc.ReplaceStickerFileParams{
-				ID: sid, FileID: rec.id, Width: wd, Height: ht, Animated: rec.info.Animated,
+				ID: sid, FileID: &rec.id, Width: wd, Height: ht, Animated: rec.info.Animated,
 			}); err != nil {
 				return err
 			}
@@ -720,7 +733,7 @@ func (h *Handlers) replaceSticker(w http.ResponseWriter, r *http.Request) error 
 		return err
 	}
 	if rec != nil {
-		h.dropStickerFile(r.Context(), old.Sticker.FileID)
+		h.dropStickerFile(r.Context(), *old.Sticker.FileID)
 	}
 	pb, err := h.publishUpdate(r, p.ID)
 	if err != nil {
@@ -796,6 +809,9 @@ func (h *Handlers) loadSticker(r *http.Request) (sqlc.GetStickerRow, error) {
 	}
 	if err != nil {
 		return s, err
+	}
+	if s.WorkspaceID == uuid.Nil {
+		return s, httpx.Forbidden("built-in sticker is read-only")
 	}
 	if _, err := member(r, s.WorkspaceID); err != nil {
 		return s, httpx.NotFound("sticker")
@@ -881,11 +897,31 @@ func (h *Handlers) myPacks(ctx context.Context, user uuid.UUID) (*v1.MyStickerPa
 	if err != nil {
 		return nil, err
 	}
+	filter := func(rows []sqlc.StickerPack) ([]sqlc.StickerPack, error) {
+		visible := rows[:0]
+		for _, row := range rows {
+			if row.WorkspaceID == nil {
+				continue
+			}
+			if err := perm.CheckAccess(ctx, *row.WorkspaceID, user); err == nil {
+				visible = append(visible, row)
+			} else if httpx.AsError(err).Status >= 500 {
+				return nil, err
+			}
+		}
+		return visible, nil
+	}
+	if inst, err = filter(inst); err != nil {
+		return nil, err
+	}
+	if avail, err = filter(avail); err != nil {
+		return nil, err
+	}
 	all, err := withStickers(ctx, h.db.Q, append(append([]sqlc.StickerPack{}, inst...), avail...))
 	if err != nil {
 		return nil, err
 	}
-	return &v1.MyStickerPacksResponse{Installed: all[:len(inst)], Available: all[len(inst):]}, nil
+	return &v1.MyStickerPacksResponse{Installed: append([]*v1.StickerPack{builtinstickers.Pack()}, all[:len(inst)]...), Available: all[len(inst):]}, nil
 }
 
 func (h *Handlers) writeMine(w http.ResponseWriter, r *http.Request) error {
@@ -911,8 +947,11 @@ func (h *Handlers) install(w http.ResponseWriter, r *http.Request) error {
 	if err != nil {
 		return err
 	}
+	if p.WorkspaceID == nil {
+		return httpx.Forbidden("built-in sticker pack is already available")
+	}
 	// Guests only look at stickers (ADR-0030 §4); a pack of a foreign workspace stays hidden.
-	m, err := perm.FromContext(r.Context()).Member(r.Context(), p.WorkspaceID, uid(r))
+	m, err := perm.FromContext(r.Context()).Member(r.Context(), *p.WorkspaceID, uid(r))
 	if errors.Is(err, perm.ErrNotMember) || (err == nil && m.Role == perm.RoleGuest) {
 		return httpx.NotFound("sticker pack")
 	}
@@ -926,7 +965,9 @@ func (h *Handlers) install(w http.ResponseWriter, r *http.Request) error {
 	if n >= MaxInstalled {
 		return httpx.Validation("id", fmt.Sprintf("at most %d installed sticker packs", MaxInstalled))
 	}
-	if _, err := h.db.Q.InstallStickerPack(r.Context(), sqlc.InstallStickerPackParams{UserID: uid(r), PackID: p.ID}); err != nil {
+	if _, err := db.GuardValue(r.Context(), h.db, func(guarded *sqlc.Queries) (int64, error) {
+		return guarded.InstallStickerPack(r.Context(), sqlc.InstallStickerPackParams{UserID: uid(r), PackID: p.ID})
+	}); err != nil {
 		return err
 	}
 	return h.writeMine(w, r)
@@ -937,7 +978,12 @@ func (h *Handlers) uninstall(w http.ResponseWriter, r *http.Request) error {
 	if err != nil {
 		return err
 	}
-	if _, err := h.db.Q.UninstallStickerPack(r.Context(), sqlc.UninstallStickerPackParams{UserID: uid(r), PackID: id}); err != nil {
+	if id.String() == builtinstickers.PackID() {
+		return httpx.Forbidden("built-in sticker pack cannot be removed")
+	}
+	if _, err := db.GuardValue(r.Context(), h.db, func(guarded *sqlc.Queries) (int64, error) {
+		return guarded.UninstallStickerPack(r.Context(), sqlc.UninstallStickerPackParams{UserID: uid(r), PackID: id})
+	}); err != nil {
 		return err
 	}
 	return h.writeMine(w, r)
@@ -960,6 +1006,12 @@ func (h *Handlers) order(w http.ResponseWriter, r *http.Request) error {
 	ids := make([]uuid.UUID, 0, len(req.GetPackIds()))
 	for _, s := range req.GetPackIds() {
 		id, err := uuid.Parse(s)
+		// Clients before ADR-0057 list the built-in pack they received in installed; it has
+		// a fixed place, so it is skipped rather than failing their reorder.
+		if err == nil && id.String() == builtinstickers.PackID() && !seen[id] {
+			seen[id] = true
+			continue
+		}
 		if err != nil || !mine[id] || seen[id] {
 			return httpx.Validation("packIds", "must list every installed pack once")
 		}
@@ -969,7 +1021,9 @@ func (h *Handlers) order(w http.ResponseWriter, r *http.Request) error {
 	if len(ids) != len(have) {
 		return httpx.Validation("packIds", "must list every installed pack once")
 	}
-	if err := h.db.Q.SetUserStickerPackOrder(r.Context(), sqlc.SetUserStickerPackOrderParams{UserID: uid(r), PackIds: ids}); err != nil {
+	if err := db.GuardExec(r.Context(), h.db, func(guarded *sqlc.Queries) error {
+		return guarded.SetUserStickerPackOrder(r.Context(), sqlc.SetUserStickerPackOrderParams{UserID: uid(r), PackIds: ids})
+	}); err != nil {
 		return err
 	}
 	return h.writeMine(w, r)

@@ -4,7 +4,8 @@
 -- name: GetBoardAccess :one
 -- Everything needed to compute a user's board bits, in one round trip: the membership (role
 -- NULL = not a member), the member's roles lowest position first with each role's board
--- override (0/0 = none) and the user's own override.
+-- override (0/0 = none), the user's own override and the disabled board features (ADR-0058 §3:
+-- COMMENTS off makes the task rooms read-only).
 SELECT b.workspace_id,
        b.is_private,
        b.restricted,
@@ -16,7 +17,8 @@ SELECT b.workspace_id,
        coalesce(mr.allows, '{}')::bigint[] AS role_allows,
        coalesce(mr.denies, '{}')::bigint[] AS role_denies,
        uo.allow AS user_allow, uo.deny AS user_deny,
-       (w.suspended_at IS NOT NULL)::boolean AS suspended
+       (w.suspended_at IS NOT NULL)::boolean AS suspended,
+       b.disabled_features
 FROM boards b
 JOIN workspaces w ON w.id = b.workspace_id
 LEFT JOIN workspace_members m ON m.workspace_id = b.workspace_id AND m.user_id = sqlc.arg('user_id')
@@ -88,6 +90,14 @@ UPDATE boards SET
     auto_archive_days = coalesce(sqlc.narg('auto_archive_days'), auto_archive_days),
     default_view_id   = CASE WHEN sqlc.arg('set_default_view')::boolean THEN sqlc.narg('default_view_id')::uuid ELSE default_view_id END,
     restricted        = coalesce(sqlc.narg('restricted'), restricted)
+WHERE id = sqlc.arg('id')
+RETURNING *;
+
+-- name: SetBoardFeatures :one
+-- Board features (ADR-0058 §3): the disabled BoardFeature bit mask and the estimate scale.
+UPDATE boards SET
+    disabled_features = coalesce(sqlc.narg('disabled_features'), disabled_features),
+    estimate_scale    = coalesce(sqlc.narg('estimate_scale'), estimate_scale)
 WHERE id = sqlc.arg('id')
 RETURNING *;
 
@@ -365,13 +375,16 @@ WHERE kind = sqlc.arg('kind') AND ((task_id = sqlc.arg('a') AND related_id = sql
     OR (kind <> 'blocks' AND task_id = sqlc.arg('b') AND related_id = sqlc.arg('a')));
 
 -- name: TaskCounts :many
--- Per task: live subtasks and finished ones, live comments, attachments.
+-- Per task: live subtasks and finished ones, live comments, attachments, checklist items and
+-- done ones (ADR-0058 §2).
 SELECT t.id,
     (SELECT count(*) FROM tasks s WHERE s.parent_id = t.id AND s.archived_at IS NULL)::integer AS subtasks,
     (SELECT count(*) FROM tasks s JOIN board_statuses st ON st.id = s.status_id
         WHERE s.parent_id = t.id AND s.archived_at IS NULL AND st.type IN ('completed', 'cancelled'))::integer AS subtasks_done,
     (SELECT count(*) FROM messages m WHERE m.room_id = t.room_id AND m.deleted_at IS NULL)::integer AS comments,
-    (SELECT count(*) FROM task_attachments a WHERE a.task_id = t.id)::integer AS attachments
+    (SELECT count(*) FROM task_attachments a WHERE a.task_id = t.id)::integer AS attachments,
+    (SELECT count(*) FROM task_checklist_items ci WHERE ci.task_id = t.id)::integer AS checklist_total,
+    (SELECT count(*) FROM task_checklist_items ci WHERE ci.task_id = t.id AND ci.done)::integer AS checklist_done
 FROM tasks t WHERE t.id = ANY(sqlc.arg('task_ids')::uuid[]);
 
 -- name: ListTaskAttachments :many
@@ -529,6 +542,7 @@ WHERE task_id = $1;
 SELECT a.task_id, a.user_id FROM task_approvers a
 JOIN tasks t ON t.id = a.task_id AND t.archived_at IS NULL
 JOIN boards b ON b.id = t.board_id AND b.archived_at IS NULL
+    AND b.disabled_features & 512 = 0 -- BOARD_FEATURE_APPROVALS (9) off: no reminders (ADR-0058 §3)
 JOIN board_statuses st ON st.id = t.status_id AND st.type NOT IN ('completed', 'cancelled')
 WHERE a.state = 'pending' AND a.reminders < 3
   AND coalesce(a.reminded_at, a.requested_at) <= now() - interval '24 hours'
@@ -540,9 +554,10 @@ LIMIT sqlc.arg('lim');
 -- Claims the reminders of one task: re-checks DueApprovalReminders' conditions under the row
 -- locks, so a vote cast since, or another server instance's pass, never gets a second notice.
 UPDATE task_approvers a SET reminders = a.reminders + 1, reminded_at = now()
-FROM tasks t JOIN board_statuses st ON st.id = t.status_id
+FROM tasks t JOIN board_statuses st ON st.id = t.status_id JOIN boards b ON b.id = t.board_id
 WHERE a.task_id = sqlc.arg('task_id') AND a.user_id = ANY(sqlc.arg('user_ids')::uuid[])
   AND t.id = a.task_id AND t.archived_at IS NULL AND st.type NOT IN ('completed', 'cancelled')
+  AND b.disabled_features & 512 = 0
   AND a.state = 'pending' AND a.reminders < 3
   AND coalesce(a.reminded_at, a.requested_at) <= now() - interval '24 hours'
   AND NOT EXISTS (SELECT 1 FROM task_approvers r WHERE r.task_id = a.task_id AND r.state = 'rejected')

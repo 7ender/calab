@@ -613,7 +613,9 @@ func (s *Service) SweepAdmissions(ctx context.Context) (int, error) {
 // SweepAdmissionsAt is SweepAdmissions with the clock at now (tests).
 func (s *Service) SweepAdmissionsAt(ctx context.Context, now time.Time) (int, error) {
 	ctx = events.WithBudget(ctx, events.RequestBudget)
-	stale, err := s.db.Q.DeclineStaleAdmissions(ctx, sqlc.DeclineStaleAdmissionsParams{Now: now, Cutoff: staleBefore(now)})
+	stale, err := db.GuardValue(ctx, s.db, func(guarded *sqlc.Queries) ([]sqlc.RoomAdmission, error) {
+		return guarded.DeclineStaleAdmissions(ctx, sqlc.DeclineStaleAdmissionsParams{Now: now, Cutoff: staleBefore(now)})
+	})
 	if err != nil {
 		return 0, err
 	}
@@ -622,7 +624,9 @@ func (s *Service) SweepAdmissionsAt(ctx context.Context, now time.Time) (int, er
 			slog.WarnContext(ctx, "admission sweep", "room", a.RoomID, "user", a.UserID, "err", err)
 		}
 	}
-	if _, err := s.db.Q.DeleteExpiredDeclines(ctx, expiredBefore(now)); err != nil {
+	if _, err := db.GuardValue(ctx, s.db, func(guarded *sqlc.Queries) (int64, error) {
+		return guarded.DeleteExpiredDeclines(ctx, expiredBefore(now))
+	}); err != nil {
 		return len(stale), err
 	}
 	return len(stale), nil

@@ -160,7 +160,9 @@ func (s *Service) sendCode(ctx context.Context, u sqlc.User, purpose, addr strin
 // checkCode spends one attempt of the user's live code for purpose and compares it.
 // Returns errCodeExpired when there is no usable code, errCodeInvalid on a mismatch.
 func (s *Service) checkCode(ctx context.Context, userID uuid.UUID, purpose, code string) error {
-	row, err := s.db.Q.TakeEmailCodeAttempt(ctx, sqlc.TakeEmailCodeAttemptParams{UserID: userID, Purpose: purpose, MaxAttempts: codeAttempts})
+	row, err := db.GuardValue(ctx, s.db, func(guarded *sqlc.Queries) (sqlc.EmailCode, error) {
+		return guarded.TakeEmailCodeAttempt(ctx, sqlc.TakeEmailCodeAttemptParams{UserID: userID, Purpose: purpose, MaxAttempts: codeAttempts})
+	})
 	if db.IsNotFound(err) {
 		// Same timing as a compared code: POST /api/auth/password/reset must not tell an
 		// existing account without a live code from an unknown address.
@@ -197,7 +199,7 @@ func (s *Service) SendVerification(ctx context.Context, userID uuid.UUID) error 
 	}
 	if !s.mailOn() {
 		if u.EmailVerifiedAt == nil {
-			if u, err = s.db.Q.SetEmailVerified(ctx, u.ID); err != nil {
+			if u, err = db.GuardValue(ctx, s.db, func(guarded *sqlc.Queries) (sqlc.User, error) { return guarded.SetEmailVerified(ctx, u.ID) }); err != nil {
 				return err
 			}
 			s.verified(ctx, u)

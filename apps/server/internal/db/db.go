@@ -65,9 +65,7 @@ func (d *DB) Close() { d.Pool.Close() }
 
 // Tx runs fn in a transaction; it commits when fn returns nil and rolls back otherwise.
 func (d *DB) Tx(ctx context.Context, fn func(q *sqlc.Queries) error) error {
-	return pgx.BeginFunc(ctx, d.Pool, func(tx pgx.Tx) error {
-		return fn(d.Q.WithTx(tx))
-	})
+	return d.TxRaw(ctx, func(q *sqlc.Queries, _ pgx.Tx) error { return fn(q) })
 }
 
 func newProvider(d *DB) (*goose.Provider, error) {

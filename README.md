@@ -17,7 +17,7 @@
   <img alt="Electron" src="https://img.shields.io/badge/desktop-Electron-47848F">
   <img alt="Go" src="https://img.shields.io/badge/server-Go-00ADD8">
   <img alt="LiveKit" src="https://img.shields.io/badge/media-LiveKit-ff6b35">
-  <a href="https://calab.ru/en/"><img alt="calab.ru" src="https://img.shields.io/badge/site-calab.ru-0A84FF"></a>
+  <a href="https://calab.io/en/"><img alt="calab.io" src="https://img.shields.io/badge/site-calab.io-0A84FF"></a>
 </p>
 
 <p align="center">
@@ -46,7 +46,7 @@ It is built for teams of up to 20–30 people in voice at once and up to 3 scree
 - **One-on-one calls** in direct messages, with ringing, camera and screen sharing.
 - **Meeting recordings** — the server records, GPTunneL transcribes; a card with the summary, audio and full transcript arrives in the room chat.
 - **Soundboard**, moderation (server mute, disconnect, move by drag and drop), statuses.
-- **Phone calls (SIP)** — connect your own SIP provider and dial a landline or mobile number from a voice room; the callee joins as a participant, everyone sees “Dialling → Ringing → On the call”. Provider settings, a call log, a “Place calls” permission that nobody has by default ([ADR-0046](docs/adr/0046-sip-telephony.md)).
+- **Phone calls (SIP)** — connect your own SIP provider and dial a landline or mobile number from a voice room; the callee joins as a participant, everyone sees “Dialling → Ringing → On the call”. Provider settings, a call log, a “Place calls” permission that nobody has by default. Business plan and Enterprise ([ADR-0046](docs/adr/0046-sip-telephony.md)).
 - **Temporary rooms** — a room for an hour or a day with a ready guest link and an optional calendar meeting: a Zoom replacement that disappears by itself ([ADR-0044](docs/adr/0044-temp-rooms.md)).
 
 ### 💬 Chat
@@ -111,7 +111,7 @@ A bot is a member with a token: the same REST and gateway as the app, rights thr
 ```ts
 import { Bot } from '@calaba/bot-sdk';
 
-const bot = new Bot(process.env.BOT_TOKEN, { server: 'https://app.calab.ru' });
+const bot = new Bot(process.env.BOT_TOKEN, { server: 'https://app.calab.io' });
 bot.on('message', (m) => bot.reply(m, m.content));
 await bot.start();
 ```
@@ -120,8 +120,9 @@ SDK — [`packages/bot-sdk`](packages/bot-sdk), examples — [`examples/bots`](e
 
 ### 🔒 Self-hosted and secure
 
+- **Identity 2.0** — workspace-scoped OIDC SSO, LDAPS lifecycle sync and OAuth/OIDC clients for “Sign in with Calab”, with explicit linking, consent and owner recovery. Requires a positive workspace grant plus Business or operator-approved on-prem Enterprise. Keycloak 26.4.7 RP evidence is available; live Entra ID, AD FS and Windows AD compatibility remains unverified. Setup and activation gates: [deployment guide](docs/06-deployment.md#identity-20-настройка-и-приёмка).
 - **Works everywhere**: UDP → ICE/TCP → TURN/UDP 443 → TURN/TLS 443 automatically; one public IP; tested behind VPNs.
-- Media — DTLS-SRTP; API — HTTPS/WSS, HSTS, strict CSP, `HttpOnly/SameSite=Strict` cookies for the web, argon2id, refresh-token rotation with reuse detection, rate limits. No end-to-end encryption yet: media goes through your own media server.
+- Media — DTLS-SRTP; API — HTTPS/WSS, HSTS, strict CSP, argon2id, refresh-token rotation with reuse detection, rate limits. Ordinary web refresh uses `HttpOnly/SameSite=Strict`; identity browser binding, scoped SSO refresh and root authorize resolver cookies use `Secure/HttpOnly/SameSite=Lax` for browser redirects ([cookie contract](docs/plans/release-2.0-identity.md#браузерный-consent-и-cookies)). No end-to-end encryption yet: media goes through your own media server.
 - Every right (rooms, boards, calendar) is checked on the server; the LiveKit grant mirrors the rights.
 - **Roles by function** — separate rights for boards, members, bots, integrations, journals, events and recordings; private and closed rooms and boards that even administrators can’t see ([ADR-0048](docs/adr/0048-roles-v2.md)).
 - **Docker Compose** with hardened containers, automatic Let’s Encrypt certificates, daily backups with verified restore, Prometheus metrics; PostgreSQL 17 or 18.
@@ -151,7 +152,7 @@ Ports: `80/443` TCP, `443/UDP`, `7881/TCP`, `7882/UDP`. The first registered use
 
 ### The app
 
-Builds for macOS, Windows and Linux are at [calab.ru](https://calab.ru/en/#download) and on your server at `https://app.<domain>/download/`; the web app is at `https://app.<domain>`. What’s new in each version — [CHANGELOG.md](CHANGELOG.md) (in Russian; the same text goes into [GitHub Releases](https://github.com/itrcz/calab/releases)).
+Builds for macOS, Windows and Linux are at [calab.io](https://calab.io/en/#download) and on your server at `https://app.<domain>/download/`; the web app is at `https://app.<domain>`. What’s new in each version — [CHANGELOG.md](CHANGELOG.md) (in Russian; the same text goes into [GitHub Releases](https://github.com/itrcz/calab/releases)).
 
 ### Development
 
@@ -162,7 +163,7 @@ cd apps/server && go run ./cmd/server serve       # API on :3000
 pnpm -F @calaba/desktop dev                       # Electron
 ```
 
-Checks: `make test` (Go + TS), `make test-integration`, visual tests per screen (`pnpm -F @calaba/desktop e2e:visual -g "<screen>"`). Architecture: [overview](docs/01-architecture.md) · [media](docs/02-media.md) · [network](docs/03-network.md) · [data model and rights](docs/04-data-model.md) · [realtime protocol](docs/05-realtime-protocol.md) · [design system](docs/08-design.md) · [ADR](docs/adr/).
+Checks: `make lint` from the repository root, `make test` (Go + TS), `make test-integration` with an isolated test environment. Visual suites are disabled by the owner; Identity 2.0 final acceptance commands are in [TESTING.md](TESTING.md#identity-20-final-acceptance). Architecture: [overview](docs/01-architecture.md) · [media](docs/02-media.md) · [network](docs/03-network.md) · [data model and rights](docs/04-data-model.md) · [realtime protocol](docs/05-realtime-protocol.md) · [design system](docs/08-design.md) · [ADR](docs/adr/).
 
 ## Plans
 
@@ -182,12 +183,13 @@ Checks: `make test` (Go + TS), `make test-integration`, visual tests per screen 
 | CalDAV sync | — | ✓ | ✓ | ✓ |
 | Task approvals | ✓ | ✓ | ✓ | ✓ |
 | Embedded web apps | ✓ | ✓ | ✓ | ✓ |
-| Telephony (SIP) | ✓ | ✓ | ✓ | ✓ |
+| Identity 2.0: SSO / directory / OAuth provider | — | — | positive workspace grant | positive grant + operator workspace allowlist |
+| Telephony (SIP) | — | — | ✓ | ✓ |
 | White-label | — | — | — | ✓ |
 | Support | — | support | priority | — |
 | Price | free | on request (**it@gptunnel.ai**) | on request (**it@gptunnel.ai**) | free for non-commercial use (BSL 1.1, “Powered by GPTunneL”); commercial licence on request |
 
-Free, Team and Business are cloud plans of a workspace ([ADR-0024](docs/adr/0024-plans-and-limits.md)); Enterprise is your own server with no plan limits. CalDAV belongs to a person: it works if any of their workspaces is on Team or above. Details — [calab.ru/en/#pricing](https://calab.ru/en/#pricing) and [COMMERCIAL-LICENSE.md](COMMERCIAL-LICENSE.md).
+Free, Team and Business are cloud plans of a workspace ([ADR-0024](docs/adr/0024-plans-and-limits.md)); Enterprise is your own server with no plan limits. CalDAV belongs to a person: it works if any of their workspaces is on Team or above. Details — [calab.io/en/#pricing](https://calab.io/en/#pricing) and [COMMERCIAL-LICENSE.md](COMMERCIAL-LICENSE.md).
 
 ## Licence
 

@@ -17,6 +17,8 @@ import {
   limitsFormFrom,
   limitsFromForm,
   planErrorNotice,
+  capMax,
+  clampToCap,
   planHas,
   planUsage,
   setPlanBody,
@@ -68,7 +70,7 @@ describe('preset locks (ADR-0024)', () => {
 describe('plan contact', () => {
   it('only mailto: and http(s)', () => {
     expect(contactHref('mailto:it@gptunnel.ai')).toBe('mailto:it@gptunnel.ai');
-    expect(contactHref(' https://calab.ru/buy ')).toBe('https://calab.ru/buy');
+    expect(contactHref(' https://calab.io/buy ')).toBe('https://calab.io/buy');
     expect(contactHref('javascript:alert(1)')).toBeNull();
     expect(contactHref('file:///etc/passwd')).toBeNull();
     expect(contactHref('')).toBeNull();
@@ -201,6 +203,45 @@ describe('admin CUSTOM form', () => {
     expect(setPlanBody({ plan: Plan.CUSTOM, limits: { ...limits, storageMb: 'x' }, validUntil: '', note: '' })).toEqual({ error: 'storageMb' });
     expect(validUntilFromInput('garbage')).toBeNull();
   });
+
+  it('ADR-0058 §5: the CUSTOM form carries checklists / board webhooks (new: checklists on, webhooks off)', () => {
+    const fresh = limitsFormFrom(Plan.FREE, undefined);
+    expect(fresh).toMatchObject({ checklistsDisabled: false, boardWebhooksDisabled: true });
+    const stored = create(PlanLimitsSchema, { checklistsDisabled: true, boardWebhooksDisabled: false });
+    expect(limitsFormFrom(Plan.CUSTOM, stored)).toMatchObject({ checklistsDisabled: true, boardWebhooksDisabled: false });
+    const body = setPlanBody({ plan: Plan.CUSTOM, limits: fresh, validUntil: '', note: '' });
+    // Saving the form without touching them does not switch webhooks on.
+    expect('body' in body && body.body.limits).toMatchObject({ checklistsDisabled: false, boardWebhooksDisabled: true });
+  });
+});
+
+describe('ADR-0058 §5: checklists and board webhooks by plan', () => {
+  const plan = (l: MessageInitShape<typeof PlanLimitsSchema>) => create(WorkspacePlanSchema, { plan: Plan.FREE, limits: l });
+  it('planHas reads the flags; the 409 PLAN_LIMIT texts name the plan', () => {
+    expect(planHas(plan({ checklistsDisabled: true }), 'checklists')).toBe(false);
+    expect(planHas(plan({ checklistsDisabled: true }), 'boardWebhooks')).toBe(true);
+    expect(planHas(plan({ boardWebhooksDisabled: true }), 'boardWebhooks')).toBe(false);
+    expect(planHas(undefined, 'boardWebhooks')).toBe(true);
+    const err = (msg: string) => new ApiError('ERROR_CODE_CONFLICT', msg, 409, undefined, { reason: 'PLAN_LIMIT', used: 0, limit: 0 });
+    expect(planErrorNotice(err('checklists is not included in the plan'), Plan.FREE)?.text).toBe(t('plan.checklistsLocked'));
+    expect(planErrorNotice(err('board_webhooks is not included in the plan'), Plan.TEAM)?.text).toBe(t('plan.boardWebhooksLocked'));
+  });
+});
+
+describe('ADR-0046 (owner 02.10): telephony is Business only', () => {
+  it('planHas, the 409 text and a new CUSTOM form without telephony', () => {
+    const plan = (l: MessageInitShape<typeof PlanLimitsSchema>) => create(WorkspacePlanSchema, { plan: Plan.TEAM, limits: l });
+    expect(planHas(plan({ telephonyDisabled: true }), 'telephony')).toBe(false);
+    expect(planHas(plan({}), 'telephony')).toBe(true);
+    expect(planHas(undefined, 'telephony')).toBe(true);
+    const err = new ApiError('ERROR_CODE_CONFLICT', 'telephony is not included in the plan', 409, undefined, { reason: 'PLAN_LIMIT', used: 0, limit: 0 });
+    expect(planErrorNotice(err, Plan.TEAM)?.text).toBe(t('plan.telephonyLocked'));
+    const fresh = limitsFormFrom(Plan.TEAM, undefined);
+    expect(fresh.telephonyDisabled).toBe(true);
+    expect(limitsFormFrom(Plan.CUSTOM, create(PlanLimitsSchema, { telephonyDisabled: false })).telephonyDisabled).toBe(false);
+    const body = setPlanBody({ plan: Plan.CUSTOM, limits: fresh, validUntil: '', note: '' });
+    expect('body' in body && body.body.limits?.telephonyDisabled).toBe(true);
+  });
 });
 
 describe('planUsage', () => {
@@ -215,5 +256,18 @@ describe('planUsage', () => {
     ];
     expect(planUsage(voice, [{ guest: false }, { guest: true }, { guest: false, bot: true }])).toEqual({ roomPeak: 3, streamPeak: 2, members: 2, bots: 1 });
     expect(planUsage([], [])).toEqual({ roomPeak: 0, streamPeak: 0, members: 0, bots: 0 });
+  });
+});
+
+describe('plan caps for workspace voice defaults (#42)', () => {
+  it('clampToCap = min(value, cap); 0 means no plan limit', () => {
+    expect(clampToCap(3, 1)).toBe(1);
+    expect(clampToCap(1, 3)).toBe(1);
+    expect(clampToCap(6, 0)).toBe(6);
+  });
+  it('capMax limits the selectable range', () => {
+    expect(capMax(10, 1)).toBe(1);
+    expect(capMax(10, 0)).toBe(10);
+    expect(capMax(10, 99)).toBe(10);
   });
 });

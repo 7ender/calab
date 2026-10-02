@@ -112,7 +112,7 @@ README / landing screenshots): «Команда Calab» with `общий`, `ди
 `Стендап`, `Переговорка` (Борис and Вера streaming, call started 12:40 before the visual-test
 clock); natural names and statuses; `общий` has a short dialogue with a 👍×2 reaction, a mention
 of Анна, a reply, a real screenshot (`assets/room-settings.jpg`, 1200×675) and a text preview
-of `https://calab.ru`; one unread message in `релизы`. Same user ids / logins as `data`, own
+of `https://calab.io`; one unread message in `релизы`. Same user ids / logins as `data`, own
 room / file ids (`MARKETING_IDS`). `assets/stream-slide.png` is the slide Вера shares
 (`startPublisher({ image })`).
 

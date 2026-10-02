@@ -6,6 +6,10 @@ describe('showBottomIsland', () => {
     expect(showBottomIsland(false)).toBe(true);
     expect(showBottomIsland(true)).toBe(false);
   });
+  it('is hidden on the Calendar / Boards tabs, call or not', () => {
+    expect(showBottomIsland(false, true)).toBe(false);
+    expect(showBottomIsland(true, true)).toBe(false);
+  });
 });
 
 describe('titleSlot', () => {

@@ -56,7 +56,7 @@ func TestJoinTakesOutOtherDevice(t *testing.T) {
 	join := func(room wsRoom, sid uuid.UUID) {
 		t.Helper()
 		if err := s.joinExclusive(ctx, uid, sid, func() error {
-			_, _, err := s.recordPending(ctx, room, uid, sid, admission{})
+			_, _, err := recordFixturePending(ctx, t, s, room, uid, sid, admission{})
 			return err
 		}); err != nil {
 			t.Fatal(err)

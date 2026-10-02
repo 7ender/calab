@@ -171,7 +171,7 @@ func (s *Service) updateView(w http.ResponseWriter, r *http.Request) error {
 	if req.GetShared() && !v.Shared && !acc.Bits.Has(perm.ManageBoard) {
 		return httpx.Forbidden("MANAGE_BOARD required for a shared view")
 	}
-	out, err := s.db.Q.UpdateBoardView(r.Context(), p)
+	out, err := db.GuardValue(r.Context(), s.db, func(guarded *sqlc.Queries) (sqlc.BoardView, error) { return guarded.UpdateBoardView(r.Context(), p) })
 	if err != nil {
 		return err
 	}
@@ -187,7 +187,9 @@ func (s *Service) deleteView(w http.ResponseWriter, r *http.Request) error {
 	if err != nil {
 		return err
 	}
-	if _, err := s.db.Q.DeleteBoardView(r.Context(), sqlc.DeleteBoardViewParams{ID: v.ID, BoardID: id}); err != nil {
+	if _, err := db.GuardValue(r.Context(), s.db, func(guarded *sqlc.Queries) (int64, error) {
+		return guarded.DeleteBoardView(r.Context(), sqlc.DeleteBoardViewParams{ID: v.ID, BoardID: id})
+	}); err != nil {
 		return err
 	}
 	if v.Shared {

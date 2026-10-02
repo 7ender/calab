@@ -3,10 +3,10 @@ import { RoomType } from '@calaba/protocol';
 /**
  * Voice rooms: joining and reading their chat without joining (docs/09 #14).
  *
- * A click on a voice room joins it (docs/08: one click, one action); the «чат» action (hover on
- * the row, «Открыть чат» in its context menu on the phone) only opens the room's text feed —
- * a call in another room stays as it is. The header of such a feed says «Вы не в голосе» and
- * offers «Войти в голос», which goes through the same `joinOutcome` as the row.
+ * A click on a voice room's row opens its chat and never joins (owner, 02.10); the row's «Войти»
+ * button (hover / focus on desktop, always on touch; hidden when the room is full) joins. A call in another
+ * room stays as it is until a join. The chat header of such a room says «Вы не в голосе» and
+ * offers «Войти в голос», which goes through the same `joinOutcome` as the row's button.
  */
 
 /** What «join this voice room» does: nothing (already in / no right), join, or «Комната заполнена». */
@@ -17,6 +17,15 @@ export function joinOutcome(o: { inRoom: boolean; canConnect: boolean; canMove: 
   // Moderators (MOVE_MEMBERS) may enter a full room; the server enforces the same rule.
   if (o.limit > 0 && o.people >= o.limit && !o.canMove) return 'full';
   return 'join';
+}
+
+/**
+ * The row's «Войти»: shown only when joining would succeed (not in the room, CONNECT, and the
+ * room is not full unless I may move members). Visible always on touch, otherwise on hover / focus,
+ * so the room name keeps the row width (docs/08).
+ */
+export function joinButton(o: { inRoom: boolean; canConnect: boolean; canMove: boolean; people: number; limit: number; touch: boolean }): { shown: boolean; always: boolean } {
+  return { shown: joinOutcome(o) === 'join', always: o.touch };
 }
 
 /** The open room is a voice room whose chat I read without being in its voice. */

@@ -202,7 +202,9 @@ func (h *Handlers) updateBackground(w http.ResponseWriter, r *http.Request) erro
 	if err != nil {
 		return err
 	}
-	updated, err := h.db.Q.RenameWorkspaceBackground(r.Context(), sqlc.RenameWorkspaceBackgroundParams{ID: cur.ID, WorkspaceID: wsID, Name: name})
+	updated, err := db.GuardValue(r.Context(), h.db, func(guarded *sqlc.Queries) (sqlc.WorkspaceBackground, error) {
+		return guarded.RenameWorkspaceBackground(r.Context(), sqlc.RenameWorkspaceBackgroundParams{ID: cur.ID, WorkspaceID: wsID, Name: name})
+	})
 	if db.IsNotFound(err) {
 		return httpx.NotFound("background")
 	}
@@ -227,7 +229,9 @@ func (h *Handlers) deleteBackground(w http.ResponseWriter, r *http.Request) erro
 	if err != nil {
 		return err
 	}
-	n, err := h.db.Q.DeleteWorkspaceBackground(r.Context(), sqlc.DeleteWorkspaceBackgroundParams{ID: cur.ID, WorkspaceID: wsID})
+	n, err := db.GuardValue(r.Context(), h.db, func(guarded *sqlc.Queries) (int64, error) {
+		return guarded.DeleteWorkspaceBackground(r.Context(), sqlc.DeleteWorkspaceBackgroundParams{ID: cur.ID, WorkspaceID: wsID})
+	})
 	if err != nil {
 		return err
 	}

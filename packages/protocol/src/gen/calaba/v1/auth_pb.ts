@@ -8,13 +8,15 @@ import type { Timestamp } from "@bufbuild/protobuf/wkt";
 import { file_google_protobuf_timestamp } from "@bufbuild/protobuf/wkt";
 import type { Me } from "./user_pb.js";
 import { file_calaba_v1_user } from "./user_pb.js";
+import type { SessionAuthority, WorkspaceAssurance, WorkspaceIdentityAccess } from "./identity_pb.js";
+import { file_calaba_v1_identity } from "./identity_pb.js";
 import type { Message } from "@bufbuild/protobuf";
 
 /**
  * Describes the file calaba/v1/auth.proto.
  */
 export const file_calaba_v1_auth: GenFile = /*@__PURE__*/
-  fileDesc("ChRjYWxhYmEvdjEvYXV0aC5wcm90bxIJY2FsYWJhLnYxIu0BCgdTZXNzaW9uEgoKAmlkGAEgASgJEhMKC2RldmljZV9uYW1lGAIgASgJEgoKAmlwGAMgASgJEhIKCnVzZXJfYWdlbnQYBCABKAkSLgoKY3JlYXRlZF9hdBgFIAEoCzIaLmdvb2dsZS5wcm90b2J1Zi5UaW1lc3RhbXASMAoMbGFzdF9zZWVuX2F0GAYgASgLMhouZ29vZ2xlLnByb3RvYnVmLlRpbWVzdGFtcBIuCgpleHBpcmVzX2F0GAcgASgLMhouZ29vZ2xlLnByb3RvYnVmLlRpbWVzdGFtcBIPCgdjdXJyZW50GAggASgIIrwBCgpBdXRoVG9rZW5zEhQKDGFjY2Vzc190b2tlbhgBIAEoCRI1ChFhY2Nlc3NfZXhwaXJlc19hdBgCIAEoCzIaLmdvb2dsZS5wcm90b2J1Zi5UaW1lc3RhbXASFQoNcmVmcmVzaF90b2tlbhgDIAEoCRI2ChJyZWZyZXNoX2V4cGlyZXNfYXQYBCABKAsyGi5nb29nbGUucHJvdG9idWYuVGltZXN0YW1wEhIKCnNlc3Npb25faWQYBSABKAkioQEKD1JlZ2lzdGVyUmVxdWVzdBINCgVlbWFpbBgBIAEoCRIQCghwYXNzd29yZBgCIAEoCRIUCgxkaXNwbGF5X25hbWUYAyABKAkSEwoLaW52aXRlX2NvZGUYBCABKAkSEwoLZGV2aWNlX25hbWUYBSABKAkSDgoGbG9jYWxlGAYgASgJEh0KFWNoZWNrX3NpbWlsYXJfYWNjb3VudBgHIAEoCCJtChBSZWdpc3RlclJlc3BvbnNlEiUKBnRva2VucxgBIAEoCzIVLmNhbGFiYS52MS5BdXRoVG9rZW5zEhkKAm1lGAIgASgLMg0uY2FsYWJhLnYxLk1lEhcKD3NpbWlsYXJfYWNjb3VudBgDIAEoCCJECgxMb2dpblJlcXVlc3QSDQoFZW1haWwYASABKAkSEAoIcGFzc3dvcmQYAiABKAkSEwoLZGV2aWNlX25hbWUYAyABKAkiUQoNTG9naW5SZXNwb25zZRIlCgZ0b2tlbnMYASABKAsyFS5jYWxhYmEudjEuQXV0aFRva2VucxIZCgJtZRgCIAEoCzINLmNhbGFiYS52MS5NZSInCg5SZWZyZXNoUmVxdWVzdBIVCg1yZWZyZXNoX3Rva2VuGAEgASgJIjgKD1JlZnJlc2hSZXNwb25zZRIlCgZ0b2tlbnMYASABKAsyFS5jYWxhYmEudjEuQXV0aFRva2VucyI8Cg1Mb2dvdXRSZXF1ZXN0EhQKDGFsbF9zZXNzaW9ucxgBIAEoCBIVCg1yZWZyZXNoX3Rva2VuGAIgASgJIjwKFExpc3RTZXNzaW9uc1Jlc3BvbnNlEiQKCHNlc3Npb25zGAEgAygLMhIuY2FsYWJhLnYxLlNlc3Npb24iIgoSVmVyaWZ5RW1haWxSZXF1ZXN0EgwKBGNvZGUYASABKAkiTgoTVmVyaWZ5RW1haWxSZXNwb25zZRIZCgJtZRgBIAEoCzINLmNhbGFiYS52MS5NZRIcChRqb2luZWRfd29ya3NwYWNlX2lkcxgCIAMoCSImChVGb3Jnb3RQYXNzd29yZFJlcXVlc3QSDQoFZW1haWwYASABKAkiMQoWRm9yZ290UGFzc3dvcmRSZXNwb25zZRIXCg9zaW1pbGFyX2FjY291bnQYASABKAgiRQoUUmVzZXRQYXNzd29yZFJlcXVlc3QSDQoFZW1haWwYASABKAkSDAoEY29kZRgCIAEoCRIQCghwYXNzd29yZBgDIAEoCUKXAQoNY29tLmNhbGFiYS52MUIJQXV0aFByb3RvUAFaNmdpdGh1Yi5jb20vY2FsYWJhL2NhbGFiYS9zZXJ2ZXIvZ2VuL2NhbGFiYS92MTtjYWxhYmF2MaICA0NYWKoCCUNhbGFiYS5WMcoCCUNhbGFiYVxWMeICFUNhbGFiYVxWMVxHUEJNZXRhZGF0YeoCCkNhbGFiYTo6VjFiBnByb3RvMw", [file_google_protobuf_timestamp, file_calaba_v1_user]);
+  fileDesc("ChRjYWxhYmEvdjEvYXV0aC5wcm90bxIJY2FsYWJhLnYxIp0CCgdTZXNzaW9uEgoKAmlkGAEgASgJEhMKC2RldmljZV9uYW1lGAIgASgJEgoKAmlwGAMgASgJEhIKCnVzZXJfYWdlbnQYBCABKAkSLgoKY3JlYXRlZF9hdBgFIAEoCzIaLmdvb2dsZS5wcm90b2J1Zi5UaW1lc3RhbXASMAoMbGFzdF9zZWVuX2F0GAYgASgLMhouZ29vZ2xlLnByb3RvYnVmLlRpbWVzdGFtcBIuCgpleHBpcmVzX2F0GAcgASgLMhouZ29vZ2xlLnByb3RvYnVmLlRpbWVzdGFtcBIuCglhdXRob3JpdHkYCSABKAsyGy5jYWxhYmEudjEuU2Vzc2lvbkF1dGhvcml0eRIPCgdjdXJyZW50GAggASgIIuwBCgpBdXRoVG9rZW5zEhQKDGFjY2Vzc190b2tlbhgBIAEoCRI1ChFhY2Nlc3NfZXhwaXJlc19hdBgCIAEoCzIaLmdvb2dsZS5wcm90b2J1Zi5UaW1lc3RhbXASFQoNcmVmcmVzaF90b2tlbhgDIAEoCRI2ChJyZWZyZXNoX2V4cGlyZXNfYXQYBCABKAsyGi5nb29nbGUucHJvdG9idWYuVGltZXN0YW1wEhIKCnNlc3Npb25faWQYBSABKAkSLgoJYXV0aG9yaXR5GAYgASgLMhsuY2FsYWJhLnYxLlNlc3Npb25BdXRob3JpdHkifgoTU1NPQ29tcGxldGVSZXNwb25zZRIlCgZ0b2tlbnMYASABKAsyFS5jYWxhYmEudjEuQXV0aFRva2VucxIwCglhc3N1cmFuY2UYAiABKAsyHS5jYWxhYmEudjEuV29ya3NwYWNlQXNzdXJhbmNlEg4KBnRlc3RlZBgDIAEoCCKhAQoPUmVnaXN0ZXJSZXF1ZXN0Eg0KBWVtYWlsGAEgASgJEhAKCHBhc3N3b3JkGAIgASgJEhQKDGRpc3BsYXlfbmFtZRgDIAEoCRITCgtpbnZpdGVfY29kZRgEIAEoCRITCgtkZXZpY2VfbmFtZRgFIAEoCRIOCgZsb2NhbGUYBiABKAkSHQoVY2hlY2tfc2ltaWxhcl9hY2NvdW50GAcgASgIIm0KEFJlZ2lzdGVyUmVzcG9uc2USJQoGdG9rZW5zGAEgASgLMhUuY2FsYWJhLnYxLkF1dGhUb2tlbnMSGQoCbWUYAiABKAsyDS5jYWxhYmEudjEuTWUSFwoPc2ltaWxhcl9hY2NvdW50GAMgASgIIkQKDExvZ2luUmVxdWVzdBINCgVlbWFpbBgBIAEoCRIQCghwYXNzd29yZBgCIAEoCRITCgtkZXZpY2VfbmFtZRgDIAEoCSJRCg1Mb2dpblJlc3BvbnNlEiUKBnRva2VucxgBIAEoCzIVLmNhbGFiYS52MS5BdXRoVG9rZW5zEhkKAm1lGAIgASgLMg0uY2FsYWJhLnYxLk1lIicKDlJlZnJlc2hSZXF1ZXN0EhUKDXJlZnJlc2hfdG9rZW4YASABKAkiOAoPUmVmcmVzaFJlc3BvbnNlEiUKBnRva2VucxgBIAEoCzIVLmNhbGFiYS52MS5BdXRoVG9rZW5zIjwKDUxvZ291dFJlcXVlc3QSFAoMYWxsX3Nlc3Npb25zGAEgASgIEhUKDXJlZnJlc2hfdG9rZW4YAiABKAkiPAoUTGlzdFNlc3Npb25zUmVzcG9uc2USJAoIc2Vzc2lvbnMYASADKAsyEi5jYWxhYmEudjEuU2Vzc2lvbiIiChJWZXJpZnlFbWFpbFJlcXVlc3QSDAoEY29kZRgBIAEoCSJOChNWZXJpZnlFbWFpbFJlc3BvbnNlEhkKAm1lGAEgASgLMg0uY2FsYWJhLnYxLk1lEhwKFGpvaW5lZF93b3Jrc3BhY2VfaWRzGAIgAygJIiYKFUZvcmdvdFBhc3N3b3JkUmVxdWVzdBINCgVlbWFpbBgBIAEoCSIxChZGb3Jnb3RQYXNzd29yZFJlc3BvbnNlEhcKD3NpbWlsYXJfYWNjb3VudBgBIAEoCCJFChRSZXNldFBhc3N3b3JkUmVxdWVzdBINCgVlbWFpbBgBIAEoCRIMCgRjb2RlGAIgASgJEhAKCHBhc3N3b3JkGAMgASgJIokBChFTU09GaW5pc2hSZXNwb25zZRIlCgZ0b2tlbnMYASABKAsyFS5jYWxhYmEudjEuQXV0aFRva2VucxIyCgZhY2Nlc3MYAiABKAsyIi5jYWxhYmEudjEuV29ya3NwYWNlSWRlbnRpdHlBY2Nlc3MSGQoCbWUYAyABKAsyDS5jYWxhYmEudjEuTWVClwEKDWNvbS5jYWxhYmEudjFCCUF1dGhQcm90b1ABWjZnaXRodWIuY29tL2NhbGFiYS9jYWxhYmEvc2VydmVyL2dlbi9jYWxhYmEvdjE7Y2FsYWJhdjGiAgNDWFiqAglDYWxhYmEuVjHKAglDYWxhYmFcVjHiAhVDYWxhYmFcVjFcR1BCTWV0YWRhdGHqAgpDYWxhYmE6OlYxYgZwcm90bzM", [file_google_protobuf_timestamp, file_calaba_v1_user, file_calaba_v1_identity]);
 
 /**
  * A login session = one device. Each session has its own rotating refresh token.
@@ -56,6 +58,11 @@ export type Session = Message<"calaba.v1.Session"> & {
    * @generated from field: google.protobuf.Timestamp expires_at = 7;
    */
   expiresAt?: Timestamp | undefined;
+
+  /**
+   * @generated from field: calaba.v1.SessionAuthority authority = 9;
+   */
+  authority?: SessionAuthority | undefined;
 
   /**
    * true for the session that made the request
@@ -106,6 +113,11 @@ export type AuthTokens = Message<"calaba.v1.AuthTokens"> & {
    * @generated from field: string session_id = 5;
    */
   sessionId: string;
+
+  /**
+   * @generated from field: calaba.v1.SessionAuthority authority = 6;
+   */
+  authority?: SessionAuthority | undefined;
 };
 
 /**
@@ -114,6 +126,35 @@ export type AuthTokens = Message<"calaba.v1.AuthTokens"> & {
  */
 export const AuthTokensSchema: GenMessage<AuthTokens> = /*@__PURE__*/
   messageDesc(file_calaba_v1_auth, 1);
+
+/**
+ * First-party SSO completion preserves proof/test results without widening authority.
+ *
+ * @generated from message calaba.v1.SSOCompleteResponse
+ */
+export type SSOCompleteResponse = Message<"calaba.v1.SSOCompleteResponse"> & {
+  /**
+   * @generated from field: calaba.v1.AuthTokens tokens = 1;
+   */
+  tokens?: AuthTokens | undefined;
+
+  /**
+   * @generated from field: calaba.v1.WorkspaceAssurance assurance = 2;
+   */
+  assurance?: WorkspaceAssurance | undefined;
+
+  /**
+   * @generated from field: bool tested = 3;
+   */
+  tested: boolean;
+};
+
+/**
+ * Describes the message calaba.v1.SSOCompleteResponse.
+ * Use `create(SSOCompleteResponseSchema)` to create a new message.
+ */
+export const SSOCompleteResponseSchema: GenMessage<SSOCompleteResponse> = /*@__PURE__*/
+  messageDesc(file_calaba_v1_auth, 2);
 
 /**
  * POST /api/auth/register
@@ -178,7 +219,7 @@ export type RegisterRequest = Message<"calaba.v1.RegisterRequest"> & {
  * Use `create(RegisterRequestSchema)` to create a new message.
  */
 export const RegisterRequestSchema: GenMessage<RegisterRequest> = /*@__PURE__*/
-  messageDesc(file_calaba_v1_auth, 2);
+  messageDesc(file_calaba_v1_auth, 3);
 
 /**
  * @generated from message calaba.v1.RegisterResponse
@@ -208,7 +249,7 @@ export type RegisterResponse = Message<"calaba.v1.RegisterResponse"> & {
  * Use `create(RegisterResponseSchema)` to create a new message.
  */
 export const RegisterResponseSchema: GenMessage<RegisterResponse> = /*@__PURE__*/
-  messageDesc(file_calaba_v1_auth, 3);
+  messageDesc(file_calaba_v1_auth, 4);
 
 /**
  * POST /api/auth/login
@@ -237,7 +278,7 @@ export type LoginRequest = Message<"calaba.v1.LoginRequest"> & {
  * Use `create(LoginRequestSchema)` to create a new message.
  */
 export const LoginRequestSchema: GenMessage<LoginRequest> = /*@__PURE__*/
-  messageDesc(file_calaba_v1_auth, 4);
+  messageDesc(file_calaba_v1_auth, 5);
 
 /**
  * @generated from message calaba.v1.LoginResponse
@@ -259,7 +300,7 @@ export type LoginResponse = Message<"calaba.v1.LoginResponse"> & {
  * Use `create(LoginResponseSchema)` to create a new message.
  */
 export const LoginResponseSchema: GenMessage<LoginResponse> = /*@__PURE__*/
-  messageDesc(file_calaba_v1_auth, 5);
+  messageDesc(file_calaba_v1_auth, 6);
 
 /**
  * POST /api/auth/refresh (no access token needed).
@@ -281,7 +322,7 @@ export type RefreshRequest = Message<"calaba.v1.RefreshRequest"> & {
  * Use `create(RefreshRequestSchema)` to create a new message.
  */
 export const RefreshRequestSchema: GenMessage<RefreshRequest> = /*@__PURE__*/
-  messageDesc(file_calaba_v1_auth, 6);
+  messageDesc(file_calaba_v1_auth, 7);
 
 /**
  * @generated from message calaba.v1.RefreshResponse
@@ -298,7 +339,7 @@ export type RefreshResponse = Message<"calaba.v1.RefreshResponse"> & {
  * Use `create(RefreshResponseSchema)` to create a new message.
  */
 export const RefreshResponseSchema: GenMessage<RefreshResponse> = /*@__PURE__*/
-  messageDesc(file_calaba_v1_auth, 7);
+  messageDesc(file_calaba_v1_auth, 8);
 
 /**
  * POST /api/auth/logout. Identifies the session by the access token (Authorization) or,
@@ -324,7 +365,7 @@ export type LogoutRequest = Message<"calaba.v1.LogoutRequest"> & {
  * Use `create(LogoutRequestSchema)` to create a new message.
  */
 export const LogoutRequestSchema: GenMessage<LogoutRequest> = /*@__PURE__*/
-  messageDesc(file_calaba_v1_auth, 8);
+  messageDesc(file_calaba_v1_auth, 9);
 
 /**
  * GET /api/me/sessions
@@ -343,7 +384,7 @@ export type ListSessionsResponse = Message<"calaba.v1.ListSessionsResponse"> & {
  * Use `create(ListSessionsResponseSchema)` to create a new message.
  */
 export const ListSessionsResponseSchema: GenMessage<ListSessionsResponse> = /*@__PURE__*/
-  messageDesc(file_calaba_v1_auth, 9);
+  messageDesc(file_calaba_v1_auth, 10);
 
 /**
  * ---- Email verification and password reset (ADR-0023) ----
@@ -374,7 +415,7 @@ export type VerifyEmailRequest = Message<"calaba.v1.VerifyEmailRequest"> & {
  * Use `create(VerifyEmailRequestSchema)` to create a new message.
  */
 export const VerifyEmailRequestSchema: GenMessage<VerifyEmailRequest> = /*@__PURE__*/
-  messageDesc(file_calaba_v1_auth, 10);
+  messageDesc(file_calaba_v1_auth, 11);
 
 /**
  * @generated from message calaba.v1.VerifyEmailResponse
@@ -399,7 +440,7 @@ export type VerifyEmailResponse = Message<"calaba.v1.VerifyEmailResponse"> & {
  * Use `create(VerifyEmailResponseSchema)` to create a new message.
  */
 export const VerifyEmailResponseSchema: GenMessage<VerifyEmailResponse> = /*@__PURE__*/
-  messageDesc(file_calaba_v1_auth, 11);
+  messageDesc(file_calaba_v1_auth, 12);
 
 /**
  * POST /api/auth/password/forgot (no auth) → 200 ForgotPasswordResponse, whether or not the
@@ -419,7 +460,7 @@ export type ForgotPasswordRequest = Message<"calaba.v1.ForgotPasswordRequest"> &
  * Use `create(ForgotPasswordRequestSchema)` to create a new message.
  */
 export const ForgotPasswordRequestSchema: GenMessage<ForgotPasswordRequest> = /*@__PURE__*/
-  messageDesc(file_calaba_v1_auth, 12);
+  messageDesc(file_calaba_v1_auth, 13);
 
 /**
  * @generated from message calaba.v1.ForgotPasswordResponse
@@ -441,7 +482,7 @@ export type ForgotPasswordResponse = Message<"calaba.v1.ForgotPasswordResponse">
  * Use `create(ForgotPasswordResponseSchema)` to create a new message.
  */
 export const ForgotPasswordResponseSchema: GenMessage<ForgotPasswordResponse> = /*@__PURE__*/
-  messageDesc(file_calaba_v1_auth, 13);
+  messageDesc(file_calaba_v1_auth, 14);
 
 /**
  * POST /api/auth/password/reset (no auth) → 204. Sets the new password, marks the email
@@ -473,5 +514,36 @@ export type ResetPasswordRequest = Message<"calaba.v1.ResetPasswordRequest"> & {
  * Use `create(ResetPasswordRequestSchema)` to create a new message.
  */
 export const ResetPasswordRequestSchema: GenMessage<ResetPasswordRequest> = /*@__PURE__*/
-  messageDesc(file_calaba_v1_auth, 14);
+  messageDesc(file_calaba_v1_auth, 15);
+
+/**
+ * Session credentials are returned only to the bound initiating client.
+ *
+ * @generated from message calaba.v1.SSOFinishResponse
+ */
+export type SSOFinishResponse = Message<"calaba.v1.SSOFinishResponse"> & {
+  /**
+   * @generated from field: calaba.v1.AuthTokens tokens = 1;
+   */
+  tokens?: AuthTokens | undefined;
+
+  /**
+   * @generated from field: calaba.v1.WorkspaceIdentityAccess access = 2;
+   */
+  access?: WorkspaceIdentityAccess | undefined;
+
+  /**
+   * restricted profile for workspace_sso/recovery
+   *
+   * @generated from field: calaba.v1.Me me = 3;
+   */
+  me?: Me | undefined;
+};
+
+/**
+ * Describes the message calaba.v1.SSOFinishResponse.
+ * Use `create(SSOFinishResponseSchema)` to create a new message.
+ */
+export const SSOFinishResponseSchema: GenMessage<SSOFinishResponse> = /*@__PURE__*/
+  messageDesc(file_calaba_v1_auth, 16);
 

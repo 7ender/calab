@@ -8,6 +8,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/calaba/calaba/server/internal/identitypolicy"
 	"github.com/golang-jwt/jwt/v5"
 	"github.com/google/uuid"
 )
@@ -37,8 +38,19 @@ func NewTokens(secret []byte, ttl time.Duration) *Tokens {
 // Issue returns a signed access token and its expiry. refreshGen is the session's current
 // refresh generation (0 = none).
 func (t *Tokens) Issue(userID, sessionID uuid.UUID, refreshGen int64) (string, time.Time, error) {
+	return t.IssueUntil(userID, sessionID, refreshGen, time.Time{})
+}
+
+// IssueUntil caps credentials at the authoritative session deadline.
+func (t *Tokens) IssueUntil(userID, sessionID uuid.UUID, refreshGen int64, deadline time.Time) (string, time.Time, error) {
 	now := t.now()
 	exp := now.Add(t.ttl)
+	if !deadline.IsZero() && deadline.Before(exp) {
+		exp = deadline
+	}
+	if !now.Before(exp) {
+		return "", exp, ErrInvalidToken
+	}
 	tok := jwt.NewWithClaims(jwt.SigningMethodHS256, Claims{
 		SessionID:  sessionID.String(),
 		RefreshGen: refreshGen,
@@ -55,7 +67,9 @@ func (t *Tokens) Issue(userID, sessionID uuid.UUID, refreshGen int64) (string, t
 
 // Identity is the authenticated principal of a request.
 type Identity struct {
-	UserID uuid.UUID
+	// Principal is loaded from the session row, never from bearer claims.
+	Principal identitypolicy.Principal
+	UserID    uuid.UUID
 	// SessionID is the auth session (device). For a bot it is the id of its current token
 	// (bots.token_id, ADR-0031): one "device", revoked together with the token.
 	SessionID uuid.UUID

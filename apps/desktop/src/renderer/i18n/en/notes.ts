@@ -13,7 +13,6 @@ export const enNotes: DictShape<typeof ruNotes> = {
   'notes.rename': 'Rename',
   'notes.changeEmoji': 'Change emoji',
   'notes.removeEmoji': 'Remove emoji',
-  'notes.delete': 'Delete shelf',
   'notes.deleteTitle': 'Delete the “{name}” shelf?',
   'notes.deleteConfirm': 'All messages and files on the shelf will be deleted. Copies forwarded from it to other chats stay.',
   'notes.empty': 'Keep messages and files here for yourself',

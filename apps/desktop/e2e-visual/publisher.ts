@@ -54,7 +54,7 @@ export async function startPublisher(args: {
   // A viewer who annotates has SPEAK (the microphone source) like any member (ADR-0028).
   at.addGrant({ roomJoin: true, room: `${livekitRoomPrefix()}${args.roomId}`, canPublish: true, canSubscribe: args.data === true, canPublishData: true });
   const token = await at.toJwt();
-  const browser: Browser = await chromium.launch({ args: ['--mute-audio', '--autoplay-policy=no-user-gesture-required'] });
+  const browser: Browser = await chromium.launch({ args: ['--mute-audio', '--autoplay-policy=no-user-gesture-required', '--allow-loopback-in-peer-connection', '--disable-features=WebRtcHideLocalIpsWithMdns'] });
   const page = await browser.newPage();
   const umd = createRequire(import.meta.url).resolve('livekit-client');
   await page.addScriptTag({ path: umd.replace(/[^/]+$/, 'livekit-client.umd.js') });

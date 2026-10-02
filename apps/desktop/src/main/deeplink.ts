@@ -1,6 +1,7 @@
 import { app } from 'electron';
 import { IPC } from '../shared/ipc';
 import { getMainWindow, showMainWindow } from './windows';
+import { isSsoDeepLink } from './ssoHandoff';
 
 /**
  * Deep links: `calab://join/<code>` (workspace invite, docs/04) and `calab://r/<code>` (room link,
@@ -12,6 +13,12 @@ export const PROTOCOLS = ['calab', 'calaba'] as const;
 const isDeepLink = (s: string): boolean => PROTOCOLS.some((p) => s.startsWith(`${p}://`));
 
 let pending: string | null = null;
+let ssoHandler: ((url: string) => Promise<unknown>) | null = null;
+
+/** Main-only hook. Reserved SSO links are dropped when no broker is installed. */
+export function setSsoDeepLinkHandler(handler: ((url: string) => Promise<unknown>) | null): void {
+  ssoHandler = handler;
+}
 
 export function registerProtocolClient(): void {
   if (process.defaultApp && process.argv.length >= 2 && process.argv[1]) {
@@ -27,6 +34,11 @@ export function findDeepLink(argv: readonly string[]): string | null {
 }
 
 export function handleDeepLink(url: string): void {
+  if (isSsoDeepLink(url)) {
+    // Never queue/forward callback tickets, including malformed or unknown flows.
+    try { void ssoHandler?.(url).catch(() => undefined); } catch { /* No raw callback logging. */ }
+    return;
+  }
   if (!isDeepLink(url) || url.length > 512) return;
   const win = getMainWindow();
   if (win && !win.webContents.isLoading()) {

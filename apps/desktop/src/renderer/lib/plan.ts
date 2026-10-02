@@ -1,5 +1,5 @@
 import { Plan, ScreenSharePreset, SCREEN_SHARE_PRESETS, type ConcreteScreenSharePreset, type PlanLimits, type WorkspacePlan } from '@calaba/protocol';
-import { t, type MessageKey } from '../i18n';
+import { plural, t, type MessageKey, type PluralKey } from '../i18n';
 import { fmt } from './format';
 
 /**
@@ -44,11 +44,21 @@ export const PLAN_LABEL: Record<Plan, MessageKey> = {
   [Plan.ENTERPRISE]: 'plan.name.enterprise',
 };
 
-/** Plan features that are not part of every plan (CalDAV, musician mode — ADR-0052: Team and above). */
-export type PlanFeature = 'caldav' | 'musician';
+/**
+ * Plan features that are not part of every plan: CalDAV, musician mode (ADR-0052), task
+ * checklists — Team and above; board webhooks (ADR-0058 §5) and telephony SIP (ADR-0046, owner
+ * 02.10) — Business only.
+ */
+export type PlanFeature = 'caldav' | 'musician' | 'checklists' | 'boardWebhooks' | 'telephony';
 
 /** The «disabled» flag of PlanLimits behind each feature. */
-const DISABLED_FLAG = { caldav: 'caldavDisabled', musician: 'musicianDisabled' } as const satisfies Record<PlanFeature, keyof PlanLimits>;
+const DISABLED_FLAG = {
+  caldav: 'caldavDisabled',
+  musician: 'musicianDisabled',
+  checklists: 'checklistsDisabled',
+  boardWebhooks: 'boardWebhooksDisabled',
+  telephony: 'telephonyDisabled',
+} as const satisfies Record<PlanFeature, keyof PlanLimits>;
 
 /**
  * Is the feature part of the plan? PlanLimits carries «disabled» flags, so an absent plan (an older
@@ -184,10 +194,15 @@ export function planErrorNotice(err: unknown, plan: Plan): PlanNotice | null {
     if (/\bvoice\b/i.test(msg)) return { text: t('plan.paidOnly'), contact: true };
     // CalDAV is a feature, not a count (ADR-0024, 30.09): used = limit = 0.
     if (/caldav/i.test(msg)) return { text: t('plan.caldavLocked'), contact: true };
+    // Board webhooks — Business only, checklists — Team and above (ADR-0058 §5): features too.
+    if (/webhook/i.test(msg)) return { text: t('plan.boardWebhooksLocked'), contact: true };
+    if (/checklist/i.test(msg)) return { text: t('plan.checklistsLocked'), contact: true };
+    // Telephony SIP — Business only (ADR-0046, owner 02.10).
+    if (/telephony/i.test(msg)) return { text: t('plan.telephonyLocked'), contact: true };
     if (/\bmembers?\b/i.test(msg)) return { text: t('plan.membersFull', { plan: t(PLAN_LABEL[plan]), n }), contact: true };
     if (/\bboards?\b/i.test(msg)) return { text: t('plan.boardsFull', { plan: t(PLAN_LABEL[plan]), n }), contact: true };
-    const key: MessageKey = /\bbots?\b/i.test(msg) ? 'bots.planLimit' : /pack/i.test(msg) ? 'stk.planPacks' : 'stk.planStickers';
-    return { text: t(key, { n }), contact: true };
+    const key: PluralKey = /\bbots?\b/i.test(msg) ? 'bots.planLimit' : /pack/i.test(msg) ? 'stk.planPacks' : 'stk.planStickers';
+    return { text: plural(key, n), contact: true };
   }
   // A notes shelf over the uploader's personal quota (ADR-0039 §5): nothing to buy, no «Связаться».
   if (e.code === 'ERROR_CODE_FILE_QUOTA_EXCEEDED' && x.reason === 'PERSONAL_QUOTA' && x.used !== undefined && x.limit !== undefined) {
@@ -217,6 +232,10 @@ export interface LimitsForm {
   stickerPacks: string;
   /** A tier (8 | 16 | 32 | 64) or 0 = no cap. */
   audioTierMaxKbps: number;
+  /** Feature flags of the plan (ADR-0058 §5, ADR-0046): checklists off, board webhooks off, telephony off. */
+  checklistsDisabled: boolean;
+  boardWebhooksDisabled: boolean;
+  telephonyDisabled: boolean;
 }
 
 /**
@@ -237,8 +256,18 @@ export function limitsFormFrom(plan: Plan, limits: PlanLimits | undefined): Limi
     bots: String(src ? src.bots : FREE_LIMITS.bots),
     stickerPacks: String(src ? src.stickerPacks : FREE_LIMITS.stickerPacks),
     audioTierMaxKbps: src ? src.audioTierMaxKbps : FREE_LIMITS.audioTierMaxKbps,
+    // ADR-0058 §5: a new CUSTOM plan has checklists and no board webhooks (the stored flags else).
+    checklistsDisabled: src ? src.checklistsDisabled : CUSTOM_DEFAULT_FLAGS.checklistsDisabled,
+    boardWebhooksDisabled: src ? src.boardWebhooksDisabled : CUSTOM_DEFAULT_FLAGS.boardWebhooksDisabled,
+    telephonyDisabled: src ? src.telephonyDisabled : CUSTOM_DEFAULT_FLAGS.telephonyDisabled,
   };
 }
+
+/**
+ * The feature flags a CUSTOM plan starts with: checklists on, board webhooks off (ADR-0058 §5),
+ * telephony off (ADR-0046: Business only) — the server's CustomBase.
+ */
+export const CUSTOM_DEFAULT_FLAGS = { checklistsDisabled: false, boardWebhooksDisabled: true, telephonyDisabled: true } as const;
 
 /** Upper bounds of the numeric fields (sanity, the server validates too). */
 const MAX: Record<'roomMembers' | 'streamMaxFps' | 'cameraMaxFps' | 'streamsPerRoom' | 'storageMb' | 'members' | 'bots' | 'stickerPacks', number> = {
@@ -266,6 +295,9 @@ export interface PlanLimitsInit {
   bots: number;
   stickerPacks: number;
   audioTierMaxKbps: number;
+  checklistsDisabled: boolean;
+  boardWebhooksDisabled: boolean;
+  telephonyDisabled: boolean;
 }
 
 /**
@@ -293,6 +325,9 @@ export function limitsFromForm(f: LimitsForm): { limits: PlanLimitsInit } | { er
       bots: out.bots ?? 0,
       stickerPacks: out.stickerPacks ?? 0,
       audioTierMaxKbps: f.audioTierMaxKbps,
+      checklistsDisabled: f.checklistsDisabled,
+      boardWebhooksDisabled: f.boardWebhooksDisabled,
+      telephonyDisabled: f.telephonyDisabled,
     },
   };
 }
@@ -362,4 +397,14 @@ export function planUsage(
   }
   const peak = (m: Map<string, number>): number => Math.max(0, ...m.values());
   return { roomPeak: peak(people), streamPeak: peak(streams), members: members.filter((m) => !m.guest).length, bots: members.filter((m) => m.bot).length };
+}
+
+/** min(value, cap); cap 0 = no plan limit. */
+export function clampToCap(value: number, cap: number): number {
+  return cap > 0 ? Math.min(value, cap) : value;
+}
+
+/** Highest selectable value of a count select under the plan cap (0 = no plan limit). */
+export function capMax(max: number, cap: number): number {
+  return cap > 0 ? Math.min(max, cap) : max;
 }

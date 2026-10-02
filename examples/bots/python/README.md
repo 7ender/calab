@@ -7,7 +7,7 @@ twice a second; Ctrl+C disconnects and calls `POST /api/rooms/{id}/voice/leave`.
 ```sh
 python3 -m venv .venv && . .venv/bin/activate
 pip install -r requirements.txt
-BOT_TOKEN=calab_bot_… VOICE_ROOM_ID=<room id> [CALAB_SERVER=https://app.calab.ru] python voice_listen.py
+BOT_TOKEN=calab_bot_… VOICE_ROOM_ID=<room id> [CALAB_SERVER=https://app.calab.io] python voice_listen.py
 ```
 
 Needs `CONNECT` in the room. To speak, publish an `rtc.AudioSource(48000, 1)` track

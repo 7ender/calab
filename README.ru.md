@@ -17,7 +17,7 @@
   <img alt="Electron" src="https://img.shields.io/badge/desktop-Electron-47848F">
   <img alt="Go" src="https://img.shields.io/badge/server-Go-00ADD8">
   <img alt="LiveKit" src="https://img.shields.io/badge/media-LiveKit-ff6b35">
-  <a href="https://calab.ru/ru/"><img alt="calab.ru" src="https://img.shields.io/badge/site-calab.ru-0A84FF"></a>
+  <a href="https://calab.io/ru/"><img alt="calab.io" src="https://img.shields.io/badge/site-calab.io-0A84FF"></a>
 </p>
 
 <p align="center">
@@ -46,7 +46,7 @@ Calab — мессенджер для команды, в котором глав
 - **Звонки один на один** в личных сообщениях — с рингтоном, камерой и показом экрана.
 - **Записи встреч** — запись ведёт сервер, расшифровку делает GPTunneL; в чат комнаты приходит карточка с саммари, аудио и полным транскриптом.
 - **Саундборд**, модерация (серверный mute, отключение, перемещение перетаскиванием), статусы.
-- **Звонки на телефон (SIP)** — подключите своего SIP-провайдера и набирайте городской или мобильный номер из голосовой комнаты; абонент входит участником, все видят «Набор → Идёт вызов → На связи». Настройки провайдера, журнал звонков, право «Звонить на номера», которого по умолчанию нет ни у кого ([ADR-0046](docs/adr/0046-sip-telephony.md)).
+- **Звонки на телефон (SIP)** — подключите своего SIP-провайдера и набирайте городской или мобильный номер из голосовой комнаты; абонент входит участником, все видят «Набор → Идёт вызов → На связи». Настройки провайдера, журнал звонков, право «Звонить на номера», которого по умолчанию нет ни у кого. Тариф Business и Enterprise ([ADR-0046](docs/adr/0046-sip-telephony.md)).
 - **Временные комнаты** — комната на час или на день с готовой гостевой ссылкой и встречей в календаре по желанию: замена Zoom, которая исчезает сама ([ADR-0044](docs/adr/0044-temp-rooms.md)).
 
 ### 💬 Чат
@@ -111,7 +111,7 @@ Calab — мессенджер для команды, в котором глав
 ```ts
 import { Bot } from '@calaba/bot-sdk';
 
-const bot = new Bot(process.env.BOT_TOKEN, { server: 'https://app.calab.ru' });
+const bot = new Bot(process.env.BOT_TOKEN, { server: 'https://app.calab.io' });
 bot.on('message', (m) => bot.reply(m, m.content));
 await bot.start();
 ```
@@ -151,7 +151,7 @@ infra/docker/deploy.sh                            # Caddy, LiveKit, API, Postgre
 
 ### Приложение
 
-Сборки для macOS, Windows и Linux — на [calab.ru](https://calab.ru/ru/#download) и на вашем сервере по адресу `https://app.<домен>/download/`; веб-версия — `https://app.<домен>`. Что нового в каждой версии — [CHANGELOG.md](CHANGELOG.md) (тот же текст попадает в [GitHub Releases](https://github.com/itrcz/calab/releases)).
+Сборки для macOS, Windows и Linux — на [calab.io](https://calab.io/ru/#download) и на вашем сервере по адресу `https://app.<домен>/download/`; веб-версия — `https://app.<домен>`. Что нового в каждой версии — [CHANGELOG.md](CHANGELOG.md) (тот же текст попадает в [GitHub Releases](https://github.com/itrcz/calab/releases)).
 
 ### Разработка
 
@@ -180,11 +180,12 @@ pnpm -F @calaba/desktop dev                       # Electron
 | Доски задач | 3 | 30 | 50 | без ограничения |
 | Календарь | ✓ | ✓ | ✓ | ✓ |
 | CalDAV | — | ✓ | ✓ | ✓ |
+| Телефония (SIP) | — | — | ✓ | ✓ |
 | On-prem (свой сервер) | — | — | — | ✓ |
 | Поддержка | — | поддержка | приоритетная | ✓ |
 | Цена | бесплатно | по запросу (**it@gptunnel.ai**) | по запросу (**it@gptunnel.ai**) | бесплатно для некоммерческого использования (BSL 1.1, «Powered by GPTunneL»); коммерческая лицензия — по запросу |
 
-Free, Team и Business — облачные тарифы пространства ([ADR-0024](docs/adr/0024-plans-and-limits.md)); Enterprise — Calab на вашем собственном сервере (on-prem), без ограничений. Подробности — [calab.ru/ru/#pricing](https://calab.ru/ru/#pricing) и [COMMERCIAL-LICENSE.md](COMMERCIAL-LICENSE.md).
+Free, Team и Business — облачные тарифы пространства ([ADR-0024](docs/adr/0024-plans-and-limits.md)); Enterprise — Calab на вашем собственном сервере (on-prem), без ограничений. Подробности — [calab.io/ru/#pricing](https://calab.io/ru/#pricing) и [COMMERCIAL-LICENSE.md](COMMERCIAL-LICENSE.md).
 
 ## Лицензия
 

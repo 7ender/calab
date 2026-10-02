@@ -47,7 +47,7 @@ export const zhPeople: DictShape<typeof enPeople> = {
   'people.menu.renameSelf': '修改昵称',
   'people.menu.promote': '设为成员',
   'people.menu.removeGuest': '移除访客',
-  'people.menu.kick': '移出工作区',
+  'people.menu.kick': '移出',
   'people.menu.mention': '提及',
   'people.menu.deafen': '不收听',
   'people.menu.deafenHint': '不接收语音和屏幕共享的声音——仅对你生效',

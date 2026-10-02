@@ -144,8 +144,10 @@ type StickerPack struct {
 	CreatedBy      string                 `protobuf:"bytes,7,opt,name=created_by,json=createdBy,proto3" json:"created_by,omitempty"`
 	CreatedAt      *timestamppb.Timestamp `protobuf:"bytes,8,opt,name=created_at,json=createdAt,proto3" json:"created_at,omitempty"`
 	UpdatedAt      *timestamppb.Timestamp `protobuf:"bytes,9,opt,name=updated_at,json=updatedAt,proto3" json:"updated_at,omitempty"`
-	unknownFields  protoimpl.UnknownFields
-	sizeCache      protoimpl.SizeCache
+	// Global immutable pack, always available; not part of workspace or install quotas.
+	Builtin       bool `protobuf:"varint,10,opt,name=builtin,proto3" json:"builtin,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
 }
 
 func (x *StickerPack) Reset() {
@@ -239,6 +241,13 @@ func (x *StickerPack) GetUpdatedAt() *timestamppb.Timestamp {
 		return x.UpdatedAt
 	}
 	return nil
+}
+
+func (x *StickerPack) GetBuiltin() bool {
+	if x != nil {
+		return x.Builtin
+	}
+	return false
 }
 
 // GET /api/workspaces/{id}/sticker-packs (any member, guests included): live packs, oldest
@@ -678,7 +687,7 @@ const file_calaba_v1_sticker_proto_rawDesc = "" +
 	"\x06height\x18\x06 \x01(\rR\x06height\x12\x1a\n" +
 	"\banimated\x18\a \x01(\bR\banimated\x12\x12\n" +
 	"\x04size\x18\b \x01(\rR\x04size\x12\x18\n" +
-	"\adeleted\x18\t \x01(\bR\adeleted\"\xe2\x02\n" +
+	"\adeleted\x18\t \x01(\bR\adeleted\"\xfc\x02\n" +
 	"\vStickerPack\x12\x0e\n" +
 	"\x02id\x18\x01 \x01(\tR\x02id\x12!\n" +
 	"\fworkspace_id\x18\x02 \x01(\tR\vworkspaceId\x12\x12\n" +
@@ -692,7 +701,9 @@ const file_calaba_v1_sticker_proto_rawDesc = "" +
 	"\n" +
 	"created_at\x18\b \x01(\v2\x1a.google.protobuf.TimestampR\tcreatedAt\x129\n" +
 	"\n" +
-	"updated_at\x18\t \x01(\v2\x1a.google.protobuf.TimestampR\tupdatedAt\"H\n" +
+	"updated_at\x18\t \x01(\v2\x1a.google.protobuf.TimestampR\tupdatedAt\x12\x18\n" +
+	"\abuiltin\x18\n" +
+	" \x01(\bR\abuiltin\"H\n" +
 	"\x18ListStickerPacksResponse\x12,\n" +
 	"\x05packs\x18\x01 \x03(\v2\x16.calaba.v1.StickerPackR\x05packs\"M\n" +
 	"\x18CreateStickerPackRequest\x12\x12\n" +

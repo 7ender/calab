@@ -1,13 +1,19 @@
 import { notFound } from 'next/navigation';
 import { Downloads } from '@/components/downloads';
 import { Faq } from '@/components/faq';
-import { Features } from '@/components/features';
+import { StoryMotion } from '@/components/story-motion';
+import { Capabilities } from '@/components/capabilities';
+import { ShowcaseRows } from '@/components/showcase-rows';
+import { ControlInfographic } from '@/components/control-infographic';
+import { Container } from '@/components/ui';
+import { StickerFinale } from '@/components/sticker-finale';
 import { Footer } from '@/components/footer';
 import { Header } from '@/components/header';
+import { ConferenceStrip } from '@/components/conference-strip';
 import { Hero } from '@/components/hero';
-import { Performance } from '@/components/performance';
 import { Pricing } from '@/components/pricing';
-import { Why } from '@/components/why';
+import { getCapabilities } from '@/i18n/capabilities';
+import { getStory } from '@/i18n/story';
 import { getDict, isLocale, LOCALE_INFO, localePath } from '@/i18n';
 import { APP_URL, DOWNLOADS, REPO_URL, SITE_URL } from '@/lib/site';
 
@@ -41,15 +47,20 @@ export default async function Home({ params }: { params: Promise<{ locale: strin
   return (
     <>
       <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: jsonLd(locale) }} />
+      <StoryMotion />
       <Header t={t.header} locale={locale} />
       <main id="main">
         <Hero t={t.hero} locale={locale} />
-        <Why t={t.why} />
-        <Features t={t.features} locale={locale} />
-        <Performance t={t.perf} locale={locale} />
+        <Capabilities locale={locale} />
+        <ShowcaseRows locale={locale} more={getCapabilities(locale).more} />
+        <ConferenceStrip locale={locale} />
+        <section id="control" className="story-section control-section" aria-labelledby="control-title">
+          <Container><ControlInfographic locale={locale} title={getStory(locale).control} /></Container>
+        </section>
         <Pricing t={t.pricing} />
         <Downloads t={t.downloads} />
         <Faq t={t.faq} />
+        <StickerFinale locale={locale} />
       </main>
       <Footer t={t.footer} locale={locale} />
     </>

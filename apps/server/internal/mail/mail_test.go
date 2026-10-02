@@ -41,7 +41,7 @@ func TestTemplatesAllLocales(t *testing.T) {
 				if !strings.Contains(body, "https://gptunnel.ai") || !strings.Contains(body, "Powered by GPTunneL") {
 					t.Errorf("%s/%s %s: no attribution", tmpl, loc, part)
 				}
-				if !strings.Contains(body, "https://calab.ru") {
+				if !strings.Contains(body, "https://calab.io") {
 					t.Errorf("%s/%s %s: no product link", tmpl, loc, part)
 				}
 				if strings.Contains(body, "{{") || strings.Contains(body, "<no value>") {

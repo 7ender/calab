@@ -1,5 +1,5 @@
 import { CircleAlert, CircleCheck, Info } from 'lucide-react';
-import { useEffect, useLayoutEffect, useRef, useState, type ReactNode } from 'react';
+import { useEffect, useLayoutEffect, useReducer, useRef, useState, type ReactNode } from 'react';
 import { CloseButton, cx } from '../../components/ui';
 import { t } from '../../i18n';
 import type { DeviceSwitch } from '../../lib/deviceSwitch';
@@ -7,7 +7,7 @@ import { useMobile } from '../../lib/mobile';
 import { toastPlacement, type ToastPlacement } from '../../lib/toastPlacement';
 import { announceDeviceSwitch } from '../../services/deviceToast';
 import { useSession } from '../../stores/session';
-import { isSticky, type Toast, type ToastAction } from '../../stores/toastQueue';
+import { isSticky, stackInteraction, type Toast, type ToastAction } from '../../stores/toastQueue';
 import { TOAST_MS, useToasts } from '../../stores/toasts';
 
 declare global {
@@ -72,8 +72,7 @@ export function Toasts(): ReactNode {
   const items = useToasts((s) => s.items);
   const visualTest = useSession((s) => s.appInfo?.visualTest === true);
   const stack = useRef<HTMLElement>(null);
-  const [hover, setHover] = useState(false);
-  const [focus, setFocus] = useState(false);
+  const [{ hover, focus }, interact] = useReducer(stackInteraction, { hover: false, focus: false });
   const [hidden, setHidden] = useState(() => typeof document !== 'undefined' && document.hidden);
 
   useEffect(() => {
@@ -93,12 +92,10 @@ export function Toasts(): ReactNode {
   }, [visualTest]);
 
   useLayoutEffect(() => {
-    // Removing a focused toast (dismiss, dedupe or queue eviction) does not emit blur.
-    // Reconcile with the surviving DOM so the stack cannot stay paused indefinitely.
-    const syncInteraction = (): void => {
-      setFocus(stack.current?.contains(document.activeElement) ?? false);
-    };
-    syncInteraction();
+    // Removing the toast under the pointer or focus (dismiss, dedupe or queue eviction) emits
+    // no pointerleave/blur: reconcile with the surviving DOM so the stack cannot stay paused
+    // indefinitely (#45). A pointer that is still over the stack re-arms hover on its next move.
+    interact({ type: 'items', focusInside: stack.current?.contains(document.activeElement) ?? false });
   }, [items]);
 
   const paused = hover || focus || hidden || visualTest;
@@ -113,11 +110,12 @@ export function Toasts(): ReactNode {
       // and under the drawers and sheets, which the user is working in.
       className="pointer-events-none fixed z-[var(--z-toast)] flex flex-col items-stretch gap-2 mobile:left-4 mobile:right-4 mobile:top-[calc(var(--safe-top)+56px)] mobile:z-[var(--z-popover)]"
       style={place ? { left: place.centerX, bottom: place.bottom, width: place.width, transform: 'translateX(-50%)' } : undefined}
-      onPointerEnter={() => setHover(true)}
-      onPointerLeave={() => setHover(false)}
-      onFocus={() => setFocus(true)}
+      onPointerEnter={() => interact({ type: 'enter' })}
+      onPointerMove={() => interact({ type: 'enter' })}
+      onPointerLeave={() => interact({ type: 'leave' })}
+      onFocus={() => interact({ type: 'focus' })}
       onBlur={(e) => {
-        if (!e.currentTarget.contains(e.relatedTarget)) setFocus(false);
+        if (!e.currentTarget.contains(e.relatedTarget)) interact({ type: 'blur' });
       }}
     >
       {items.map((x) => (

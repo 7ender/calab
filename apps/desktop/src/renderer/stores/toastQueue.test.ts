@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { TOAST_MAX, asSentence, isSticky, pushToast, type Toast } from './toastQueue';
+import { TOAST_MAX, asSentence, isSticky, pushToast, stackInteraction, type Toast } from './toastQueue';
 
 const info = (id: number, text = `t${id}`): Toast => ({ id, kind: 'info', text });
 const sticky = (id: number): Toast => ({ id, kind: 'error', text: `e${id}`, action: { label: 'Повторить', run: () => undefined } });
@@ -50,5 +50,25 @@ describe('asSentence', () => {
   it('is applied to error toasts only', () => {
     expect(pushToast([], { id: 1, kind: 'error', text: 'Сбой' })[0]?.text).toBe('Сбой.');
     expect(pushToast([], { id: 1, kind: 'info', text: 'Скопировано' })[0]?.text).toBe('Скопировано');
+  });
+});
+
+describe('stackInteraction (#45)', () => {
+  const idle = { hover: false, focus: false };
+  it('pauses on enter and resumes on leave', () => {
+    const h = stackInteraction(idle, { type: 'enter' });
+    expect(h.hover).toBe(true);
+    expect(stackInteraction(h, { type: 'leave' }).hover).toBe(false);
+  });
+  it('does not stay paused when the hovered toast is removed (no pointerleave)', () => {
+    const h = stackInteraction(idle, { type: 'enter' });
+    expect(stackInteraction(h, { type: 'items', focusInside: false })).toEqual(idle);
+  });
+  it('re-arms hover on the next pointer move and re-reads focus from the DOM', () => {
+    let s = stackInteraction({ hover: true, focus: true }, { type: 'items', focusInside: false });
+    expect(s).toEqual(idle);
+    s = stackInteraction(s, { type: 'enter' });
+    expect(s.hover).toBe(true);
+    expect(stackInteraction({ hover: false, focus: false }, { type: 'items', focusInside: true }).focus).toBe(true);
   });
 });

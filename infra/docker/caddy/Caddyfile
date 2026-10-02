@@ -3,13 +3,23 @@
 #                        (LiveKit runs with turn.external_tls: true)
 #   anything else     -> falls through to the regular HTTPS server (app, landing, rtc.*)
 # HTTP/3 is disabled: UDP 443 belongs to LiveKit TURN/UDP.
-# Host lists come from entrypoint.sh (APP_HOST/LANDING_HOST/DOMAIN/DOMAIN_ALT/DOMAIN_LEGACY → APP_HOSTS,
+# Host lists come from entrypoint.sh (APP_HOST/LANDING_HOST/DOMAIN/DOMAIN_ALT/DOMAIN_LEGACY/DOMAIN_ALIASES and the
+# *_HOST_ALIASES → APP_HOSTS,
 # RTC_HOSTS, TURN_HOSTS, RTC_ORIGINS, RELEASES_ORIGIN, /tmp/landing.caddy, /tmp/download.caddy, /tmp/releases.caddy) — see docs/10-branding.md.
 {
 	admin off
 	log {
 		output stdout
-		format json
+		# Proxy error logs also carry requests. Drop the whole URI (consent handles can be
+		# in the path), all request headers (Referer/cookies), and redirect response headers.
+		format filter {
+			wrap json
+			fields {
+				request>uri delete
+				request>headers delete
+				resp_headers delete
+			}
+		}
 	}
 	servers :443 {
 		listener_wrappers {
@@ -79,11 +89,12 @@
 		# other frames. No http: — this page is served over https, where an http frame is mixed content.
 		Content-Security-Policy "default-src 'self'; script-src 'self' 'wasm-unsafe-eval'; connect-src 'self'{$RTC_ORIGINS}; img-src 'self' blob: data:; media-src 'self' blob:; worker-src 'self' blob:; style-src 'self' 'unsafe-inline'; frame-src https:; frame-ancestors 'none'; base-uri 'self'; form-action 'self'"
 		X-Content-Type-Options nosniff
-		Referrer-Policy same-origin
 		X-Frame-Options DENY
 		Permissions-Policy "microphone=(self), display-capture=(self), speaker-selection=(self), autoplay=(self)"
 		-Server
 	}
+	# Default only: completion/consent set a stricter policy in their SPA handle.
+	header ?Referrer-Policy "same-origin"
 }
 
 # Static landing (Next.js static export in /srv/landing, pushed by sync.sh from apps/landing/out).
@@ -134,6 +145,11 @@
 }
 
 {$APP_HOSTS} {
+	# Identity URLs contain one-time credentials. Access logging is intentionally disabled;
+	# sanitized API logs/metrics remain available. Do not enable raw request logging here.
+	log {
+		output discard
+	}
 	# HSTS on the whole site (no preload: the parent gptunnel.* zones are not ours to pin).
 	header Strict-Transport-Security "max-age=31536000; includeSubDomains"
 
@@ -145,12 +161,39 @@
 		respond 404
 	}
 
+	# Workspace OIDC issuer + RFC 8414 path-issuer metadata must precede SPA fallback.
+	# Match only the published endpoints; /oauth/consent and /sso/complete stay SPA routes.
+	@identity_provider path_regexp ^(/oidc/workspaces/[^/]+/(\.well-known/openid-configuration|jwks|authorize|token|userinfo|revoke)|/\.well-known/oauth-authorization-server/oidc/workspaces/[^/]+)$
+	handle @identity_provider {
+		header >Referrer-Policy "no-referrer"
+		# Keep upstream JWKS max-age=60; default to no-store for other responses.
+		header ?Cache-Control "no-store"
+		header >Content-Security-Policy "default-src 'none'; frame-ancestors 'none'"
+		reverse_proxy 127.0.0.1:3000
+	}
+	# Proxy failures are written by Caddy's error chain, outside deferred proxy headers.
+	# They carry no credentials and must still be private and unframeable.
+	handle_errors {
+		header @identity_provider {
+			Cache-Control "no-store"
+			Referrer-Policy "no-referrer"
+			Content-Security-Policy "default-src 'none'; frame-ancestors 'none'"
+		}
+		@api_failure path /api/*
+		header @api_failure {
+			Cache-Control "no-store"
+			Referrer-Policy "no-referrer"
+			Content-Security-Policy "default-src 'none'; frame-ancestors 'none'"
+		}
+		respond "" {err.status_code}
+	}
+
 	# Go API (host network): REST, gateway WS, liveness.
 	@api path /api/* /gateway /healthz
 	handle @api {
 		# The API sets Cache-Control (no-store on JSON, its own on files/unfurl) and nosniff itself;
-		# only Referrer-Policy is added here (the API never sets it, so no duplicate values).
-		header /api/* Referrer-Policy "same-origin"
+		# identity/OAuth routes also set no-referrer: never weaken it at the proxy.
+		header /api/* >Referrer-Policy "no-referrer"
 		# JSON only (lists, READY-sized pages, search: 4–6× smaller; docs/18 step 3). Never touched:
 		# the gateway WebSocket, files/thumbnails (http.ServeContent with Range/ETag — encoding would
 		# break ranged and resumable downloads) and proxied unfurl images.
@@ -174,6 +217,14 @@
 		@manifest path *.webmanifest
 		header @manifest Content-Type "application/manifest+json"
 		import web_security_headers
+		# The same SPA scripts/CSP load on completion and consent, but URLs/HTML are sensitive.
+		@sensitive_spa path /sso/complete /oauth/consent
+		handle @sensitive_spa {
+			header >Cache-Control "no-store"
+			header >Referrer-Policy "no-referrer"
+			try_files /index.html
+			file_server
+		}
 		# Vite puts content-hashed files under /assets/: cache forever; a missing asset is a 404,
 		# never index.html (otherwise a stale index would get HTML cached as JS for a year).
 		handle /assets/* {

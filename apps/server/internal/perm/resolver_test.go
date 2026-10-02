@@ -98,7 +98,17 @@ func TestResolverTaskRoom(t *testing.T) {
 	if acc, _ := r.Room(ctx, room, u); acc.Bits != ViewRoom|ManageMessages {
 		t.Fatalf("archived task room must be read-only: %d", acc.Bits)
 	}
-	if TaskRoom(ViewBoard, false) != ViewRoom|SendMessages|AttachFiles || TaskRoom(CreateTasks, false) != 0 {
+	// ADR-0058 §3: COMMENTS off on the board — the task room is read-only, moderation stays.
+	s.taskRooms[room] = sqlc.GetTaskRoomRefRow{TaskID: task, BoardID: board}
+	row := s.boards[key{board, u}]
+	row.DisabledFeatures = 1 << 12
+	s.boards[key{board, u}] = row
+	r = NewResolver(s)
+	if acc, _ := r.Room(ctx, room, u); acc.Bits != ViewRoom|ManageMessages {
+		t.Fatalf("comments off: task room must be read-only: %d", acc.Bits)
+	}
+	if TaskRoom(ViewBoard, false, false) != ViewRoom|SendMessages|AttachFiles || TaskRoom(CreateTasks, false, false) != 0 ||
+		TaskRoom(ViewBoard, false, true) != ViewRoom || !CommentsOff(1<<12) || CommentsOff(1<<9) {
 		t.Fatal("TaskRoom")
 	}
 }

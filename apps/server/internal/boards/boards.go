@@ -42,6 +42,7 @@ type Service struct {
 	ev    events.Publisher
 	plans *plans.Service
 	files Uploader
+	hooks *Webhooks // board webhooks (EnableWebhooks); nil = off
 	// PublicURL is PUBLIC_APP_URL: links to messages in «Создать задачу из сообщения».
 	PublicURL string
 	// CreateLimit / SearchLimit: per-user budgets of task creation and of ⌘K task search
@@ -102,6 +103,19 @@ func (s *Service) Routes(mux httpx.Router, wrap func(http.Handler) http.Handler)
 	h("GET /api/t/{key}", s.lookup)
 	h("GET /api/me/tasks", s.myTasks)
 	h("GET /api/workspaces/{id}/tasks/search", s.search)
+	h("GET /api/workspaces/{id}/board-categories", s.listCategories)
+	h("POST /api/workspaces/{id}/board-categories", s.createCategory)
+	h("PATCH /api/board-categories/{id}", s.updateCategory)
+	h("DELETE /api/board-categories/{id}", s.deleteCategory)
+	h("PUT /api/workspaces/{id}/boards/order", s.setOrder)
+	h("POST /api/tasks/{id}/checklists", s.createChecklist)
+	h("PATCH /api/checklists/{id}", s.updateChecklist)
+	h("DELETE /api/checklists/{id}", s.deleteChecklist)
+	h("POST /api/checklists/{id}/items", s.createChecklistItem)
+	h("PATCH /api/checklist-items/{id}", s.updateChecklistItem)
+	h("DELETE /api/checklist-items/{id}", s.deleteChecklistItem)
+	h("POST /api/checklist-items/{id}/convert", s.convertChecklistItem)
+	s.webhookRoutes(mux, wrap)
 }
 
 func uid(r *http.Request) uuid.UUID { return auth.MustFromContext(r.Context()).UserID }
@@ -118,7 +132,7 @@ func take(r *http.Request, l Limiter) error {
 
 // tx runs fn in a transaction with both the sqlc queries and the raw transaction (dynamic SQL).
 func (s *Service) tx(ctx context.Context, fn func(q *sqlc.Queries, tx pgx.Tx) error) error {
-	return pgx.BeginFunc(ctx, s.db.Pool, func(tx pgx.Tx) error { return fn(s.db.Q.WithTx(tx), tx) })
+	return s.db.TxRaw(ctx, fn)
 }
 
 // ---- access ----

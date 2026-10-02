@@ -1,12 +1,5 @@
-import {
-  create,
-  fromJson,
-  toJson,
-  type DescMessage,
-  type JsonValue,
-  type MessageInitShape,
-  type MessageShape,
-} from '@bufbuild/protobuf';
+import { identityRequestBlocked, identityRequestVersion } from './identityGate';
+import { create, fromJson, toJson, type DescMessage, type JsonValue, type MessageInitShape, type MessageShape } from '@bufbuild/protobuf';
 import { platform } from '../../platform';
 
 /**
@@ -95,6 +88,8 @@ type Method = 'GET' | 'POST' | 'PUT' | 'PATCH' | 'DELETE';
 const JSON_OPTS = { ignoreUnknownFields: true } as const;
 
 async function send(method: Method, path: string, body?: JsonValue, signal?: AbortSignal): Promise<Response> {
+  const version = identityRequestVersion(path);
+  if (identityRequestBlocked(path)) throw new ApiError('ERROR_CODE_SSO_REQUIRED', '', 403);
   let res: Response;
   try {
     res = await platform.apiFetch(path, {
@@ -109,6 +104,8 @@ async function send(method: Method, path: string, body?: JsonValue, signal?: Abo
   }
   if (!res.ok) {
     const err = await toApiError(res);
+    if (['ERROR_CODE_SSO_REQUIRED', 'ERROR_CODE_DIRECTORY_ACCESS_DENIED', 'ERROR_CODE_RECOVERY_ONLY'].includes(err.code))
+      for (const h of identityDenials) h(err, path);
     // ADR-0044: a room closed meanwhile answers 410 ROOM_ARCHIVED to anything but its history.
     if (err.code === 'ERROR_CODE_ROOM_ARCHIVED') {
       const id = archivedRoomOf(path);
@@ -116,6 +113,7 @@ async function send(method: Method, path: string, body?: JsonValue, signal?: Abo
     }
     throw err;
   }
+  if (identityRequestBlocked(path, version)) throw new ApiError('ERROR_CODE_SSO_REQUIRED', '', 403);
   return res;
 }
 
@@ -143,10 +141,12 @@ export async function call<Res extends DescMessage>(
   body?: JsonValue,
   signal?: AbortSignal,
 ): Promise<MessageShape<Res>> {
+  const version = identityRequestVersion(path);
   const res = await send(method, path, body, signal);
   // An older server may still answer 204 for an endpoint that grew a body (e.g. password/forgot).
   if (res.status === 204) return create(resSchema);
   const json = (await res.json()) as JsonValue;
+  if (identityRequestBlocked(path, version)) throw new ApiError('ERROR_CODE_SSO_REQUIRED', '', 403);
   return fromJson(resSchema, json, JSON_OPTS);
 }
 
@@ -165,4 +165,9 @@ export function qs(params: Record<string, string | number | undefined>): string 
   for (const [k, v] of Object.entries(params)) if (v !== undefined && v !== '') p.set(k, String(v));
   const s = p.toString();
   return s ? `?${s}` : '';
+}
+
+const identityDenials = new Set<(e: ApiError, path: string) => void>();
+export function onIdentityDenied(h: (e: ApiError, path: string) => void): void {
+  identityDenials.add(h);
 }

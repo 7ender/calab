@@ -2,13 +2,19 @@ import { create as createMsg, type MessageInitShape } from '@bufbuild/protobuf';
 import {
   ApproverState,
   BoardViewKind,
+  Permission,
   PresenceStatus,
   TaskApproverSchema,
   TaskAssigneeSchema,
   TaskNoticeKind,
   TaskSchema,
   type Board,
+  type BoardCategory,
+  type BoardFeature,
   type BoardView,
+  type BoardWebhook,
+  type EstimateScale,
+  type TaskChecklist,
   type CreateTaskRequestSchema,
   type DispatchEvent,
   type Room,
@@ -22,16 +28,20 @@ import {
   type TaskUpdate,
   type WorkspaceSnapshot,
 } from '@calaba/protocol';
-import { t } from '../i18n';
+import { t, type MessageKey } from '../i18n';
 import { ApiError } from '../lib/api/client';
 import { approvedCount, blockedStatusIds, quorumOf, rejecters } from '../lib/boards/approvals';
 import { draftsOf, type AssigneeDraft } from '../lib/boards/assignees';
 import { toTaskFilter, type FilterState } from '../lib/boards/filter';
 import { between, byPosition } from '../lib/boards/position';
+import { countItems, itemPosition, toggledItem, withItem } from '../lib/boards/checklists';
+import { boardLayout, boardPlacements } from '../lib/boards/categories';
 import { countsUnread } from '../lib/boards/reducers';
+import { planCategoryMove, planNewCategoryFirst, planRoomMove, type RoomTarget } from '../lib/roomOrder';
+import { reportPlanError } from './plan';
 import { log } from '../lib/log';
 import { platform } from '../platform';
-import { useBoards } from '../stores/boards';
+import { checklistsOf, useBoards, workspaceBoards, workspaceCategories } from '../stores/boards';
 import { MY_TASKS, prefsOf, useBoardsUi, type BoardPrefs, type ViewKind } from '../stores/boardsUi';
 import { prefs } from '../stores/prefs';
 import { useRooms } from '../stores/rooms';
@@ -97,6 +107,7 @@ export function applySnapshotBoards(snap: WorkspaceSnapshot): void {
   if (!wsId) return;
   const s = useBoards.getState();
   s.setWorkspaceBoards(wsId, snap.boards);
+  s.setWorkspaceCategories(wsId, snap.boardCategories);
   s.setUnread(wsId, snap.unreadTaskIds);
 }
 
@@ -131,10 +142,11 @@ export function retryFailedBoardLoads(): void {
 export function dropWorkspaceBoards(workspaceId: string): void {
   const s = useBoards.getState();
   for (const b of Object.values(s.boards)) if (b.workspaceId === workspaceId) s.removeBoard(b.id);
+  s.setWorkspaceCategories(workspaceId, []);
   s.setUnread(workspaceId, []);
 }
 
-/** Gateway events 75–81. Returns false for any other event. */
+/** Gateway events 75–81 and 87–91 (ADR-0058). Returns false for any other event. */
 export function applyBoardEvent(ev: DispatchEvent['event']): boolean {
   const s = useBoards.getState();
   switch (ev.case) {
@@ -159,6 +171,20 @@ export function applyBoardEvent(ev: DispatchEvent['event']): boolean {
       return true;
     case 'taskActivity':
       if (ev.value.activity) s.appendActivity(ev.value.activity);
+      return true;
+    case 'boardCategoryCreate':
+    case 'boardCategoryUpdate':
+      if (ev.value.category) s.upsertCategory(ev.value.category);
+      return true;
+    case 'boardCategoryDelete':
+      s.removeCategory(ev.value.categoryId);
+      return true;
+    // No TASK_UPDATE for checklists: the counters come in the event (ADR-0058 §2).
+    case 'taskChecklistUpdate':
+      s.upsertChecklist(ev.value.taskId, ev.value.checklist, ev.value.checklistTotal, ev.value.checklistDone);
+      return true;
+    case 'taskChecklistDelete':
+      s.removeChecklist(ev.value.taskId, ev.value.checklistId, ev.value.checklistTotal, ev.value.checklistDone);
       return true;
     default:
       return false;
@@ -268,11 +294,13 @@ export async function loadBoard(boardId: string): Promise<void> {
   }
 }
 
-function applyTaskResponse(r: TaskResponse): void {
+/** `full`: GET /tasks/{id} (or by key) — the only answer that carries the checklists. */
+function applyTaskResponse(r: TaskResponse, full = false): void {
   const s = useBoards.getState();
   if (r.board) s.upsertBoard(r.board);
   const extra = [...r.subtasks, ...r.related, ...(r.parent ? [r.parent] : [])];
   s.upsertTasks([...(r.task ? [r.task] : []), ...extra]);
+  if (full && r.task) s.setChecklists(r.task.id, r.task.checklists);
   if (r.room) rememberRoom(r.room);
   const task = r.task;
   if (!task) return;
@@ -291,7 +319,7 @@ function applyTaskResponse(r: TaskResponse): void {
 export async function loadTask(taskId: string): Promise<Task | null> {
   try {
     const r = await boardsApi.tasks.get(taskId);
-    applyTaskResponse(r);
+    applyTaskResponse(r, true);
     if (r.task?.unread) void markTaskRead(r.task);
     return r.task ?? null;
   } catch (e) {
@@ -404,7 +432,7 @@ function takePendingLink(): void {
   void (async () => {
     try {
       const r = await boardsApi.tasks.byKey(p.id);
-      applyTaskResponse(r);
+      applyTaskResponse(r, true);
       if (r.task) openTaskAnywhere(r.task);
     } catch (e) {
       log.warn('task link failed', e);
@@ -434,7 +462,39 @@ function wireOf(p: TaskPatch): MessageInitShape<typeof UpdateTaskRequestSchema> 
   return { ...rest, ...(labelIds ? { setLabels: true, labelIds } : {}) };
 }
 
+/** JSON field names of FEATURE_DISABLED (`ApiError.field`) → the field's name in the UI. */
+const FEATURE_FIELD: Record<string, MessageKey> = {
+  estimate: 'boards.f.estimate',
+  startOn: 'boards.f.startOn',
+  dueOn: 'boards.f.dueOn',
+  priority: 'boards.f.priority',
+  labelIds: 'boards.f.label',
+  milestoneId: 'boards.f.milestone',
+  parentId: 'boards.subtasks',
+  relatedId: 'boards.relations',
+  attachmentIds: 'boards.feat.attachments',
+  approverIds: 'boards.feat.approvals',
+  approvalRequired: 'boards.feat.approvals',
+  decision: 'boards.feat.approvals',
+};
+
+/**
+ * A refusal by a board feature (409 FEATURE_DISABLED, ADR-0058 §3) or by the plan (409 PLAN_LIMIT:
+ * checklists below Team, the webhook below Business — ADR §5): a toast, true. False otherwise.
+ */
+export function reportFeatureError(e: unknown, workspaceId?: string): boolean {
+  if (!(e instanceof ApiError)) return false;
+  if (e.reason === 'FEATURE_DISABLED') {
+    const key = e.field ? FEATURE_FIELD[e.field] : undefined;
+    toast.error(key ? t('boards.err.featureOff', { name: t(key) }) : t('boards.err.featureOffAny'));
+    return true;
+  }
+  if (e.reason === 'PLAN_LIMIT') return reportPlanError(e, workspaceId ?? useUi.getState().activeWorkspaceId);
+  return false;
+}
+
 function fail(e: unknown, task?: Task): void {
+  if (reportFeatureError(e, task?.workspaceId)) return;
   if (e instanceof ApiError && e.reason === 'TASK_APPROVAL_REQUIRED' && task) toast.error(gateText(task, e.extra.used, e.extra.limit));
   else if (e instanceof ApiError && e.status === 403) toast.error(t('boards.err.forbidden'));
   else toast.fail(e, t('boards.err.save'));
@@ -716,6 +776,7 @@ export async function bulkArchive(ids: readonly string[]): Promise<void> {
 // ------------------------------------------------------------------ board mutations
 
 function boardFail(e: unknown): void {
+  if (e instanceof ApiError && (e.reason === 'FEATURE_DISABLED' || (e.reason === 'PLAN_LIMIT' && !/\bboards?\b/i.test(e.message))) && reportFeatureError(e)) return;
   if (e instanceof ApiError && (e.reason === 'PLAN_LIMIT' || e.reason === 'BOARD_LIMIT')) toast.error(t('boards.err.boardLimit'));
   else if (e instanceof ApiError && e.field === 'key') toast.error(t('boards.err.keyTaken'));
   else toast.fail(e, t('boards.err.save'));
@@ -774,27 +835,6 @@ async function removeCall(p: Promise<void>, boardId: string): Promise<boolean> {
 export const deleteStatus = (boardId: string, id: string, moveTo: string): Promise<boolean> => removeCall(boardsApi.statuses.remove(boardId, id, moveTo), boardId);
 export const deleteLabel = (boardId: string, id: string): Promise<boolean> => removeCall(boardsApi.labels.remove(boardId, id), boardId);
 export const deleteMilestone = (boardId: string, id: string): Promise<boolean> => removeCall(boardsApi.milestones.remove(boardId, id), boardId);
-
-/** The boards list order (drag reorder): optimistic. */
-export async function moveBoard(workspaceId: string, boardId: string, index: number): Promise<void> {
-  const all = Object.values(useBoards.getState().boards)
-    .filter((b) => b.workspaceId === workspaceId && !b.archivedAt)
-    .sort((a, b) => a.position - b.position);
-  const from = all.findIndex((b) => b.id === boardId);
-  if (from < 0 || from === index) return;
-  const before = all.map((b) => b);
-  const [moved] = all.splice(from, 1);
-  if (!moved) return;
-  all.splice(index, 0, moved);
-  all.forEach((b, i) => useBoards.getState().upsertBoard({ ...b, position: i }));
-  try {
-    const r = await boardsApi.move(boardId, index);
-    if (r.board) useBoards.getState().upsertBoard(r.board);
-  } catch (e) {
-    for (const b of before) useBoards.getState().upsertBoard(b);
-    boardFail(e);
-  }
-}
 
 /** The workspace's archived boards (those the viewer manages: the server lists only them). */
 export async function listArchivedBoards(workspaceId: string): Promise<Board[]> {
@@ -887,4 +927,382 @@ export function applyView(boardId: string, v: BoardView, fromFilter: (f: BoardVi
 /** A detached Task (a draft for the create dialog's preview), for typed helpers. */
 export function blankTask(boardId: string): Task {
   return createMsg(TaskSchema, { boardId });
+}
+
+export function clearWorkspaceBoards(workspaceId: string): void {
+  const tasks = new Set(
+    Object.values(useBoards.getState().tasks)
+      .filter((task) => task.workspaceId === workspaceId)
+      .map((task) => task.id),
+  );
+  for (const [id, room] of taskRooms) if (room.workspaceId === workspaceId) taskRooms.delete(id);
+  useTaskDetails.setState((s) => ({
+    byTask: Object.fromEntries(Object.entries(s.byTask).filter(([id]) => !tasks.has(id))),
+    mine: Object.fromEntries(Object.entries(s.mine).filter(([id]) => !tasks.has(id))),
+  }));
+}
+
+// ------------------------------------------------------------------ board features (ADR-0058 §3)
+
+/** Switches the board's features (the whole disabled set) — optimistic; BOARD_UPDATE confirms. */
+export async function setBoardFeatures(boardId: string, disabled: BoardFeature[]): Promise<void> {
+  const prev = useBoards.getState().boards[boardId];
+  if (!prev) return;
+  useBoards.getState().upsertBoard({ ...prev, disabledFeatures: disabled });
+  const r = await boardCall(boardsApi.update(boardId, { setDisabledFeatures: true, disabledFeatures: disabled }));
+  if (!r) useBoards.getState().upsertBoard({ ...(useBoards.getState().boards[boardId] ?? prev), disabledFeatures: prev.disabledFeatures });
+}
+
+export async function setEstimateScale(boardId: string, scale: EstimateScale): Promise<void> {
+  const prev = useBoards.getState().boards[boardId];
+  if (!prev || prev.estimateScale === scale) return;
+  useBoards.getState().upsertBoard({ ...prev, estimateScale: scale });
+  const r = await boardCall(boardsApi.update(boardId, { estimateScale: scale }));
+  if (!r) useBoards.getState().upsertBoard({ ...(useBoards.getState().boards[boardId] ?? prev), estimateScale: prev.estimateScale });
+}
+
+// ------------------------------------------------------------------ board categories (ADR-0058 §1)
+
+function categoryFail(e: unknown): void {
+  if (e instanceof ApiError && e.reason === 'BOARD_CATEGORY_LIMIT') toast.error(t('boards.cat.limit'));
+  else if (e instanceof ApiError && e.status === 403) toast.error(t('boards.err.forbidden'));
+  else toast.fail(e, t('boards.err.save'));
+}
+
+/** The list's containers as the viewer sees them (empty categories included: a place to drop). */
+function liveLayout(workspaceId: string): ReturnType<typeof boardLayout> {
+  const s = useBoards.getState();
+  return boardLayout(workspaceBoards(s.boards, workspaceId), workspaceCategories(s.categories, workspaceId), true);
+}
+
+/**
+ * Applies a reorder at once and sends it as one request (PUT …/boards/order); a refusal brings the
+ * previous boards and categories back. The answer (and the BOARD_UPDATE / BOARD_CATEGORY_UPDATE
+ * events that follow) is the final word.
+ */
+async function commitBoardOrder(workspaceId: string, boards: Array<{ boardId: string; categoryId: string; position: number }>, categories: Array<{ categoryId: string; position: number }>): Promise<boolean> {
+  if (!boards.length && !categories.length) return true;
+  const s = useBoards.getState();
+  const prevBoards: Board[] = [];
+  const prevCats: BoardCategory[] = [];
+  for (const p of boards) {
+    const b = s.boards[p.boardId];
+    if (!b) continue;
+    prevBoards.push(b);
+    s.upsertBoard({ ...b, position: p.position, categoryId: p.categoryId });
+  }
+  for (const p of categories) {
+    const c = s.categories[p.categoryId];
+    if (!c) continue;
+    prevCats.push(c);
+    s.upsertCategory({ ...c, position: p.position });
+  }
+  try {
+    const r = await boardsApi.setOrder(workspaceId, { boards, categories });
+    const after = useBoards.getState();
+    for (const b of r.boards) after.upsertBoard(b, true);
+    for (const c of r.categories) after.upsertCategory(c);
+    return true;
+  } catch (e) {
+    const after = useBoards.getState();
+    for (const b of prevBoards) after.upsertBoard(b);
+    for (const c of prevCats) after.upsertCategory(c);
+    categoryFail(e);
+    return false;
+  }
+}
+
+/**
+ * Moves a board (drag & drop, «Переместить в категорию»): one request. When every board the move
+ * renumbers is mine to manage — PUT …/boards/order with the changed placements; otherwise (a
+ * neighbour I may not manage) PUT /boards/{id}/position with the category: the server shifts the
+ * others itself, MANAGE_BOARD is needed on the moved board only.
+ */
+export async function moveBoardTo(workspaceId: string, boardId: string, to: RoomTarget): Promise<boolean> {
+  const s = useBoards.getState();
+  const layout = liveLayout(workspaceId);
+  const placed: Record<string, { id: string; position: number; categoryId: string }> = {};
+  for (const b of workspaceBoards(s.boards, workspaceId)) placed[b.id] = { id: b.id, position: b.position, categoryId: b.categoryId };
+  const plan = boardPlacements(planRoomMove(layout, placed, boardId, to));
+  if (!plan.length) return true;
+  if (plan.every((p) => hasManage(s.boards[p.boardId]))) return commitBoardOrder(workspaceId, plan, []);
+  const prev = s.boards[boardId];
+  if (!prev) return false;
+  const categoryId = to.categoryId ?? '';
+  s.upsertBoard({ ...prev, categoryId, position: to.index });
+  try {
+    const r = await boardsApi.move(boardId, to.index, categoryId);
+    if (r.board) useBoards.getState().upsertBoard(r.board);
+    return true;
+  } catch (e) {
+    useBoards.getState().upsertBoard(prev);
+    categoryFail(e);
+    return false;
+  }
+}
+
+const hasManage = (b: Board | undefined): boolean => !!b && (b.permissions & BigInt(Permission.MANAGE_BOARD)) !== 0n;
+
+/** Moves a category among the categories (CREATE_BOARDS). */
+export function moveBoardCategory(workspaceId: string, categoryId: string, index: number): Promise<boolean> {
+  const plan = planCategoryMove(workspaceCategories(useBoards.getState().categories, workspaceId), categoryId, index);
+  return commitBoardOrder(workspaceId, [], plan);
+}
+
+/** A new category goes on top of the categories (as rooms, owner 28.09). */
+export async function createBoardCategory(workspaceId: string, name: string): Promise<BoardCategory | null> {
+  try {
+    const r = await boardsApi.categories.create(workspaceId, { name });
+    const cat = r.category;
+    if (!cat) return null;
+    const others = workspaceCategories(useBoards.getState().categories, workspaceId);
+    useBoards.getState().upsertCategory(cat);
+    await commitBoardOrder(workspaceId, [], planNewCategoryFirst(others, cat));
+    return cat;
+  } catch (e) {
+    categoryFail(e);
+    return null;
+  }
+}
+
+/** Inline rename: optimistic, the old name back on a refusal. */
+export async function renameBoardCategory(categoryId: string, name: string): Promise<void> {
+  const prev = useBoards.getState().categories[categoryId];
+  if (!prev || !name || name === prev.name) return;
+  useBoards.getState().upsertCategory({ ...prev, name });
+  try {
+    const r = await boardsApi.categories.update(categoryId, { name });
+    if (r.category) useBoards.getState().upsertCategory(r.category);
+  } catch (e) {
+    useBoards.getState().upsertCategory(prev);
+    categoryFail(e);
+  }
+}
+
+/** Deletes a category: its boards go to «без категории» (BOARD_UPDATE for each follows). */
+export async function deleteBoardCategory(categoryId: string): Promise<boolean> {
+  try {
+    await boardsApi.categories.remove(categoryId);
+    useBoards.getState().removeCategory(categoryId);
+    return true;
+  } catch (e) {
+    categoryFail(e);
+    return false;
+  }
+}
+
+// ------------------------------------------------------------------ checklists (ADR-0058 §2)
+
+function checklistFail(e: unknown, workspaceId: string | undefined): void {
+  if (reportFeatureError(e, workspaceId)) return;
+  if (e instanceof ApiError && e.reason === 'CHECKLIST_LIMIT') toast.error(t('boards.cl.limit'));
+  else if (e instanceof ApiError && e.reason === 'CHECKLIST_ITEM_LIMIT') toast.error(t('boards.cl.itemLimit'));
+  else if (e instanceof ApiError && e.status === 403) toast.error(t('boards.err.forbidden'));
+  else toast.fail(e, t('boards.err.save'));
+}
+
+const wsOfTask = (taskId: string): string | undefined => useBoards.getState().tasks[taskId]?.workspaceId;
+
+/** A checklist answer into the store (the checklist and the task's counters). */
+function applyChecklist(taskId: string, r: { checklist?: TaskChecklist | undefined; checklistTotal: number; checklistDone: number }): void {
+  useBoards.getState().upsertChecklist(taskId, r.checklist, r.checklistTotal, r.checklistDone);
+}
+
+/** The checklist that holds an item (and the task of it), from the loaded checklists. */
+function findItem(taskId: string, itemId: string): { list: TaskChecklist; index: number } | null {
+  for (const c of checklistsOf(useBoards.getState(), taskId)) {
+    const index = c.items.findIndex((x) => x.id === itemId);
+    if (index >= 0) return { list: c, index };
+  }
+  return null;
+}
+
+/** Puts a changed checklist locally with the counters recomputed (optimistic). */
+function localChecklist(taskId: string, next: TaskChecklist): void {
+  const lists = checklistsOf(useBoards.getState(), taskId).map((c) => (c.id === next.id ? next : c));
+  const n = countItems(lists);
+  useBoards.getState().upsertChecklist(taskId, next, n.total, n.done);
+}
+
+export async function createChecklist(taskId: string, title: string): Promise<TaskChecklist | null> {
+  try {
+    const r = await boardsApi.tasks.checklists.create(taskId, title);
+    applyChecklist(taskId, r);
+    return r.checklist ?? null;
+  } catch (e) {
+    checklistFail(e, wsOfTask(taskId));
+    return null;
+  }
+}
+
+export async function renameChecklist(taskId: string, checklistId: string, title: string): Promise<void> {
+  const prev = checklistsOf(useBoards.getState(), taskId).find((c) => c.id === checklistId);
+  if (!prev || !title || title === prev.title) return;
+  localChecklist(taskId, { ...prev, title });
+  try {
+    applyChecklist(taskId, await boardsApi.tasks.checklists.update(checklistId, { title }));
+  } catch (e) {
+    localChecklist(taskId, prev);
+    checklistFail(e, wsOfTask(taskId));
+  }
+}
+
+export async function deleteChecklist(taskId: string, checklistId: string): Promise<void> {
+  try {
+    const r = await boardsApi.tasks.checklists.remove(checklistId);
+    useBoards.getState().removeChecklist(taskId, checklistId, r.checklistTotal, r.checklistDone);
+  } catch (e) {
+    checklistFail(e, wsOfTask(taskId));
+  }
+}
+
+export async function addChecklistItem(taskId: string, checklistId: string, text: string): Promise<boolean> {
+  try {
+    applyChecklist(taskId, await boardsApi.tasks.checklists.addItem(checklistId, { text }));
+    return true;
+  } catch (e) {
+    checklistFail(e, wsOfTask(taskId));
+    return false;
+  }
+}
+
+/** Ticks / unticks an item: the row and the counters change at once, the answer confirms. */
+export async function toggleChecklistItem(taskId: string, itemId: string, done: boolean): Promise<void> {
+  const at = findItem(taskId, itemId);
+  const item = at?.list.items[at.index];
+  if (!at || !item || item.done === done) return;
+  localChecklist(taskId, withItem(at.list, toggledItem(item, done, myUserId())));
+  try {
+    applyChecklist(taskId, await boardsApi.tasks.checklists.updateItem(itemId, { done }));
+  } catch (e) {
+    const cur = findItem(taskId, itemId);
+    const now = cur?.list.items[cur.index];
+    if (cur && now) localChecklist(taskId, withItem(cur.list, { ...now, done: item.done, doneBy: item.doneBy }));
+    checklistFail(e, wsOfTask(taskId));
+  }
+}
+
+export async function editChecklistItem(taskId: string, itemId: string, text: string): Promise<void> {
+  const at = findItem(taskId, itemId);
+  const item = at?.list.items[at.index];
+  if (!at || !item || !text || text === item.text) return;
+  localChecklist(taskId, withItem(at.list, { ...item, text }));
+  try {
+    applyChecklist(taskId, await boardsApi.tasks.checklists.updateItem(itemId, { text }));
+  } catch (e) {
+    const cur = findItem(taskId, itemId);
+    const now = cur?.list.items[cur.index];
+    if (cur && now) localChecklist(taskId, withItem(cur.list, { ...now, text: item.text }));
+    checklistFail(e, wsOfTask(taskId));
+  }
+}
+
+export async function deleteChecklistItem(taskId: string, itemId: string): Promise<void> {
+  try {
+    applyChecklist(taskId, await boardsApi.tasks.checklists.removeItem(itemId));
+  } catch (e) {
+    checklistFail(e, wsOfTask(taskId));
+  }
+}
+
+/**
+ * Drag & drop of an item: to `index` of checklist `toId` (another checklist of the task moves it
+ * there). The position is between the new neighbours; the rows move at once.
+ */
+export async function moveChecklistItem(taskId: string, itemId: string, toId: string, index: number): Promise<void> {
+  const lists = checklistsOf(useBoards.getState(), taskId);
+  const at = findItem(taskId, itemId);
+  const target = lists.find((c) => c.id === toId);
+  const item = at?.list.items[at.index];
+  if (!at || !item || !target) return;
+  const position = itemPosition(target.items, itemId, index);
+  const same = at.list.id === toId;
+  if (same && target.items.filter((x) => x.id !== itemId && x.position < item.position).length === index) return;
+  const moved = { ...item, position, checklistId: toId };
+  const before = lists;
+  if (same) localChecklist(taskId, withItem(at.list, moved));
+  else {
+    localChecklist(taskId, { ...at.list, items: at.list.items.filter((x) => x.id !== itemId) });
+    localChecklist(taskId, { ...target, items: [...target.items, moved].sort((a, b) => a.position - b.position) });
+  }
+  try {
+    applyChecklist(taskId, await boardsApi.tasks.checklists.updateItem(itemId, { position, ...(same ? {} : { checklistId: toId }) }));
+  } catch (e) {
+    for (const c of before) localChecklist(taskId, c);
+    checklistFail(e, wsOfTask(taskId));
+  }
+}
+
+/** «Сделать подзадачей»: the item leaves its checklist, the new subtask joins the panel's list. */
+export async function convertChecklistItem(taskId: string, itemId: string): Promise<void> {
+  try {
+    const r = await boardsApi.tasks.checklists.convert(itemId);
+    applyChecklist(taskId, r);
+    const sub = r.task;
+    if (sub) {
+      useBoards.getState().upsertTask(sub);
+      useTaskDetails.setState((st) => {
+        const d = st.byTask[taskId];
+        return d && !d.subtasks.includes(sub.id) ? { byTask: { ...st.byTask, [taskId]: { ...d, subtasks: [...d.subtasks, sub.id] } } } : {};
+      });
+      toast.success(t('boards.cl.converted', { key: sub.key }));
+    }
+  } catch (e) {
+    if (e instanceof ApiError && e.status === 422) toast.error(t('boards.cl.convertNested'));
+    else checklistFail(e, wsOfTask(taskId));
+  }
+}
+
+// ------------------------------------------------------------------ webhook (ADR-0058 §4)
+
+export interface WebhookState {
+  webhook: BoardWebhook | null;
+  /** The signing secret, only right after a save (shown once). */
+  secret: string;
+}
+
+function webhookFail(e: unknown, workspaceId: string): void {
+  if (reportFeatureError(e, workspaceId)) return;
+  if (e instanceof ApiError && e.status === 422) toast.error(e.field === 'secret' ? t('boards.hook.badSecret') : t('boards.hook.badUrl'));
+  else if (e instanceof ApiError && e.status === 403) toast.error(t('boards.err.forbidden'));
+  else if (e instanceof ApiError && e.status === 429) toast.error(t('boards.hook.tooOften'));
+  else toast.fail(e, t('boards.err.save'));
+}
+
+export async function loadWebhook(boardId: string, signal?: AbortSignal): Promise<BoardWebhook | null> {
+  const r = await boardsApi.webhook.get(boardId, signal);
+  return r.webhook ?? null;
+}
+
+export async function saveWebhook(workspaceId: string, boardId: string, url: string, secret: string): Promise<WebhookState | null> {
+  try {
+    const r = await boardsApi.webhook.set(boardId, url, secret);
+    return { webhook: r.webhook ?? null, secret: r.secret };
+  } catch (e) {
+    webhookFail(e, workspaceId);
+    return null;
+  }
+}
+
+export async function deleteWebhook(workspaceId: string, boardId: string): Promise<boolean> {
+  try {
+    await boardsApi.webhook.remove(boardId);
+    return true;
+  } catch (e) {
+    webhookFail(e, workspaceId);
+    return false;
+  }
+}
+
+/** «Проверить»: the receiver's answer in a toast. */
+export async function pingWebhook(workspaceId: string, boardId: string): Promise<boolean> {
+  try {
+    const r = await boardsApi.webhook.ping(boardId);
+    if (r.ok) toast.success(t('boards.hook.pingOk', { status: r.status }));
+    else toast.error(r.status ? t('boards.hook.pingStatus', { status: r.status }) : t('boards.hook.pingFail', { error: r.error || '—' }));
+    return r.ok;
+  } catch (e) {
+    webhookFail(e, workspaceId);
+    return false;
+  }
 }

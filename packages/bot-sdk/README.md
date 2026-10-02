@@ -25,7 +25,7 @@ Create a bot in **Workspace settings → Bots**, copy the token (it is shown onc
 ```js
 import { Bot } from '@calaba/bot-sdk';
 
-const bot = new Bot(process.env.BOT_TOKEN, { server: 'https://app.calab.ru' });
+const bot = new Bot(process.env.BOT_TOKEN, { server: 'https://app.calab.io' });
 
 await bot.commands([{ name: 'echo', description: 'Repeat the text' }]);
 
@@ -133,3 +133,16 @@ receives the generated `BotCallback` type over gateway or webhook. Persist and d
 and revalidate your current draft version and author before external effects. Data is public,
 never a secret; acceptance is not completion. For delivery guarantees and REST fields see
 [Bot API](../../docs/19-bot-api.en.md#inline-buttons-adr-0047).
+
+## Boards 2.0 (ADR-0058)
+
+```ts
+await bot.boards.categories.create(wsId, 'Dev');
+await bot.boards.setFeatures(boardId, { disabledFeatures: [BoardFeature.ESTIMATE] });
+const { checklist } = await bot.tasks.checklists.create(taskId, 'QA');
+await bot.tasks.checklists.addItem(checklist!.id, 'Smoke test');
+
+// board webhook receiver (people configure it in the board settings, Business plan):
+if (!verifyBoardWebhook(secret, headers['x-calab-timestamp'], rawBody, headers['x-calab-signature'])) return res.writeHead(401).end();
+const event = parseBoardWebhookEvent(rawBody); // dedupe by event.id, order by event.sequence
+```

@@ -23,7 +23,7 @@ export function StickerPackDialog({ sticker, onClose }: { sticker: Sticker; onCl
   useEffect(() => {
     if (!loaded) void loadMyStickers();
   }, [loaded]);
-  const canInstall = role !== undefined && role !== WorkspaceRole.GUEST;
+  const canInstall = !pack?.builtin && role !== undefined && role !== WorkspaceRole.GUEST;
   const act = async (): Promise<void> => {
     if (!pack) return;
     setBusy(true);
@@ -39,7 +39,7 @@ export function StickerPackDialog({ sticker, onClose }: { sticker: Sticker; onCl
       open
       onClose={onClose}
       title={pack?.name ?? t('stk.tabStickers')}
-      description={pack ? plural('stk.count', pack.stickers.length, { n: pack.stickers.length }) : undefined}
+      description={pack ? (pack.builtin ? `${t('stk.builtin')} · ` : '') + plural('stk.count', pack.stickers.length, { n: pack.stickers.length }) : undefined}
       footer={
         pack && canInstall ? (
           <Button variant={installed ? 'secondary' : 'primary'} busy={busy} onClick={() => void act()} data-testid="sticker-pack-action">

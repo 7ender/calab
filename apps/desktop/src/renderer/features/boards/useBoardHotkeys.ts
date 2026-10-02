@@ -1,4 +1,6 @@
+import { BoardFeature } from '@calaba/protocol';
 import { useEffect } from 'react';
+import { featureOn } from '../../lib/boards/features';
 import { archiveTask, copyTaskKey, copyTaskLink, moveTask } from '../../services/boards';
 import { IS_MAC } from '../../services/hotkeys';
 import { useBoards } from '../../stores/boards';
@@ -46,6 +48,14 @@ function reveal(id: string): void {
 
 const VIEWS: ViewKind[] = ['kanban', 'list', 'timeline'];
 
+const MENU_FEATURE: Partial<Record<string, BoardFeature>> = {
+  priority: BoardFeature.PRIORITY,
+  label: BoardFeature.LABELS,
+  due: BoardFeature.DUE_DATE,
+  estimate: BoardFeature.ESTIMATE,
+  milestone: BoardFeature.MILESTONES,
+};
+
 /**
  * The boards mode's keyboard (ADR-0042 «Хоткеи», registry features/boards/hotkeys.ts). Active
  * while the mode is on; single letters are ignored in text fields and while a menu / dialog is
@@ -84,13 +94,15 @@ export function useBoardHotkeys(workspaceId: string, boardId: string): void {
           case 'cycleView': {
             if (!board) return false;
             const cur = prefsOf(ui, boardId).kind;
-            ui.setPrefs(boardId, { kind: VIEWS[(VIEWS.indexOf(cur) + 1) % VIEWS.length] ?? 'kanban' });
+            // TIMELINE off (ADR-0058 §3): V cycles kanban ↔ list.
+            const views = featureOn(board.disabledFeatures, BoardFeature.TIMELINE) ? VIEWS : VIEWS.filter((v) => v !== 'timeline');
+            ui.setPrefs(boardId, { kind: views[(views.indexOf(cur) + 1) % views.length] ?? 'kanban' });
             return true;
           }
           case 'viewKanban':
           case 'viewList':
           case 'viewTimeline':
-            if (!board) return false;
+            if (!board || (id === 'viewTimeline' && !featureOn(board.disabledFeatures, BoardFeature.TIMELINE))) return false;
             ui.setPrefs(boardId, { kind: id === 'viewKanban' ? 'kanban' : id === 'viewList' ? 'list' : 'timeline' });
             return true;
           case 'up':
@@ -156,11 +168,15 @@ export function useBoardHotkeys(workspaceId: string, boardId: string): void {
           case 'label':
           case 'due':
           case 'estimate':
-          case 'milestone':
+          case 'milestone': {
             if (!task || !mayEditTask(task, perms, me)) return false;
+            // A menu of a disabled feature has nowhere to open (ADR-0058 §3).
+            const f = MENU_FEATURE[id];
+            if (f !== undefined && !featureOn(useBoards.getState().boards[task.boardId]?.disabledFeatures, f)) return false;
             ui.openMenu(task.id, id);
             reveal(task.id);
             return true;
+          }
           case 'archive':
             if (!task || !mayArchiveTask(task, perms, me)) return false;
             void archiveTask(task.id);

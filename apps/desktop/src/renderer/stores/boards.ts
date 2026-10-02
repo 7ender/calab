@@ -1,8 +1,15 @@
 import { create } from 'zustand';
-import type { Board, Task, TaskActivity } from '@calaba/protocol';
+import type { Board, BoardCategory, Task, TaskActivity, TaskChecklist } from '@calaba/protocol';
 import {
   EMPTY_DATA,
   appendActivity,
+  checkCountsOf,
+  removeCategory,
+  removeChecklist,
+  setChecklists,
+  setWorkspaceCategories,
+  upsertCategory,
+  upsertChecklist,
   removeBoard,
   removeTask,
   setBoardTasks,
@@ -37,6 +44,12 @@ interface BoardsState extends BoardsData {
   setPositions: (positions: Readonly<Record<string, number>>) => void;
   setUnread: (workspaceId: string, ids: readonly string[]) => void;
   appendActivity: (a: TaskActivity) => void;
+  setWorkspaceCategories: (workspaceId: string, list: readonly BoardCategory[]) => void;
+  upsertCategory: (c: BoardCategory) => void;
+  removeCategory: (categoryId: string) => void;
+  setChecklists: (taskId: string, list: readonly TaskChecklist[]) => void;
+  upsertChecklist: (taskId: string, c: TaskChecklist | undefined, total: number, done: number) => void;
+  removeChecklist: (taskId: string, checklistId: string, total: number, done: number) => void;
 }
 
 export const useBoards = create<BoardsState>()((set) => ({
@@ -64,9 +77,34 @@ export const useBoards = create<BoardsState>()((set) => ({
   setPositions: (p) => set((d) => setPositions(d, p)),
   setUnread: (ws, ids) => set((d) => setUnread(d, ws, ids)),
   appendActivity: (a) => set((d) => appendActivity(d, a)),
+  setWorkspaceCategories: (ws, list) => set((d) => setWorkspaceCategories(d, ws, list)),
+  upsertCategory: (c) => set((d) => upsertCategory(d, c)),
+  removeCategory: (id) => set((d) => removeCategory(d, id)),
+  setChecklists: (taskId, list) => set((d) => setChecklists(d, taskId, list)),
+  upsertChecklist: (taskId, c, total, done) => set((d) => upsertChecklist(d, taskId, c, total, done)),
+  removeChecklist: (taskId, id, total, done) => set((d) => removeChecklist(d, taskId, id, total, done)),
 }));
 
 const NONE: readonly string[] = [];
+const NO_CHECKLISTS: readonly TaskChecklist[] = [];
+
+/** A task's loaded checklists (stable reference while they do not change). */
+export function checklistsOf(s: BoardsData, taskId: string): readonly TaskChecklist[] {
+  return s.checklists[taskId] ?? NO_CHECKLISTS;
+}
+
+/** The card's «3/7» (a primitive: the progress leaf re-renders only when it changes). */
+export function checklistProgress(s: BoardsData, taskId: string): string {
+  const c = checkCountsOf(s, taskId);
+  return c.total > 0 ? `${c.done}/${c.total}` : '';
+}
+
+/** Board categories of a workspace by position. */
+export function workspaceCategories(categories: Readonly<Record<string, BoardCategory>>, workspaceId: string): BoardCategory[] {
+  return Object.values(categories)
+    .filter((c) => c.workspaceId === workspaceId)
+    .sort((a, b) => a.position - b.position || (a.id < b.id ? -1 : 1));
+}
 
 /** A status column's ids (stable reference while the column does not change). */
 export function columnIds(s: BoardsData, boardId: string, statusId: string): readonly string[] {

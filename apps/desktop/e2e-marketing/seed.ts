@@ -121,6 +121,9 @@ export function seedScene(mock: MockServer, c: Copy, art: Art): void {
   room(R.longPrivate, c.rooms.releases, c.topics.releases);
   room(R.call, c.rooms.standup, '');
   room(R.meeting, c.rooms.meeting, c.topics.meeting);
+  // The fixture caps «Переговорка» at 4; the shots show five people in it (a «05/04» counter in red looks like an error).
+  const meeting = s.rooms.get(R.meeting);
+  if (meeting) meeting.userLimit = 12;
   // Guests see only the rooms they were let into (the fixture opens some rooms to the guest role).
   for (const r of s.rooms.values()) r.permissionOverrides = r.permissionOverrides.filter((o) => o.targetId !== 'guest');
   // The other workspaces' rooms are never opened; keep them but give them neutral names.
@@ -356,7 +359,7 @@ export function seedNotes(mock: MockServer, c: Copy): string {
   c.notes.items.forEach((text, i) => at(mock.injectMessage({ roomId: first, authorId: U.anna, content: text }), times[i] ?? '12:50'));
   at(mock.injectMessage({ roomId: first, authorId: U.anna, content: c.notes.forwarded, forward: { authorId: U.vera, sentAtMs: msk('16:05', '2026-01-14'), roomId: R.general } }), '13:02');
   const second = ids[1];
-  if (second) at(mock.injectMessage({ roomId: second, authorId: U.anna, content: 'https://calab.ru' }), '10:00');
+  if (second) at(mock.injectMessage({ roomId: second, authorId: U.anna, content: 'https://calab.io' }), '10:00');
   const third = ids[2];
   if (third) at(mock.injectMessage({ roomId: third, authorId: U.anna, content: c.slide.items.join('\n') }), '12:00');
   return first;

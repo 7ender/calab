@@ -42,6 +42,9 @@ services:
       - LANDING_HOST=${LANDING_HOST:-}
       - DOMAIN_ALT=${DOMAIN_ALT:-}          # extra app host (alias), optional
       - DOMAIN_LEGACY=${DOMAIN_LEGACY:-}    # extra app host (transitional), optional
+      - DOMAIN_ALIASES=${DOMAIN_ALIASES:-}  # extra zones: rtc./turn.<zone> served too (docs/06 «Домены»)
+      - LANDING_HOST_ALIASES=${LANDING_HOST_ALIASES:-}    # 301 → LANDING_HOST
+      - RELEASES_HOST_ALIASES=${RELEASES_HOST_ALIASES:-}  # the same feed (old builds have it baked in)
       # desktop release feed: unset → releases.<DOMAIN>; set to empty → none (/download/ served locally)
       - RELEASES_HOST=${RELEASES_HOST-releases.${DOMAIN}}
       - S3_PUBLIC_URL=${S3_PUBLIC_URL:-}   # public base URL of the release bucket; empty → /srv/releases
@@ -174,9 +177,22 @@ services:
       - REDIS_URL=redis://:${REDIS_PASSWORD}@127.0.0.1:6379
       - REDIS_KEY_PREFIX=${REDIS_KEY_PREFIX:-}   # key/channel namespace for a shared Valkey (docs/06); empty = none
       - JWT_SECRET=${JWT_SECRET}
+      # ADR-0054 / release-2.0-identity §13: empty dependencies preserve legacy startup;
+      # partial/invalid configuration fails startup. Never derive these keys from JWT_SECRET.
+      - IDENTITY_PUBLIC_ORIGIN=${IDENTITY_PUBLIC_ORIGIN:-}
+      - IDENTITY_ENCRYPTION_KEYS=${IDENTITY_ENCRYPTION_KEYS:-}
+      - IDENTITY_ENCRYPTION_ACTIVE_KID=${IDENTITY_ENCRYPTION_ACTIVE_KID:-}
+      - OAUTH_SIGNING_KEYS=${OAUTH_SIGNING_KEYS:-}
+      - OAUTH_SIGNING_ACTIVE_KID=${OAUTH_SIGNING_ACTIVE_KID:-}
+      - IDENTITY_ENDPOINTS=${IDENTITY_ENDPOINTS:-}
+      - IDENTITY_DIRECTORY_HOSTS=${IDENTITY_DIRECTORY_HOSTS:-}
+      - IDENTITY_EDITION=${IDENTITY_EDITION:-cloud}
+      - IDENTITY_ENTERPRISE_WORKSPACE_IDS=${IDENTITY_ENTERPRISE_WORKSPACE_IDS:-}
       - ACCESS_TOKEN_TTL=${ACCESS_TOKEN_TTL:-24h}      # access JWT; revocation is instant regardless (docs/04 «Auth»)
       - REFRESH_TOKEN_TTL=${REFRESH_TOKEN_TTL:-8760h}  # session (sliding): 1 year without use ends it
-      - LIVEKIT_URL=wss://rtc.${DOMAIN}
+      # the rtc. host clients get; after a domain move keep the old one while older desktop builds are in use
+      # (their CSP allows only the old family — docs/06 «Домены»)
+      - LIVEKIT_URL=wss://${RTC_PUBLIC_HOST:-rtc.${DOMAIN}}
       - LIVEKIT_INTERNAL_URL=http://127.0.0.1:7880
       - LIVEKIT_API_KEY=${LIVEKIT_API_KEY}
       - LIVEKIT_API_SECRET=${LIVEKIT_API_SECRET}

@@ -1,6 +1,8 @@
 syntax = "proto3";
 package calaba.v1;
 
+import "calaba/v1/identity.proto";
+
 import "google/protobuf/timestamp.proto";
 import "calaba/v1/boards.proto";
 import "calaba/v1/media.proto";
@@ -46,6 +48,7 @@ message Workspace {
   TimeFormat time_format = 14;
   // Telephony is on (ADR-0046): SIP settings enabled and accepted by LiveKit. Members with
   // PLACE_CALLS in a voice room they are in may call phone numbers from it.
+  WorkspaceIdentityAccess identity_access = 16;
   bool sip_enabled = 15;
 }
 
@@ -160,6 +163,7 @@ message UpdateWorkspaceResponse {
 message JoinWorkspaceResponse {
   Workspace workspace = 1;
   WorkspaceMember member = 2;
+  WorkspaceIdentityAccess identity_access = 3;
 }
 
 // POST /api/workspaces/{id}/invites (INVITE_MEMBERS, ADR-0043)

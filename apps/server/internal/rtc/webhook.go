@@ -136,6 +136,17 @@ func (s *Service) HandleEvent(ctx context.Context, ev *WebhookEvent) error {
 		}
 		return nil
 	case EventTrackPublished:
+		if err := s.checkIdentity(ctx, wid, rid, uid, sid); err != nil {
+			s.removeIdentities(ctx, ev.Room.Name, []string{identity})
+			// Authoritative eviction precedes best-effort Redis bookkeeping.
+			_ = s.update(ctx, wid, uid, sid, func(current *voice.SessionState) *voice.SessionState {
+				if current != nil && current.RoomID == rid {
+					return nil
+				}
+				return current
+			})
+			return nil
+		}
 		switch t.Source {
 		case SourceMicrophone:
 			muted := t.Muted
@@ -217,6 +228,9 @@ func (s *Service) participantJoined(ctx context.Context, wid, rid, uid, sid uuid
 			}
 			return nil
 		})
+	}
+	if err := s.checkIdentity(ctx, wid, rid, uid, sid); err != nil {
+		return reject("identity access denied")
 	}
 	if s.Revoked != nil {
 		if revoked, err := s.Revoked(ctx, sid); err != nil {

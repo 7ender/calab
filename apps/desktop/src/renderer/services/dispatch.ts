@@ -1,10 +1,21 @@
-import { VoiceStreamStopReason, WorkspaceRole, type Birthday, type DispatchEvent, type Message, type WorkspaceSnapshot } from '@calaba/protocol';
+import { applyIdentityAccess, identityRoomLocked } from './identity';
+import { useIdentity } from '../stores/identity';
+import { accessLocked } from '../features/identity/model';
+import {
+  VoiceStreamStopReason,
+  WorkspaceRole,
+  type Birthday,
+  type DispatchEvent,
+  type Message,
+  type WorkspaceSnapshot,
+} from '@calaba/protocol';
 import { timestampMs } from '@bufbuild/protobuf/wkt';
 import { syncTimeZone } from './timezone';
 import { log } from '../lib/log';
 import { HOME, isDm, useDms } from '../stores/dms';
 import { useInbox } from '../stores/inbox';
 import { useMessages } from '../stores/messages';
+import { useArchiveView } from '../stores/archiveView';
 import { toast } from '../stores/toasts';
 import { mayMentionAll } from '../lib/permissions';
 import { useReadReceipts } from '../stores/readReceipts';
@@ -110,7 +121,17 @@ onRoomArchived((roomId) => {
 
 export function applyDispatch(ev: DispatchEvent): void {
   const e = ev.event;
+  if (e.value && e.case !== 'ready' && e.case !== 'workspaceIdentityAccessUpdate') {
+    const value = e.value;
+    if ('workspaceId' in value && typeof value.workspaceId === 'string' && accessLocked(useIdentity.getState().access[value.workspaceId]))
+      return;
+    if ('roomId' in value && typeof value.roomId === 'string' && identityRoomLocked(value.roomId)) return;
+  }
   switch (e.case) {
+    case 'workspaceIdentityAccessUpdate': {
+      if (e.value.sessionId === useSession.getState().sessionId && e.value.access) applyIdentityAccess(e.value.access);
+      break;
+    }
     case 'ready': {
       const r = e.value;
       const ws = useWorkspaces.getState();
@@ -122,6 +143,7 @@ export function applyDispatch(ev: DispatchEvent): void {
       // clearing the chat.
       const prevUnread = rooms.unread;
       const prevMentions = rooms.mentions;
+      for (const access of r.identityAccess) applyIdentityAccess(access);
       ws.reset();
       rooms.reset();
       useSounds.getState().reset();
@@ -163,7 +185,10 @@ export function applyDispatch(ev: DispatchEvent): void {
       useRooms.setState((st) => ({ unread: { ...carry(prevUnread), ...st.unread }, mentions: { ...carry(prevMentions), ...st.mentions } }));
       void loadMentions(); // the inbox list: mentions missed while disconnected
       const msgs = useMessages.getState();
-      for (const id of Object.keys(msgs.rooms)) if (!(id in alive)) msgs.unload(id);
+      // The history of an archived temporary room (ADR-0044) is read outside the live store: it
+      // stays open and is resynced like any loaded window (#48).
+      const archived = useArchiveView.getState().room?.id;
+      for (const id of Object.keys(msgs.rooms)) if (!(id in alive) && id !== archived) msgs.unload(id);
       void resyncLoadedRooms();
       void retryFailedLoads(); // a room left on «Не удалось загрузить» (docs/09 #146)
       void resyncPins();
@@ -214,6 +239,7 @@ export function applyDispatch(ev: DispatchEvent): void {
       ensureActiveWorkspace();
       return;
     }
+    // Boards (ADR-0042, events 75–81); board categories and task checklists (ADR-0058, 87–91).
     case 'boardCreate':
     case 'boardUpdate':
     case 'boardDelete':
@@ -221,6 +247,11 @@ export function applyDispatch(ev: DispatchEvent): void {
     case 'taskUpdate':
     case 'taskDelete':
     case 'taskActivity':
+    case 'boardCategoryCreate':
+    case 'boardCategoryUpdate':
+    case 'boardCategoryDelete':
+    case 'taskChecklistUpdate':
+    case 'taskChecklistDelete':
       applyBoardEvent(e);
       return;
     case 'dmCreate':
@@ -586,6 +617,11 @@ function applySnapshotExtras(snap: WorkspaceSnapshot): void {
 export function ensureActiveWorkspace(): void {
   const ui = useUi.getState();
   const { byId, order } = useWorkspaces.getState();
-  if (ui.activeWorkspaceId === HOME || (ui.activeWorkspaceId && byId[ui.activeWorkspaceId])) return;
+  if (
+    (ui.activeWorkspaceId && useIdentity.getState().access[ui.activeWorkspaceId]) ||
+    ui.activeWorkspaceId === HOME ||
+    (ui.activeWorkspaceId && byId[ui.activeWorkspaceId])
+  )
+    return;
   ui.setWorkspace(order[0] ?? null);
 }

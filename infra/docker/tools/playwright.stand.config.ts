@@ -3,7 +3,7 @@
 // locally yet. With CALABA_FORCE_IP set, every hostname resolves to that IP (the stand serves all of its
 // names — app, aliases, rtc., turn. — from one address) and connections go direct, in Chromium and Firefox.
 //
-//   cd apps/desktop && CALABA_FORCE_IP=141.105.69.177 CALABA_WEB_URL=https://app.calab.ru \
+//   cd apps/desktop && CALABA_FORCE_IP=141.105.69.177 CALABA_WEB_URL=https://app.calab.io \
 //     CALABA_WEB_LOGIN=… CALABA_WEB_PASSWORD=… \
 //     pnpm exec playwright test --config ../../infra/docker/tools/playwright.stand.config.ts
 import path from 'node:path';

@@ -1,3 +1,4 @@
+import { esIdentity } from './identity';
 import type { Dict } from '../types';
 import { esApp } from './app';
 import { esChat } from './chat';
@@ -16,6 +17,7 @@ import { esPicker } from './picker';
 import { esRoles } from './roles';
 import { esCalendar } from './calendar';
 import { esBoards } from './boards';
+import { esBoards2 } from './boards2';
 import { esPlan } from './plan';
 import { esShell } from './shell';
 import { esVideo } from './video';
@@ -29,6 +31,7 @@ import { esWebApps } from './webapps';
 
 /** Spanish UI strings (ADR-0022): same keys and placeholders as `ru`/`en`; glossary docs/i18n-glossary.md. */
 export const es: Dict = {
+  ...esIdentity,
   ...esShell,
   ...esChat,
   ...esPeople,
@@ -56,6 +59,7 @@ export const es: Dict = {
   ...esRoles,
   ...esCalendar,
   ...esBoards,
+  ...esBoards2,
   'voice.pendingMember': 'Conectando…',
   // common
   'common.cancel': 'Cancelar',
@@ -146,11 +150,12 @@ export const es: Dict = {
   'ws.timeFormat.auto': 'Auto',
   'ws.timeFormat.h24': '24 h',
   'ws.timeFormat.h12': '12 h',
-  'ws.settings': 'Ajustes del espacio',
+  'ws.settings': 'Ajustes',
   'ws.settingsTitle': 'Ajustes: {name}',
-  'ws.invite': 'Invitar personas',
+  'ws.invite': 'Invitar',
   'ws.members': 'Miembros',
   'ws.leave': 'Abandonar espacio',
+  'ws.leaveItem': 'Salir',
   'ws.leaveConfirm': '¿Abandonar «{name}»? Solo podrás volver con una invitación.',
   'ws.tabGeneral': 'General',
   'ws.tabMedia': 'Voz y pantalla compartida',
@@ -238,6 +243,7 @@ export const es: Dict = {
   'room.whoSeesRemove': 'Quitar de la lista: {name}',
   'room.whoSeesFooter': 'La lista es el permiso «{perm}» en la pestaña «{tab}»',
   'room.settings': 'Ajustes de la sala',
+  'roomMenu.settings': 'Ajustes',
   'room.settingsTitle': 'Sala: {name}',
   'room.tabPerms': 'Permisos',
   'room.mediaText': '«Predeterminado del espacio» usa el ajuste del espacio.',
@@ -251,6 +257,7 @@ export const es: Dict = {
   'media.maxPreset': 'Calidad máxima de pantalla compartida',
   'media.maxStreams': 'Pantallas compartidas simultáneas',
   'media.maxStreamsHint': 'Cuántas personas pueden compartir pantalla a la vez (0 — no permitido)',
+  'media.planClamp': 'Se aplica min(valor, límite del plan): {limit}',
   'media.default': 'Predeterminado del espacio ({v})',
   'audioTier.8': 'Baja',
   'audioTier.16': 'Normal',

@@ -15,6 +15,7 @@ LiveKit-клиентом как обычный участник.
 - [Gateway: события в реальном времени](#gateway-события-в-реальном-времени)
 - [Команды](#команды)
 - [Webhook](#webhook)
+- [Вебхук доски](#вебхук-доски)
 - [Голос через LiveKit](#голос-через-livekit)
 - [Стикеры по API](#стикеры-по-api)
 - [Лимиты и ошибки](#лимиты-и-ошибки)
@@ -31,7 +32,7 @@ LiveKit-клиентом как обычный участник.
    ```sh
    pnpm install && pnpm -F @calaba/bot-sdk build
    cd examples/bots/echo && npm install
-   BOT_TOKEN=calab_bot_… CALAB_SERVER=https://app.calab.ru npm start
+   BOT_TOKEN=calab_bot_… CALAB_SERVER=https://app.calab.io npm start
    ```
    Напишите в комнате что угодно или `/echo привет` — бот ответит.
 
@@ -40,7 +41,7 @@ LiveKit-клиентом как обычный участник.
 ```js
 import { Bot } from '@calaba/bot-sdk';
 
-const bot = new Bot(process.env.BOT_TOKEN, { server: 'https://app.calab.ru' });
+const bot = new Bot(process.env.BOT_TOKEN, { server: 'https://app.calab.io' });
 await bot.commands([{ name: 'echo', description: 'Повторить текст' }]);
 bot.on('message', (m) => bot.reply(m, m.content));
 bot.on('command', (c) => c.name === 'echo' && bot.reply(c, c.args || 'Напишите: /echo текст'));
@@ -79,13 +80,13 @@ await bot.start();
 
 ## REST
 
-База — адрес приложения (`https://app.calab.ru` или ваш `https://<APP_HOST>`). Тела запросов и ответов — proto-сообщения
+База — адрес приложения (`https://app.calab.io` или ваш `https://<APP_HOST>`). Тела запросов и ответов — proto-сообщения
 в JSON (protojson): поля в lowerCamelCase, enum — полными именами (`"ROOM_TYPE_VOICE"`), `uint64` — строками, время —
 RFC 3339; поля со значениями по умолчанию в ответе присутствуют, неизвестные поля в запросе игнорируются. Ошибка —
 `ApiError { code, message, field?, reason?, used?, limit? }`.
 
 ```sh
-export CALAB=https://app.calab.ru
+export CALAB=https://app.calab.io
 export TOKEN=calab_bot_…
 curl -s $CALAB/api/bots/me -H "Authorization: Bearer $TOKEN"
 ```
@@ -142,13 +143,14 @@ curl -s $CALAB/api/bots/me -H "Authorization: Bearer $TOKEN"
 | `POST /api/rooms/{id}/voice/{userId}/mute · unmute · disconnect · move · stop-stream · stop-camera · allow-camera` | модерация голоса | `MUTE_MEMBERS` / `MOVE_MEMBERS` |
 | `GET /api/rooms/{id}/admissions` · `POST /api/rooms/{id}/admissions/{userId} {status, displayName?, badgeId?}` | гости, ожидающие подтверждения входа (ADR-0040), и решение по ним: `ROOM_ADMISSION_STATUS_ADMITTED` / `…_DECLINED` (ADR-0051) | `INVITE_GUESTS` в комнате |
 | `POST /api/rooms/{id}/recording/start` · `…/recording/stop` | запись встречи (ADR-0025): в звонке комнаты кто-то есть, `allowRecording`, пространство подключено к GPTunneL. SDK `bot.recording.start/stop` | `VIEW_ROOM` + `CONNECT` и **`MANAGE_RECORDINGS`** (для ботов, ADR-0051) |
-| `POST /api/rooms/{id}/calls {number}` · `DELETE /api/rooms/{id}/calls/{callId}` | телефония (ADR-0046): позвонить на номер из звонка комнаты — абонент входит в комнату участником `sip:<callId>`; положить свою линию (чужую — с `MUTE_MEMBERS`). Статусы — событие `sipCallUpdate`. Лимит — 20 звонков в час на пространство (`429 SIP_RATE_LIMITED`). Настройки SIP и журнал — 403 `BOT_NOT_ALLOWED` | `PLACE_CALLS`, бот в звонке комнаты, телефония включена |
+| `POST /api/rooms/{id}/calls {number}` · `DELETE /api/rooms/{id}/calls/{callId}` | телефония (ADR-0046): позвонить на номер из звонка комнаты — абонент входит в комнату участником `sip:<callId>`; положить свою линию (чужую — с `MUTE_MEMBERS`). Статусы — событие `sipCallUpdate`. Лимит — 20 звонков в час на пространство (`429 SIP_RATE_LIMITED`). Настройки SIP и журнал — 403 `BOT_NOT_ALLOWED`. Только тариф Business: ниже — `409 PLAN_LIMIT` (положить линию можно всегда) | `PLACE_CALLS`, бот в звонке комнаты, телефония включена |
 | `GET /api/workspaces/{id}/events?from=&to=` · `GET /api/events/{id}` | календарь (ADR-0038): встречи, которые бот организует, и встречи видимых ему комнат; адреса внешних участников — только если бот может править встречу. SDK `bot.calendar.list/get` | `VIEW_ROOM` |
 | `POST /api/workspaces/{id}/events` | создать встречу (ADR-0051): **бот — организатор, но не участник** (себя в `attendees` — 422); письма и `invite.ics` участникам уходят от системного адреса «Пространство (от имени бота X)», без `Reply-To` и без гостевых ссылок комнаты — внешние получают ссылку на страницу встречи. SDK `bot.calendar.create` | не гость; комната — видимая голосовая |
 | `PATCH · DELETE /api/events/{id}[?occurrence=]` | изменить / отменить встречу (или одно вхождение серии). SDK `bot.calendar.update/delete` | свою; чужую — `MANAGE_ROOM` в её комнате или `MANAGE_EVENTS` (внешние адреса в чужую встречу — 403) |
 | `GET /api/workspaces/{id}/freebusy?users=&from=&to=` · `POST …/freebusy/suggest` | свободно/занято и подбор времени (ADR-0041): боту — только «занято» (без названий и участников внешних событий). SDK `bot.calendar.freebusy/suggest` | не гость |
 | `PUT /api/events/{id}/rsvp`, `GET /api/me/events/today`, CalDAV (`/api/me/caldav…`, `/api/me/external-events`) | 403 `BOT_NOT_ALLOWED`: бот не участник встреч и не держит внешний календарь | — |
 | доски задач (ADR-0042): `GET /api/workspaces/{id}/boards`, `GET /api/boards/{id}`, `GET/POST /api/boards/{id}/tasks`, `GET/PATCH /api/tasks/{id}`, `PUT /api/tasks/{id}/assignees`, `GET /api/workspaces/{id}/tasks/search?q=`, `GET /api/t/{KEY-N}`, `GET /api/me/tasks`, статусы/лейблы/вехи/виды, архив задач | бот работает как человек — по битам доски своих ролей и переопределений (бота можно назначить исполнителем и дать ему доступ к приватной доске лично); комментарий — сообщение в `task.roomId`. Доступ к доске (`PUT …/permissions`) и удаление навсегда (`DELETE …?purge=1`) — 403 `BOT_NOT_ALLOWED`. SDK: `bot.boards.list/get`, `bot.tasks.list/search/get/create/update/setAssignees/comment` | `VIEW_BOARD` / `CREATE_TASKS` / `EDIT_TASKS` / `MANAGE_BOARD` |
+| доски 2.0 (ADR-0058): `GET/POST /api/workspaces/{id}/board-categories`, `PATCH/DELETE /api/board-categories/{id}`, `PUT /api/workspaces/{id}/boards/order`, `PATCH /api/boards/{id} {setDisabledFeatures, disabledFeatures, estimateScale}`, чек-листы: `POST /api/tasks/{id}/checklists`, `PATCH/DELETE /api/checklists/{id}`, `POST /api/checklists/{id}/items`, `PATCH/DELETE /api/checklist-items/{id}`, `POST /api/checklist-items/{id}/convert` | категории — `CREATE_BOARDS`, положить доску и фичи — `MANAGE_BOARD`, чек-листы — как поля задачи (`EDIT_TASKS`; `CREATE_TASKS` — свои и назначенные); чек-листы — с тарифа Team (`409 PLAN_LIMIT`). Фича доски выключена → запрос, **меняющий** её поле на непустое, — `409 CONFLICT`, `reason FEATURE_DISABLED`, `field` = имя поля (`estimate`, `dueOn`, `approverIds`…); сброс в пусто и повтор текущего значения проходят. Вебхук доски (`/api/boards/{id}/webhook*`) — только люди, боту `403 BOT_NOT_ALLOWED`. SDK: `bot.boards.categories.*`, `bot.boards.setFeatures`, `bot.tasks.checklists.*` | см. слева |
 | `GET /api/workspaces/{id}/sounds` · `POST /api/rooms/{id}/sounds/play {soundId}` | саундборд (ADR-0036): список звуков; проиграть звук всем в звонке (`builtin:<имя>` или id звука; 1 в 2 с на бота, 5 в 10 с на комнату) | бот в звонке комнаты |
 | `POST /api/workspaces/{id}/sounds` · `PATCH · DELETE …/sounds/{soundId}` | библиотека звуков (ADR-0051): клип — своя загрузка бота в это пространство | `MANAGE_STICKERS` |
 | стикеры: `GET/POST /api/workspaces/{id}/sticker-packs`, `/api/sticker-packs/{id}…`, `/api/stickers/{id}`, `/api/me/sticker-packs…` | см. [Стикеры](#стикеры-по-api) | участник / `MANAGE_STICKERS` |
@@ -390,6 +392,183 @@ def ok(secret: bytes, raw_body: bytes, header: str) -> bool:
 В SDK: `new Bot(token, { server, webhookSecret })` и `bot.handleWebhook(rawBody, headers)` — проверит подпись,
 отбросит повтор и выдаст те же события `message` / `command` / `reaction`, что и gateway.
 
+## Вебхук доски
+
+(ADR-0058.) Доска сама присылает JSON на ваш HTTPS-адрес, когда что-то меняется в её задачах. Это отдельный механизм от
+[вебхука бота](#webhook): один вебхук на доску, все изменения задач, без выбора событий.
+
+- **Кто настраивает.** Только люди (боту `403 BOT_NOT_ALLOWED`: в нём секрет и вывод данных наружу): `MANAGE_BOARD` на доске
+  **и** `MANAGE_INTEGRATIONS` пространства, тариф **Business** (ниже — `409 CONFLICT`, `reason PLAN_LIMIT`).
+  Вебхук принадлежит доске, а не создателю: его видит и меняет любой, у кого есть `MANAGE_BOARD`.
+- **Маршруты.** `PUT /api/boards/{id}/webhook {url, secret?}` — создать, заменить или включить заново отключённый;
+  `url` — только `https://` на публичный адрес, `secret` 16..256 символов; пустой — сервер сгенерирует 32 случайных байта
+  (base64url) и вернёт `secret` **один раз** в ответе. `GET` — состояние (`url`, `hasSecret`, `enabled`, `disabledAt`,
+  `failingSince`, `lastOkAt`, `lastError`, `pending`, `pausedReason`); секрет не отдаётся никогда. `DELETE` → 204 (очередь
+  помечается `failed`). `POST …/webhook/ping` — синхронно шлёт событие `ping` тем же способом →
+  `{ok, status, error}`, не чаще раза в 10 с (`429`).
+- **События** (`type`): `task.created`, `task.updated` (любое изменение: поля, статус, исполнители, связи, вложения,
+  согласования, чек-листы), `task.archived`, `task.restored` (автоархив — `actor: null`), `task.moved_in` (доска-получатель;
+  задача уже с новым ключом), `task.moved_out` (доска-источник), `task.comment.created`, `task.comment.updated`,
+  `task.comment.deleted`, `ping`. Изменения одной транзакции — одно событие, список `changes` — записи журнала задачи
+  (`field` = `kind` журнала: `status`, `assignees`, `checklist` …; `before` / `after` — их данные).
+- **Запрос.** `POST <url>`, `Content-Type: application/json`, `User-Agent: Calab-Webhook/1.0`, заголовки:
+
+  | Заголовок | Значение |
+  |---|---|
+  | `X-Calab-Webhook-Version` | `1` (контракт меняется только добавлением полей) |
+  | `X-Calab-Event` | `type` события |
+  | `X-Calab-Delivery` | id доставки (= `id` в теле) |
+  | `X-Calab-Timestamp` | unix-секунды отправки |
+  | `X-Calab-Signature` | `v1=<hex HMAC-SHA256(secret, timestamp + "." + body)>` |
+
+- **Подпись.** HMAC считается от строки `timestamp + "." + сырые байты тела`. Отвергайте запрос, если `|now − timestamp| > 5 минут`
+  (защита от повтора), сравнивайте подпись за постоянное время. Боты остаются на `sha256=…` без timestamp.
+- **Доставка.** At-least-once: повторы возможны, порядок доставки не гарантирован. **Идемпотентность** — по `id`
+  (хранить виденные); **порядок** — по `sequence` (монотонен в пределах доски, начиная с 1; у `ping` — 0). Успех — любой
+  `2xx` за 10 с, редиректы — ошибка. Ретраи: 1 мин, 2, 4 … до 1 ч, доставка живёт сутки; вебхук, падающий сутки подряд,
+  **отключается** (`enabled: false`, очередь сброшена; `PUT` включает снова). Принимайте тело ≤ 256 КБ.
+- **Паузы.** При понижении тарифа ниже Business вебхук не удаляется, а встаёт на паузу (`pausedReason = PLAN`): новые
+  события не ставятся в очередь, после апгрейда доставка идёт с новых событий. Архивная доска — задачи только для чтения,
+  событий нет, накопленная очередь дорабатывается.
+- **Известный пробел.** События комментариев ставятся в очередь **после** коммита сообщения: если процесс упал ровно
+  между ними, событие потеряно (редкое окно; события изменений задачи пишутся в той же транзакции и не теряются).
+
+### Формат тела
+
+`BoardWebhookEvent` в protojson, но с **именами полей из proto (snake_case)**, а не lowerCamelCase, как в REST. Каждое поле
+присутствует: неустановленные — `null` (`actor: null` у изменений сервера, `edited_at: null`), пустые строки и списки — как
+есть; `uint64` (например `size` вложения) — **строкой**, `sequence` — числом. `task` — задача без данных зрителя
+(`subscribed`, `muted`, `unread`, `viewer_state` всегда в значениях по умолчанию), `attachments` и `checklists` всегда пусты
+(счётчики `attachment_count`, `checklist_total/done` на месте);
+`comment` — только у `task.comment.*`. Ссылка на задачу — `task_url`. Реальный пример (golden-фикстура
+`apps/server/internal/boards/testdata/webhook_event.json`, поля по алфавиту; чтобы показать и `changes`, и `comment`, она
+собрана вместе, у настоящего `task.updated` `comment` равен `null`):
+
+```json
+{
+  "actor": {
+    "id": "0192a000-0000-7000-8000-0000000000cc",
+    "is_bot": false,
+    "name": "Анна"
+  },
+  "board": {
+    "id": "0192a000-0000-7000-8000-0000000000bb",
+    "key": "FNG",
+    "name": "Финансы"
+  },
+  "changes": [
+    {
+      "after": {
+        "status_id": "s2",
+        "status_type": "started"
+      },
+      "before": {
+        "status_id": "s1",
+        "status_type": "unstarted"
+      },
+      "field": "status"
+    }
+  ],
+  "comment": {
+    "attachments": [
+      {
+        "mime": "application/pdf",
+        "name": "a.pdf",
+        "size": "1024"
+      }
+    ],
+    "author_id": "u1",
+    "created_at": "2026-10-02T12:00:00Z",
+    "edited_at": null,
+    "id": "m1",
+    "text": "готово"
+  },
+  "id": "0192a000-0000-7000-8000-000000000001",
+  "occurred_at": "2026-10-02T12:00:00Z",
+  "sequence": 42,
+  "task": {
+    "approval_required": 0,
+    "approval_state": "TASK_APPROVAL_STATE_UNSPECIFIED",
+    "approvers": [],
+    "archived_at": null,
+    "assignees": [],
+    "attachment_count": 0,
+    "attachments": [],
+    "board_id": "0192a000-0000-7000-8000-0000000000bb",
+    "checklist_done": 3,
+    "checklist_total": 7,
+    "checklists": [],
+    "comment_count": 0,
+    "completed_at": null,
+    "completed_by": "",
+    "created_at": "2026-10-02T12:00:00Z",
+    "created_by": "",
+    "description": "",
+    "due_on": "",
+    "estimate": 3,
+    "id": "0192a000-0000-7000-8000-0000000000dd",
+    "key": "FNG-12",
+    "label_ids": [],
+    "milestone_id": "",
+    "muted": false,
+    "number": 12,
+    "parent_id": "",
+    "position": 0,
+    "priority": "TASK_PRIORITY_HIGH",
+    "relations": [],
+    "room_id": "",
+    "start_on": "",
+    "started_at": null,
+    "status_id": "s2",
+    "subscribed": false,
+    "subtask_count": 0,
+    "subtask_done": 0,
+    "title": "Отчёт",
+    "unread": false,
+    "updated_at": "2026-10-02T12:00:00Z",
+    "viewer_state": false,
+    "workspace_id": ""
+  },
+  "task_url": "https://app.example.com/t/FNG-12",
+  "type": "task.updated",
+  "version": 1,
+  "workspace_id": "0192a000-0000-7000-8000-0000000000aa"
+}
+```
+
+`task.moved_out` несёт только то, что знала доска-источник: `task` содержит лишь `id`, прежний `key` и `board_id`
+доски-источника, `changes` — одна запись `moved_board` с `before`; задача целиком (новый ключ, статусы и лейблы
+получателя) приходит в `task.moved_in` доски-получателя.
+
+### Проверка подписи
+
+```js
+import { createHmac, timingSafeEqual } from 'node:crypto';
+
+// rawBody — сырые байты тела (Buffer), не пересобранный JSON; headers — заголовки запроса в нижнем регистре
+export function verifyBoardWebhook(secret, rawBody, headers, now = Date.now() / 1000) {
+  const ts = headers['x-calab-timestamp'];
+  if (!ts || Math.abs(now - Number(ts)) > 300) return false; // replay: окно ±5 минут
+  const want = Buffer.from('v1=' + createHmac('sha256', secret).update(`${ts}.`).update(rawBody).digest('hex'));
+  const got = Buffer.from(headers['x-calab-signature'] ?? '');
+  return want.length === got.length && timingSafeEqual(want, got);
+}
+```
+
+```python
+import hashlib, hmac, time
+
+def verify_board_webhook(secret: bytes, raw_body: bytes, headers: dict, now: float | None = None) -> bool:
+    ts = headers.get("X-Calab-Timestamp", "")
+    if not ts.isdigit() or abs((now or time.time()) - int(ts)) > 300:  # replay: окно ±5 минут
+        return False
+    mac = hmac.new(secret, ts.encode() + b"." + raw_body, hashlib.sha256).hexdigest()
+    return hmac.compare_digest("v1=" + mac, headers.get("X-Calab-Signature", ""))
+```
+
+В SDK: `verifyBoardWebhook(secret, timestamp, body, signature)` из `@calaba/bot-sdk` (проверяет подпись и окно ±5 минут;
+`parseBoardWebhookEvent(body)` разбирает тело).
+
 ## Голос через LiveKit
 
 Медиа идёт напрямую через LiveKit (SFU) — наш REST его не проксирует. Бот в звонке — обычный участник: строка в
@@ -500,6 +679,8 @@ Go: `livekit/server-sdk-go` (`lksdk.ConnectToRoomWithToken(url, token, callbacks
 | 404 | `NOT_FOUND` | нет такого объекта или он скрыт от бота |
 | 409 | `CONFLICT`, `reason: "PLAN_LIMIT"` (`used`/`limit`) | лимит тарифа (боты, паки, стикеры) |
 | 409 | `CONFLICT`, `reason: "REACTION_LIMIT"` | не больше 3 разных реакций на сообщение |
+| 409 | `CONFLICT`, `reason: "FEATURE_DISABLED"` (`field`) | фича доски выключена, а запрос ставит её полю непустое значение |
+| 409 | `CONFLICT`, `reason: "CHECKLIST_LIMIT"` / `"CHECKLIST_ITEM_LIMIT"` / `"BOARD_CATEGORY_LIMIT"` (`used`/`limit`) | ≤ 10 чек-листов в задаче, ≤ 100 пунктов в чек-листе, ≤ 50 категорий досок в пространстве |
 | 409 | `ROOM_FULL` | голосовая комната заполнена |
 | 413 | `FILE_TOO_LARGE`, `FILE_QUOTA_EXCEEDED`, `PAYLOAD_TOO_LARGE` | размер / квота |
 | 422 | `VALIDATION` (`field`) | неверное значение поля |

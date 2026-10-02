@@ -57,6 +57,7 @@ import { toast, useToasts } from '../stores/toasts';
 import { memberName, rolesOf, useWorkspaces } from '../stores/workspaces';
 import { setVoice, useVoice, type RemoteCamera, type RemoteStream, type StreamQuality, type VoiceLink, type VoicePhase } from '../stores/voice';
 import { platform } from '../platform';
+import { VOICE_TABS_CHANNEL, parseClaim, yieldsTo, type VoiceClaim } from '../lib/voiceTabs';
 import { cameraWanted } from '../lib/media/cameraLogic';
 import { pipCamera } from '../features/voice/tileLayout';
 import { ActiveSpeaker } from '../lib/activeSpeaker';
@@ -279,6 +280,11 @@ class VoiceEngine {
       const kind: StuckKind | null = s.joining !== null || s.phase === 'connecting' ? 'connecting' : s.phase === 'reconnecting' ? 'reconnecting' : null;
       this.watchdog.update(kind, s.joining?.roomId ?? s.roomId);
       if (s.phase === 'connected' && s.joining === null) this.stuckRetries = 0;
+      // Deafen, from wherever it is written: the elements at once, then the subscriptions.
+      if (s.deafened !== p.deafened) {
+        this.applyVolumes();
+        this.applyAudioSubscriptions();
+      }
     });
   }
 
@@ -298,6 +304,11 @@ class VoiceEngine {
     document.addEventListener('securitypolicyviolation', (ev) => this.onCspViolation(ev));
     this.gate.configure({ thresholdDb: prefs().thresholdDb });
     usePrefs.subscribe((s, p) => this.onPrefs(s, p));
+    // Web: the tabs of this browser share the auth session and its voice seat (#40, lib/voiceTabs).
+    if (platform.kind === 'web' && typeof BroadcastChannel !== 'undefined') {
+      this.tabChannel = new BroadcastChannel(VOICE_TABS_CHANNEL);
+      this.tabChannel.onmessage = (ev: MessageEvent) => this.onOtherTabJoin(ev.data);
+    }
     // Musician mode (ADR-0052) ends with the call and cannot stay on in a room whose plan lacks it.
     // A room switch passes «no room» with `joining` set: only no room and no join is a leave.
     useVoice.subscribe((s, p) => {
@@ -388,6 +399,7 @@ class VoiceEngine {
     this.takenOverRoom = null;
     this.stuckRetries = 0;
     this.resumedJoin = opts.resumed === true;
+    this.announceJoin();
     setLink({ attempts: 0, lastError: null, blockedHost: null });
     // Optimistic join (docs/05): I am in the room's list from the click on, also while the old
     // call is still being torn down; connect() takes over with phase 'connecting'.
@@ -1008,8 +1020,12 @@ class VoiceEngine {
     }, SEAT_SELF_GRACE_MS);
   }
 
-  /** User intent: leave voice (also stops a pending rejoin). */
-  async leave(sound = true): Promise<void> {
+  /**
+   * User intent: leave voice (also stops a pending rejoin). `tellServer` false: another tab of
+   * this auth session took the voice seat over (#40) — the seat is its now, a /voice/leave
+   * would take that tab out.
+   */
+  async leave(sound = true, tellServer = true): Promise<void> {
     this.clearRemoved();
     this.rejoinGen++;
     // A stopped rejoin loop only clears this when it is still the current one: a user intent
@@ -1025,7 +1041,39 @@ class VoiceEngine {
     await this.teardown(sound);
     // After room.disconnect(): tell the server at once (a pending /join would otherwise stay
     // for everyone up to 15 s; for a connected device it is a safety net). Not awaited.
-    if (seat) this.sendLeave(seat);
+    if (seat && tellServer) this.sendLeave(seat);
+  }
+
+  // ------------------------------------------------------------ tabs of one browser (#40)
+
+  private tabChannel: BroadcastChannel | null = null;
+  /** This tab's last join intent, broadcast to the other tabs (lib/voiceTabs). */
+  private tabClaim: VoiceClaim | null = null;
+
+  private announceJoin(): void {
+    const ch = this.tabChannel;
+    const session = useSession.getState().sessionId;
+    if (!ch || !session) return;
+    this.tabClaim = { session, at: Date.now(), nonce: Math.random().toString(36).slice(2) };
+    try {
+      ch.postMessage(this.tabClaim);
+    } catch (e) {
+      log.warn('voice: tab claim not sent', e);
+    }
+  }
+
+  /** Another tab of this auth session joined voice: let go here without telling the server. */
+  private onOtherTabJoin(data: unknown): void {
+    const other = parseClaim(data);
+    if (!other || !yieldsTo(useSession.getState().sessionId, this.tabClaim, other)) return;
+    const v = useVoice.getState();
+    const room = this.roomId ?? v.roomId ?? v.joining?.roomId ?? this.rejoinRoomId;
+    if (!room && !this.room) return;
+    log.info('voice: another tab of this session joined voice, leaving here');
+    this.tabClaim = null;
+    this.takenOverRoom = room; // a one-to-one call goes on in the other tab (services/call.ts)
+    toast.info(t('mediaErr.voice.duplicate'));
+    void this.leave(false, false);
   }
 
   /**
@@ -1211,7 +1259,14 @@ class VoiceEngine {
           };
           return;
         }
-        else if (reason === DisconnectReason.DUPLICATE_IDENTITY) toast.info(t('mediaErr.voice.duplicate'));
+        else if (reason === DisconnectReason.DUPLICATE_IDENTITY) {
+          // Another tab / window of this auth session connected with the same identity (#40):
+          // the seat is its now — leave locally, a /voice/leave would take that one out.
+          toast.info(t('mediaErr.voice.duplicate'));
+          this.takenOverRoom = this.roomId;
+          void this.leave(true, false);
+          return;
+        }
         else if (reason === DisconnectReason.ROOM_DELETED || reason === DisconnectReason.ROOM_CLOSED) {
           // A temporary room closed (ADR-0044): the same «Комната закрыта» as its ROOM_DELETE, once.
           if (this.roomId && isTempRoom(useRooms.getState().byId[this.roomId])) roomClosedToast(this.roomId);
@@ -1353,9 +1408,31 @@ class VoiceEngine {
    * preview strip — its 160×90 tiles make adaptive stream pick the low simulcast layer.
    */
   private onPublished(pub: RemoteTrackPublication): void {
-    if (pub.source === Track.Source.Microphone) pub.setSubscribed(true);
-    else if (pub.source === Track.Source.ScreenShare || pub.source === Track.Source.ScreenShareAudio) this.applyWatching();
+    // Deafened: not even subscribed (applyAudioSubscriptions); undeafen subscribes it.
+    if (pub.source === Track.Source.Microphone) {
+      if (!useVoice.getState().deafened) pub.setSubscribed(true);
+    } else if (pub.source === Track.Source.ScreenShare || pub.source === Track.Source.ScreenShareAudio) this.applyWatching();
     else if (pub.source === Track.Source.Camera) this.applyCameras();
+  }
+
+  /**
+   * Deafened = no remote audio is received at all (docs/02 «Deafen»): every mic and stream-audio
+   * subscription is dropped; undeafen takes them back (one signalling round trip). Muting the
+   * elements (RemoteAudioOut) stays the instant layer, but it is not enough on its own: Chromium
+   * mixes every remote WebRTC audio receiver into one output (WebRtcAudioRenderer) and an
+   * element's mute zeroes only the receivers that element plays — a receiver no element has
+   * played yet is at full gain, and LiveKit has paths where a subscribed track gets no element
+   * (TrackSubscribed deferred while Reconnecting, publication not found → TrackSubscriptionFailed).
+   * Unsubscribed, the SFU sends nothing: nothing to leak, and no Opus decode or traffic either.
+   */
+  private applyAudioSubscriptions(): void {
+    const room = this.room;
+    if (!room) return;
+    const on = !useVoice.getState().deafened;
+    for (const p of room.remoteParticipants.values()) {
+      for (const pub of p.trackPublications.values()) if (pub.source === Track.Source.Microphone) pub.setSubscribed(on);
+    }
+    this.applyWatching(); // the watched stream's own audio
   }
 
   private subscribe(pub: RemoteTrackPublication, on: boolean): void {
@@ -1408,7 +1485,7 @@ class VoiceEngine {
       const audio = p.getTrackPublication(Track.Source.ScreenShareAudio);
       const on = !!video && video.trackSid === watching;
       if (video) this.subscribe(video, on || previews);
-      if (audio) this.subscribe(audio, on);
+      if (audio) this.subscribe(audio, on && !useVoice.getState().deafened);
       // Adaptive stream pauses video while the main window is hidden (docs/02, «Перекрытое окно»);
       // a pop-out lives in another window, so the popped-out stream is forced on (review M7).
       // The rest follows the main window's visibility, as adaptive stream would do itself.
@@ -1660,7 +1737,9 @@ class VoiceEngine {
   }
 
   private detachAudio(track: RemoteTrack): void {
-    if (track.sid) this.audioOut.remove(track.sid);
+    // LiveKit detaches the track before TrackUnsubscribed (RemoteTrackPublication.setTrack), so
+    // track.detach() is usually empty here: our element is the one registered for the sid.
+    if (track.sid) this.audioOut.remove(track.sid)?.remove();
     for (const el of track.detach()) el.remove();
   }
 
@@ -2298,7 +2377,7 @@ class VoiceEngine {
     const v = useVoice.getState();
     // Muted / deafened: PTT off now, held key included (no cue — pttCue); a new press is ignored.
     if (v.muted || v.deafened) this.ptt.stop();
-    this.applyVolumes();
+    // Playback and subscriptions follow `deafened` in the store subscriber (constructor).
     this.applyTransmit();
     this.pushSelfState();
     this.syncTray();

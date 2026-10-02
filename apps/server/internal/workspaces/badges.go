@@ -183,7 +183,9 @@ func (h *Handlers) updateBadge(w http.ResponseWriter, r *http.Request) error {
 		}
 		p.FileID = &id
 	}
-	updated, err := h.db.Q.UpdateWorkspaceBadge(r.Context(), p)
+	updated, err := db.GuardValue(r.Context(), h.db, func(guarded *sqlc.Queries) (sqlc.WorkspaceBadge, error) {
+		return guarded.UpdateWorkspaceBadge(r.Context(), p)
+	})
 	if db.IsNotFound(err) {
 		return httpx.NotFound("badge")
 	}
@@ -290,7 +292,9 @@ func (h *Handlers) setMemberBadge(w http.ResponseWriter, r *http.Request) error 
 		}
 		badgeID = &id
 	}
-	m, err := h.db.Q.SetMemberBadge(r.Context(), sqlc.SetMemberBadgeParams{WorkspaceID: wsID, UserID: target, BadgeID: badgeID})
+	m, err := db.GuardValue(r.Context(), h.db, func(guarded *sqlc.Queries) (sqlc.WorkspaceMember, error) {
+		return guarded.SetMemberBadge(r.Context(), sqlc.SetMemberBadgeParams{WorkspaceID: wsID, UserID: target, BadgeID: badgeID})
+	})
 	if db.IsNotFound(err) {
 		return httpx.NotFound("member")
 	}

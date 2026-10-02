@@ -5,6 +5,7 @@ import { cx } from '../../../components/ui';
 import { t } from '../../../i18n';
 import { createPlayback } from '../../../lib/stickerPlayback';
 import { stickerBox } from '../../../lib/stickers';
+import { builtinStickerUrl } from '../../../lib/builtinStickers';
 
 /**
  * A sticker (ADR-0030 §8): the WebP through <img> (the browser decodes it), no background.
@@ -121,7 +122,9 @@ export function StickerStill({ src, width, height }: { src: string; width: numbe
  */
 export function StickerImage({ sticker, size, className, playing: forced }: { sticker: Sticker; size: number; className?: string; playing?: boolean }): ReactNode {
   const box = stickerBox(sticker, size);
-  const src = useMediaUrl(sticker.url);
+  const local = builtinStickerUrl(sticker);
+  const remote = useMediaUrl(local ? undefined : sticker.url);
+  const src = local ?? remote;
   const ref = useRef<HTMLSpanElement>(null);
   const budgeted = usePlaying(ref, sticker.animated && forced === undefined);
   const playing = forced ?? budgeted;

@@ -18,7 +18,7 @@ import { installAppMenu } from './appMenu';
 import { startUpdates, updatesSessionEnding } from './updater';
 import { loadResumeVoice } from './resumeVoice';
 import { forgetAllApps, installWebAppGuards } from './webApps';
-import { onSessionEnd } from './auth';
+import { onSessionEnd, installSsoHandoff } from './auth';
 import {
   createMainWindow,
   getMainWindow,
@@ -33,6 +33,7 @@ import {
 // userData (session, settings, logs) and the macOS Keychain item «Calaba Safe Storage» that
 // safeStorage derives from app.name when Chromium starts. So main starts as «Calaba» and switches
 // the visible name (menus, About) to productName once `ready`; both are fixed by then.
+installSsoHandoff();
 const PRODUCT_NAME = app.name;
 app.setName('Calaba');
 app.setPath('userData', join(app.getPath('appData'), 'Calaba'));

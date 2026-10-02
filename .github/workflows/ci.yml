@@ -3,12 +3,12 @@ name: ci
 on:
   push:
     branches: [main]
-    tags: ['v*']        # a release tag also runs the PostgreSQL 17 integration shards (ADR-0037)
+    tags: ['v*']        # PostgreSQL 17 is the single integration target (ADR-0037)
     # docs-only pushes run no CI (a workflow skipped by paths blocks nothing on a direct push); pull
     # requests always run everything: on a docs-only PR the required checks would wait forever
     paths-ignore: ['docs/**', '**/*.md']
   pull_request:
-  workflow_dispatch:     # manual full run, PostgreSQL 17 included
+  workflow_dispatch:     # manual run uses the same PostgreSQL 17 target
 
 permissions:
   contents: read
@@ -119,14 +119,14 @@ jobs:
 
   # Integration tests in parallel shards (internal/app runs its tests one after another in one
   # process — ~5.5 min in a single job): internal/app split by test name, every other package in its
-  # own shard. PostgreSQL 18 on every run; 17 (ADR-0037) on release tags and manual runs only.
+  # own shard. PostgreSQL 17 only: one compatibility baseline on every run (owner, 2026-10-01).
   go-integration-shard:
     name: go integration ${{ matrix.shard }} (PostgreSQL ${{ matrix.pg }})
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false
       matrix:
-        pg: ${{ fromJSON((github.event_name == 'workflow_dispatch' || startsWith(github.ref, 'refs/tags/v')) && '["18","17"]' || '["18"]') }}
+        pg: ['17']
         shard: [app-1, app-2, app-3, rest]
     env:
       # internal/app split by the first letter after "Test", balanced on CI step times (30.09: ~2 min
@@ -134,11 +134,14 @@ jobs:
       APP_1: '^Test[A-E]'
       APP_2: '^Test[F-P]'
       APP_3: '^Test[^A-P]'
+      # Admin URL of the service database: every package creates its own database from it.
+      # TEST_PG_URL is the same URL for tests that read only that name (internal/oauthprovider).
       TEST_DATABASE_URL: postgres://calaba:calaba@localhost:5432/calaba
+      TEST_PG_URL: postgres://calaba:calaba@localhost:5432/calaba
       TEST_REDIS_URL: redis://localhost:6379/15
     services:
       postgres:
-        image: ${{ matrix.pg == '17' && 'postgres:17-alpine@sha256:b0f9560a2de083e2cc7382e75f808c7381a32852a7ec49117deedb300e552b24' || 'postgres:18-alpine@sha256:77f585114c32fbca283dc835b0596f4e52b51b4c6662d7810b2f4084f60a1873' }}
+        image: postgres:17-alpine@sha256:b0f9560a2de083e2cc7382e75f808c7381a32852a7ec49117deedb300e552b24
         env:
           POSTGRES_USER: calaba
           POSTGRES_PASSWORD: calaba

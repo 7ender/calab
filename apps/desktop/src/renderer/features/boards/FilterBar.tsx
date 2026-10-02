@@ -9,6 +9,7 @@ import type { PickerGroup } from '../../components/picker/pickerModel';
 import { Tip, cx } from '../../components/ui';
 import { t } from '../../i18n';
 import { addCond, quickOn, removeCond, resolveDay, setCond, toggleQuick, toggleValue, type Cond, type FilterState, type QuickChip } from '../../lib/boards/filter';
+import { estimateName, fieldOff, scaleValues } from '../../lib/boards/features';
 import { APPROVAL_VALUES, DATE_PRESETS, FILTER_FIELDS, RELATION_VALUES, fieldDef, opLabel, opNeedsValue, type FieldDef } from '../../lib/boards/filterFields';
 import { autoFocusAllowed } from '../../lib/mobile';
 import { useBoards } from '../../stores/boards';
@@ -17,7 +18,8 @@ import { useWorkspaces } from '../../stores/workspaces';
 import { nameOf } from '../people/members';
 import { menuBox, menuItem } from '../shell/menu';
 import type { Choice } from './menus';
-import { ESTIMATES, useToday } from './menus';
+import { useToday } from './menus';
+import { useDisabledFeatures } from './useBoardView';
 import { Dot, PRIORITIES, PRIORITY_LABEL, PriorityIcon, STATUS_TYPES, STATUS_TYPE_LABEL, STATUS_TYPE_TOKEN, StatusIcon, formatDue } from './visuals';
 
 /**
@@ -72,7 +74,7 @@ function useValueChoices(def: FieldDef, board: Board | undefined, workspaceId: s
       case 'task':
         return [c('', t('boards.hasParent'), undefined, TaskOp.NOT_EMPTY), c('', t('boards.noParent'), undefined, TaskOp.EMPTY)];
       case 'number':
-        return [...ESTIMATES.map((n) => c(String(n), `> ${n}`, undefined, TaskOp.GT)), c('', t('boards.noEstimate'), undefined, TaskOp.EMPTY)];
+        return [...scaleValues(board?.estimateScale).map((n) => c(String(n), `> ${estimateName(n, board?.estimateScale)}`, undefined, TaskOp.GT)), c('', t('boards.noEstimate'), undefined, TaskOp.EMPTY)];
       case 'bool':
         return [c('true', t('boards.yes')), c('false', t('boards.no'))];
       case 'approval':
@@ -181,10 +183,12 @@ export function FilterButton({ boardId, workspaceId, compact = false }: { boardI
   const [field, setField] = useState<TaskField | null>(null);
   const [index, setIndex] = useState<number>(-1);
   const input = useRef<HTMLInputElement>(null);
+  // Fields of a disabled board feature are not offered (ADR-0058 §3).
+  const disabled = board?.disabledFeatures;
   const fields = useMemo((): Array<PickerGroup<FieldChoice>> => {
     const Icon = (d: FieldDef): ReactNode => <d.icon className="size-4 text-muted" aria-hidden />;
-    return [{ id: 'f', label: '', items: FILTER_FIELDS.filter((d) => !d.hidden).map((d) => ({ id: String(d.field), def: d, label: t(d.label), search: [t(d.label)], icon: Icon(d) })) }];
-  }, []);
+    return [{ id: 'f', label: '', items: FILTER_FIELDS.filter((d) => !d.hidden && !fieldOff(disabled, d.field)).map((d) => ({ id: String(d.field), def: d, label: t(d.label), search: [t(d.label)], icon: Icon(d) })) }];
+  }, [disabled]);
   const def = field !== null ? fieldDef(field) : undefined;
   const cond = index >= 0 ? (filter.conds[index] ?? null) : null;
   const change = (c: Cond): void => {
@@ -354,11 +358,14 @@ function FilterChip({ cond, board, workspaceId, text, onChange, onRemove }: { co
   if (!def) return null;
   const Icon = def.icon;
   const seg = 'inline-flex h-6 items-center gap-1 px-2 hover:bg-hover';
+  // A condition on a disabled feature still filters (the server counts it as is, ADR-0058 §3).
+  const off = fieldOff(board?.disabledFeatures, cond.field);
   return (
-    <span className="inline-flex h-6 max-w-full items-center overflow-hidden rounded-full border border-line text-caption text-fg" data-testid="filter-chip">
+    <span className={cx('inline-flex h-6 max-w-full items-center overflow-hidden rounded-full border text-caption text-fg', off ? 'border-dashed border-line' : 'border-line')} title={off ? t('boards.feat.chipOffHint') : undefined} data-testid="filter-chip" data-off={off || undefined}>
       <span className="inline-flex h-6 items-center gap-1 pl-2 pr-1.5 text-muted">
         <Icon className="size-3.5" aria-hidden />
         {t(def.label)}
+        {off ? <span className="text-faint">· {t('boards.feat.chipOff')}</span> : null}
       </span>
       <Dropdown.Root modal={false}>
         <Dropdown.Trigger asChild>
@@ -408,10 +415,13 @@ const QUICK: ReadonlyArray<{ chip: QuickChip; label: 'boards.quick.mine' | 'boar
 /** «Мои», «Просрочено», «Без исполнителя», «Ждут моего согласования» (ADR-0049). */
 export function QuickChips({ boardId }: { boardId: string }): ReactNode {
   const [filter, setFilter] = useFilter(boardId);
+  const disabled = useDisabledFeatures(boardId);
   return (
     <div className="flex shrink-0 items-center gap-1" role="group" aria-label={t('boards.quick')}>
       {QUICK.map((q) => {
         const on = quickOn(filter, q.chip);
+        // «Просрочено» needs due dates, «Ждут моего согласования» approvals (ADR-0058 §3); an applied one stays to switch off.
+        if (!on && ((q.chip === 'overdue' && fieldOff(disabled, TaskField.DUE_ON)) || (q.chip === 'approval' && fieldOff(disabled, TaskField.APPROVER_PENDING)))) return null;
         return (
           <button
             key={q.chip}

@@ -222,6 +222,15 @@ VALUES (sqlc.arg('room_id'), sqlc.arg('author_id'), sqlc.arg('content'), sqlc.na
     sqlc.narg('forwarded_from'), sqlc.narg('forward_author_id'), sqlc.narg('forward_sent_at'))
 RETURNING *;
 
+-- name: GetMessageShared :one
+-- The source of a forward, read under a share lock: what a recording card gets meanwhile (payload,
+-- audio) is either seen here or applied to the copy once it exists (UpdateSystemMessage waits for it).
+SELECT * FROM messages WHERE id = $1 AND deleted_at IS NULL FOR SHARE;
+
+-- name: LockMessage :exec
+-- Waits for the forwards in flight of the message and keeps new ones off until commit.
+SELECT 1 FROM messages WHERE id = $1 FOR NO KEY UPDATE;
+
 -- name: CopyAttachments :exec
 -- The copy shows the same files as the source (no blob copy, no quota: ADR-0033 §3).
 INSERT INTO message_attachments (message_id, file_id, position, forwarded)
@@ -233,3 +242,9 @@ WHERE message_id = sqlc.arg('from_id')::uuid;
 SELECT m.id, (CASE WHEN r.workspace_id IS NULL THEN NULL ELSE m.room_id END)::uuid AS room_id
 FROM messages m JOIN rooms r ON r.id = m.room_id
 WHERE m.id = ANY(sqlc.arg('ids')::uuid[]);
+
+-- name: ListRoomAuthors :many
+-- Distinct authors of the live messages of rooms (what a guest may see of them, ADR-0016);
+-- an index-only scan of messages_live_room_id_idx.
+SELECT DISTINCT room_id, author_id FROM messages
+WHERE room_id = ANY(sqlc.arg('room_ids')::uuid[]) AND deleted_at IS NULL;

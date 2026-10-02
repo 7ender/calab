@@ -17,7 +17,7 @@
   <img alt="Electron" src="https://img.shields.io/badge/desktop-Electron-47848F">
   <img alt="Go" src="https://img.shields.io/badge/server-Go-00ADD8">
   <img alt="LiveKit" src="https://img.shields.io/badge/media-LiveKit-ff6b35">
-  <a href="https://calab.ru/es/"><img alt="calab.ru" src="https://img.shields.io/badge/site-calab.ru-0A84FF"></a>
+  <a href="https://calab.io/es/"><img alt="calab.io" src="https://img.shields.io/badge/site-calab.io-0A84FF"></a>
 </p>
 
 <p align="center">
@@ -46,7 +46,7 @@ Está pensado para equipos de hasta 20–30 personas en voz a la vez y hasta 3 p
 - **Llamadas uno a uno** en mensajes directos, con tono de llamada, cámara y pantalla compartida.
 - **Grabaciones de reuniones**: graba el servidor y transcribe GPTunneL; al chat de la sala llega una tarjeta con el resumen, el audio y la transcripción completa.
 - **Botonera de sonidos**, moderación (silenciar desde el servidor, desconectar, mover arrastrando), estados.
-- **Llamadas telefónicas (SIP)** — conecta tu propio proveedor SIP y marca un número fijo o móvil desde una sala de voz; el interlocutor entra como participante y todos ven «Marcando → Llamando → En la llamada». Ajustes del proveedor, registro de llamadas y el permiso «Hacer llamadas», que por defecto no tiene nadie ([ADR-0046](docs/adr/0046-sip-telephony.md)).
+- **Llamadas telefónicas (SIP)** — conecta tu propio proveedor SIP y marca un número fijo o móvil desde una sala de voz; el interlocutor entra como participante y todos ven «Marcando → Llamando → En la llamada». Ajustes del proveedor, registro de llamadas y el permiso «Hacer llamadas», que por defecto no tiene nadie. Plan Business y Enterprise ([ADR-0046](docs/adr/0046-sip-telephony.md)).
 - **Salas temporales** — una sala por una hora o un día con enlace de invitado listo y, si quieres, una reunión en el calendario: un sustituto de Zoom que desaparece solo ([ADR-0044](docs/adr/0044-temp-rooms.md)).
 
 ### 💬 Chat
@@ -111,7 +111,7 @@ Un bot es un miembro con token: la misma API REST y el mismo gateway que la apli
 ```ts
 import { Bot } from '@calaba/bot-sdk';
 
-const bot = new Bot(process.env.BOT_TOKEN, { server: 'https://app.calab.ru' });
+const bot = new Bot(process.env.BOT_TOKEN, { server: 'https://app.calab.io' });
 bot.on('message', (m) => bot.reply(m, m.content));
 await bot.start();
 ```
@@ -151,7 +151,7 @@ Puertos: `80/443` TCP, `443/UDP`, `7881/TCP`, `7882/UDP`. El primer usuario regi
 
 ### La aplicación
 
-Las versiones para macOS, Windows y Linux están en [calab.ru](https://calab.ru/es/#download) y en tu servidor en `https://app.<dominio>/download/`; la versión web, en `https://app.<dominio>`. Novedades de cada versión: [CHANGELOG.md](CHANGELOG.md) (en ruso; el mismo texto va a [GitHub Releases](https://github.com/itrcz/calab/releases)).
+Las versiones para macOS, Windows y Linux están en [calab.io](https://calab.io/es/#download) y en tu servidor en `https://app.<dominio>/download/`; la versión web, en `https://app.<dominio>`. Novedades de cada versión: [CHANGELOG.md](CHANGELOG.md) (en ruso; el mismo texto va a [GitHub Releases](https://github.com/itrcz/calab/releases)).
 
 ### Desarrollo
 
@@ -180,11 +180,12 @@ Comprobaciones: `make test` (Go + TS), `make test-integration`, pruebas visuales
 | Tableros de tareas | 3 | 30 | 50 | sin límite |
 | Calendario | ✓ | ✓ | ✓ | ✓ |
 | CalDAV | — | ✓ | ✓ | ✓ |
+| Telefonía (SIP) | — | — | ✓ | ✓ |
 | On-prem (servidor propio) | — | — | — | ✓ |
 | Soporte | — | soporte | prioritario | ✓ |
 | Precio | gratis | a consultar (**it@gptunnel.ai**) | a consultar (**it@gptunnel.ai**) | gratis para uso no comercial (BSL 1.1, «Powered by GPTunneL»); licencia comercial a consultar |
 
-Free, Team y Business son planes en la nube de un espacio ([ADR-0024](docs/adr/0024-plans-and-limits.md)); Enterprise es Calab en tu propio servidor (on-prem), sin límites. Detalles: [calab.ru/es/#pricing](https://calab.ru/es/#pricing) y [COMMERCIAL-LICENSE.md](COMMERCIAL-LICENSE.md).
+Free, Team y Business son planes en la nube de un espacio ([ADR-0024](docs/adr/0024-plans-and-limits.md)); Enterprise es Calab en tu propio servidor (on-prem), sin límites. Detalles: [calab.io/es/#pricing](https://calab.io/es/#pricing) y [COMMERCIAL-LICENSE.md](COMMERCIAL-LICENSE.md).
 
 ## Licencia
 

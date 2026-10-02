@@ -550,6 +550,7 @@ func (h *Handlers) update(w http.ResponseWriter, r *http.Request) error {
 		}
 	}
 	var pb *v1.Room
+	var publishMeetings func(context.Context)
 	restrictedChanged := false // who sees the room changed (restricted or is_private)
 	err = h.db.Tx(r.Context(), func(q *sqlc.Queries) error {
 		if p.Restricted != nil || tp.any() {
@@ -575,7 +576,7 @@ func (h *Handlers) update(w http.ResponseWriter, r *http.Request) error {
 				return httpx.Validation("isPrivate", "a restricted room stays private")
 			}
 			restrictedChanged = cur.Restricted != restricted || cur.IsPrivate != private
-			if err := h.applyTempPatch(r.Context(), q, cur, tp); err != nil {
+			if publishMeetings, err = h.applyTempPatch(r.Context(), q, cur, tp); err != nil {
 				return err
 			}
 			if restricted && !cur.Restricted && acc.Role != perm.RoleOwner {
@@ -620,6 +621,9 @@ func (h *Handlers) update(w http.ResponseWriter, r *http.Request) error {
 			WorkspaceId: acc.WorkspaceID.String(), RoomId: roomID.String(), Permissions: pb.GetPermissionOverrides(),
 		}}}})
 	}
+	if publishMeetings != nil {
+		publishMeetings(r.Context())
+	}
 	httpx.Write(w, http.StatusOK, &v1.UpdateRoomResponse{Room: pb})
 	return nil
 }
@@ -646,7 +650,7 @@ func (h *Handlers) delete(w http.ResponseWriter, r *http.Request) error {
 		return nil
 	}
 	// A permanent room: archived and hidden for good (unchanged).
-	n, err := h.db.Q.ArchiveRoom(r.Context(), roomID)
+	n, err := db.GuardValue(r.Context(), h.db, func(guarded *sqlc.Queries) (int64, error) { return guarded.ArchiveRoom(r.Context(), roomID) })
 	if err != nil {
 		return err
 	}

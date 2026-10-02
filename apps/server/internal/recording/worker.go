@@ -58,15 +58,19 @@ func (s *Service) finish(ctx context.Context, rec sqlc.RoomRecording, info *rtc.
 	var upd sqlc.RoomRecording
 	if unavailable {
 		slog.WarnContext(ctx, "recording: file storage did not answer, giving up", "recording", rec.ID, "err", err)
-		upd, err = s.db.Q.MarkRecordingFailed(ctx, sqlc.MarkRecordingFailedParams{ID: rec.ID, Error: "recorder_failed", StopReason: reason})
+		upd, err = db.GuardValue(ctx, s.db, func(guarded *sqlc.Queries) (sqlc.RoomRecording, error) {
+			return guarded.MarkRecordingFailed(ctx, sqlc.MarkRecordingFailedParams{ID: rec.ID, Error: "recorder_failed", StopReason: reason})
+		})
 	} else if size > 0 {
 		dur := s.Now().Sub(rec.StartedAt)
 		if f := info.File(); f.Duration > 0 {
 			dur = f.Duration
 		}
-		upd, err = s.db.Q.MarkRecordingEnded(ctx, sqlc.MarkRecordingEndedParams{
-			ID: rec.ID, SizeBytes: size, DurationSec: int32(min(max(dur.Round(time.Second)/time.Second, 1), 1<<30)), //nolint:gosec // bounded
-			StopReason: reason,
+		upd, err = db.GuardValue(ctx, s.db, func(guarded *sqlc.Queries) (sqlc.RoomRecording, error) {
+			return guarded.MarkRecordingEnded(ctx, sqlc.MarkRecordingEndedParams{
+				ID: rec.ID, SizeBytes: size, DurationSec: int32(min(max(dur.Round(time.Second)/time.Second, 1), 1<<30)), //nolint:gosec // bounded
+				StopReason: reason,
+			})
 		})
 	} else {
 		code := "recorder_failed"
@@ -74,7 +78,9 @@ func (s *Service) finish(ctx context.Context, rec sqlc.RoomRecording, info *rtc.
 			code = "no_audio"
 		}
 		slog.WarnContext(ctx, "recording: egress ended without a file", "recording", rec.ID, "status", info.Status, "error", info.Error)
-		upd, err = s.db.Q.MarkRecordingFailed(ctx, sqlc.MarkRecordingFailedParams{ID: rec.ID, Error: code, StopReason: reason})
+		upd, err = db.GuardValue(ctx, s.db, func(guarded *sqlc.Queries) (sqlc.RoomRecording, error) {
+			return guarded.MarkRecordingFailed(ctx, sqlc.MarkRecordingFailedParams{ID: rec.ID, Error: code, StopReason: reason})
+		})
 	}
 	if db.IsNotFound(err) {
 		return nil // concurrently taken over
@@ -119,7 +125,9 @@ func (s *Service) card(ctx context.Context, rec sqlc.RoomRecording) {
 		slog.WarnContext(ctx, "recording: post chat card", "recording", rec.ID, "err", err)
 		return
 	}
-	if err := s.db.Q.SetRecordingMessage(ctx, sqlc.SetRecordingMessageParams{ID: rec.ID, MessageID: &id}); err != nil {
+	if err := db.GuardExec(ctx, s.db, func(guarded *sqlc.Queries) error {
+		return guarded.SetRecordingMessage(ctx, sqlc.SetRecordingMessageParams{ID: rec.ID, MessageID: &id})
+	}); err != nil {
 		slog.WarnContext(ctx, "recording: remember chat card", "recording", rec.ID, "err", err)
 	}
 }
@@ -207,8 +215,10 @@ func (s *Service) runJobs(ctx context.Context, jobs <-chan struct{}) {
 func (s *Service) ProcessOnce(ctx context.Context) (int, error) {
 	done := 0
 	for range 10 {
-		rows, err := s.db.Q.ClaimRecordingJobs(ctx, sqlc.ClaimRecordingJobsParams{
-			Lease: pgtype.Interval{Microseconds: s.Lease.Microseconds(), Valid: true}, Lim: 4,
+		rows, err := db.GuardValue(ctx, s.db, func(guarded *sqlc.Queries) ([]sqlc.RoomRecording, error) {
+			return guarded.ClaimRecordingJobs(ctx, sqlc.ClaimRecordingJobsParams{
+				Lease: pgtype.Interval{Microseconds: s.Lease.Microseconds(), Valid: true}, Lim: 4,
+			})
 		})
 		if err != nil {
 			return done, err
@@ -247,7 +257,9 @@ var failCodes = map[string]bool{
 }
 
 func (s *Service) fail(ctx context.Context, rec sqlc.RoomRecording, code string) {
-	upd, err := s.db.Q.MarkRecordingFailed(ctx, sqlc.MarkRecordingFailedParams{ID: rec.ID, Error: clip(code, 500), StopReason: "egress"})
+	upd, err := db.GuardValue(ctx, s.db, func(guarded *sqlc.Queries) (sqlc.RoomRecording, error) {
+		return guarded.MarkRecordingFailed(ctx, sqlc.MarkRecordingFailedParams{ID: rec.ID, Error: clip(code, 500), StopReason: "egress"})
+	})
 	if db.IsNotFound(err) {
 		return
 	}
@@ -266,7 +278,9 @@ func (s *Service) remoteError(ctx context.Context, rec sqlc.RoomRecording, seale
 	switch {
 	case ok && e.Unauthorized():
 		// The device was revoked in GPTunneL: the workspace is no longer connected.
-		if _, rerr := s.db.Q.RevokeIntegration(ctx, sqlc.RevokeIntegrationParams{WorkspaceID: rec.WorkspaceID, Kind: kindGPTunnel, TokenEnc: sealed}); rerr != nil {
+		if _, rerr := db.GuardValue(ctx, s.db, func(guarded *sqlc.Queries) (int64, error) {
+			return guarded.RevokeIntegration(ctx, sqlc.RevokeIntegrationParams{WorkspaceID: rec.WorkspaceID, Kind: kindGPTunnel, TokenEnc: sealed})
+		}); rerr != nil {
 			slog.WarnContext(ctx, "recording: forget a revoked device token", "workspace", rec.WorkspaceID, "err", rerr)
 		}
 		s.fail(ctx, rec, "device_revoked")
@@ -292,7 +306,9 @@ func (s *Service) retry(ctx context.Context, rec sqlc.RoomRecording, cause error
 		s.fail(ctx, rec, "upload_failed")
 		return
 	}
-	if err := s.db.Q.RetryRecording(ctx, sqlc.RetryRecordingParams{ID: rec.ID, NextAt: &next, Error: clip(cause.Error(), 500)}); err != nil {
+	if err := db.GuardExec(ctx, s.db, func(guarded *sqlc.Queries) error {
+		return guarded.RetryRecording(ctx, sqlc.RetryRecordingParams{ID: rec.ID, NextAt: &next, Error: clip(cause.Error(), 500)})
+	}); err != nil {
 		slog.WarnContext(ctx, "recording: schedule retry", "recording", rec.ID, "err", err)
 	}
 	slog.WarnContext(ctx, "recording: upload failed, will retry", "recording", rec.ID, "attempt", rec.Attempts+1, "next_at", next, "err", cause)
@@ -345,7 +361,9 @@ func (s *Service) upload(ctx context.Context, rec sqlc.RoomRecording) {
 		DurationSec: int64(max(rec.DurationSec, 1)), StartedAt: rec.StartedAt.UTC().Format(time.RFC3339),
 	}
 	res, err := s.gpt.Upload(ctx, token, f, req, rec.GptunnelID, func(id string) error {
-		return s.db.Q.SetRecordingGptunnelID(ctx, sqlc.SetRecordingGptunnelIDParams{ID: rec.ID, GptunnelID: id})
+		return db.GuardExec(ctx, s.db, func(guarded *sqlc.Queries) error {
+			return guarded.SetRecordingGptunnelID(ctx, sqlc.SetRecordingGptunnelIDParams{ID: rec.ID, GptunnelID: id})
+		})
 	})
 	if err != nil {
 		if ctx.Err() != nil {
@@ -357,7 +375,9 @@ func (s *Service) upload(ctx context.Context, rec sqlc.RoomRecording) {
 		return
 	}
 	next := s.Now().Add(s.PollMin)
-	upd, err := s.db.Q.MarkRecordingProcessing(ctx, sqlc.MarkRecordingProcessingParams{ID: rec.ID, GptunnelID: res.ID, WebUrl: clip(res.WebURL, 2000), NextAt: &next})
+	upd, err := db.GuardValue(ctx, s.db, func(guarded *sqlc.Queries) (sqlc.RoomRecording, error) {
+		return guarded.MarkRecordingProcessing(ctx, sqlc.MarkRecordingProcessingParams{ID: rec.ID, GptunnelID: res.ID, WebUrl: clip(res.WebURL, 2000), NextAt: &next})
+	})
 	if err != nil {
 		slog.WarnContext(ctx, "recording: mark processing", "recording", rec.ID, "err", err)
 		return
@@ -373,7 +393,9 @@ func (s *Service) upload(ctx context.Context, rec sqlc.RoomRecording) {
 func (s *Service) applyStatus(ctx context.Context, rec sqlc.RoomRecording, st *gptunnel.RecordingStatus) bool {
 	switch st.Status {
 	case gptunnel.StatusDone:
-		upd, err := s.db.Q.MarkRecordingDone(ctx, sqlc.MarkRecordingDoneParams{ID: rec.ID, WebUrl: clip(st.WebURL, 2000)})
+		upd, err := db.GuardValue(ctx, s.db, func(guarded *sqlc.Queries) (sqlc.RoomRecording, error) {
+			return guarded.MarkRecordingDone(ctx, sqlc.MarkRecordingDoneParams{ID: rec.ID, WebUrl: clip(st.WebURL, 2000)})
+		})
 		if err != nil {
 			if !db.IsNotFound(err) {
 				slog.WarnContext(ctx, "recording: mark done", "recording", rec.ID, "err", err)
@@ -445,7 +467,9 @@ func (s *Service) poll(ctx context.Context, rec sqlc.RoomRecording) {
 	if st != nil {
 		web = clip(st.WebURL, 2000)
 	}
-	if err := s.db.Q.PollRecordingLater(ctx, sqlc.PollRecordingLaterParams{ID: rec.ID, NextAt: &next, WebUrl: web}); err != nil {
+	if err := db.GuardExec(ctx, s.db, func(guarded *sqlc.Queries) error {
+		return guarded.PollRecordingLater(ctx, sqlc.PollRecordingLaterParams{ID: rec.ID, NextAt: &next, WebUrl: web})
+	}); err != nil {
 		slog.WarnContext(ctx, "recording: schedule poll", "recording", rec.ID, "err", err)
 	}
 }
@@ -491,10 +515,14 @@ func (s *Service) Maintain(ctx context.Context) {
 		case started != nil:
 			if _, busy := started[rec.RoomID]; busy {
 				if rec.EmptySince != nil {
-					_ = s.db.Q.SetRecordingEmptySince(ctx, sqlc.SetRecordingEmptySinceParams{ID: rec.ID, EmptySince: nil})
+					_ = db.GuardExec(ctx, s.db, func(guarded *sqlc.Queries) error {
+						return guarded.SetRecordingEmptySince(ctx, sqlc.SetRecordingEmptySinceParams{ID: rec.ID, EmptySince: nil})
+					})
 				}
 			} else if rec.EmptySince == nil {
-				_ = s.db.Q.SetRecordingEmptySince(ctx, sqlc.SetRecordingEmptySinceParams{ID: rec.ID, EmptySince: &now})
+				_ = db.GuardExec(ctx, s.db, func(guarded *sqlc.Queries) error {
+					return guarded.SetRecordingEmptySince(ctx, sqlc.SetRecordingEmptySinceParams{ID: rec.ID, EmptySince: &now})
+				})
 			} else if now.Sub(*rec.EmptySince) >= s.EmptyTimeout {
 				reason = "empty"
 			}
@@ -643,7 +671,7 @@ func (s *Service) removeFile(ctx context.Context, rec sqlc.RoomRecording) {
 // forgetFile records that the recording's file is gone; a failed recording's card is updated (it
 // no longer offers «Отправить снова»).
 func (s *Service) forgetFile(ctx context.Context, rec sqlc.RoomRecording) {
-	if err := s.db.Q.MarkRecordingFileDeleted(ctx, rec.ID); err != nil {
+	if err := db.GuardExec(ctx, s.db, func(guarded *sqlc.Queries) error { return guarded.MarkRecordingFileDeleted(ctx, rec.ID) }); err != nil {
 		slog.WarnContext(ctx, "recording: mark file deleted", "recording", rec.ID, "err", err)
 		return
 	}

@@ -64,15 +64,15 @@ export const MARKETING_IDS = {
 } as const;
 
 /** Link preview for the product site (text only: keeps the hero chat shot compact). */
-const CALAB_RU = {
+const CALAB_SITE = {
   siteName: 'Calab',
   title: 'Calab — голос и чат для команды',
   description: 'Голосовые комнаты, чат и стрим экрана для небольших команд — на вашем собственном сервере.',
   image: false,
 };
 export const MARKETING_UNFURLS: Record<string, { title: string; description: string; siteName: string; image: boolean }> = {
-  'https://calab.ru': CALAB_RU,
-  'https://calab.ru/': CALAB_RU,
+  'https://calab.io': CALAB_SITE,
+  'https://calab.io/': CALAB_SITE,
 };
 
 /** Call start: NOW (10:30Z) − 12 min 40 s → the sidebar and voice panel show «12:40». */
@@ -228,7 +228,7 @@ export function buildMarketingState(s: MockState): MockState {
     { room: R.backend, at: '09:52', author: U.anna, content: 'Спасибо! Прогнала смоук-тесты — всё зелёное.' },
     { room: R.design, at: '09:58', author: U.vera, content: 'Обновила иконки в панели комнат, посмотрите при случае.' },
     { room: R.design, at: '10:03', author: U.anna, content: 'Посмотрела — стало заметно чище.' },
-    { room: R.general, at: '10:31', author: U.boris, content: 'Лендинг обновили, скриншоты уже новые: https://calab.ru' },
+    { room: R.general, at: '10:31', author: U.boris, content: 'Лендинг обновили, скриншоты уже новые: https://calab.io' },
     {
       key: 'shot',
       room: R.general,

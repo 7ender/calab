@@ -1,3 +1,4 @@
+import { zhIdentity } from './identity';
 import type { Dict } from '../types';
 import { zhApp } from './app';
 import { zhChat } from './chat';
@@ -16,6 +17,7 @@ import { zhPicker } from './picker';
 import { zhRoles } from './roles';
 import { zhCalendar } from './calendar';
 import { zhBoards } from './boards';
+import { zhBoards2 } from './boards2';
 import { zhPlan } from './plan';
 import { zhShell } from './shell';
 import { zhVideo } from './video';
@@ -29,6 +31,7 @@ import { zhWebApps } from './webapps';
 
 /** Simplified Chinese UI strings (ADR-0022): same keys and placeholders as `ru`/`en`; glossary docs/i18n-glossary.md. */
 export const zhCN: Dict = {
+  ...zhIdentity,
   ...zhShell,
   ...zhChat,
   ...zhPeople,
@@ -56,6 +59,7 @@ export const zhCN: Dict = {
   ...zhRoles,
   ...zhCalendar,
   ...zhBoards,
+  ...zhBoards2,
   'voice.pendingMember': '连接中…',
   // common
   'common.cancel': '取消',
@@ -146,11 +150,12 @@ export const zhCN: Dict = {
   'ws.timeFormat.auto': '自动',
   'ws.timeFormat.h24': '24 小时',
   'ws.timeFormat.h12': '12 小时',
-  'ws.settings': '工作区设置',
+  'ws.settings': '设置',
   'ws.settingsTitle': '设置：{name}',
-  'ws.invite': '邀请成员',
+  'ws.invite': '邀请',
   'ws.members': '成员',
   'ws.leave': '退出工作区',
+  'ws.leaveItem': '退出',
   'ws.leaveConfirm': '退出"{name}"？只能通过邀请再次加入。',
   'ws.tabGeneral': '常规',
   'ws.tabMedia': '语音与屏幕共享',
@@ -238,6 +243,7 @@ export const zhCN: Dict = {
   'room.whoSeesRemove': '从名单中移除：{name}',
   'room.whoSeesFooter': '名单即“{tab}”标签页中的“{perm}”权限',
   'room.settings': '房间设置',
+  'roomMenu.settings': '设置',
   'room.settingsTitle': '房间：{name}',
   'room.tabPerms': '权限',
   'room.mediaText': '"跟随工作区"表示使用工作区的设置。',
@@ -251,6 +257,7 @@ export const zhCN: Dict = {
   'media.maxPreset': '屏幕共享最高画质',
   'media.maxStreams': '同时共享数',
   'media.maxStreamsHint': '可同时共享屏幕的人数（0 表示禁止）',
+  'media.planClamp': '实际生效值为 min(设定值, 套餐上限)：{limit}',
   'media.default': '跟随工作区（{v}）',
   'audioTier.8': '低',
   'audioTier.16': '普通',

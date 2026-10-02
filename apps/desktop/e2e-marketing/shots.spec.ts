@@ -160,7 +160,7 @@ for (const theme of ['dark', 'light'] as const) {
       await expect(page.getByRole('dialog').getByText(`${mock.url}/r/`)).toBeVisible();
       await page.getByRole('dialog').evaluate((dialog, from) => {
         const walker = document.createTreeWalker(dialog, NodeFilter.SHOW_TEXT);
-        for (let n = walker.nextNode(); n; n = walker.nextNode()) n.nodeValue = n.nodeValue?.replaceAll(from, 'https://calab.ru') ?? null;
+        for (let n = walker.nextNode(); n; n = walker.nextNode()) n.nodeValue = n.nodeValue?.replaceAll(from, 'https://calab.io') ?? null;
       }, mock.url);
       await shoot(app, page, `settings-${theme}`);
       await page.keyboard.press('Escape');

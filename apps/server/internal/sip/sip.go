@@ -131,6 +131,23 @@ func (s *Service) Routes(mux httpx.Router, wrap func(http.Handler) http.Handler)
 
 func uid(r *http.Request) uuid.UUID { return auth.MustFromContext(r.Context()).UserID }
 
+// planAllows refuses telephony outside its plans (Business and on-prem; owner, 02.10, ADR-0046):
+// 409 PLAN_LIMIT. Reading the settings and the journal, turning telephony off and hanging up stay
+// open, so a downgraded workspace keeps its trunk visible and live calls are not cut.
+func (s *Service) planAllows(ctx context.Context, wsID uuid.UUID) error {
+	if s.plans == nil {
+		return nil
+	}
+	l, err := s.plans.Effective(ctx, wsID)
+	if err != nil {
+		return err
+	}
+	if l.TelephonyDisabled {
+		return plans.FeatureError("telephony")
+	}
+	return nil
+}
+
 // manage resolves the workspace of the path for a MANAGE_INTEGRATIONS member (ADR-0048; 404 for
 // non-members): telephony settings and the connection test.
 func manage(r *http.Request) (uuid.UUID, error) {
@@ -339,6 +356,11 @@ func (s *Service) putSettings(w http.ResponseWriter, r *http.Request) error {
 	if err != nil {
 		return err
 	}
+	if in.enabled {
+		if err := s.planAllows(r.Context(), wsID); err != nil {
+			return err
+		}
+	}
 	if in.enabled && s.sip == nil {
 		return httpx.Coded(http.StatusConflict, v1.ErrorCode_ERROR_CODE_SIP_DISABLED, "LiveKit is not configured on this server")
 	}
@@ -419,7 +441,9 @@ func (s *Service) putSettings(w http.ResponseWriter, r *http.Request) error {
 	})
 	var pe *providerError
 	if errors.As(err, &pe) {
-		if err := s.db.Q.SetSipLastError(context.WithoutCancel(ctx), sqlc.SetSipLastErrorParams{WorkspaceID: wsID, LastError: pe.msg}); err != nil {
+		if err := db.GuardExec(context.WithoutCancel(ctx), s.db, func(guarded *sqlc.Queries) error {
+			return guarded.SetSipLastError(context.WithoutCancel(ctx), sqlc.SetSipLastErrorParams{WorkspaceID: wsID, LastError: pe.msg})
+		}); err != nil {
 			slog.WarnContext(ctx, "sip: store last_error", "workspace", wsID, "err", err)
 		}
 		e := httpx.Coded(http.StatusBadGateway, v1.ErrorCode_ERROR_CODE_SIP_PROVIDER_ERROR, pe.msg)

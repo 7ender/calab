@@ -97,7 +97,9 @@ func (s *Service) ChangeEmail(ctx context.Context, id Identity, email, current s
 	}
 	switch {
 	case !s.mailOn():
-		u, err = s.db.Q.SetEmailAndVerified(ctx, sqlc.SetEmailAndVerifiedParams{ID: id.UserID, Email: &email})
+		u, err = db.GuardValue(ctx, s.db, func(guarded *sqlc.Queries) (sqlc.User, error) {
+			return guarded.SetEmailAndVerified(ctx, sqlc.SetEmailAndVerifiedParams{ID: id.UserID, Email: &email})
+		})
 		if db.UniqueViolation(err) != "" {
 			return nil, httpx.Conflict("email is already registered")
 		}

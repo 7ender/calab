@@ -104,6 +104,15 @@ func (h *Handlers) forward(w http.ResponseWriter, r *http.Request) error {
 	}
 	var msg sqlc.Message
 	err = h.db.Tx(ctx, func(q *sqlc.Queries) error {
+		if m.Kind == pbconv.MessageKindSystem {
+			// A recording card changes meanwhile (status, audio): take the payload as of the lock, so the
+			// copy is not left with a stale one that no later update reaches.
+			fresh, err := q.GetMessageShared(ctx, m.ID)
+			if err != nil {
+				return err
+			}
+			m.Payload = fresh.Payload
+		}
 		var err error
 		msg, err = q.InsertForwardedMessage(ctx, sqlc.InsertForwardedMessageParams{
 			RoomID: toID, AuthorID: me, Content: m.Content, StickerID: m.StickerID, EmbedsHidden: m.EmbedsHidden,
@@ -128,7 +137,9 @@ func (h *Handlers) forward(w http.ResponseWriter, r *http.Request) error {
 	}
 	pb := out[0]
 	if dst.DM && !dst.Notes { // docs/09 item 51: an incoming message takes the DM out of the recipient's archive
-		states, err := h.db.Q.UnarchiveDMForRecipients(ctx, sqlc.UnarchiveDMForRecipientsParams{RoomID: toID, AuthorID: me})
+		states, err := db.GuardValue(ctx, h.db, func(guarded *sqlc.Queries) ([]sqlc.DmState, error) {
+			return guarded.UnarchiveDMForRecipients(ctx, sqlc.UnarchiveDMForRecipientsParams{RoomID: toID, AuthorID: me})
+		})
 		if err != nil {
 			return err
 		}

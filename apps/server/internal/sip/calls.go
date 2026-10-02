@@ -107,6 +107,9 @@ func (s *Service) place(w http.ResponseWriter, r *http.Request) error {
 		return httpx.Forbidden("PLACE_CALLS required")
 	}
 	ctx, me := r.Context(), uid(r)
+	if err := s.planAllows(ctx, acc.WorkspaceID); err != nil {
+		return err
+	}
 	if room, err = s.db.Q.GetRoom(ctx, room.ID); db.IsNotFound(err) {
 		return httpx.NotFound("room")
 	} else if err != nil {
@@ -155,9 +158,11 @@ func (s *Service) place(w http.ResponseWriter, r *http.Request) error {
 	if err != nil {
 		return err
 	}
-	call, err := s.db.Q.InsertSipCall(ctx, sqlc.InsertSipCallParams{
-		ID: id, WorkspaceID: acc.WorkspaceID, RoomID: &room.ID, Number: number, StartedBy: &me,
-		ParticipantIdentity: rtc.SIPIdentity(id),
+	call, err := db.GuardValue(ctx, s.db, func(guarded *sqlc.Queries) (sqlc.SipCall, error) {
+		return guarded.InsertSipCall(ctx, sqlc.InsertSipCallParams{
+			ID: id, WorkspaceID: acc.WorkspaceID, RoomID: &room.ID, Number: number, StartedBy: &me,
+			ParticipantIdentity: rtc.SIPIdentity(id),
+		})
 	})
 	if db.UniqueViolation(err) != "" {
 		return errActive // a concurrent call won the room
@@ -188,7 +193,9 @@ func (s *Service) dial(ctx context.Context, call sqlc.SipCall, a sqlc.SipAccount
 	})
 	ctx = context.WithoutCancel(ctx)
 	if err == nil {
-		row, err := s.db.Q.MarkSipCallActive(ctx, sqlc.MarkSipCallActiveParams{ID: call.ID, SipCallID: info.SIPCallID})
+		row, err := db.GuardValue(ctx, s.db, func(guarded *sqlc.Queries) (sqlc.SipCall, error) {
+			return guarded.MarkSipCallActive(ctx, sqlc.MarkSipCallActiveParams{ID: call.ID, SipCallID: info.SIPCallID})
+		})
 		switch {
 		case err == nil:
 			s.publish(ctx, row)
@@ -237,7 +244,9 @@ func failureReason(err error) string {
 
 // finish ends a live call once and publishes it; a call already final is left alone.
 func (s *Service) finish(ctx context.Context, id uuid.UUID, status, reason string, by *uuid.UUID) (sqlc.SipCall, bool) {
-	row, err := s.db.Q.FinishSipCall(ctx, sqlc.FinishSipCallParams{ID: id, Status: status, Reason: reason, EndedBy: by})
+	row, err := db.GuardValue(ctx, s.db, func(guarded *sqlc.Queries) (sqlc.SipCall, error) {
+		return guarded.FinishSipCall(ctx, sqlc.FinishSipCallParams{ID: id, Status: status, Reason: reason, EndedBy: by})
+	})
 	if err != nil {
 		if !db.IsNotFound(err) {
 			slog.WarnContext(ctx, "sip: finish call", "call", id, "err", err)
@@ -388,6 +397,9 @@ func (s *Service) test(w http.ResponseWriter, r *http.Request) error {
 		return err
 	}
 	ctx, me := r.Context(), uid(r)
+	if err := s.planAllows(ctx, wsID); err != nil {
+		return err
+	}
 	a, _, err := s.account(ctx, s.db.Q, wsID)
 	if err != nil {
 		return err
@@ -417,8 +429,10 @@ func (s *Service) test(w http.ResponseWriter, r *http.Request) error {
 			slog.WarnContext(ctx, "sip: delete test room", "room", lkRoom, "err", err)
 		}
 	}()
-	call, err := s.db.Q.InsertSipCall(ctx, sqlc.InsertSipCallParams{
-		ID: id, WorkspaceID: wsID, Number: a.CallerID, StartedBy: &me, ParticipantIdentity: rtc.SIPIdentity(id),
+	call, err := db.GuardValue(ctx, s.db, func(guarded *sqlc.Queries) (sqlc.SipCall, error) {
+		return guarded.InsertSipCall(ctx, sqlc.InsertSipCallParams{
+			ID: id, WorkspaceID: wsID, Number: a.CallerID, StartedBy: &me, ParticipantIdentity: rtc.SIPIdentity(id),
+		})
 	})
 	if err != nil {
 		return err
@@ -459,7 +473,9 @@ func (s *Service) test(w http.ResponseWriter, r *http.Request) error {
 	if !out.Ok {
 		last = out.Message
 	}
-	if err := s.db.Q.SetSipLastError(bg, sqlc.SetSipLastErrorParams{WorkspaceID: wsID, LastError: last}); err != nil {
+	if err := db.GuardExec(bg, s.db, func(guarded *sqlc.Queries) error {
+		return guarded.SetSipLastError(bg, sqlc.SetSipLastErrorParams{WorkspaceID: wsID, LastError: last})
+	}); err != nil {
 		slog.WarnContext(ctx, "sip: store last_error", "workspace", wsID, "err", err)
 	}
 	slog.InfoContext(ctx, "sip: connection test", "workspace", wsID, "by", me, "ok", out.Ok, "message", out.Message)
@@ -494,9 +510,11 @@ func (s *Service) SIPParticipant(ctx context.Context, event string, wid, rid uui
 		var row sqlc.SipCall
 		switch p.Attributes[rtc.AttrSIPCallStatus] {
 		case "active":
-			row, err = s.db.Q.MarkSipCallActive(ctx, sqlc.MarkSipCallActiveParams{ID: id, SipCallID: p.Attributes[rtc.AttrSIPCallID]})
+			row, err = db.GuardValue(ctx, s.db, func(guarded *sqlc.Queries) (sqlc.SipCall, error) {
+				return guarded.MarkSipCallActive(ctx, sqlc.MarkSipCallActiveParams{ID: id, SipCallID: p.Attributes[rtc.AttrSIPCallID]})
+			})
 		case "ringing":
-			row, err = s.db.Q.MarkSipCallRinging(ctx, id)
+			row, err = db.GuardValue(ctx, s.db, func(guarded *sqlc.Queries) (sqlc.SipCall, error) { return guarded.MarkSipCallRinging(ctx, id) })
 		default:
 			return nil
 		}

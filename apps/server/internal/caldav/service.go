@@ -304,7 +304,7 @@ func (s *Service) connectAccount(w http.ResponseWriter, r *http.Request) error {
 			}
 		}
 	}
-	acc, err := s.db.Q.UpsertCalDavAccount(ctx, p)
+	acc, err := db.GuardValue(ctx, s.db, func(guarded *sqlc.Queries) (sqlc.CaldavAccount, error) { return guarded.UpsertCalDavAccount(ctx, p) })
 	if err != nil {
 		return err
 	}
@@ -379,7 +379,9 @@ func (s *Service) backfill(ctx context.Context, user uuid.UUID) {
 		return
 	}
 	for _, id := range ids {
-		if _, err := s.db.Q.EnqueueCalDavPushes(ctx, sqlc.EnqueueCalDavPushesParams{EventID: id, Ids: []uuid.UUID{user}}); err != nil {
+		if _, err := db.GuardValue(ctx, s.db, func(guarded *sqlc.Queries) (int64, error) {
+			return guarded.EnqueueCalDavPushes(ctx, sqlc.EnqueueCalDavPushesParams{EventID: id, Ids: []uuid.UUID{user}})
+		}); err != nil {
 			slog.WarnContext(ctx, "caldav: backfill", "err", err)
 			return
 		}
@@ -454,12 +456,16 @@ func (s *Service) Import(ctx context.Context, user uuid.UUID) (sqlc.CaldavAccoun
 	} else if !ok {
 		// Stopped, not deleted (the stored config and busy time stay). Stamped as synced, so a
 		// locked account does not stay first in the due list and starve the others.
-		return s.db.Q.SetCalDavSynced(ctx, sqlc.SetCalDavSyncedParams{UserID: user, LastSyncAt: &now, LastError: "CalDAV is not included in the plan"})
+		return db.GuardValue(ctx, s.db, func(guarded *sqlc.Queries) (sqlc.CaldavAccount, error) {
+			return guarded.SetCalDavSynced(ctx, sqlc.SetCalDavSyncedParams{UserID: user, LastSyncAt: &now, LastError: "CalDAV is not included in the plan"})
+		})
 	}
 	busy, fetchErr := s.fetch(ctx, acc, now)
 	if fetchErr != nil {
 		slog.InfoContext(ctx, "caldav: import failed", "user_id", user, "err", fetchErr)
-		return s.db.Q.SetCalDavSynced(ctx, sqlc.SetCalDavSyncedParams{UserID: user, LastSyncAt: &now, LastError: clipErr("import: " + fetchErr.Error())})
+		return db.GuardValue(ctx, s.db, func(guarded *sqlc.Queries) (sqlc.CaldavAccount, error) {
+			return guarded.SetCalDavSynced(ctx, sqlc.SetCalDavSyncedParams{UserID: user, LastSyncAt: &now, LastError: clipErr("import: " + fetchErr.Error())})
+		})
 	}
 	err = s.db.Tx(ctx, func(q *sqlc.Queries) error {
 		cur, err := q.LockCalDavAccount(ctx, user) // serializes imports of one user
@@ -563,7 +569,35 @@ func (s *Service) EventChanged(ctx context.Context, eventID uuid.UUID, users []u
 	}
 	ctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 3*time.Second)
 	defer cancel()
-	n, err := s.db.Q.EnqueueCalDavPushes(ctx, sqlc.EnqueueCalDavPushesParams{EventID: eventID, Ids: users})
+	// Only users who push are asked about (identity policy checks are not free), then only
+	// those the meeting's workspace policy lets the content reach (ADR-0054).
+	var pushers []uuid.UUID
+	for _, u := range users {
+		acc, err := s.db.Q.GetCalDavAccount(ctx, u)
+		if err == nil && acc.Push && acc.CalendarHref != nil {
+			pushers = append(pushers, u)
+		} else if err != nil && !db.IsNotFound(err) {
+			slog.WarnContext(ctx, "caldav: enqueue push", "event_id", eventID, "err", err)
+			return
+		}
+	}
+	if len(pushers) == 0 {
+		return
+	}
+	pushers, withheld, err := s.cal.PushTargets(ctx, eventID, pushers)
+	if err != nil {
+		slog.WarnContext(ctx, "caldav: enqueue push", "event_id", eventID, "err", err)
+		return
+	}
+	for _, u := range withheld {
+		s.withhold(ctx, u, eventID)
+	}
+	if len(pushers) == 0 {
+		return
+	}
+	n, err := db.GuardValue(ctx, s.db, func(guarded *sqlc.Queries) (int64, error) {
+		return guarded.EnqueueCalDavPushes(ctx, sqlc.EnqueueCalDavPushesParams{EventID: eventID, Ids: pushers})
+	})
 	if err != nil {
 		slog.WarnContext(ctx, "caldav: enqueue push", "event_id", eventID, "err", err)
 		return
@@ -585,8 +619,10 @@ func (s *Service) poke() {
 func (s *Service) ProcessPushes(ctx context.Context) (int, error) {
 	done := 0
 	for range 20 {
-		rows, err := s.db.Q.ClaimCalDavPushes(ctx, sqlc.ClaimCalDavPushesParams{
-			Lease: pgtype.Interval{Microseconds: pushLease.Microseconds(), Valid: true}, Lim: pushBatch,
+		rows, err := db.GuardValue(ctx, s.db, func(guarded *sqlc.Queries) ([]sqlc.CaldavPush, error) {
+			return guarded.ClaimCalDavPushes(ctx, sqlc.ClaimCalDavPushesParams{
+				Lease: pgtype.Interval{Microseconds: pushLease.Microseconds(), Valid: true}, Lim: pushBatch,
+			})
 		})
 		if err != nil {
 			return done, err
@@ -606,7 +642,9 @@ func (s *Service) ProcessPushes(ctx context.Context) (int, error) {
 // push PUTs or DELETEs one meeting in the user's calendar and records the outcome.
 func (s *Service) push(ctx context.Context, row sqlc.CaldavPush) bool {
 	drop := func() {
-		if err := s.db.Q.DeleteCalDavPush(ctx, sqlc.DeleteCalDavPushParams{UserID: row.UserID, EventID: row.EventID, Gen: row.Gen}); err != nil {
+		if err := db.GuardExec(ctx, s.db, func(guarded *sqlc.Queries) error {
+			return guarded.DeleteCalDavPush(ctx, sqlc.DeleteCalDavPushParams{UserID: row.UserID, EventID: row.EventID, Gen: row.Gen})
+		}); err != nil {
 			slog.WarnContext(ctx, "caldav: drop push", "err", err)
 		}
 	}
@@ -624,17 +662,28 @@ func (s *Service) push(ctx context.Context, row sqlc.CaldavPush) bool {
 		drop()
 		return true
 	}
+	if errors.Is(err, calendar.ErrWithheld) {
+		// The workspace identity policy keeps the meeting in Calab for now: the earlier copy
+		// is withdrawn and the push catches up later (withheld.go).
+		drop()
+		s.withhold(ctx, row.UserID, row.EventID)
+		return false
+	}
 	msg := clipErr("push: " + err.Error())
 	slog.InfoContext(ctx, "caldav: push failed", "user_id", row.UserID, "event_id", row.EventID, "attempt", row.Attempts+1, "err", err)
 	if row.Attempts+1 >= PushAttempts {
 		drop()
-		if e := s.db.Q.SetCalDavError(ctx, sqlc.SetCalDavErrorParams{UserID: row.UserID, LastError: msg}); e != nil {
+		if e := db.GuardExec(ctx, s.db, func(guarded *sqlc.Queries) error {
+			return guarded.SetCalDavError(ctx, sqlc.SetCalDavErrorParams{UserID: row.UserID, LastError: msg})
+		}); e != nil {
 			slog.WarnContext(ctx, "caldav: push error", "err", e)
 		}
 		return false
 	}
-	if e := s.db.Q.RetryCalDavPush(ctx, sqlc.RetryCalDavPushParams{UserID: row.UserID, EventID: row.EventID, Gen: row.Gen,
-		NextAt: s.Now().Add(s.opts.PushBackoff(row.Attempts)), Error: msg}); e != nil {
+	if e := db.GuardExec(ctx, s.db, func(guarded *sqlc.Queries) error {
+		return guarded.RetryCalDavPush(ctx, sqlc.RetryCalDavPushParams{UserID: row.UserID, EventID: row.EventID, Gen: row.Gen,
+			NextAt: s.Now().Add(s.opts.PushBackoff(row.Attempts)), Error: msg})
+	}); e != nil {
 		slog.WarnContext(ctx, "caldav: push retry", "err", e)
 	}
 	return false
@@ -695,6 +744,9 @@ func (s *Service) Run(ctx context.Context) {
 		}
 		if _, err := s.ProcessPushes(ctx); err != nil && ctx.Err() == nil {
 			slog.WarnContext(ctx, "caldav: pushes", "err", err)
+		}
+		if _, err := s.ProcessWithheld(ctx); err != nil && ctx.Err() == nil {
+			slog.WarnContext(ctx, "caldav: withheld", "err", err)
 		}
 	}
 }

@@ -8,13 +8,15 @@ import type { Timestamp } from "@bufbuild/protobuf/wkt";
 import { file_google_protobuf_timestamp } from "@bufbuild/protobuf/wkt";
 import type { ScreenSharePreset } from "./media_pb.js";
 import { file_calaba_v1_media } from "./media_pb.js";
+import type { WorkspaceIdentityEntitlements } from "./identity_pb.js";
+import { file_calaba_v1_identity } from "./identity_pb.js";
 import type { Message } from "@bufbuild/protobuf";
 
 /**
  * Describes the file calaba/v1/plan.proto.
  */
 export const file_calaba_v1_plan: GenFile = /*@__PURE__*/
-  fileDesc("ChRjYWxhYmEvdjEvcGxhbi5wcm90bxIJY2FsYWJhLnYxIrUDCgpQbGFuTGltaXRzEhQKDHJvb21fbWVtYmVycxgBIAEoDRI3ChFzdHJlYW1fbWF4X3ByZXNldBgCIAEoDjIcLmNhbGFiYS52MS5TY3JlZW5TaGFyZVByZXNldBIWCg5zdHJlYW1fbWF4X2ZwcxgDIAEoDRI3ChFjYW1lcmFfbWF4X3ByZXNldBgEIAEoDjIcLmNhbGFiYS52MS5TY3JlZW5TaGFyZVByZXNldBIWCg5jYW1lcmFfbWF4X2ZwcxgFIAEoDRIYChBzdHJlYW1zX3Blcl9yb29tGAYgASgNEhIKCnN0b3JhZ2VfbWIYByABKAQSDwoHbWVtYmVycxgIIAEoDRIVCg1zdGlja2VyX3BhY2tzGAkgASgNEhAKCHN0aWNrZXJzGAogASgNEgwKBGJvdHMYFCABKA0SGwoTYXVkaW9fdGllcl9tYXhfa2JwcxgVIAEoDRIOCgZib2FyZHMYFiABKA0SGAoQY2FtZXJhc19wZXJfcm9vbRgbIAEoDRIXCg9jYWxkYXZfZGlzYWJsZWQYFyABKAgSGQoRbXVzaWNpYW5fZGlzYWJsZWQYHCABKAgilwEKDVdvcmtzcGFjZVBsYW4SHQoEcGxhbhgBIAEoDjIPLmNhbGFiYS52MS5QbGFuEiUKBmxpbWl0cxgCIAEoCzIVLmNhbGFiYS52MS5QbGFuTGltaXRzEi8KC3ZhbGlkX3VudGlsGAMgASgLMhouZ29vZ2xlLnByb3RvYnVmLlRpbWVzdGFtcBIPCgdleHBpcmVkGAQgASgIKmAKBFBsYW4SFAoQUExBTl9VTlNQRUNJRklFRBAAEg0KCVBMQU5fRlJFRRABEg0KCVBMQU5fVEVBTRACEg8KC1BMQU5fQ1VTVE9NEAMSEwoPUExBTl9FTlRFUlBSSVNFEARClwEKDWNvbS5jYWxhYmEudjFCCVBsYW5Qcm90b1ABWjZnaXRodWIuY29tL2NhbGFiYS9jYWxhYmEvc2VydmVyL2dlbi9jYWxhYmEvdjE7Y2FsYWJhdjGiAgNDWFiqAglDYWxhYmEuVjHKAglDYWxhYmFcVjHiAhVDYWxhYmFcVjFcR1BCTWV0YWRhdGHqAgpDYWxhYmE6OlYxYgZwcm90bzM", [file_google_protobuf_timestamp, file_calaba_v1_media]);
+  fileDesc("ChRjYWxhYmEvdjEvcGxhbi5wcm90bxIJY2FsYWJhLnYxIqEECgpQbGFuTGltaXRzEhQKDHJvb21fbWVtYmVycxgBIAEoDRI3ChFzdHJlYW1fbWF4X3ByZXNldBgCIAEoDjIcLmNhbGFiYS52MS5TY3JlZW5TaGFyZVByZXNldBIWCg5zdHJlYW1fbWF4X2ZwcxgDIAEoDRI3ChFjYW1lcmFfbWF4X3ByZXNldBgEIAEoDjIcLmNhbGFiYS52MS5TY3JlZW5TaGFyZVByZXNldBIWCg5jYW1lcmFfbWF4X2ZwcxgFIAEoDRIYChBzdHJlYW1zX3Blcl9yb29tGAYgASgNEhIKCnN0b3JhZ2VfbWIYByABKAQSDwoHbWVtYmVycxgIIAEoDRIVCg1zdGlja2VyX3BhY2tzGAkgASgNEhAKCHN0aWNrZXJzGAogASgNEgwKBGJvdHMYFCABKA0SGwoTYXVkaW9fdGllcl9tYXhfa2JwcxgVIAEoDRIOCgZib2FyZHMYFiABKA0SGAoQY2FtZXJhc19wZXJfcm9vbRgbIAEoDRIXCg9jYWxkYXZfZGlzYWJsZWQYFyABKAgSGQoRbXVzaWNpYW5fZGlzYWJsZWQYHCABKAgSGwoTY2hlY2tsaXN0c19kaXNhYmxlZBgdIAEoCBIfChdib2FyZF93ZWJob29rc19kaXNhYmxlZBgeIAEoCBIaChJ0ZWxlcGhvbnlfZGlzYWJsZWQYHyABKAhKBAgYEBlKBAgZEBpKBAgaEBsi4AEKDVdvcmtzcGFjZVBsYW4SHQoEcGxhbhgBIAEoDjIPLmNhbGFiYS52MS5QbGFuEiUKBmxpbWl0cxgCIAEoCzIVLmNhbGFiYS52MS5QbGFuTGltaXRzEi8KC3ZhbGlkX3VudGlsGAMgASgLMhouZ29vZ2xlLnByb3RvYnVmLlRpbWVzdGFtcBJHChVpZGVudGl0eV9lbnRpdGxlbWVudHMYBSABKAsyKC5jYWxhYmEudjEuV29ya3NwYWNlSWRlbnRpdHlFbnRpdGxlbWVudHMSDwoHZXhwaXJlZBgEIAEoCCpgCgRQbGFuEhQKEFBMQU5fVU5TUEVDSUZJRUQQABINCglQTEFOX0ZSRUUQARINCglQTEFOX1RFQU0QAhIPCgtQTEFOX0NVU1RPTRADEhMKD1BMQU5fRU5URVJQUklTRRAEQpcBCg1jb20uY2FsYWJhLnYxQglQbGFuUHJvdG9QAVo2Z2l0aHViLmNvbS9jYWxhYmEvY2FsYWJhL3NlcnZlci9nZW4vY2FsYWJhL3YxO2NhbGFiYXYxogIDQ1hYqgIJQ2FsYWJhLlYxygIJQ2FsYWJhXFYx4gIVQ2FsYWJhXFYxXEdQQk1ldGFkYXRh6gIKQ2FsYWJhOjpWMWIGcHJvdG8z", [file_google_protobuf_timestamp, file_calaba_v1_media, file_calaba_v1_identity]);
 
 /**
  * Effective limits of a workspace. 0 / UNSPECIFIED = no limit.
@@ -133,6 +135,27 @@ export type PlanLimits = Message<"calaba.v1.PlanLimits"> & {
    * @generated from field: bool musician_disabled = 28;
    */
   musicianDisabled: boolean;
+
+  /**
+   * task checklists (ADR-0058 §5) are Team and above: writes refused, reading stays
+   *
+   * @generated from field: bool checklists_disabled = 29;
+   */
+  checklistsDisabled: boolean;
+
+  /**
+   * board webhooks (ADR-0058 §5) are Business only: setup refused, delivery paused
+   *
+   * @generated from field: bool board_webhooks_disabled = 30;
+   */
+  boardWebhooksDisabled: boolean;
+
+  /**
+   * telephony SIP (ADR-0046) is Business only: trunk setup, test and calls refused, settings readable
+   *
+   * @generated from field: bool telephony_disabled = 31;
+   */
+  telephonyDisabled: boolean;
 };
 
 /**
@@ -168,6 +191,11 @@ export type WorkspacePlan = Message<"calaba.v1.WorkspacePlan"> & {
    * @generated from field: google.protobuf.Timestamp valid_until = 3;
    */
   validUntil?: Timestamp | undefined;
+
+  /**
+   * @generated from field: calaba.v1.WorkspaceIdentityEntitlements identity_entitlements = 5;
+   */
+  identityEntitlements?: WorkspaceIdentityEntitlements | undefined;
 
   /**
    * valid_until passed: the FREE limits apply
@@ -215,7 +243,7 @@ export enum Plan {
   CUSTOM = 3,
 
   /**
-   * no limits at all (like self-hosted), not configurable
+   * cloud Business; on-prem Enterprise is an operator edition
    *
    * @generated from enum value: PLAN_ENTERPRISE = 4;
    */

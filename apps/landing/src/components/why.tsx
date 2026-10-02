@@ -18,7 +18,7 @@ export function Why({ t }: { t: Dict['why'] }) {
   return (
     <section id="why" aria-labelledby="why-title" className="border-y border-line py-12 sm:py-16">
       <Container>
-        <h2 id="why-title" className="text-center text-[24px] leading-8 font-semibold tracking-tight sm:text-[28px] sm:leading-9">
+        <h2 id="why-title" className="editorial-eyebrow">
           {t.title}
         </h2>
         <ul className="mt-8 grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
@@ -26,7 +26,7 @@ export function Why({ t }: { t: Dict['why'] }) {
             <li key={id} className="flex gap-4 rounded-[16px] border border-line bg-card p-5 lg:flex-col lg:gap-3">
               <Icon aria-hidden="true" className="size-6 shrink-0 text-accent" strokeWidth={1.75} />
               <div>
-                <h3 className="text-[17px] leading-6 font-semibold">{t.items[id].title}</h3>
+                <h3 className="text-[17px] leading-6 font-bold">{t.items[id].title}</h3>
                 <p className="mt-1 text-[15px] leading-6 text-pretty text-fg-2">{rich(t.items[id].text, { code })}</p>
               </div>
             </li>

@@ -4,7 +4,8 @@
 #                                                by infra/docker/release.sh, see the github-release job), publish
 #   workflow_dispatch (version, publish)        → same; the GitHub Release is a draft, publishing is opt-in
 #
-# Publishing (the update feed https://releases.calab.ru/ proxies this bucket, infra/docker/caddy):
+# Publishing (the update feed https://releases.calab.io/ proxies this bucket, infra/docker/caddy; the pre-2.0 feed
+# host https://releases.calab.ru/ serves the same bucket — feeds must keep relative file URLs, docs/06 «Домены»):
 #   S3 (preferred) — bucket layout: releases/<version>/<installers, blockmaps>   (Cache-Control immutable)
 #                                   latest-mac.yml, latest-linux.yml, latest.yml, index.html at the root
 #                                   (no-cache, uploaded LAST; their `url:`/`path:` point into releases/<version>/)
@@ -46,12 +47,37 @@ concurrency:
 
 env:
   RELEASE_REPO: itrcz/calab                      # git@github.com:itrcz/calab.git
-  UPDATE_URL: https://releases.calab.ru/         # update feed (docs/10-branding.md; proxies the S3 bucket)
-  HOMEPAGE: https://calab.ru
+  UPDATE_URL: https://releases.calab.io/         # update feed (docs/10-branding.md; proxies the S3 bucket)
+  HOMEPAGE: https://calab.io
+  APP_ORIGIN: https://app.calab.io               # first-run server of release builds (MAIN_VITE_DEFAULT_SERVER_URL)
+  LEGACY_UPDATE_URL: https://releases.calab.ru/  # feed baked into pre-2.0 builds: must keep serving the same bucket
 
 jobs:
+  # A tag must never ship clients pointing to a dead host: the feed and the default server baked into the
+  # build have to answer over valid TLS before anything is built (docs/06 «Домены»).
+  preflight:
+    runs-on: ubuntu-latest
+    timeout-minutes: 3
+    steps:
+      - name: update feed and app host answer over TLS
+        run: |
+          fail=0
+          probe() { # url, what
+            local code rc=0
+            code=$(curl -s -o /dev/null -w '%{http_code}' --max-time 20 --retry 2 --retry-all-errors "$1") || rc=$?
+            if [[ $rc == 0 && "$code" =~ ^(200|204|301|302|307|308)$ ]]; then echo "ok   $1 ($code)"
+            else echo "::error::$2 $1 failed (HTTP $code, curl exit $rc: 6/7 DNS/connect, 35/60 TLS) — fix DNS/certificate/ingress before releasing"; fail=1; fi
+          }
+          probe "$UPDATE_URL" "update feed (UPDATE_URL)"
+          probe "${UPDATE_URL%/}/latest.yml" "update feed metadata"
+          probe "${LEGACY_UPDATE_URL%/}/latest.yml" "pre-2.0 update feed (LEGACY_UPDATE_URL)"
+          probe "$APP_ORIGIN/api/version" "default server (APP_ORIGIN)"
+          probe "$HOMEPAGE/" "site (HOMEPAGE)"
+          exit $fail
+
   build:
     name: build (${{ matrix.target }})
+    needs: preflight
     runs-on: ${{ matrix.os }}
     strategy:
       fail-fast: false
@@ -208,6 +234,7 @@ jobs:
       - name: build:app (electron-vite + third-party notices)
         env:
           MAIN_VITE_UPDATE_FEED: ${{ env.UPDATE_URL }}
+          MAIN_VITE_DEFAULT_SERVER_URL: ${{ env.APP_ORIGIN }}   # the host the preflight job checked
           MAIN_VITE_UPDATES_SIGNED: ${{ steps.sign.outputs.trusted == '1' && '1' || '' }}
         run: pnpm -F @calaba/desktop run build:app
       - name: third-party notices generated
@@ -282,7 +309,7 @@ jobs:
           tag="${GITHUB_REF_NAME}"; draft="--draft"; target=()
           if [[ "$GITHUB_REF" != refs/tags/v* ]]; then tag="v$ver"; target=(--target "$GITHUB_SHA"); fi
           # body = this version's CHANGELOG.md section + download links; no section → GitHub's auto-generated notes
-          links="**Скачать:** [calab.ru](https://calab.ru/#download) · файлы и обновления: [releases.calab.ru](https://releases.calab.ru/) · [все изменения](https://github.com/$RELEASE_REPO/blob/main/CHANGELOG.md)"
+          links="**Скачать:** [calab.io](https://calab.io/#download) · файлы и обновления: [releases.calab.io](https://releases.calab.io/) · [все изменения](https://github.com/$RELEASE_REPO/blob/main/CHANGELOG.md)"
           edit_notes=()
           if section=$(bash infra/ci/changelog-section.sh "$ver" CHANGELOG.md); then
             printf '%s\n\n---\n%s\n' "$section" "$links" > release-notes.md
@@ -345,10 +372,15 @@ jobs:
             --include '*.dmg' --include '*.zip' --include '*.AppImage' --include '*.deb' --include '*.exe' --include '*.blockmap' \
             --cache-control 'public, max-age=31536000, immutable' --only-show-errors
           # 2. feeds: point url:/path: into releases/<version>/ (sha512/size unchanged — same bytes)
+          # Relative only: releases.calab.io (new builds) and releases.calab.ru (pre-2.0 builds) serve the same
+          # bucket, and each client resolves file URLs against its own feed host (docs/06 «Домены»).
+          if grep -EHn '^\s*(- url|path): *[a-z]+://' "${feeds[@]}"; then
+            echo "::error::absolute file URLs in the update feeds — clients of the other feed host could not follow them"; exit 1
+          fi
           for y in "${feeds[@]}"; do
             sed -E -i "s#^(\s*- url: |path: )#\1releases/$ver/#" "$y"
           done
-          # 3. a small index for humans (https://releases.calab.ru/)
+          # 3. a small index for humans (https://releases.calab.io/)
           {
             echo "<!doctype html><meta charset=utf-8><title>Calab $ver</title><h1>Calab $ver</h1><ul>"
             for f in *.dmg *.exe *.AppImage *.deb; do [[ -f "$f" ]] && echo "<li><a href=\"releases/$ver/$f\">$f</a></li>"; done
@@ -386,7 +418,7 @@ jobs:
             s3 cp VERSION "s3://$S3_BUCKET/latest/VERSION" --cache-control 'no-cache' --content-type 'text/plain; charset=utf-8' --only-show-errors
           fi
           echo "published=1" >> "$GITHUB_OUTPUT"
-          echo "::notice::published Calab $ver to s3://$S3_BUCKET (feed: https://releases.calab.ru/)"
+          echo "::notice::published Calab $ver to s3://$S3_BUCKET (feed: $UPDATE_URL, same bucket as https://releases.calab.ru/)"
 
   publish-stand:
     needs: [build, publish-s3]

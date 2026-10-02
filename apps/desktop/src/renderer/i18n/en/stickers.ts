@@ -1,5 +1,6 @@
 /** English UI strings — sticker packs (ADR-0030). Same keys as ru/stickers.ts. */
 export const enStickers = {
+  'stk.builtin': 'Built-in',
   'stk.tabStickers': 'Stickers',
   'stk.preview': '{emoji} Sticker',
   'stk.search': 'Search by emoji',
@@ -54,7 +55,6 @@ export const enStickers = {
   'stk.cover': 'Cover',
   'stk.makeCover': 'Make cover',
   'stk.emojiFor': 'Sticker emoji',
-  'stk.deleteSticker': 'Delete sticker',
   'stk.actions': 'Sticker actions',
   'stk.replace': 'Replace file',
   'stk.editEmoji': 'Change emoji',
@@ -69,8 +69,8 @@ export const enStickers = {
   'stk.selectAll': 'Select all',
   'stk.selectedCount': 'Selected: {n}',
   'stk.applyEmoji': 'Apply emoji to all selected',
-  'stk.planPacks': 'The workspace plan allows up to {n} sticker packs',
-  'stk.planStickers': 'The workspace plan allows up to {n} stickers',
+  'stk.planPacks': { one: 'The workspace plan allows up to {n} sticker pack', other: 'The workspace plan allows up to {n} sticker packs' },
+  'stk.planStickers': { one: 'The workspace plan allows up to {n} sticker', other: 'The workspace plan allows up to {n} stickers' },
   'stk.mine': 'My stickers',
   'stk.mineHint': 'Packs appear in the sticker panel in this order',
   'stk.mineEmpty': 'You haven’t added any packs yet',

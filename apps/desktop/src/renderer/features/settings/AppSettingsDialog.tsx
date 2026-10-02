@@ -1,3 +1,5 @@
+import { AuthorizedApps } from '../identity/OAuth';
+import { localAuthority } from '../identity/model';
 import { AUDIO_TIERS_KBPS, audioTierKbps } from '@calaba/protocol';
 import { timestampDate } from '@bufbuild/protobuf/wkt';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
@@ -57,7 +59,9 @@ export function AppSettingsDialog({ tab, onClose }: { tab: string | undefined; o
   const guest = useSession((s) => s.me?.user?.isGuest === true);
   // «Обновление» on «О программе» while an update waits (docs/09 #125); a boolean selector.
   const updatePending = useSession(selectUpdatePending);
+  const local = useSession((s) => localAuthority(s.authority));
   const sections: SettingsSection[] = [
+    { id: 'authorized-apps', label: t('identity.grants'), icon: CircleUser, content: <AuthorizedApps /> },
     // «Основное» first (owner, 29.09): theme, language, startup / updates. The web has no startup /
     // updates, but the theme and the language live here too (ADR-0022).
     { id: 'general', label: t('settings.general'), icon: SlidersHorizontal, content: <GeneralTab /> },
@@ -83,7 +87,7 @@ export function AppSettingsDialog({ tab, onClose }: { tab: string | undefined; o
       title={t('settings.title')}
       initial={tab ?? 'general'}
       onClose={onClose}
-      sections={sections}
+      sections={sections.filter((section) => local || !['profile', 'sessions', 'calendar'].includes(section.id))}
       footer={
         <SettingsFooter
           superadmin={superadmin}
@@ -642,7 +646,12 @@ function ConnectionTab(): ReactNode {
       <Row label={t('conn.gateway')} hint={host || undefined}>
         <span className={cx('text-body', ready ? 'text-ok' : 'text-warn')}>
           {ready ? t('conn.ok') : t('conn.connecting')}
-          {ready && ping?.ms !== null && ping?.ms !== undefined ? <span className="tabular-nums text-muted" title={t('conn.apiOkHint')}> · {t('conn.apiOk', { ms: ping.ms })}</span> : null}
+          {ready && ping?.ms !== null && ping?.ms !== undefined ? (
+            <span className="tabular-nums text-muted" title={t('conn.apiOkHint')}>
+              {' '}
+              · {t('conn.apiOk', { ms: ping.ms })}
+            </span>
+          ) : null}
         </span>
       </Row>
       {ping?.error ? (
@@ -663,7 +672,9 @@ function ConnectionTab(): ReactNode {
                   : t('conn.connecting')
                 : t('conn.notInVoice')}
           {inVoice && (phase === 'connecting' || phase === 'reconnecting') ? <VoicePhaseAge /> : null}
-          {link.attempts > 0 && phase !== 'connected' ? <span className="tabular-nums text-muted"> · {t('conn.voiceAttempts', { n: link.attempts })}</span> : null}
+          {link.attempts > 0 && phase !== 'connected' ? (
+            <span className="tabular-nums text-muted"> · {t('conn.voiceAttempts', { n: link.attempts })}</span>
+          ) : null}
         </span>
       </Row>
       {link.lastError && phase !== 'connected' ? (

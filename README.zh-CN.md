@@ -17,7 +17,7 @@
   <img alt="Electron" src="https://img.shields.io/badge/desktop-Electron-47848F">
   <img alt="Go" src="https://img.shields.io/badge/server-Go-00ADD8">
   <img alt="LiveKit" src="https://img.shields.io/badge/media-LiveKit-ff6b35">
-  <a href="https://calab.ru/zh/"><img alt="calab.ru" src="https://img.shields.io/badge/site-calab.ru-0A84FF"></a>
+  <a href="https://calab.io/zh/"><img alt="calab.io" src="https://img.shields.io/badge/site-calab.io-0A84FF"></a>
 </p>
 
 <p align="center">
@@ -46,7 +46,7 @@ Calab 是一款以**语音**为核心的团队通讯工具。进入房间就能�
 - **一对一通话**——在私信中发起，支持铃声、摄像头和屏幕共享。
 - **会议录音**——由服务器录制，GPTunneL 转写；房间聊天中会收到包含摘要、音频和完整转写的卡片。
 - **音效板**、管理功能（服务器端静音、断开、拖动移动成员）、状态。
-- **电话呼叫（SIP）**——接入你自己的 SIP 服务商，在语音房间中拨打座机或手机号码；被叫方作为参与者加入，所有人都能看到“拨号中 → 响铃中 → 通话中”。提供服务商设置、通话记录，以及默认无人拥有的“拨打电话”权限（[ADR-0046](docs/adr/0046-sip-telephony.md)）。
+- **电话呼叫（SIP）**——接入你自己的 SIP 服务商，在语音房间中拨打座机或手机号码；被叫方作为参与者加入，所有人都能看到“拨号中 → 响铃中 → 通话中”。提供服务商设置、通话记录，以及默认无人拥有的“拨打电话”权限。仅限 Business 套餐和 Enterprise（[ADR-0046](docs/adr/0046-sip-telephony.md)）。
 - **临时房间**——存在一小时或一天的房间，自带访客链接，也可同时在日历中创建会议：可替代 Zoom，到期自动消失（[ADR-0044](docs/adr/0044-temp-rooms.md)）。
 
 ### 💬 聊天
@@ -111,7 +111,7 @@ Calab 是一款以**语音**为核心的团队通讯工具。进入房间就能�
 ```ts
 import { Bot } from '@calaba/bot-sdk';
 
-const bot = new Bot(process.env.BOT_TOKEN, { server: 'https://app.calab.ru' });
+const bot = new Bot(process.env.BOT_TOKEN, { server: 'https://app.calab.io' });
 bot.on('message', (m) => bot.reply(m, m.content));
 await bot.start();
 ```
@@ -151,7 +151,7 @@ infra/docker/deploy.sh                            # Caddy、LiveKit、API、Post
 
 ### 应用
 
-macOS、Windows 和 Linux 版本可在 [calab.ru](https://calab.ru/zh/#download) 下载，也可以在你的服务器 `https://app.<域名>/download/` 下载；网页版地址为 `https://app.<域名>`。各版本更新内容见 [CHANGELOG.md](CHANGELOG.md)（俄文；同样的内容也会发布到 [GitHub Releases](https://github.com/itrcz/calab/releases)）。
+macOS、Windows 和 Linux 版本可在 [calab.io](https://calab.io/zh/#download) 下载，也可以在你的服务器 `https://app.<域名>/download/` 下载；网页版地址为 `https://app.<域名>`。各版本更新内容见 [CHANGELOG.md](CHANGELOG.md)（俄文；同样的内容也会发布到 [GitHub Releases](https://github.com/itrcz/calab/releases)）。
 
 ### 开发
 
@@ -180,11 +180,12 @@ pnpm -F @calaba/desktop dev                       # Electron
 | 任务看板 | 3 | 30 | 50 | 不限 |
 | 日历 | ✓ | ✓ | ✓ | ✓ |
 | CalDAV | — | ✓ | ✓ | ✓ |
+| 电话呼叫（SIP） | — | — | ✓ | ✓ |
 | On-prem（自有服务器） | — | — | — | ✓ |
 | 支持 | — | 支持 | 优先支持 | ✓ |
 | 价格 | 免费 | 按需询价（**it@gptunnel.ai**） | 按需询价（**it@gptunnel.ai**） | 非商业用途免费（BSL 1.1，保留“Powered by GPTunneL”）；商业许可按需询价 |
 
-Free、Team 和 Business 是工作区的云端方案（[ADR-0024](docs/adr/0024-plans-and-limits.md)）；Enterprise 是部署在自有服务器上的 Calab（on-prem），没有任何限制。详情见 [calab.ru/zh/#pricing](https://calab.ru/zh/#pricing) 和 [COMMERCIAL-LICENSE.md](COMMERCIAL-LICENSE.md)。
+Free、Team 和 Business 是工作区的云端方案（[ADR-0024](docs/adr/0024-plans-and-limits.md)）；Enterprise 是部署在自有服务器上的 Calab（on-prem），没有任何限制。详情见 [calab.io/zh/#pricing](https://calab.io/zh/#pricing) 和 [COMMERCIAL-LICENSE.md](COMMERCIAL-LICENSE.md)。
 
 ## 许可证
 

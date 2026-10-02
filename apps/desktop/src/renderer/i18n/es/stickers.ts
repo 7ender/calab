@@ -3,6 +3,7 @@ import type { DictShape } from '../types';
 
 /** Spanish UI strings — sticker packs (ADR-0030). Same keys as ru/stickers.ts. */
 export const esStickers: DictShape<typeof enStickers> = {
+  'stk.builtin': 'Integrado',
   'stk.tabStickers': 'Stickers',
   'stk.preview': '{emoji} Sticker',
   'stk.search': 'Buscar por emoji',
@@ -57,7 +58,6 @@ export const esStickers: DictShape<typeof enStickers> = {
   'stk.cover': 'Portada',
   'stk.makeCover': 'Usar como portada',
   'stk.emojiFor': 'Emoji del sticker',
-  'stk.deleteSticker': 'Eliminar sticker',
   'stk.actions': 'Acciones del sticker',
   'stk.replace': 'Reemplazar archivo',
   'stk.editEmoji': 'Cambiar emoji',
@@ -72,8 +72,8 @@ export const esStickers: DictShape<typeof enStickers> = {
   'stk.selectAll': 'Seleccionar todo',
   'stk.selectedCount': 'Seleccionados: {n}',
   'stk.applyEmoji': 'Aplicar emoji a todos los seleccionados',
-  'stk.planPacks': 'El plan del espacio permite hasta {n} paquetes de stickers',
-  'stk.planStickers': 'El plan del espacio permite hasta {n} stickers',
+  'stk.planPacks': { one: 'El plan del espacio permite hasta {n} paquete de stickers', many: 'El plan del espacio permite hasta {n} paquetes de stickers', other: 'El plan del espacio permite hasta {n} paquetes de stickers' },
+  'stk.planStickers': { one: 'El plan del espacio permite hasta {n} sticker', many: 'El plan del espacio permite hasta {n} stickers', other: 'El plan del espacio permite hasta {n} stickers' },
   'stk.mine': 'Mis stickers',
   'stk.mineHint': 'Los paquetes aparecen en el panel de stickers en este orden',
   'stk.mineEmpty': 'Aún no has añadido ningún paquete',

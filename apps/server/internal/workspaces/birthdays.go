@@ -25,11 +25,11 @@ func (h *Handlers) birthdayRoutes(handle func(string, httpx.HandlerFunc)) {
 // birthdayManager: the caller's workspace, with MANAGE_NICKNAMES (the right to others'
 // nicknames covers the other profile field an admin may set).
 func birthdayManager(r *http.Request) (uuid.UUID, error) {
-	wsID, bits, _, err := access(r)
+	wsID, bits, role, err := access(r)
 	if err != nil {
 		return uuid.Nil, err
 	}
-	if !bits.Has(perm.ManageNicknames) {
+	if !bits.Has(perm.ManageNicknames) || role == perm.RoleGuest { // guests never see the directory
 		return uuid.Nil, httpx.Forbidden("MANAGE_NICKNAMES required")
 	}
 	return wsID, nil
@@ -98,7 +98,7 @@ func (h *Handlers) setMemberBirthday(w http.ResponseWriter, r *http.Request) err
 	if p.BirthdayDay, p.BirthdayMonth, p.BirthdayYear, err = birthdays.Columns(req.GetBirthday(), time.Now()); err != nil {
 		return err
 	}
-	u, err := h.db.Q.UpdateUser(r.Context(), p)
+	u, err := db.GuardValue(r.Context(), h.db, func(guarded *sqlc.Queries) (sqlc.User, error) { return guarded.UpdateUser(r.Context(), p) })
 	if err != nil {
 		return err
 	}

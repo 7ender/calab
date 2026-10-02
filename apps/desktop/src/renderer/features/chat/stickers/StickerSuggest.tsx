@@ -4,7 +4,7 @@ import { useShallow } from 'zustand/react/shallow';
 import { cx } from '../../../components/ui';
 import { t } from '../../../i18n';
 import { useMobile } from '../../../lib/mobile';
-import type { StickerPlace } from '../../../lib/stickers';
+import { packUsable, type StickerPlace } from '../../../lib/stickers';
 import { suggestStickers, usableWorkspaces } from '../../../lib/stickerSuggest';
 import { useMediaQuery } from '../../../lib/useMediaQuery';
 import { loadMyStickers } from '../../../services/stickers';
@@ -50,12 +50,13 @@ export const StickerSuggest = memo(function StickerSuggest({
   }, [loaded]);
   // Where packs may be sent here (roles of me / the DM peer): a primitive, stable across voice states.
   const wsKey = useWorkspaces((s) => usableWorkspaces(Object.keys(s.byId), place, me, (w, u) => s.byId[w]?.members[u]?.role));
+  const builtinAllowed = useWorkspaces((s) => packUsable({ builtin: true, workspaceId: '' }, place, me, (w, u) => s.byId[w]?.members[u]?.role));
   const list = useStickers(
     useShallow((s) => {
-      if (!wsKey) return [];
+      if (!wsKey && !builtinAllowed) return [];
       const allowed = wsKey.split(',');
       return suggestStickers(
-        s.installed.filter((p) => allowed.includes(p.workspaceId)),
+        s.installed.filter((p) => p.builtin ? builtinAllowed : allowed.includes(p.workspaceId)),
         emoji,
         s.recent,
       );

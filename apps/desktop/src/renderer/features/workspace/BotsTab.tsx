@@ -76,7 +76,7 @@ function PlanLine({ used, limit, full }: { used: number; limit: number; full: bo
   return (
     <div className={cx('-mt-2 flex flex-wrap items-center gap-x-1.5 gap-y-1 px-1 text-caption', full ? 'text-muted' : 'text-faint')} data-testid="bots-plan">
       {full ? <TriangleAlert className="size-3.5 shrink-0 text-warn" aria-hidden /> : null}
-      <span>{full ? t('bots.planFull', { n: limit }) : t('bots.planUsage', { used, limit })}</span>
+      <span>{full ? plural('bots.planFull', limit) : t('bots.planUsage', { used, limit })}</span>
       {contact ? (
         <button type="button" className="font-medium text-accent-text hover:underline" onClick={openPlanContact}>
           {t('plan.contactShort')}
@@ -328,7 +328,7 @@ function BotRow({ workspaceId, bot, onIssued }: { workspaceId: string; bot: Bot;
                 ) : null}
                 <Dropdown.Separator className={menuSeparator} />
                 <Dropdown.Item className={cx(menuItem, 'text-danger-text')} onSelect={() => void remove()}>
-                  <Trash2 className="size-4" aria-hidden /> {t('bots.delete')}
+                  <Trash2 className="size-4" aria-hidden /> {t('common.delete')}
                 </Dropdown.Item>
               </>
             ) : (

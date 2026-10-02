@@ -1,3 +1,4 @@
+import { localAuthority } from '../identity/model';
 import { timestampMs } from '@bufbuild/protobuf/wkt';
 import * as Dropdown from '@radix-ui/react-dropdown-menu';
 import { PresenceStatus } from '@calaba/protocol';
@@ -83,6 +84,7 @@ function customChoices(recent: readonly StatusChoice[], current: { emoji: string
  * свой…» | «Редактировать профиль» (+ admin).
  */
 export function StatusMenu({ children }: { children: ReactNode }): ReactNode {
+  const local = useSession((s) => localAuthority(s.authority));
   const me = useSession((s) => s.me);
   const chosen = usePrefs((s) => s.presence);
   const until = usePrefs((s) => s.presenceUntil);
@@ -93,6 +95,7 @@ export function StatusMenu({ children }: { children: ReactNode }): ReactNode {
   const [custom, setCustom] = useState(false);
   const user = me?.user;
   if (!user) return null;
+  if (!local) return <>{children}</>;
   const customText = [user.statusEmoji, user.statusText].filter(Boolean).join(' ');
   const customUntil = user.statusText && user.statusExpiresAt ? timestampMs(user.statusExpiresAt) : null;
   const choices = customChoices(recent, { emoji: user.statusEmoji, text: user.statusText });

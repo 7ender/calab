@@ -43,7 +43,6 @@ export const esDm: DictShape<typeof enDm> = {
   'dm.archive': 'Archivar',
   'dm.unarchive': 'Desarchivar',
   'dm.archiveSection': 'Archivo — {n}',
-  'dm.delete': 'Eliminar chat',
   'dm.deleteTitle': '¿Eliminar el chat?',
   'dm.deleteConfirm': 'El historial se eliminará solo para ti; la otra persona lo conservará.',
   'dm.errState': 'No se pudo actualizar la conversación',

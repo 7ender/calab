@@ -1,15 +1,15 @@
-import {
-  audioTierKbps,
-  WorkspaceRole,
-  WorkspaceVisibility,
-  type Invite,
-} from '@calaba/protocol';
+import { IdentitySettings } from '../identity/IdentitySettings';
+import { OAuthClients } from '../identity/OAuth';
+import { identityApi } from '../identity/api';
+import { localAuthority } from '../identity/model';
+import { audioTierKbps, type ConcreteScreenSharePreset, IdentityFeature, WorkspaceRole, WorkspaceVisibility, type Invite } from '@calaba/protocol';
 import { timestampDate } from '@bufbuild/protobuf/wkt';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { Award, AudioLines, Ban, Music, Bot as BotIcon, Cake, CircleDot, Copy, Gem, Phone, Search, Settings2, Shield, Sticker, Trash2, TriangleAlert, Upload, UserPlus, Users, Wallpaper } from 'lucide-react';
+import { Award, AudioLines, Ban, Music, Bot as BotIcon, Cake, CircleDot, Copy, Gem, KeyRound, AppWindow, Lock, Phone, Search, Settings2, Shield, Sticker, Trash2, TriangleAlert, Upload, UserPlus, Users, Wallpaper } from 'lucide-react';
 import { useRef, useState, type ReactNode } from 'react';
 import { Avatar } from '../../components/Avatar';
 import { confirmAction } from '../../components/Confirm';
+import { slugError } from './slugError';
 import { MediaImg } from '../../components/MediaImg';
 import { SettingsWindow, type SettingsSection } from '../../components/SettingsWindow';
 import { Button, Card, Empty, IconButton, Input, Row, Segmented, Select, Spinner, Toggle } from '../../components/ui';
@@ -37,7 +37,7 @@ import { PlanFullNote, PlanTab, useMembersCap } from './PlanTab';
 import { AudioTierHint, AudioTierOptions } from './AudioTierOptions';
 import { GptunnelTab } from './GptunnelTab';
 import { TelephonyTab } from './TelephonyTab';
-import { PLAN_LABEL, planKind } from '../../lib/plan';
+import { PLAN_LABEL, capMax, clampToCap, planKind } from '../../lib/plan';
 import { reportPlanError, workspacePlan } from '../../services/plan';
 import { fromTimeFormatPref, toTimeFormatPref } from '../../services/timeFormat';
 import { RoomGuestInviteCard } from '../people/RoomGuestInviteCard';
@@ -73,9 +73,13 @@ export function WorkspaceSettingsDialog({
   roomId?: string | undefined;
   onClose: () => void;
 }): ReactNode {
+  const local = useSession((s) => localAuthority(s.authority));
   const entry = useWorkspaces((s) => s.byId[workspaceId]);
   const me = useSession((s) => s.me?.user?.id ?? '');
   const myRoles = useMemberRoles(workspaceId, me);
+  const identityStatus = useQuery({ queryKey: ['identity', workspaceId], queryFn: () => identityApi.status(workspaceId), enabled: !!entry, retry: false, refetchOnWindowFocus: false });
+  const grants = identityStatus.data?.access?.entitlements?.grants;
+  const featureLocked = (feature: IdentityFeature): boolean => !!grants && !grants.some((g) => g.feature === feature && g.enabled && (!g.validUntil || timestampDate(g.validUntil).getTime() > Date.now()));
   if (!entry) return null;
   // Tabs by right, as the server checks (ADR-0048, lib/permissions settingsAccess): «Общие»,
   // «Звук», «Фоны» — MANAGE_WORKSPACE; «Роли» — MANAGE_ROLES; «Стикеры» — MANAGE_STICKERS; «Бейджи»,
@@ -87,6 +91,12 @@ export function WorkspaceSettingsDialog({
   const manageRoles = access.roles;
   const manageStickers = access.stickers;
   const inviter = access.invites;
+  const identityPanel = (feature: IdentityFeature, content: ReactNode): ReactNode => (
+    <div className="flex flex-col gap-4">
+      {featureLocked(feature) ? <p className="flex items-start gap-2 text-body text-muted"><Lock className="mt-0.5 size-4 shrink-0" aria-hidden />{t('identity.plan')}</p> : null}
+      {content}
+    </div>
+  );
   const sections: SettingsSection[] = [
     ...(admin
       ? [
@@ -118,6 +128,16 @@ export function WorkspaceSettingsDialog({
       : []),
     // «Телефония» (ADR-0046): the SIP account, the connection test and the call journal — MANAGE_WORKSPACE.
     ...(admin ? [{ id: 'telephony', label: t('sip.tab'), icon: Phone, content: <TelephonyTab workspaceId={workspaceId} /> }] : []),
+    {
+      id: 'identity',
+      label: t('identity.settingsTitle'),
+      icon: KeyRound,
+      locked: featureLocked(IdentityFeature.CORPORATE_SSO),
+      content: identityPanel(IdentityFeature.CORPORATE_SSO, <IdentitySettings workspaceId={workspaceId} owner={owner && local} />),
+    },
+    ...(local && (owner || entry.role === WorkspaceRole.ADMIN)
+      ? [{ id: 'oauth', label: t('identity.oauth'), icon: AppWindow, locked: featureLocked(IdentityFeature.OAUTH_PROVIDER), content: identityPanel(IdentityFeature.OAUTH_PROVIDER, <OAuthClients workspaceId={workspaceId} />) }]
+      : []),
     ...(inviter ? [{ id: 'invites', label: t('ws.tabInvites'), icon: UserPlus, content: <InvitesTab workspaceId={workspaceId} roomId={roomId} /> }] : []),
     // «Забаненные» (docs/09 #32): the same right as kicking (MANAGE_MEMBERS, ADR-0048).
     ...(access.members ? [{ id: 'bans', label: t('bans.tab'), icon: Ban, content: <BansTab workspaceId={workspaceId} /> }] : []),
@@ -149,7 +169,15 @@ function WorkspaceGlyph({ name, iconFileId, size }: { name: string; iconFileId: 
   );
 }
 
-function GeneralTab({ workspaceId, manageRoles, manageRooms }: { workspaceId: string; manageRoles: boolean; manageRooms: boolean }): ReactNode {
+function GeneralTab({
+  workspaceId,
+  manageRoles,
+  manageRooms,
+}: {
+  workspaceId: string;
+  manageRoles: boolean;
+  manageRooms: boolean;
+}): ReactNode {
   const ws = useWorkspaces((s) => s.byId[workspaceId]?.ws);
   const [uploading, setUploading] = useState(false);
   const input = useRef<HTMLInputElement>(null);
@@ -191,7 +219,7 @@ function GeneralTab({ workspaceId, manageRoles, manageRooms }: { workspaceId: st
           <CommitInput label={t('ws.name')} value={ws.name} maxLength={100} onCommit={(v) => (v ? patchWorkspace(workspaceId, { name: v }) : undefined)} />
         </Row>
         <Row label={t('ws.slug')} hint={t('ws.slugHint')}>
-          <CommitInput label={t('ws.slug')} value={ws.slug} maxLength={32} onCommit={(v) => patchWorkspace(workspaceId, { slug: v.toLowerCase() })} />
+          <CommitInput label={t('ws.slug')} value={ws.slug} maxLength={32} validate={(v) => slugError(v.toLowerCase())} onCommit={(v) => patchWorkspace(workspaceId, { slug: v.toLowerCase() })} />
         </Row>
         <Row label={t('ws.visibility')} hint={ws.visibility === WorkspaceVisibility.OPEN ? t('ws.openHint') : t('ws.privateHint')}>
           <Select
@@ -228,9 +256,28 @@ function GeneralTab({ workspaceId, manageRoles, manageRooms }: { workspaceId: st
   );
 }
 
+function ClampHint({ base, show, limit }: { base: string; show: boolean; limit: string }): ReactNode {
+  return show ? (
+    <>
+      {base}
+      <br />
+      {t('media.planClamp', { limit })}
+    </>
+  ) : (
+    base
+  );
+}
+
 function MediaTab({ workspaceId }: { workspaceId: string }): ReactNode {
   const md = useWorkspaces((s) => s.byId[workspaceId]?.ws.mediaDefaults);
   const audioCap = useWorkspaces((s) => s.byId[workspaceId]?.ws.plan?.limits?.audioTierMaxKbps ?? 0);
+  // The plan caps what the defaults can reach (#42): effective value = min(default, plan limit); 0 = no plan limit.
+  const presetCap = useWorkspaces((s) => s.byId[workspaceId]?.ws.plan?.limits?.streamMaxPreset ?? 0);
+  const streamsCap = useWorkspaces((s) => s.byId[workspaceId]?.ws.plan?.limits?.streamsPerRoom ?? 0);
+  const camerasCap = useWorkspaces((s) => s.byId[workspaceId]?.ws.plan?.limits?.camerasPerRoom ?? 0);
+  const presetValue = clampToCap(md?.maxStreamPreset || 3, presetCap);
+  const streamsMax = capMax(10, streamsCap);
+  const camerasMax = capMax(25, camerasCap);
   const apply = (init: Parameters<typeof api.workspaces.update>[1]): void =>
     void patchWorkspace(workspaceId, init).catch((e: unknown) => {
       if (!reportPlanError(e, workspaceId)) toast.error(err(e));
@@ -242,32 +289,32 @@ function MediaTab({ workspaceId }: { workspaceId: string }): ReactNode {
           <AudioTierOptions cap={audioCap} />
         </Select>
       </Row>
-      <Row label={t('media.maxPreset')} hint={presetDetail(md?.maxStreamPreset || 3)}>
+      <Row label={t('media.maxPreset')} hint={<ClampHint base={presetDetail(presetValue)} show={presetCap > 0} limit={presetCap > 0 ? presetText(presetCap as ConcreteScreenSharePreset) : ''} />}>
         <Select
           aria-label={t('media.maxPreset')}
           className="w-60"
-          value={md?.maxStreamPreset || 3}
+          value={presetValue}
           onChange={(e) => apply({ defaultMaxStreamPreset: Number(e.target.value) })}
         >
           {PRESETS.map((p) => (
-            <option key={p} value={p} title={presetDetail(p)}>
+            <option key={p} value={p} title={presetDetail(p)} disabled={presetCap > 0 && p > presetCap}>
               {presetText(p)}
             </option>
           ))}
         </Select>
       </Row>
-      <Row label={t('media.maxStreams')} hint={t('media.maxStreamsHint')}>
-        <Select aria-label={t('media.maxStreams')} className="w-20" value={md?.maxStreams ?? 3} onChange={(e) => apply({ defaultMaxStreams: Number(e.target.value) })}>
-          {Array.from({ length: 11 }, (_, i) => (
+      <Row label={t('media.maxStreams')} hint={<ClampHint base={t('media.maxStreamsHint')} show={streamsCap > 0} limit={String(streamsCap)} />}>
+        <Select aria-label={t('media.maxStreams')} className="w-20" value={clampToCap(md?.maxStreams ?? 3, streamsCap)} onChange={(e) => apply({ defaultMaxStreams: Number(e.target.value) })}>
+          {Array.from({ length: streamsMax + 1 }, (_, i) => (
             <option key={i} value={i}>
               {i}
             </option>
           ))}
         </Select>
       </Row>
-      <Row label={t('media.cameraLimit')} hint={t('media.cameraLimitHint')}>
-        <Select aria-label={t('media.cameraLimit')} className="w-20" value={md?.cameraLimit ?? 6} onChange={(e) => apply({ defaultCameraLimit: Number(e.target.value) })}>
-          {Array.from({ length: 26 }, (_, i) => (
+      <Row label={t('media.cameraLimit')} hint={<ClampHint base={t('media.cameraLimitHint')} show={camerasCap > 0} limit={String(camerasCap)} />}>
+        <Select aria-label={t('media.cameraLimit')} className="w-20" value={clampToCap(md?.cameraLimit ?? 6, camerasCap)} onChange={(e) => apply({ defaultCameraLimit: Number(e.target.value) })}>
+          {Array.from({ length: camerasMax + 1 }, (_, i) => (
             <option key={i} value={i}>
               {i}
             </option>
@@ -441,12 +488,18 @@ function InvitesTab({ workspaceId, roomId }: { workspaceId: string; roomId: stri
   const revoke = useMutation({
     mutationFn: (id: string) => api.workspaces.deleteInvite(workspaceId, id),
     onSuccess: () => void qc.invalidateQueries({ queryKey: ['invites', workspaceId] }),
+    onError: (e) => toast.fail(e),
   });
   return (
     <>
       {/* docs/09 #55: from a room, a guest without an account first (the card hides itself without MANAGE_ROOM). */}
       {roomId ? <RoomGuestInviteCard roomId={roomId} /> : null}
-      {cap.full ? <PlanFullNote text={t('plan.membersFull', { plan: t(PLAN_LABEL[planKind(workspacePlan(workspaceId))]), n: cap.limit })} testId="invite-plan-full" /> : null}
+      {cap.full ? (
+        <PlanFullNote
+          text={t('plan.membersFull', { plan: t(PLAN_LABEL[planKind(workspacePlan(workspaceId))]), n: cap.limit })}
+          testId="invite-plan-full"
+        />
+      ) : null}
       {/* ADR-0023: by an exact address first; the links below stay for everyone else. */}
       <EmailInviteCard workspaceId={workspaceId} full={cap.full} />
       <EmailInvitesList workspaceId={workspaceId} />
@@ -491,7 +544,7 @@ function InvitesTab({ workspaceId, roomId }: { workspaceId: string; roomId: stri
               <IconButton label={t('invite.copy')} onClick={() => void navigator.clipboard.writeText(inviteLink(i)).then(() => toast.success(t('invite.copied')))}>
                 <Copy className="size-4" />
               </IconButton>
-              <IconButton label={t('invite.revoke')} className="text-muted hover:text-danger" onClick={() => revoke.mutate(i.id)}>
+              <IconButton label={t('invite.revoke')} className="text-muted hover:text-danger" onClick={() => void confirmAction(t('invite.revokeTitle'), t('invite.revokeText'), t('invite.revoke')).then((ok) => ok && revoke.mutate(i.id))}>
                 <Trash2 className="size-4" />
               </IconButton>
             </div>

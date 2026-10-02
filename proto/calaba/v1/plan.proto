@@ -3,6 +3,7 @@ package calaba.v1;
 
 import "google/protobuf/timestamp.proto";
 import "calaba/v1/media.proto";
+import "calaba/v1/identity.proto";
 
 // Workspace plans and limits (ADR-0024). Limits are enforced by the server only and apply
 // to everyone in the workspace, the owner included (they are not permission bits).
@@ -12,7 +13,7 @@ enum Plan {
   PLAN_FREE = 1;   // limits from PLAN_FREE_LIMITS
   PLAN_TEAM = 2;   // limits from PLAN_TEAM_LIMITS
   PLAN_CUSTOM = 3; // limits as stored for the workspace
-  PLAN_ENTERPRISE = 4; // no limits at all (like self-hosted), not configurable
+  PLAN_ENTERPRISE = 4; // cloud Business; on-prem Enterprise is an operator edition
 }
 
 // Effective limits of a workspace. 0 / UNSPECIFIED = no limit.
@@ -33,6 +34,11 @@ message PlanLimits {
   uint32 cameras_per_room = 27;            // webcams at once in one voice room (caps camera_limit of the room / workspace); 0 = no plan limit
   bool caldav_disabled = 23;               // CalDAV sync is not part of the plan (Free); per user it works if any of their workspaces allows it
   bool musician_disabled = 28;             // musician mode (ADR-0052) is not part of the plan (Free): VoiceState.musician refused
+  bool checklists_disabled = 29;           // task checklists (ADR-0058 §5) are Team and above: writes refused, reading stays
+  bool board_webhooks_disabled = 30;       // board webhooks (ADR-0058 §5) are Business only: setup refused, delivery paused
+  bool telephony_disabled = 31;            // telephony SIP (ADR-0046) is Business only: trunk setup, test and calls refused, settings readable
+  // Removed flags (an older telephony flag, web apps, approvals per plan): never reuse their numbers.
+  reserved 24, 25, 26;
 }
 
 // The plan of a workspace as members see it (Workspace.plan).
@@ -40,5 +46,6 @@ message WorkspacePlan {
   Plan plan = 1;                           // stored plan; FREE when none was ever set
   PlanLimits limits = 2;                   // effective limits (FREE's when expired)
   google.protobuf.Timestamp valid_until = 3; // unset = no expiry
+  WorkspaceIdentityEntitlements identity_entitlements = 5;
   bool expired = 4;                        // valid_until passed: the FREE limits apply
 }

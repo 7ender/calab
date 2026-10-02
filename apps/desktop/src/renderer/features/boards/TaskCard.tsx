@@ -1,13 +1,14 @@
 import * as ContextMenu from '@radix-ui/react-context-menu';
-import type { Task } from '@calaba/protocol';
-import { CalendarClock, ChevronRight, Copy, CopyPlus, GitFork, Link2, MessageSquare, Archive, UserPlus, SquareArrowOutUpRight, UserRound } from 'lucide-react';
+import { BoardFeature, type Task } from '@calaba/protocol';
+import { CalendarClock, ChevronRight, Copy, CopyPlus, GitFork, Link2, ListChecks, MessageSquare, Archive, UserPlus, SquareArrowOutUpRight, UserRound } from 'lucide-react';
 import { memo, useCallback, useMemo, useState, type DragEvent, type MouseEvent, type ReactNode } from 'react';
 import { cx } from '../../components/ui';
 import { t } from '../../i18n';
 import { blockedStatusIds } from '../../lib/boards/approvals';
 import { addAssignee, draftsOf, toggleAssignee } from '../../lib/boards/assignees';
 import { archiveTask, copyTaskKey, copyTaskLink, duplicateTask, setAssignees, updateTask } from '../../services/boards';
-import { useBoards } from '../../stores/boards';
+import { featureOn } from '../../lib/boards/features';
+import { checklistProgress, useBoards } from '../../stores/boards';
 import { useBoardsUi, type CardMenu } from '../../stores/boardsUi';
 import { myUserId } from '../../stores/session';
 import { memberName } from '../../stores/workspaces';
@@ -19,6 +20,7 @@ import { doneType, hasBit, mayArchiveTask, mayEditTask, CREATE_TASKS, MANAGE_BOA
 import { Dot, PRIORITY_LABEL, PriorityIcon, StatusIcon, formatDue, isOverdue, PRIORITIES } from './visuals';
 import { chordLabel, BOARD_HOTKEYS, type BoardHotkeyId } from './hotkeys';
 import { IS_MAC } from '../../services/hotkeys';
+import { useDisabledFeatures, useFeatureOn } from './useBoardView';
 
 /** A label dragged onto a card (from the panel / settings): the card gets it. */
 export const DRAG_LABEL = 'application/x-calab-label';
@@ -59,6 +61,8 @@ export const TaskCard = memo(function TaskCard({
   const open = useBoardsUi((s) => s.taskId === id);
   const menuReq = useBoardsUi((s) => (s.menu?.taskId === id ? s.menu : null));
   const today = useToday();
+  // Board features (ADR-0058 §3): the board's array, stable until BOARD_UPDATE.
+  const disabled = useDisabledFeatures(boardId);
   const [dropOver, setDropOver] = useState(false);
   const me = myUserId();
 
@@ -78,6 +82,7 @@ export const TaskCard = memo(function TaskCard({
   );
 
   if (!task) return null;
+  const on = (f: BoardFeature): boolean => featureOn(disabled, f);
   const canEdit = mayEditTask(task, perms, me);
   const done = doneType(statusType);
   const overdue = isOverdue(task.dueOn, today, done);
@@ -86,7 +91,7 @@ export const TaskCard = memo(function TaskCard({
   const onDragOver = (e: DragEvent): void => {
     if (!canEdit) return;
     const kind = dragKind(e.dataTransfer);
-    if (kind === 'user' || e.dataTransfer.types.includes(DRAG_LABEL)) {
+    if (kind === 'user' || (on(BoardFeature.LABELS) && e.dataTransfer.types.includes(DRAG_LABEL))) {
       e.preventDefault();
       e.dataTransfer.dropEffect = 'copy';
       if (!dropOver) setDropOver(true);
@@ -177,13 +182,15 @@ export const TaskCard = memo(function TaskCard({
         </span>
       </div>
       <div className="flex min-w-0 flex-wrap items-center gap-1">
-        <PriorityMenu value={task.priority} onPick={(p) => p !== task.priority && void updateTask(id, { priority: p })} {...menuOpen('priority')}>
-          <button type="button" onClick={stop} disabled={!canEdit} aria-label={`${t('boards.f.priority')}: ${t(PRIORITY_LABEL[task.priority] ?? 'boards.prio.none')}`} className={cx(chip, 'px-1')} data-testid="card-priority">
-            <PriorityIcon priority={task.priority} />
-          </button>
-        </PriorityMenu>
-        <CardLabels task={task} boardId={boardId} canEdit={canEdit} canCreate={hasBit(perms, CREATE_TASKS)} chip={chip} req={menuOpen('label')} />
-        {task.dueOn || menuReq?.kind === 'due' ? (
+        {on(BoardFeature.PRIORITY) ? (
+          <PriorityMenu value={task.priority} onPick={(p) => p !== task.priority && void updateTask(id, { priority: p })} {...menuOpen('priority')}>
+            <button type="button" onClick={stop} disabled={!canEdit} aria-label={`${t('boards.f.priority')}: ${t(PRIORITY_LABEL[task.priority] ?? 'boards.prio.none')}`} className={cx(chip, 'px-1')} data-testid="card-priority">
+              <PriorityIcon priority={task.priority} />
+            </button>
+          </PriorityMenu>
+        ) : null}
+        {on(BoardFeature.LABELS) ? <CardLabels task={task} boardId={boardId} canEdit={canEdit} canCreate={hasBit(perms, CREATE_TASKS)} chip={chip} req={menuOpen('label')} /> : null}
+        {on(BoardFeature.DUE_DATE) && (task.dueOn || menuReq?.kind === 'due') ? (
           <DateMenu value={task.dueOn} onPick={(d) => void updateTask(id, { dueOn: d })} title={t('boards.f.dueOn')} {...menuOpen('due')}>
             <button type="button" onClick={stop} disabled={!canEdit} className={cx(chip, overdue && 'border-[color-mix(in_srgb,var(--color-red)_45%,transparent)] text-danger-text')} data-testid="card-due">
               <CalendarClock className="size-3" aria-hidden />
@@ -191,14 +198,15 @@ export const TaskCard = memo(function TaskCard({
             </button>
           </DateMenu>
         ) : null}
-        <ApprovalBadge task={task} />
-        {task.subtaskCount > 0 ? (
+        {on(BoardFeature.APPROVALS) ? <ApprovalBadge task={task} /> : null}
+        {on(BoardFeature.SUBTASKS) && task.subtaskCount > 0 ? (
           <span className="inline-flex h-5 items-center gap-1 px-1 text-micro tabular-nums text-muted" title={t('boards.subtasks')}>
             <GitFork className="size-3" aria-hidden />
             {task.subtaskDone}/{task.subtaskCount}
           </span>
         ) : null}
-        {task.commentCount > 0 ? (
+        {on(BoardFeature.CHECKLISTS) ? <ChecklistBadge id={id} /> : null}
+        {on(BoardFeature.COMMENTS) && task.commentCount > 0 ? (
           <span className="inline-flex h-5 items-center gap-1 px-1 text-micro tabular-nums text-muted" title={t('boards.comments')}>
             <MessageSquare className="size-3" aria-hidden />
             {task.commentCount}
@@ -210,6 +218,21 @@ export const TaskCard = memo(function TaskCard({
   );
 
   return <TaskContextMenu task={task} canEdit={canEdit} canArchive={mayArchiveTask(task, perms, me)} manage={hasBit(perms, MANAGE_BOARD)}>{card}</TaskContextMenu>;
+});
+
+/**
+ * The card's checklist progress «3/7» (ADR-0058 §2, always shown when the task has items): a leaf
+ * subscribed to the counters only — a tick in the panel re-renders this chip, not the card.
+ */
+export const ChecklistBadge = memo(function ChecklistBadge({ id }: { id: string }): ReactNode {
+  const text = useBoards((s) => checklistProgress(s, id));
+  if (!text) return null;
+  return (
+    <span className="inline-flex h-5 items-center gap-1 px-1 text-micro tabular-nums text-muted" title={t('boards.cl.title')} data-testid="card-checklist">
+      <ListChecks className="size-3" aria-hidden />
+      {text}
+    </span>
+  );
 });
 
 /**
@@ -251,6 +274,7 @@ function CardLabels({ task, boardId, canEdit, canCreate, chip, req }: { task: Ta
 export function TaskContextMenu({ task, canEdit, canArchive, manage, children }: { task: Task; canEdit: boolean; canArchive: boolean; manage: boolean; children: ReactNode }): ReactNode {
   const statuses = useBoards((s) => s.boards[task.boardId]?.statuses);
   const blocked = useBlockedStatuses(task, task.boardId);
+  const priority = useFeatureOn(task.boardId, BoardFeature.PRIORITY);
   const me = myUserId();
   const kbd = (id: BoardHotkeyId): ReactNode => <span className="ml-auto pl-4 text-caption text-muted group-data-[highlighted]:text-inherit">{keyOf(id)}</span>;
   const item = cx(menuItem, 'group');
@@ -286,22 +310,24 @@ export function TaskContextMenu({ task, canEdit, canArchive, manage, children }:
                   </ContextMenu.SubContent>
                 </ContextMenu.Portal>
               </ContextMenu.Sub>
-              <ContextMenu.Sub>
-                <ContextMenu.SubTrigger className={sub}>
-                  <PriorityIcon priority={task.priority} /> {t('boards.f.priority')}
-                  <span className="ml-auto pl-4 text-caption text-muted group-data-[highlighted]:text-inherit">{keyOf('priority')}</span>
-                  <ChevronRight className="size-4" aria-hidden />
-                </ContextMenu.SubTrigger>
-                <ContextMenu.Portal>
-                  <ContextMenu.SubContent className={cx(menuBox, 'w-52')} sideOffset={4} collisionPadding={16}>
-                    {PRIORITIES.map((p) => (
-                      <ContextMenu.Item key={p} className={item} onSelect={() => p !== task.priority && void updateTask(task.id, { priority: p })}>
-                        <PriorityIcon priority={p} /> {t(PRIORITY_LABEL[p] ?? 'boards.prio.none')}
-                      </ContextMenu.Item>
-                    ))}
-                  </ContextMenu.SubContent>
-                </ContextMenu.Portal>
-              </ContextMenu.Sub>
+              {priority ? (
+                <ContextMenu.Sub>
+                  <ContextMenu.SubTrigger className={sub}>
+                    <PriorityIcon priority={task.priority} /> {t('boards.f.priority')}
+                    <span className="ml-auto pl-4 text-caption text-muted group-data-[highlighted]:text-inherit">{keyOf('priority')}</span>
+                    <ChevronRight className="size-4" aria-hidden />
+                  </ContextMenu.SubTrigger>
+                  <ContextMenu.Portal>
+                    <ContextMenu.SubContent className={cx(menuBox, 'w-52')} sideOffset={4} collisionPadding={16}>
+                      {PRIORITIES.map((p) => (
+                        <ContextMenu.Item key={p} className={item} onSelect={() => p !== task.priority && void updateTask(task.id, { priority: p })}>
+                          <PriorityIcon priority={p} /> {t(PRIORITY_LABEL[p] ?? 'boards.prio.none')}
+                        </ContextMenu.Item>
+                      ))}
+                    </ContextMenu.SubContent>
+                  </ContextMenu.Portal>
+                </ContextMenu.Sub>
+              ) : null}
               {!task.assignees.some((a) => a.userId === me) ? (
                 <ContextMenu.Item className={item} onSelect={() => void setAssignees(task.id, addAssignee(draftsOf(task.assignees), me))}>
                   <UserPlus className="size-4" aria-hidden /> {t('boards.assignMe')}

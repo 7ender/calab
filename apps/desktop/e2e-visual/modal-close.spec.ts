@@ -95,7 +95,7 @@ test('invite to voice room', async ({ open, win }) => {
   await open();
   await general(win);
   await win.locator('aside').getByRole('button', { name: /Созвон/ }).first().click({ button: 'right' });
-  await win.getByRole('menuitem', { name: 'Пригласить в комнату' }).click();
+  await win.getByRole('menuitem', { name: 'Пригласить', exact: true }).click();
   const dialog = win.getByRole('dialog').filter({ has: win.getByTestId('room-invite') });
   await expect(dialog.getByTestId('picker-option').first()).toBeVisible();
   await closeAtIconCentre(win, dialog, modalClose(dialog));
@@ -210,8 +210,7 @@ async function recordingCard(win: Page, mock: MockServer): Promise<Locator> {
     result: true,
   });
   const sidebar = win.locator('aside').first();
-  await sidebar.getByRole('button', { name: /^Переговорка/ }).first().hover();
-  await sidebar.getByRole('button', { name: 'Чат комнаты «Переговорка»' }).click();
+  await sidebar.getByRole('button', { name: /^Переговорка/ }).click();
   await expect(win.getByRole('heading', { name: 'Переговорка' })).toBeVisible();
   const card = win.getByTestId('recording-card');
   await expect(card).toHaveCount(1);

@@ -1,20 +1,45 @@
 import { create } from '@bufbuild/protobuf';
-import { BoardStatusType, BoardTemplate, PermissionTargetType, RoomPermissionOverrideSchema, WorkspaceRole, type Board, type BoardStatus, type Role } from '@calaba/protocol';
-import { Archive, ChevronDown, ChevronUp, Diamond, Plus, Settings2, ShieldCheck, Star, Tag, Trash2, CircleDot } from 'lucide-react';
-import { useCallback, useMemo, useState, type ReactNode } from 'react';
+import { timestampDate } from '@bufbuild/protobuf/wkt';
+import {
+  BoardStatusType,
+  BoardTemplate,
+  BoardWebhookPauseReason,
+  EstimateScale,
+  PermissionTargetType,
+  RoomPermissionOverrideSchema,
+  WorkspaceRole,
+  type Board,
+  type BoardStatus,
+  type BoardWebhook,
+  type Role,
+} from '@calaba/protocol';
+import { Archive, ChevronDown, ChevronUp, Copy, Diamond, Plus, Settings2, ShieldCheck, Star, Tag, ToggleRight, Trash2, CircleDot, Webhook } from 'lucide-react';
+import { useCallback, useEffect, useMemo, useState, type ReactNode } from 'react';
+import { confirmAction } from '../../components/Confirm';
+import { PlanLock } from '../../components/PlanLock';
 import { Avatar } from '../../components/Avatar';
 import type { PickerGroup } from '../../components/picker/pickerModel';
 import { SettingsWindow, type SettingsSection } from '../../components/SettingsWindow';
-import { Button, Card, Field, Input, Modal, Row, Select, Switch, Tip, cx } from '../../components/ui';
+import { Button, Card, Field, Input, Modal, Row, Select, Spinner, Switch, Tip, Toggle, cx } from '../../components/ui';
 import { t } from '../../i18n';
-import { accessLevelOf, accessSteps, compactDrafts, triOf, withTri, type AccessLevel, type OverrideDraft, type Tri } from '../../lib/permissions';
+import { ESTIMATE_SCALES, FEATURES, featureOn, withFeature } from '../../lib/boards/features';
+import { fmt } from '../../lib/format';
+import { accessLevelOf, accessSteps, compactDrafts, mayManageIntegrations, triOf, withTri, type AccessLevel, type OverrideDraft, type Tri } from '../../lib/permissions';
+import { planHas } from '../../lib/plan';
 import { isFullRole } from '../../lib/roles';
 import {
   createBoard,
   createLabel,
   createMilestone,
+  copyText,
   createStatus,
   deleteLabel,
+  deleteWebhook,
+  loadWebhook,
+  pingWebhook,
+  saveWebhook,
+  setBoardFeatures,
+  setEstimateScale,
   deleteMilestone,
   moveStatus,
   openBoard,
@@ -28,7 +53,8 @@ import { boardsApi } from '../../services/boardsApi';
 import { useBoards } from '../../stores/boards';
 import { useBoardsUi } from '../../stores/boardsUi';
 import { toast } from '../../stores/toasts';
-import { memberName, useWorkspaces } from '../../stores/workspaces';
+import { myUserId } from '../../stores/session';
+import { memberName, useMemberRoles, useWorkspaces } from '../../stores/workspaces';
 import { EmojiPicker } from '../chat/EmojiPicker';
 import { RoleMark, roleName } from '../people/MemberBits';
 import { MemberPicker } from '../people/MemberPicker';
@@ -56,13 +82,17 @@ export function BoardSettingsHost(): ReactNode {
 
 function BoardSettings({ boardId, tab, onClose }: { boardId: string; tab: string | undefined; onClose: () => void }): ReactNode {
   const board = useBoards((s) => s.boards[boardId]);
+  // «Вебхук» (ADR-0058 §4): MANAGE_BOARD (this window) and MANAGE_INTEGRATIONS of the workspace.
+  const integrations = mayManageIntegrations(useMemberRoles(board?.workspaceId, myUserId()));
   if (!board) return null;
   const sections: SettingsSection[] = [
     { id: 'general', label: t('boards.set.general'), icon: Settings2, content: <GeneralTab board={board} /> },
+    { id: 'features', label: t('boards.set.features'), icon: ToggleRight, content: <FeaturesTab board={board} /> },
     { id: 'statuses', label: t('boards.set.statuses'), icon: CircleDot, content: <StatusesTab board={board} /> },
     { id: 'labels', label: t('boards.set.labels'), icon: Tag, content: <LabelsTab board={board} /> },
     { id: 'milestones', label: t('boards.set.milestones'), icon: Diamond, content: <MilestonesTab board={board} /> },
     { id: 'access', label: t('boards.access'), icon: ShieldCheck, content: <AccessTab board={board} /> },
+    ...(integrations ? [{ id: 'webhook', label: t('boards.set.webhook'), icon: Webhook, content: <WebhookTab board={board} /> }] : []),
     { id: 'danger', label: t('boards.set.danger'), icon: Archive, content: <DangerTab board={board} onDone={onClose} />, destructive: true },
   ];
   return <SettingsWindow title={board.name} titleIcon={<span className="text-headline leading-none">{board.emoji || '📋'}</span>} sections={sections} initial={tab ?? 'general'} onClose={onClose} />;
@@ -112,6 +142,171 @@ function GeneralTab({ board }: { board: Board }): ReactNode {
         </Row>
       </Card>
     </>
+  );
+}
+
+// ------------------------------------------------------------------ features (ADR-0058 §3)
+
+/**
+ * «Фичи»: every switchable feature of the board (data of a switched-off one is kept and comes
+ * back when it is on again) and the estimate scale. MANAGE_BOARD; one PATCH per change.
+ */
+function FeaturesTab({ board }: { board: Board }): ReactNode {
+  const disabled = board.disabledFeatures;
+  const scale = board.estimateScale || EstimateScale.FIBONACCI;
+  return (
+    <>
+      <Card title={t('boards.feat.card')} footer={t('boards.feat.footer')}>
+        <div data-testid="board-features">
+          {FEATURES.map((f) => (
+            <Row key={f.feature} label={t(f.label)} hint={t(f.hint)}>
+              <Toggle label={t(f.label)} checked={featureOn(disabled, f.feature)} onChange={(v) => void setBoardFeatures(board.id, withFeature(disabled, f.feature, v))} />
+            </Row>
+          ))}
+        </div>
+      </Card>
+      <Card title={t('boards.scale.card')} footer={t('boards.scale.footer')}>
+        <Row label={t('boards.scale.label')}>
+          <Select value={String(scale)} onChange={(e) => void setEstimateScale(board.id, Number(e.target.value))} aria-label={t('boards.scale.label')} data-testid="estimate-scale">
+            {ESTIMATE_SCALES.map((x) => (
+              <option key={x.scale} value={x.scale}>
+                {t(x.label)}
+              </option>
+            ))}
+          </Select>
+        </Row>
+      </Card>
+    </>
+  );
+}
+
+// ------------------------------------------------------------------ webhook (ADR-0058 §4)
+
+const tsText = (ts: Parameters<typeof timestampDate>[0] | undefined): string => (ts ? fmt.full(timestampDate(ts)) : '');
+
+/**
+ * «Вебхук»: one https address per board that gets every change of its tasks as JSON. The secret
+ * is shown once, right after a save; «Проверить» sends a ping; the status tells the last
+ * delivery, the failure and why delivery is paused. Business plan only: below it the form is
+ * locked (a configured webhook stays, paused — ADR-0058 §5).
+ */
+function WebhookTab({ board }: { board: Board }): ReactNode {
+  const allowed = useWorkspaces((s) => planHas(s.byId[board.workspaceId]?.ws.plan, 'boardWebhooks'));
+  const [hook, setHook] = useState<BoardWebhook | null>(null);
+  const [state, setState] = useState<'loading' | 'ready' | 'error'>('loading');
+  const [url, setUrl] = useState('');
+  const [secret, setSecret] = useState('');
+  const [shown, setShown] = useState('');
+  const [busy, setBusy] = useState(false);
+  useEffect(() => {
+    const ac = new AbortController();
+    loadWebhook(board.id, ac.signal).then(
+      (w) => {
+        setHook(w);
+        setUrl(w?.url ?? '');
+        setState('ready');
+      },
+      () => !ac.signal.aborted && setState('error'),
+    );
+    return () => ac.abort();
+  }, [board.id]);
+  if (state === 'loading') {
+    return (
+      <div className="grid h-24 place-items-center">
+        <Spinner />
+      </div>
+    );
+  }
+  if (state === 'error') return <p className="px-1 text-body text-danger-text">{t('boards.hook.loadFailed')}</p>;
+  const save = async (): Promise<void> => {
+    setBusy(true);
+    const r = await saveWebhook(board.workspaceId, board.id, url.trim(), secret.trim());
+    setBusy(false);
+    if (!r) return;
+    setHook(r.webhook);
+    setSecret('');
+    setShown(r.secret);
+  };
+  const remove = async (): Promise<void> => {
+    if (!(await confirmAction(t('boards.hook.deleteTitle'), t('boards.hook.deleteText'), t('common.delete')))) return;
+    if (await deleteWebhook(board.workspaceId, board.id)) {
+      setHook(null);
+      setUrl('');
+      setShown('');
+    }
+  };
+  const ping = async (): Promise<void> => {
+    setBusy(true);
+    await pingWebhook(board.workspaceId, board.id);
+    setBusy(false);
+    const w = await loadWebhook(board.id).catch(() => null);
+    if (w) setHook(w);
+  };
+  const form = (
+    <Card title={t('boards.hook.card')} footer={t('boards.hook.footer')}>
+      <Row label={t('boards.hook.url')} hint={t('boards.hook.urlHint')}>
+        <Input className="w-80" type="url" value={url} maxLength={2048} placeholder="https://" onChange={(e) => setUrl(e.target.value)} aria-label={t('boards.hook.url')} data-testid="webhook-url" />
+      </Row>
+      <Row label={t('boards.hook.secret')} hint={hook?.hasSecret ? t('boards.hook.secretKept') : t('boards.hook.secretHint')}>
+        <Input className="w-80" value={secret} maxLength={256} placeholder={t('boards.hook.secretAuto')} onChange={(e) => setSecret(e.target.value)} aria-label={t('boards.hook.secret')} data-testid="webhook-secret" />
+      </Row>
+      <div className="flex flex-wrap items-center gap-2 px-3 py-2">
+        <Button size="sm" busy={busy} disabled={!/^https:\/\/\S+$/i.test(url.trim())} onClick={() => void save()} data-testid="webhook-save">
+          {hook ? t('common.save') : t('boards.hook.create')}
+        </Button>
+        {hook ? (
+          <>
+            <Button size="sm" variant="secondary" disabled={busy} onClick={() => void ping()} data-testid="webhook-ping">
+              {t('boards.hook.ping')}
+            </Button>
+            <span className="flex-1" />
+            <Button size="sm" variant="destructive" disabled={busy} onClick={() => void remove()} data-testid="webhook-delete">
+              <Trash2 className="size-3.5" aria-hidden /> {t('common.delete')}
+            </Button>
+          </>
+        ) : null}
+      </div>
+    </Card>
+  );
+  return (
+    <>
+      {shown ? (
+        <Card title={t('boards.hook.secretOnce')} footer={t('boards.hook.secretOnceHint')}>
+          <div className="flex items-center gap-2 px-3 py-2" data-testid="webhook-secret-shown">
+            <code className="selectable min-w-0 flex-1 truncate font-mono text-caption">{shown}</code>
+            <Button size="sm" variant="secondary" onClick={() => copyText(shown, t('boards.hook.secretCopied'))}>
+              <Copy className="size-3.5" aria-hidden /> {t('boards.hook.copy')}
+            </Button>
+          </div>
+        </Card>
+      ) : null}
+      {allowed ? form : <PlanLock plan="business" testId="webhook-lock">{form}</PlanLock>}
+      {hook ? <WebhookStatus hook={hook} board={board} /> : null}
+    </>
+  );
+}
+
+/** The state of the deliveries: paused (plan, archive), disabled, failing, the last success, the queue. */
+function WebhookStatus({ hook, board }: { hook: BoardWebhook; board: Board }): ReactNode {
+  const lines: Array<{ key: string; text: string; tone?: 'danger' | 'warn' }> = [];
+  if (hook.pausedReason === BoardWebhookPauseReason.PLAN) lines.push({ key: 'plan', text: t('boards.hook.pausedPlan'), tone: 'warn' });
+  if (board.archivedAt) lines.push({ key: 'archived', text: t('boards.hook.pausedArchived'), tone: 'warn' });
+  if (!hook.enabled) lines.push({ key: 'off', text: t('boards.hook.disabled', { date: tsText(hook.disabledAt) }), tone: 'danger' });
+  else if (hook.failingSince) lines.push({ key: 'fail', text: t('boards.hook.failing', { date: tsText(hook.failingSince) }), tone: 'danger' });
+  if (hook.lastError) lines.push({ key: 'err', text: t('boards.hook.lastError', { error: hook.lastError }), tone: 'danger' });
+  lines.push({ key: 'ok', text: hook.lastOkAt ? t('boards.hook.lastOk', { date: tsText(hook.lastOkAt) }) : t('boards.hook.neverOk') });
+  if (hook.pending) lines.push({ key: 'queue', text: t('boards.hook.pending', { n: hook.pending }) });
+  if (hook.createdBy) lines.push({ key: 'by', text: t('boards.hook.createdBy', { name: memberName(board.workspaceId, hook.createdBy) }) });
+  return (
+    <Card title={t('boards.hook.status')}>
+      <ul className="flex flex-col gap-1 px-3 py-2.5 text-body" data-testid="webhook-status">
+        {lines.map((l) => (
+          <li key={l.key} className={cx('break-words', l.tone === 'danger' ? 'text-danger-text' : l.tone === 'warn' ? 'text-warn' : 'text-muted')}>
+            {l.text}
+          </li>
+        ))}
+      </ul>
+    </Card>
   );
 }
 

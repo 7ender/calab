@@ -7,6 +7,7 @@ import (
 	"sync/atomic"
 	"time"
 
+	"github.com/calaba/calaba/server/internal/identitypolicy"
 	"github.com/google/uuid"
 	"google.golang.org/protobuf/encoding/protowire"
 	"google.golang.org/protobuf/proto"
@@ -21,10 +22,15 @@ const bufferQueue = 512
 // encEvent is a DispatchEvent marshalled at most once per instance, however many sessions
 // receive it (security review M13); each session only prepends its op and seq.
 type encEvent struct {
-	ev   *v1.DispatchEvent
-	once sync.Once
-	b    []byte
-	err  error
+	workspace uuid.UUID
+	// Receipt proofs authorize only this event's own guestView, never workspace data.
+	receipts map[uuid.UUID]admissionReceiptProof
+	scopes   []uuid.UUID
+	scoped   bool
+	ev       *v1.DispatchEvent
+	once     sync.Once
+	b        []byte
+	err      error
 }
 
 func newEnc(ev *v1.DispatchEvent) *encEvent { return &encEvent{ev: ev} }
@@ -75,9 +81,13 @@ type pauseMark struct{ _ byte }
 // up to resumeWindow.
 type Session struct {
 	id, user, asess uuid.UUID
+	principal       identitypolicy.Principal
 	bot             bool       // a bot token (ADR-0031): no read receipts (docs/09 #92)
+	tab             string     // Identify.tab_id: the browser tab of the auth session (tabs.go)
 	client          clientInfo // Identify.device (docs/09 #143); set before register, then read-only
 	hub             *Hub
+
+	leases identityLeases
 
 	mu         sync.Mutex
 	seq        uint64
@@ -88,11 +98,14 @@ type Session struct {
 	dead       bool
 	workspaces map[uuid.UUID]bool
 	subscribed map[uuid.UUID]bool
-	dmPeers    map[uuid.UUID]uuid.UUID // DM room -> peer; uuid.Nil = not a DM of this user (see Hub.dmPeer)
-	status     v1.PresenceStatus
-	recent     [128]uuid.UUID
-	recentN    int
-	detachT    *time.Timer
+	// omitted: workspaces left out of READY while their lease was pending. Their events
+	// queued before the sweep's WORKSPACE_CREATE are undeliverable and dropped (emit).
+	omitted map[uuid.UUID]bool
+	dmPeers map[uuid.UUID]uuid.UUID // DM room -> peer; uuid.Nil = not a DM of this user (see Hub.dmPeer)
+	status  v1.PresenceStatus
+	recent  [128]uuid.UUID
+	recentN int
+	detachT *time.Timer
 
 	wq     chan entry
 	qmu    sync.RWMutex       // guards sends on wq against closeQueue (no send on a closed channel)
@@ -209,12 +222,23 @@ func (s *Session) dispatch(id uuid.UUID, ev *v1.DispatchEvent) { s.dispatchEnc(i
 
 // dispatchEnc delivers a (shared) encoded event, deduplicated by event id.
 func (s *Session) dispatchEnc(id uuid.UUID, enc *encEvent) {
+	if s.identityEnabled() && !s.allowsEvent(enc) {
+		s.deferIdentityEvent(id, enc)
+		return
+	}
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	if s.dead || s.seen(id) {
 		return
 	}
 	if !s.ready || s.paused > 0 {
+		if len(s.pending) >= bufferQueue {
+			s.broken.Store(true)
+			if s.conn != nil {
+				s.conn.closeNow(4000, "resync required")
+			}
+			return
+		}
 		s.pending = append(s.pending, pendingEvent{id: id, enc: enc})
 		return
 	}
@@ -227,6 +251,16 @@ func (s *Session) emit(id uuid.UUID, enc *encEvent) {
 	if s.dead {
 		return
 	}
+	if s.omittedEventLocked(enc) {
+		return
+	}
+	if s.identityEnabled() && !s.allowsEvent(enc) {
+		s.broken.Store(true)
+		if s.conn != nil {
+			s.conn.closeNow(4000, "identity resync required")
+		}
+		return
+	}
 	payload, err := enc.bytes()
 	if err != nil {
 		return
@@ -235,23 +269,56 @@ func (s *Session) emit(id uuid.UUID, enc *encEvent) {
 		eventsDispatched.Inc()
 		if s.conn != nil {
 			if typ, b, err := s.conn.codec.transcode(frameBytes(0, payload)); err == nil {
-				s.conn.send(typ, b)
+				s.conn.sendEvent(typ, b, s, enc)
 			}
 		}
 		return
 	}
 	s.seq++
 	bin := frameBytes(s.seq, payload)
-	if !s.enqueue(entry{id: id, seq: s.seq, frame: bin}) {
+	if !s.enqueue(entry{id: id, seq: s.seq, frame: bin, workspace: enc.workspace, identityFormat: true}) {
 		s.broken.Store(true)
 	}
 	eventsDispatched.Inc()
 	if s.conn != nil {
 		typ, b, err := s.conn.codec.transcode(bin)
 		if err == nil {
-			s.conn.send(typ, b)
+			s.conn.sendEvent(typ, b, s, enc)
 		}
 	}
+}
+
+// omitWorkspace records a workspace left out of READY (see omitted).
+func (s *Session) omitWorkspace(ws uuid.UUID) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.omitted == nil {
+		s.omitted = map[uuid.UUID]bool{}
+	}
+	s.omitted[ws] = true
+}
+
+// omittedEventLocked reports an event of a workspace omitted from READY, emitted before
+// that workspace's WORKSPACE_CREATE (which ends the omission); s.mu must be held. The client
+// has no state for it and the snapshot supersedes it, so it is dropped rather than closing
+// the session with "identity resync required".
+func (s *Session) omittedEventLocked(enc *encEvent) bool {
+	if len(s.omitted) == 0 || enc == nil || enc.ev == nil {
+		return false
+	}
+	if created := enc.ev.GetWorkspaceCreate(); created != nil {
+		delete(s.omitted, parseID(created.GetSnapshot().GetWorkspace().GetId()))
+		return false
+	}
+	if s.omitted[enc.workspace] {
+		return true
+	}
+	for _, ws := range enc.scopes {
+		if s.omitted[ws] {
+			return true
+		}
+	}
+	return false
 }
 
 // flushPending emits queued events once nothing holds them back; s.mu must be held.
@@ -282,7 +349,28 @@ func (s *Session) flushPending(skip map[uuid.UUID]bool) {
 func (s *Session) pause() *pauseMark {
 	s.mu.Lock()
 	defer s.mu.Unlock()
+	return s.pauseLocked()
+}
+
+// pauseEvent reserves deduplication at arrival, before preparations can finish out of order.
+func (s *Session) pauseEvent(id uuid.UUID) *pauseMark {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.dead || s.seen(id) {
+		return nil
+	}
+	return s.pauseLocked()
+}
+
+func (s *Session) pauseLocked() *pauseMark {
 	m := &pauseMark{}
+	if len(s.pending) >= bufferQueue {
+		s.broken.Store(true)
+		if s.conn != nil {
+			s.conn.closeNow(4000, "resync required")
+		}
+		return m
+	}
 	s.paused++
 	s.pending = append(s.pending, pendingEvent{mark: m})
 	return m
@@ -296,12 +384,16 @@ func (s *Session) resume(m *pauseMark, id uuid.UUID, enc *encEvent) {
 func (s *Session) resumeMany(m *pauseMark, evs []pendingEvent) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	s.paused--
 	if s.dead {
 		return
 	}
 	for i, p := range s.pending {
 		if p.mark == m {
+			s.paused--
+			if len(evs)+len(s.pending)-1 > bufferQueue {
+				evs = nil
+				s.broken.Store(true)
+			}
 			rest := append([]pendingEvent{}, s.pending[i+1:]...)
 			s.pending = append(append(s.pending[:i], evs...), rest...)
 			break

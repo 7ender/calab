@@ -1,24 +1,10 @@
-import { ChevronDown } from 'lucide-react';
+import { Plus } from 'lucide-react';
 import type { Dict } from '@/i18n';
 import { rich } from '@/lib/rich';
-import { CONTACT_EMAIL, repoFile } from '@/lib/site';
+import { CONTACT_EMAIL } from '@/lib/site';
 import { Section, SectionHeading } from './ui';
 
-const ORDER = [
-  'server',
-  'recording',
-  'sip',
-  'traffic',
-  'updates',
-  'whatsNew',
-  'security',
-  'firewall',
-  'limits',
-  'roomLimit',
-  'license',
-  'enterprise',
-  'buyTeam',
-] as const;
+const ORDER = ['server', 'identity', 'recording', 'sip', 'security', 'firewall', 'enterprise', 'buy'] as const;
 
 export function Faq({ t }: { t: Dict['faq'] }) {
   const email = (
@@ -26,26 +12,20 @@ export function Faq({ t }: { t: Dict['faq'] }) {
       {CONTACT_EMAIL}
     </a>
   );
-  const changelog = (
-    <a href={repoFile('CHANGELOG.md')} className="link">
-      {t.changelogLink}
-    </a>
-  );
   return (
     <Section id="faq" labelledBy="faq-title" alt>
+      <div className="sticker-section-heading">
       <SectionHeading id="faq-title" eyebrow={t.eyebrow} title={t.title} />
-      <div className="mx-auto mt-12 max-w-[760px] divide-y divide-line border-y border-line sm:mt-16">
+        <img className="section-sticker" src="/editorial/sticker-faq.webp" width={180} height={180} alt="" loading="lazy" />
+      </div>
+      <div className="faq-grid">
         {ORDER.map((id) => (
-          <details key={id} className="group">
-            <summary className="flex min-h-14 cursor-pointer items-center justify-between gap-4 rounded-md py-4 text-[17px] leading-6 font-semibold">
+          <details key={id} className={`faq-card ${id === 'identity' ? 'faq-card-blue' : id === 'server' || id === 'enterprise' ? 'faq-card-light' : ''}`}>
+            <summary className="faq-question">
               <h3>{t.items[id].q}</h3>
-              <ChevronDown
-                aria-hidden="true"
-                className="chevron size-5 shrink-0 text-fg-2 motion-safe:transition-transform motion-safe:duration-150"
-                strokeWidth={1.75}
-              />
+              <span className="faq-toggle" aria-hidden="true"><Plus size={20} strokeWidth={1.75} /></span>
             </summary>
-            <p className="pb-5 text-[15px] leading-6 text-pretty text-fg-2">{rich(t.items[id].a, { email, changelog })}</p>
+            <div className="faq-answer"><p>{rich(t.items[id].a, { email })}</p></div>
           </details>
         ))}
       </div>

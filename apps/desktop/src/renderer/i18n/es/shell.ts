@@ -44,8 +44,8 @@ export const esShell: DictShape<typeof enShell> = {
   'shell.ownerCannotLeave': 'El propietario no puede abandonar el espacio',
   'shell.invite': 'Invitar',
   'shell.inviteTo': 'Invitar a «{name}»',
-  'shell.roomChat': 'Chat de la sala',
-  'shell.roomChatOf': 'Chat de «{name}»',
+  'shell.joinVoiceShort': 'Unirse',
+  'shell.joinVoiceOf': 'Unirse a la voz de «{name}»',
   'shell.roomSettingsOf': 'Editar «{name}»',
   // voice room rows under the room I am in (docs/09 #48)
   'shell.voiceStatus.label': 'Estado de la sala',
@@ -58,7 +58,7 @@ export const esShell: DictShape<typeof enShell> = {
   'shell.create': 'Crear',
   'shell.categoryCreate': 'Crear categoría',
   'shell.categoryName': 'Nombre de la categoría',
-  'shell.categoryRename': 'Renombrar categoría',
+  'shell.categoryRename': 'Renombrar',
   'shell.categoryDelete': 'Eliminar categoría',
   'shell.categoryDeleteConfirm': '¿Eliminar la categoría «{name}»? Sus salas se conservarán, sin categoría.',
   'shell.categoryCollapse': 'Contraer «{name}»',
@@ -96,7 +96,6 @@ export const esShell: DictShape<typeof enShell> = {
   'shell.more': 'Más',
   'shell.voiceSettings': 'Ajustes de voz',
   'shell.connCheck': 'Probar conexión',
-  'shell.openRoom': 'Abrir chat de la sala',
 
   // self panel
   'shell.inVoiceStatus': 'En voz',

@@ -371,7 +371,7 @@ func (s *Service) setApprovers(w http.ResponseWriter, r *http.Request) error {
 	me := uid(r)
 	var c change
 	var taskID uuid.UUID
-	err := s.tx(r.Context(), func(q *sqlc.Queries, tx pgx.Tx) error {
+	err := s.taskTx(r.Context(), &c, func(q *sqlc.Queries, tx pgx.Tx) error {
 		t, acc, err := s.loadTask(r, tx, true)
 		if err != nil {
 			return err
@@ -389,6 +389,12 @@ func (s *Service) setApprovers(w http.ResponseWriter, r *http.Request) error {
 		}
 		added, old, changed, err := writeApprovers(r.Context(), q, t, ids, required, me)
 		if err != nil || !changed {
+			return err
+		}
+		// APPROVALS off (ADR-0058 §3): new approvers or a new quorum are refused (the
+		// transaction rolls back); removing approvers and clearing the list stay allowed.
+		sets := len(added) > 0 || (len(ids) > 0 && required != t.ApprovalRequired)
+		if err := requireFeature(acc.DisabledFeatures, v1.BoardFeature_BOARD_FEATURE_APPROVALS, "userIds", sets); err != nil {
 			return err
 		}
 		if err := c.record(r.Context(), q, t, me, "approvers",
@@ -447,7 +453,7 @@ func (s *Service) vote(w http.ResponseWriter, r *http.Request) error {
 	me := uid(r)
 	var c change
 	var taskID uuid.UUID
-	err := s.tx(r.Context(), func(q *sqlc.Queries, tx pgx.Tx) error {
+	err := s.taskTx(r.Context(), &c, func(q *sqlc.Queries, tx pgx.Tx) error {
 		t, acc, err := s.loadTask(r, tx, true)
 		if err != nil {
 			return err
@@ -470,6 +476,10 @@ func (s *Service) vote(w http.ResponseWriter, r *http.Request) error {
 		mine := aps[i]
 		if mine.State == state && mine.Comment == comment {
 			return nil
+		}
+		// APPROVALS off (ADR-0058 §3): no new decisions; withdrawing one stays allowed.
+		if err := requireFeature(acc.DisabledFeatures, v1.BoardFeature_BOARD_FEATURE_APPROVALS, "decision", state != votePending); err != nil {
+			return err
 		}
 		before := TallyOf(voteStates(aps), int(t.ApprovalRequired))
 		if err := q.SetApproverVote(r.Context(), sqlc.SetApproverVoteParams{State: state, Comment: comment, TaskID: t.ID, UserID: me}); err != nil {

@@ -1,7 +1,8 @@
+/// <reference lib="dom" />
 import { existsSync, readFileSync, renameSync, rmSync, writeFileSync } from 'node:fs';
 import { hostname } from 'node:os';
 import { join } from 'node:path';
-import { app, BrowserWindow, safeStorage, session, type Session } from 'electron';
+import { app, BrowserWindow, safeStorage, session, shell, type Session } from 'electron';
 import log from 'electron-log/main';
 import {
   IPC,
@@ -16,6 +17,22 @@ import { INSECURE_SERVER_CODE, serverUrlProblem } from '../shared/serverUrl';
 import { AUTH_TIMEOUT_MS } from '../shared/refreshGate';
 import { apiSession } from './apiTransport';
 import { getSettings, normalizeServerUrl, updateSettings } from './settings';
+import { create, fromJson, toJson, type JsonValue } from '@bufbuild/protobuf';
+import { timestampDate } from '@bufbuild/protobuf/wkt';
+import {
+  SSOBeginRequestSchema,
+  SSOBeginResponseSchema,
+  SSOExchangeRequestSchema,
+  SSOClientKind,
+  SSOFlowPurpose,
+  SessionAuthoritySchema,
+  SessionAuthorityKind,
+  IdentityRecoverRequestSchema,
+} from '@calaba/protocol';
+import { SSOCompleteResponseSchema } from '@calaba/protocol';
+import type { SsoStart } from '../shared/ipc';
+import { SsoHandoffBroker } from './ssoHandoff';
+import { setSsoDeepLinkHandler } from './deeplink';
 import { TokenBroker, toTokens, type Tokens, type TokensJson } from './tokenBroker';
 
 /**
@@ -32,6 +49,7 @@ interface StoredSession {
   serverUrl: string;
   refreshToken: string;
   sessionId: string;
+  workspaceId?: string;
 }
 
 /** CALABA_ALLOW_INSECURE_HTTP=1: accept a plain-http server outside loopback (LAN tests only). */
@@ -40,6 +58,10 @@ const ALLOW_INSECURE = process.env['CALABA_ALLOW_INSECURE_HTTP'] === '1';
 function storeFile(): string {
   return join(app.getPath('userData'), 'session.bin');
 }
+
+let authEpoch = 0;
+let scopedWorkspace = '';
+let recovery: { workspaceId: string; token: string; expiresAt: number } | null = null;
 
 function persist(serverUrl: string, tokens: Tokens | null): void {
   if (!tokens) {
@@ -50,7 +72,12 @@ function persist(serverUrl: string, tokens: Tokens | null): void {
     log.warn('safeStorage unavailable: refresh token kept in memory only (login required after restart)');
     return;
   }
-  const data: StoredSession = { serverUrl, refreshToken: tokens.refreshToken, sessionId: tokens.sessionId };
+  const data: StoredSession = {
+    serverUrl,
+    refreshToken: tokens.refreshToken,
+    sessionId: tokens.sessionId,
+    ...(scopedWorkspace ? { workspaceId: scopedWorkspace } : {}),
+  };
   // Atomic: a quit / crash mid-write must leave the previous token, not a truncated file
   // (an unreadable file = a login screen on the next start).
   const tmp = `${storeFile()}.tmp`;
@@ -90,13 +117,38 @@ function broadcast(channel: string, payload: unknown): void {
 /** Token state + refresh policy (tokenBroker.ts: single-flight, 401 / repeated 409 end, rest transient). */
 const broker = new TokenBroker({
   refresh: async (base, refreshToken, fresh) => {
-    const res = await postJson(base, '/api/auth/refresh', { refreshToken }, undefined, fresh ? await freshSession() : undefined);
-    if (res.ok) return { status: res.status, tokens: ((await res.json()) as { tokens: TokensJson }).tokens };
+    const res = await postJson(
+      base,
+      scopedWorkspace ? `/api/auth/sso/workspaces/${encodeURIComponent(scopedWorkspace)}/refresh` : '/api/auth/refresh',
+      { refreshToken },
+      undefined,
+      fresh ? await freshSession() : undefined,
+    );
+    if (res.ok) {
+      const result = fromJson(SSOCompleteResponseSchema, (await res.json()) as JsonValue, { ignoreUnknownFields: true });
+      const t = result.tokens;
+      if (
+        !t ||
+        (scopedWorkspace && (t.authority?.kind !== SessionAuthorityKind.WORKSPACE_SSO || t.authority.workspaceId !== scopedWorkspace)) ||
+        (!scopedWorkspace && t.authority && t.authority.kind !== SessionAuthorityKind.LOCAL_ACCOUNT)
+      )
+        return { status: 401 };
+      return {
+        status: res.status,
+        tokens: {
+          accessToken: t.accessToken,
+          refreshToken: t.refreshToken,
+          sessionId: t.sessionId,
+          accessExpiresAt: t.accessExpiresAt ? timestampDate(t.accessExpiresAt).toISOString() : '',
+        },
+      };
+    }
     const err = await readError(res);
     return { status: res.status, code: err.code, ...(err.reason ? { reason: err.reason } : {}) };
   },
   persist,
   onLoggedOut: (reason) => {
+    scopedWorkspace = ''; recovery = null; ++authEpoch; ssoBroker.invalidateForAccountSwitch();
     broadcast(IPC.authLoggedOut, reason);
     sessionEnded();
   },
@@ -190,6 +242,20 @@ export function currentServerUrl(): string {
   return broker.serverUrl || getSettings().serverUrl;
 }
 
+/**
+ * The server the renderer page talks to (its CSP connect-src, csp.ts). The page loads before
+ * restore() runs, so without a live session the stored one decides, then the settings default.
+ * Incident 2.0.0: 1.7 builds defaulted to app.calab.ru without writing it to settings.json, 2.0
+ * builds default to app.calab.io — a CSP built from the settings blocked the gateway socket of
+ * the restored app.calab.ru session (endless «Подключение…» while REST, proxied by main, worked).
+ */
+export function rendererServerUrl(): string {
+  if (broker.serverUrl) return broker.serverUrl;
+  const stored = loadStored();
+  if (stored?.serverUrl && !insecure(stored.serverUrl)) return stored.serverUrl;
+  return getSettings().serverUrl;
+}
+
 function insecure(base: string): IpcResult<never> | null {
   const problem = serverUrlProblem(base, ALLOW_INSECURE);
   if (!problem) return null;
@@ -213,22 +279,42 @@ export async function restore(): Promise<AuthSession | null> {
     broker.clear('logout', false);
     return null;
   }
-  broker.set(stored.serverUrl, { accessToken: '', accessExpiresAt: 0, refreshToken: stored.refreshToken, sessionId: stored.sessionId }, false);
+  const started = ++authEpoch;
+  ssoBroker.invalidateForAccountSwitch();
+  recovery = null;
+  scopedWorkspace = stored.workspaceId ?? '';
+  broker.set(
+    stored.serverUrl,
+    { accessToken: '', accessExpiresAt: 0, refreshToken: stored.refreshToken, sessionId: stored.sessionId },
+    false,
+  );
   const t = await broker.refreshOnce();
+  if (started !== authEpoch) return null;
   if (!t) {
     // Either rejected (the broker cleared the session) or offline (session kept).
     if (!broker.hasSession) return null;
     throw new Error('offline');
   }
   const me = await fetchMe();
-  return { serverUrl: broker.serverUrl, sessionId: t.sessionId, me };
+  if (started !== authEpoch) return null;
+  return {
+    serverUrl: broker.serverUrl,
+    sessionId: t.sessionId,
+    me,
+    ...(scopedWorkspace
+      ? {
+          authority: toJson(
+            SessionAuthoritySchema,
+            create(SessionAuthoritySchema, { kind: SessionAuthorityKind.WORKSPACE_SSO, workspaceId: scopedWorkspace }),
+          ),
+        }
+      : {}),
+  };
 }
 
-async function authenticate(
-  args: LoginArgs,
-  path: string,
-  body: Record<string, unknown>,
-): Promise<IpcResult<AuthSession>> {
+async function authenticate(args: LoginArgs, path: string, body: Record<string, unknown>): Promise<IpcResult<AuthSession>> {
+  const started = ++authEpoch;
+  ssoBroker.invalidateForAccountSwitch();
   const base = normalizeServerUrl(args.serverUrl);
   const bad = insecure(base);
   if (bad) return bad;
@@ -238,6 +324,9 @@ async function authenticate(
     const data = (await res.json()) as { tokens?: TokensJson; me: unknown; similarAccount?: boolean };
     if (!data.tokens) return { ok: false, error: noSession(data.similarAccount, res.status) };
     const tokens = toTokens(data.tokens);
+    if (started !== authEpoch) throw new Error('Account changed');
+    scopedWorkspace = '';
+    recovery = null;
     broker.set(base, tokens);
     if (getSettings().serverUrl !== base) updateSettings({ serverUrl: base });
     return { ok: true, data: { serverUrl: base, sessionId: tokens.sessionId, me: data.me } };
@@ -271,7 +360,12 @@ export function register(args: RegisterArgs): Promise<IpcResult<AuthSession>> {
  * POST /api/room-invites/{code}/join {nickname} without a session → the server creates a
  * guest account and returns tokens like a login; the refresh token is kept in main as usual.
  */
-export async function guestJoin(code: string, nickname: string): Promise<IpcResult<{ session: AuthSession; roomId: string; workspaceId: string; admission?: unknown }>> {
+export async function guestJoin(
+  code: string,
+  nickname: string,
+): Promise<IpcResult<{ session: AuthSession; roomId: string; workspaceId: string; admission?: unknown }>> {
+  const started = ++authEpoch;
+  ssoBroker.invalidateForAccountSwitch();
   const base = normalizeServerUrl(currentServerUrl());
   const bad = insecure(base);
   if (bad) return bad;
@@ -281,8 +375,15 @@ export async function guestJoin(code: string, nickname: string): Promise<IpcResu
     const data = (await res.json()) as { roomId: string; workspaceId: string; tokens?: TokensJson; me?: unknown; admission?: unknown };
     if (!data.tokens) return { ok: false, error: { code: 'ERROR_CODE_INTERNAL', message: 'no guest session in the response', status: res.status } };
     const tokens = toTokens(data.tokens);
+    let me = data.me;
+    if (!me) {
+      const profile = await apiSession().fetch(`${base}/api/me`, { headers: { Authorization: `Bearer ${tokens.accessToken}` }, signal: AbortSignal.timeout(AUTH_TIMEOUT_MS) });
+      if (!profile.ok) throw new Error('Guest profile unavailable');
+      me = (await profile.json() as { me: unknown }).me;
+    }
+    if (started !== authEpoch) throw new Error('Account changed');
+    scopedWorkspace = ''; recovery = null;
     broker.set(base, tokens);
-    const me = data.me ?? (await fetchMe());
     // ADR-0040: a knock that waits for the organizer travels to the renderer as JSON.
     return { ok: true, data: { session: { serverUrl: base, sessionId: tokens.sessionId, me }, roomId: data.roomId, workspaceId: data.workspaceId, ...(data.admission ? { admission: data.admission } : {}) } };
   } catch (e) {
@@ -291,19 +392,195 @@ export async function guestJoin(code: string, nickname: string): Promise<IpcResu
 }
 
 export async function logout(allSessions: boolean): Promise<void> {
+  const started = ++authEpoch;
+  recovery = null;
+  ssoBroker.invalidateForAccountSwitch();
   const access = await getAccessToken();
+  if (started !== authEpoch) return;
   if (access) {
     try {
-      await postJson(broker.serverUrl, '/api/auth/logout', { allSessions }, access);
+      await postJson(
+        broker.serverUrl,
+        scopedWorkspace ? `/api/auth/sso/workspaces/${encodeURIComponent(scopedWorkspace)}/logout` : '/api/auth/logout',
+        { allSessions },
+        access,
+      );
     } catch (e) {
       log.warn('logout request failed (session cleared locally anyway)', e);
     }
   }
-  broker.clear('logout', true);
+  if (started === authEpoch) { broker.clear('logout', true); scopedWorkspace = ''; }
 }
 
 /** Called when the gateway reports the session revoked (4010). */
 export function revoked(): void {
+  ++authEpoch;
+  recovery = null;
+  ssoBroker.invalidateForAccountSwitch();
   broker.clear('revoked', false);
+  scopedWorkspace = '';
   sessionEnded();
+}
+
+const ssoPurposes = {
+  login: SSOFlowPurpose.SSO_FLOW_PURPOSE_LOGIN,
+  step_up: SSOFlowPurpose.SSO_FLOW_PURPOSE_STEP_UP,
+  link: SSOFlowPurpose.SSO_FLOW_PURPOSE_LINK,
+  test: SSOFlowPurpose.SSO_FLOW_PURPOSE_TEST,
+} as const;
+const ssoBroker = new SsoHandoffBroker({
+  openExternal: (url) => shell.openExternal(url),
+  exchange: async (request) => {
+    const { signal, workspaceId, purpose, serverOrigin } = request;
+    try {
+      const access = await getAccessToken();
+      signal.throwIfAborted();
+      const res = await apiSession().fetch(`${serverOrigin}/api/auth/sso/exchange`, {
+        method: 'POST',
+        redirect: 'error',
+        signal: AbortSignal.any([signal, AbortSignal.timeout(AUTH_TIMEOUT_MS)]),
+        headers: { 'Content-Type': 'application/json', Origin: serverOrigin, ...(access ? { Authorization: `Bearer ${access}` } : {}) },
+        body: JSON.stringify(
+          toJson(
+            SSOExchangeRequestSchema,
+            create(SSOExchangeRequestSchema, { flowId: request.flowId, ticket: request.ticket, verifier: request.verifier }),
+          ),
+        ),
+      });
+      if (!res.ok) {
+        const error = await readError(res);
+        signal.throwIfAborted();
+        broadcast(IPC.authSsoResult, { workspaceId, purpose, ok: false, error });
+        return;
+      }
+      const result = fromJson(SSOCompleteResponseSchema, (await res.json()) as JsonValue);
+      signal.throwIfAborted();
+      let installed: AuthSession | undefined;
+      if (purpose === 'login') {
+        if (
+          broker.hasSession ||
+          !result.tokens ||
+          result.tokens.authority?.kind !== SessionAuthorityKind.WORKSPACE_SSO ||
+          result.tokens.authority.workspaceId !== workspaceId
+        )
+          throw new Error('Unexpected SSO authority');
+        const t = result.tokens;
+        if (!t.authority) throw new Error('Missing authority');
+        const meResponse = await apiSession().fetch(`${serverOrigin}/api/me`, {
+          headers: { Authorization: `Bearer ${t.accessToken}` },
+          signal,
+        });
+        if (!meResponse.ok) throw new Error('SSO profile unavailable');
+        const me = ((await meResponse.json()) as { me: unknown }).me;
+        signal.throwIfAborted();
+        scopedWorkspace = workspaceId;
+        broker.set(serverOrigin, {
+          accessToken: t.accessToken,
+          accessExpiresAt: t.accessExpiresAt ? timestampDate(t.accessExpiresAt).getTime() : 0,
+          refreshToken: t.refreshToken,
+          sessionId: t.sessionId,
+        });
+        installed = { serverUrl: serverOrigin, sessionId: t.sessionId, me, authority: toJson(SessionAuthoritySchema, t.authority) };
+      } else if (result.tokens || (purpose === 'test' ? !result.tested : result.assurance?.workspaceId !== workspaceId))
+        throw new Error('Unexpected SSO result');
+      signal.throwIfAborted();
+      broadcast(IPC.authSsoResult, { workspaceId, purpose, ok: true, ...(installed ? { session: installed } : {}) });
+    } catch (e) {
+      if (!signal.aborted) broadcast(IPC.authSsoResult, { workspaceId, purpose, ok: false, error: networkError(e) });
+      throw e;
+    }
+  },
+});
+
+export function installSsoHandoff(): void {
+  setSsoDeepLinkHandler((url) => ssoBroker.handleCallback(url));
+}
+export function cancelSso(id: string): void {
+  if (id === 'pending') ssoBroker.invalidateForAccountSwitch();
+  else ssoBroker.cancel(id);
+}
+export function invalidateSsoServer(): void {
+  ++authEpoch;
+  recovery = null;
+  ssoBroker.invalidateForServerSwitch();
+}
+export async function beginSso(args: SsoStart): Promise<IpcResult<{ attemptId: string; expiresAt: number }>> {
+  let id = '';
+  try {
+    if (args.purpose === 'login' && broker.hasSession) throw new Error('Local session already active');
+    const serverOrigin = new URL(currentServerUrl()).origin;
+    const challenge = ssoBroker.prepare({ ...args, serverOrigin });
+    id = challenge.attemptId;
+    const access = await getAccessToken();
+    const path =
+      args.purpose === 'test'
+        ? `/api/workspaces/${encodeURIComponent(args.workspaceId)}/identity/test`
+        : `/api/auth/sso/workspaces/${encodeURIComponent(args.workspaceId)}/begin`;
+    const res = await apiSession().fetch(`${serverOrigin}${path}`, {
+      method: 'POST',
+      redirect: 'error',
+      signal: AbortSignal.timeout(AUTH_TIMEOUT_MS),
+      headers: { 'Content-Type': 'application/json', Origin: serverOrigin, ...(access ? { Authorization: `Bearer ${access}` } : {}) },
+      body: JSON.stringify(
+        toJson(
+          SSOBeginRequestSchema,
+          create(SSOBeginRequestSchema, {
+            purpose: ssoPurposes[args.purpose],
+            clientKind: SSOClientKind.SSO_CLIENT_KIND_DESKTOP,
+            desktopChallenge: challenge.challenge,
+          }),
+        ),
+      ),
+    });
+    if (!res.ok) {
+      ssoBroker.cancel(id);
+      return { ok: false, error: await readError(res) };
+    }
+    const result = fromJson(SSOBeginResponseSchema, (await res.json()) as JsonValue);
+    const expiresAt = result.expiresAt ? timestampDate(result.expiresAt).getTime() : 0;
+    await ssoBroker.associateAndOpen(id, result.flowId, result.browserStartUrl, expiresAt);
+    return { ok: true, data: { attemptId: id, expiresAt } };
+  } catch (e) {
+    if (id) ssoBroker.cancel(id);
+    return { ok: false, error: networkError(e) };
+  }
+}
+
+export async function identityAccessToken(path: string): Promise<string | null> {
+  if (recovery && recovery.expiresAt > Date.now() && path === `/api/workspaces/${encodeURIComponent(recovery.workspaceId)}/identity/policy`)
+    return recovery.token;
+  return getAccessToken();
+}
+export async function recoverIdentity(workspaceId: string, code: string): Promise<IpcResult<{ expiresAt: number }>> {
+  try {
+    const started = authEpoch;
+    const base = currentServerUrl();
+    const original = broker.current?.sessionId;
+    const token = await getAccessToken();
+    if (!token || scopedWorkspace) throw new Error('Independent local sign-in required');
+    const res = await apiSession().fetch(`${base}/api/auth/sso/workspaces/${encodeURIComponent(workspaceId)}/recover`, {
+      method: 'POST',
+      redirect: 'error',
+      signal: AbortSignal.timeout(AUTH_TIMEOUT_MS),
+      headers: { 'Content-Type': 'application/json', Origin: new URL(base).origin, Authorization: `Bearer ${token}` },
+      body: JSON.stringify(toJson(IdentityRecoverRequestSchema, create(IdentityRecoverRequestSchema, { recoveryCode: code }))),
+    });
+    if (!res.ok) return { ok: false, error: await readError(res) };
+    const result = fromJson(SSOCompleteResponseSchema, (await res.json()) as JsonValue);
+    const t = result.tokens;
+    if (
+      started !== authEpoch ||
+      original !== broker.current?.sessionId ||
+      base !== currentServerUrl() ||
+      !t?.accessExpiresAt ||
+      t.authority?.kind !== SessionAuthorityKind.RECOVERY ||
+      t.authority.workspaceId !== workspaceId
+    )
+      throw new Error('Recovery unavailable');
+    const expiresAt = timestampDate(t.accessExpiresAt).getTime();
+    recovery = { workspaceId, token: t.accessToken, expiresAt };
+    return { ok: true, data: { expiresAt } };
+  } catch {
+    return { ok: false, error: { code: 'ERROR_CODE_UNAVAILABLE', message: 'Recovery unavailable', status: 0 } };
+  }
 }

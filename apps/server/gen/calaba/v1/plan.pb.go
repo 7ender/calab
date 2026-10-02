@@ -29,7 +29,7 @@ const (
 	Plan_PLAN_FREE        Plan = 1 // limits from PLAN_FREE_LIMITS
 	Plan_PLAN_TEAM        Plan = 2 // limits from PLAN_TEAM_LIMITS
 	Plan_PLAN_CUSTOM      Plan = 3 // limits as stored for the workspace
-	Plan_PLAN_ENTERPRISE  Plan = 4 // no limits at all (like self-hosted), not configurable
+	Plan_PLAN_ENTERPRISE  Plan = 4 // cloud Business; on-prem Enterprise is an operator edition
 )
 
 // Enum value maps for Plan.
@@ -79,25 +79,28 @@ func (Plan) EnumDescriptor() ([]byte, []int) {
 
 // Effective limits of a workspace. 0 / UNSPECIFIED = no limit.
 type PlanLimits struct {
-	state            protoimpl.MessageState `protogen:"open.v1"`
-	RoomMembers      uint32                 `protobuf:"varint,1,opt,name=room_members,json=roomMembers,proto3" json:"room_members,omitempty"`                                                // users in one voice room (guests and pending devices count)
-	StreamMaxPreset  ScreenSharePreset      `protobuf:"varint,2,opt,name=stream_max_preset,json=streamMaxPreset,proto3,enum=calaba.v1.ScreenSharePreset" json:"stream_max_preset,omitempty"` // highest screen share preset
-	StreamMaxFps     uint32                 `protobuf:"varint,3,opt,name=stream_max_fps,json=streamMaxFps,proto3" json:"stream_max_fps,omitempty"`                                           // screen share frame rate cap
-	CameraMaxPreset  ScreenSharePreset      `protobuf:"varint,4,opt,name=camera_max_preset,json=cameraMaxPreset,proto3,enum=calaba.v1.ScreenSharePreset" json:"camera_max_preset,omitempty"` // highest webcam resolution (H720 = 720p, H1080 = 1080p)
-	CameraMaxFps     uint32                 `protobuf:"varint,5,opt,name=camera_max_fps,json=cameraMaxFps,proto3" json:"camera_max_fps,omitempty"`                                           // webcam frame rate cap
-	StreamsPerRoom   uint32                 `protobuf:"varint,6,opt,name=streams_per_room,json=streamsPerRoom,proto3" json:"streams_per_room,omitempty"`                                     // screen shares at once in one room (caps max_streams of the room / workspace)
-	StorageMb        uint64                 `protobuf:"varint,7,opt,name=storage_mb,json=storageMb,proto3" json:"storage_mb,omitempty"`                                                      // file storage of the workspace, MiB
-	Members          uint32                 `protobuf:"varint,8,opt,name=members,proto3" json:"members,omitempty"`                                                                           // workspace members: bots count, guests do not (invites and joins stop at it)
-	StickerPacks     uint32                 `protobuf:"varint,9,opt,name=sticker_packs,json=stickerPacks,proto3" json:"sticker_packs,omitempty"`                                             // live sticker packs of the workspace (ADR-0030)
-	Stickers         uint32                 `protobuf:"varint,10,opt,name=stickers,proto3" json:"stickers,omitempty"`                                                                        // live stickers over all packs of the workspace
-	Bots             uint32                 `protobuf:"varint,20,opt,name=bots,proto3" json:"bots,omitempty"`                                                                                // bots that are members of the workspace (ADR-0031)
-	AudioTierMaxKbps uint32                 `protobuf:"varint,21,opt,name=audio_tier_max_kbps,json=audioTierMaxKbps,proto3" json:"audio_tier_max_kbps,omitempty"`                            // highest voice quality tier, kbps (8 | 16 | 32 | 64; docs/02 «Битрейт»)
-	Boards           uint32                 `protobuf:"varint,22,opt,name=boards,proto3" json:"boards,omitempty"`                                                                            // live task boards of the workspace (ADR-0042); 0 = no plan limit (≤ 50 always)
-	CamerasPerRoom   uint32                 `protobuf:"varint,27,opt,name=cameras_per_room,json=camerasPerRoom,proto3" json:"cameras_per_room,omitempty"`                                    // webcams at once in one voice room (caps camera_limit of the room / workspace); 0 = no plan limit
-	CaldavDisabled   bool                   `protobuf:"varint,23,opt,name=caldav_disabled,json=caldavDisabled,proto3" json:"caldav_disabled,omitempty"`                                      // CalDAV sync is not part of the plan (Free); per user it works if any of their workspaces allows it
-	MusicianDisabled bool                   `protobuf:"varint,28,opt,name=musician_disabled,json=musicianDisabled,proto3" json:"musician_disabled,omitempty"`                                // musician mode (ADR-0052) is not part of the plan (Free): VoiceState.musician refused
-	unknownFields    protoimpl.UnknownFields
-	sizeCache        protoimpl.SizeCache
+	state                 protoimpl.MessageState `protogen:"open.v1"`
+	RoomMembers           uint32                 `protobuf:"varint,1,opt,name=room_members,json=roomMembers,proto3" json:"room_members,omitempty"`                                                // users in one voice room (guests and pending devices count)
+	StreamMaxPreset       ScreenSharePreset      `protobuf:"varint,2,opt,name=stream_max_preset,json=streamMaxPreset,proto3,enum=calaba.v1.ScreenSharePreset" json:"stream_max_preset,omitempty"` // highest screen share preset
+	StreamMaxFps          uint32                 `protobuf:"varint,3,opt,name=stream_max_fps,json=streamMaxFps,proto3" json:"stream_max_fps,omitempty"`                                           // screen share frame rate cap
+	CameraMaxPreset       ScreenSharePreset      `protobuf:"varint,4,opt,name=camera_max_preset,json=cameraMaxPreset,proto3,enum=calaba.v1.ScreenSharePreset" json:"camera_max_preset,omitempty"` // highest webcam resolution (H720 = 720p, H1080 = 1080p)
+	CameraMaxFps          uint32                 `protobuf:"varint,5,opt,name=camera_max_fps,json=cameraMaxFps,proto3" json:"camera_max_fps,omitempty"`                                           // webcam frame rate cap
+	StreamsPerRoom        uint32                 `protobuf:"varint,6,opt,name=streams_per_room,json=streamsPerRoom,proto3" json:"streams_per_room,omitempty"`                                     // screen shares at once in one room (caps max_streams of the room / workspace)
+	StorageMb             uint64                 `protobuf:"varint,7,opt,name=storage_mb,json=storageMb,proto3" json:"storage_mb,omitempty"`                                                      // file storage of the workspace, MiB
+	Members               uint32                 `protobuf:"varint,8,opt,name=members,proto3" json:"members,omitempty"`                                                                           // workspace members: bots count, guests do not (invites and joins stop at it)
+	StickerPacks          uint32                 `protobuf:"varint,9,opt,name=sticker_packs,json=stickerPacks,proto3" json:"sticker_packs,omitempty"`                                             // live sticker packs of the workspace (ADR-0030)
+	Stickers              uint32                 `protobuf:"varint,10,opt,name=stickers,proto3" json:"stickers,omitempty"`                                                                        // live stickers over all packs of the workspace
+	Bots                  uint32                 `protobuf:"varint,20,opt,name=bots,proto3" json:"bots,omitempty"`                                                                                // bots that are members of the workspace (ADR-0031)
+	AudioTierMaxKbps      uint32                 `protobuf:"varint,21,opt,name=audio_tier_max_kbps,json=audioTierMaxKbps,proto3" json:"audio_tier_max_kbps,omitempty"`                            // highest voice quality tier, kbps (8 | 16 | 32 | 64; docs/02 «Битрейт»)
+	Boards                uint32                 `protobuf:"varint,22,opt,name=boards,proto3" json:"boards,omitempty"`                                                                            // live task boards of the workspace (ADR-0042); 0 = no plan limit (≤ 50 always)
+	CamerasPerRoom        uint32                 `protobuf:"varint,27,opt,name=cameras_per_room,json=camerasPerRoom,proto3" json:"cameras_per_room,omitempty"`                                    // webcams at once in one voice room (caps camera_limit of the room / workspace); 0 = no plan limit
+	CaldavDisabled        bool                   `protobuf:"varint,23,opt,name=caldav_disabled,json=caldavDisabled,proto3" json:"caldav_disabled,omitempty"`                                      // CalDAV sync is not part of the plan (Free); per user it works if any of their workspaces allows it
+	MusicianDisabled      bool                   `protobuf:"varint,28,opt,name=musician_disabled,json=musicianDisabled,proto3" json:"musician_disabled,omitempty"`                                // musician mode (ADR-0052) is not part of the plan (Free): VoiceState.musician refused
+	ChecklistsDisabled    bool                   `protobuf:"varint,29,opt,name=checklists_disabled,json=checklistsDisabled,proto3" json:"checklists_disabled,omitempty"`                          // task checklists (ADR-0058 §5) are Team and above: writes refused, reading stays
+	BoardWebhooksDisabled bool                   `protobuf:"varint,30,opt,name=board_webhooks_disabled,json=boardWebhooksDisabled,proto3" json:"board_webhooks_disabled,omitempty"`               // board webhooks (ADR-0058 §5) are Business only: setup refused, delivery paused
+	TelephonyDisabled     bool                   `protobuf:"varint,31,opt,name=telephony_disabled,json=telephonyDisabled,proto3" json:"telephony_disabled,omitempty"`                             // telephony SIP (ADR-0046) is Business only: trunk setup, test and calls refused, settings readable
+	unknownFields         protoimpl.UnknownFields
+	sizeCache             protoimpl.SizeCache
 }
 
 func (x *PlanLimits) Reset() {
@@ -242,15 +245,37 @@ func (x *PlanLimits) GetMusicianDisabled() bool {
 	return false
 }
 
+func (x *PlanLimits) GetChecklistsDisabled() bool {
+	if x != nil {
+		return x.ChecklistsDisabled
+	}
+	return false
+}
+
+func (x *PlanLimits) GetBoardWebhooksDisabled() bool {
+	if x != nil {
+		return x.BoardWebhooksDisabled
+	}
+	return false
+}
+
+func (x *PlanLimits) GetTelephonyDisabled() bool {
+	if x != nil {
+		return x.TelephonyDisabled
+	}
+	return false
+}
+
 // The plan of a workspace as members see it (Workspace.plan).
 type WorkspacePlan struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	Plan          Plan                   `protobuf:"varint,1,opt,name=plan,proto3,enum=calaba.v1.Plan" json:"plan,omitempty"`          // stored plan; FREE when none was ever set
-	Limits        *PlanLimits            `protobuf:"bytes,2,opt,name=limits,proto3" json:"limits,omitempty"`                           // effective limits (FREE's when expired)
-	ValidUntil    *timestamppb.Timestamp `protobuf:"bytes,3,opt,name=valid_until,json=validUntil,proto3" json:"valid_until,omitempty"` // unset = no expiry
-	Expired       bool                   `protobuf:"varint,4,opt,name=expired,proto3" json:"expired,omitempty"`                        // valid_until passed: the FREE limits apply
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
+	state                protoimpl.MessageState         `protogen:"open.v1"`
+	Plan                 Plan                           `protobuf:"varint,1,opt,name=plan,proto3,enum=calaba.v1.Plan" json:"plan,omitempty"`          // stored plan; FREE when none was ever set
+	Limits               *PlanLimits                    `protobuf:"bytes,2,opt,name=limits,proto3" json:"limits,omitempty"`                           // effective limits (FREE's when expired)
+	ValidUntil           *timestamppb.Timestamp         `protobuf:"bytes,3,opt,name=valid_until,json=validUntil,proto3" json:"valid_until,omitempty"` // unset = no expiry
+	IdentityEntitlements *WorkspaceIdentityEntitlements `protobuf:"bytes,5,opt,name=identity_entitlements,json=identityEntitlements,proto3" json:"identity_entitlements,omitempty"`
+	Expired              bool                           `protobuf:"varint,4,opt,name=expired,proto3" json:"expired,omitempty"` // valid_until passed: the FREE limits apply
+	unknownFields        protoimpl.UnknownFields
+	sizeCache            protoimpl.SizeCache
 }
 
 func (x *WorkspacePlan) Reset() {
@@ -304,6 +329,13 @@ func (x *WorkspacePlan) GetValidUntil() *timestamppb.Timestamp {
 	return nil
 }
 
+func (x *WorkspacePlan) GetIdentityEntitlements() *WorkspaceIdentityEntitlements {
+	if x != nil {
+		return x.IdentityEntitlements
+	}
+	return nil
+}
+
 func (x *WorkspacePlan) GetExpired() bool {
 	if x != nil {
 		return x.Expired
@@ -315,7 +347,7 @@ var File_calaba_v1_plan_proto protoreflect.FileDescriptor
 
 const file_calaba_v1_plan_proto_rawDesc = "" +
 	"\n" +
-	"\x14calaba/v1/plan.proto\x12\tcalaba.v1\x1a\x1fgoogle/protobuf/timestamp.proto\x1a\x15calaba/v1/media.proto\"\x8e\x05\n" +
+	"\x14calaba/v1/plan.proto\x12\tcalaba.v1\x1a\x1fgoogle/protobuf/timestamp.proto\x1a\x15calaba/v1/media.proto\x1a\x18calaba/v1/identity.proto\"\xb8\x06\n" +
 	"\n" +
 	"PlanLimits\x12!\n" +
 	"\froom_members\x18\x01 \x01(\rR\vroomMembers\x12H\n" +
@@ -335,12 +367,16 @@ const file_calaba_v1_plan_proto_rawDesc = "" +
 	"\x06boards\x18\x16 \x01(\rR\x06boards\x12(\n" +
 	"\x10cameras_per_room\x18\x1b \x01(\rR\x0ecamerasPerRoom\x12'\n" +
 	"\x0fcaldav_disabled\x18\x17 \x01(\bR\x0ecaldavDisabled\x12+\n" +
-	"\x11musician_disabled\x18\x1c \x01(\bR\x10musicianDisabled\"\xba\x01\n" +
+	"\x11musician_disabled\x18\x1c \x01(\bR\x10musicianDisabled\x12/\n" +
+	"\x13checklists_disabled\x18\x1d \x01(\bR\x12checklistsDisabled\x126\n" +
+	"\x17board_webhooks_disabled\x18\x1e \x01(\bR\x15boardWebhooksDisabled\x12-\n" +
+	"\x12telephony_disabled\x18\x1f \x01(\bR\x11telephonyDisabledJ\x04\b\x18\x10\x19J\x04\b\x19\x10\x1aJ\x04\b\x1a\x10\x1b\"\x99\x02\n" +
 	"\rWorkspacePlan\x12#\n" +
 	"\x04plan\x18\x01 \x01(\x0e2\x0f.calaba.v1.PlanR\x04plan\x12-\n" +
 	"\x06limits\x18\x02 \x01(\v2\x15.calaba.v1.PlanLimitsR\x06limits\x12;\n" +
 	"\vvalid_until\x18\x03 \x01(\v2\x1a.google.protobuf.TimestampR\n" +
-	"validUntil\x12\x18\n" +
+	"validUntil\x12]\n" +
+	"\x15identity_entitlements\x18\x05 \x01(\v2(.calaba.v1.WorkspaceIdentityEntitlementsR\x14identityEntitlements\x12\x18\n" +
 	"\aexpired\x18\x04 \x01(\bR\aexpired*`\n" +
 	"\x04Plan\x12\x14\n" +
 	"\x10PLAN_UNSPECIFIED\x10\x00\x12\r\n" +
@@ -366,11 +402,12 @@ func file_calaba_v1_plan_proto_rawDescGZIP() []byte {
 var file_calaba_v1_plan_proto_enumTypes = make([]protoimpl.EnumInfo, 1)
 var file_calaba_v1_plan_proto_msgTypes = make([]protoimpl.MessageInfo, 2)
 var file_calaba_v1_plan_proto_goTypes = []any{
-	(Plan)(0),                     // 0: calaba.v1.Plan
-	(*PlanLimits)(nil),            // 1: calaba.v1.PlanLimits
-	(*WorkspacePlan)(nil),         // 2: calaba.v1.WorkspacePlan
-	(ScreenSharePreset)(0),        // 3: calaba.v1.ScreenSharePreset
-	(*timestamppb.Timestamp)(nil), // 4: google.protobuf.Timestamp
+	(Plan)(0),                             // 0: calaba.v1.Plan
+	(*PlanLimits)(nil),                    // 1: calaba.v1.PlanLimits
+	(*WorkspacePlan)(nil),                 // 2: calaba.v1.WorkspacePlan
+	(ScreenSharePreset)(0),                // 3: calaba.v1.ScreenSharePreset
+	(*timestamppb.Timestamp)(nil),         // 4: google.protobuf.Timestamp
+	(*WorkspaceIdentityEntitlements)(nil), // 5: calaba.v1.WorkspaceIdentityEntitlements
 }
 var file_calaba_v1_plan_proto_depIdxs = []int32{
 	3, // 0: calaba.v1.PlanLimits.stream_max_preset:type_name -> calaba.v1.ScreenSharePreset
@@ -378,11 +415,12 @@ var file_calaba_v1_plan_proto_depIdxs = []int32{
 	0, // 2: calaba.v1.WorkspacePlan.plan:type_name -> calaba.v1.Plan
 	1, // 3: calaba.v1.WorkspacePlan.limits:type_name -> calaba.v1.PlanLimits
 	4, // 4: calaba.v1.WorkspacePlan.valid_until:type_name -> google.protobuf.Timestamp
-	5, // [5:5] is the sub-list for method output_type
-	5, // [5:5] is the sub-list for method input_type
-	5, // [5:5] is the sub-list for extension type_name
-	5, // [5:5] is the sub-list for extension extendee
-	0, // [0:5] is the sub-list for field type_name
+	5, // 5: calaba.v1.WorkspacePlan.identity_entitlements:type_name -> calaba.v1.WorkspaceIdentityEntitlements
+	6, // [6:6] is the sub-list for method output_type
+	6, // [6:6] is the sub-list for method input_type
+	6, // [6:6] is the sub-list for extension type_name
+	6, // [6:6] is the sub-list for extension extendee
+	0, // [0:6] is the sub-list for field type_name
 }
 
 func init() { file_calaba_v1_plan_proto_init() }
@@ -391,6 +429,7 @@ func file_calaba_v1_plan_proto_init() {
 		return
 	}
 	file_calaba_v1_media_proto_init()
+	file_calaba_v1_identity_proto_init()
 	type x struct{}
 	out := protoimpl.TypeBuilder{
 		File: protoimpl.DescBuilder{

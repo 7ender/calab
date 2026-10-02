@@ -1,5 +1,19 @@
 # TESTING — инструкции для тестировщика
 
+## Identity 2.0 final acceptance
+
+1. Лид назначает **точный итоговый SHA** после merge docs/browser evidence; текущие исторические reports не signoff. Команды ниже — план, здесь не выполнены; записать SHA/env/exit/skips и два независимых security/protocol review на нём.
+2. Только отдельная QA DB/Valkey/RTC; env брать из собственного `tools/identity-test-env.sh env 18 qa` либо из выделенного coordinator harness ([правила](docs/plans/identity-v2-validation.md)), не поднимать/сбрасывать чужой. Go 1.26.x как CI, golangci-lint 2.14.0, sqlc 1.31.1; записать реальные версии.
+3. Из корня: `make gen` → `git diff --exit-code -- proto apps/server/gen apps/server/internal/db/sqlc packages/protocol/src/gen`; `make lint`; `pnpm -s typecheck`; `pnpm -r test`. Ожидается без drift/errors.
+4. Unit/race: `(cd apps/server && go test -race -count=1 ./internal/auth ./internal/identitypolicy ./internal/identitycrypto ./internal/identitynet ./internal/oauthprovider/... ./internal/sso ./internal/directory ./internal/gateway ./internal/rtc)`.
+5. Перед полным прогоном подготовить выделенный PG17, Valkey DB15/RTC14, LiveKit и Garage S3 (`GARAGE_NAME`/порт только QA), ffmpeg/ffprobe ≥7.1; TEST_S3_* хранить приватно. Не запускать отдельные targeted integration перед тем же полным набором.
+6. Один назначенный QA runner на точном чистом SHA выполняет `(cd apps/server && go test -race -tags integration -count=1 -json ./...)` один раз на PG17; миграции/identity/legacy входят в этот набор. Записать counts/durations/failures/skips; недоступно/skipped ≠ passed.
+7. Повторять полный набор только после релевантной правки/сбоя; не принимать прежние branch reports за evidence. Отдельно `python3 infra/identity-test/identity-proxy-test.py`; обязательный CI проверяет только PG17 (решение владельца, 2026-10-01).
+8. Реальный generic RP: `GOTOOLCHAIN=go1.26.5 IDENTITY_TEST_HARNESS=<coordinator-assigned-harness> infra/identity-test/calaba-keycloak-test.sh 18`; затем `IDENTITY_BROWSER_EXPECTED_SHA=<exact-SHA> IDENTITY_TEST_HARNESS=<same-harness> infra/identity-test/browser-identity-e2e.sh 18`. Требуется отсутствие required skips, реальный App/Keycloak и независимая RS256 проверка; discovery/JWKS fetch из зарегистрированной RP страницы проверяет browser CORS и metadata flags.
+9. Один ручной QA screenshot pass новых identity экранов; готовые screenshots не повторять без layout changes/failure. Browser: local/SSO step-up → consent bind/decision; native adapter/deeplink/unit, account/server switch/cancel/expiry/arbitrary return URL отдельно от реального OS roundtrip (unverified без него). Токены/refresh/verifier не попадают в URL/renderer; visual suites выключены. Entra/AD FS/Windows AD без живого стенда — unverified.
+10. Сквозные отрицательные сценарии: A enforced/B independent, scopes, invite bootstrap без данных, legacy SUPERADMIN_EMAILS source/revocation, grant expiry, REST mutation race, READY/RESUME/lost pubsub/RTC eviction и DB failure; ожидается отказ без чужих данных/side effects, lease ≤30 секунд.
+11. Production activation — отдельное поручение оператору после [preflight](docs/plans/identity-v2-operator-preflight.md): Vault/config/Caddy/pins, protected backup/identity-aware fallback, synthetic success/error/parser/Referer log sentinels и recovery; затем off → optional → enforced. Реальный Microsoft стенд и незакрытые operator gates записывать как unverified/blocked.
+
 ## Как пользоваться этим файлом
 
 - Каждый раздел самодостаточен: предусловия указаны в нём или ссылкой на раздел выше. Команды — из корня репозитория (`/Users/macbook/Documents/Projects/Calaba`), если не сказано иное.
@@ -60,19 +74,20 @@
 
 | Адрес | Что |
 |---|---|
-| `https://app.calab.ru` | приложение (веб-клиент) и API: REST `/api/*`, gateway `wss://app.calab.ru/gateway?v=1&encoding=json`, файлы, `/healthz`, `/api/version`. `/metrics` и `/readyz` снаружи — 404. `/download/*` → 302 на `releases.calab.ru` |
-| `https://meet.gptunnel.ru` | алиас приложения: всё то же, что на `app.calab.ru` (LiveKit и TURN у алиаса общие — `rtc.`/`turn.calab.ru`) |
-| `https://calab.ru` | лендинг (статический сайт); кнопка «Скачать» → `https://app.calab.ru/download/` → `https://releases.calab.ru/` |
-| `https://releases.calab.ru` | установщики и фиды автообновления (`latest*.yml`), прокси в бакет S3; `/` — страница со списком файлов (до первого релиза — 404) |
-| `wss://rtc.calab.ru` | LiveKit signal (`https://rtc.calab.ru/` → `OK`) |
-| `turn.calab.ru:443` | TURN/TLS (TCP) — его раздают клиентам; TURN/UDP — `141.105.69.177:443/udp` |
+| `https://app.calab.io` | приложение (веб-клиент) и API: REST `/api/*`, gateway `wss://app.calab.io/gateway?v=1&encoding=json`, файлы, `/healthz`, `/api/version`. `/metrics` и `/readyz` снаружи — 404. `/download/*` → 302 на `releases.calab.io` |
+| `https://meet.gptunnel.ru` | алиас приложения: всё то же, что на `app.calab.io` (LiveKit и TURN у алиаса общие — `rtc.`/`turn.calab.io`) |
+| `https://calab.io` | лендинг (статический сайт); кнопка «Скачать» → `https://app.calab.io/download/` → `https://releases.calab.io/` |
+| `https://releases.calab.io` | установщики и фиды автообновления (`latest*.yml`), прокси в бакет S3; `/` — страница со списком файлов (до первого релиза — 404) |
+| `wss://rtc.calab.io` | LiveKit signal (`https://rtc.calab.io/` → `OK`); клиентам API пока отдаёт `wss://rtc.calab.ru` (docs/06 «Домены») |
+| `turn.calab.io:443` | TURN/TLS (TCP) — его раздают клиентам; TURN/UDP — `141.105.69.177:443/udp` |
+| `calab.ru`, `app.`, `releases.`, `rtc.`, `turn.calab.ru` | алиасы для клиентов до 2.0.0 (4.4a): `calab.ru` → 301 на `calab.io`, остальные — то же, что `.io` |
 
 Хост: `root@141.105.69.177`, код в `/opt/calaba`, секреты — `/opt/calaba/infra/docker/.env` (не печатать). Как поднят — `docs/06-deployment.md`, домены — `docs/10-branding.md`.
 
 Лендинг:
 ```sh
-for p in / /nope /download/; do curl -s -o /dev/null -w "$p %{http_code}\n" https://calab.ru$p; done   # 200, 404, 302
-curl -sI https://calab.ru/ | grep -iE 'strict-transport|content-security|cache-control'                        # HSTS, CSP лендинга, no-cache
+for p in / /nope /download/; do curl -s -o /dev/null -w "$p %{http_code}\n" https://calab.io$p; done   # 200, 404, 302
+curl -sI https://calab.io/ | grep -iE 'strict-transport|content-security|cache-control'                        # HSTS, CSP лендинга, no-cache
 ```
 
 DNS — Cloudflare, записи DNS-only (proxied=false). Если локальный VPN с fake-IP DNS «не видит» имена (NXDOMAIN-кэш до 30 мин) — `curl --resolve <имя>:443:141.105.69.177 …` или проверять с машины без VPN.
@@ -89,7 +104,7 @@ CODE=<invite из .env.accounts>
 curl -s -XPOST $A/api/auth/register -d "{\"email\":\"me@example.com\",\"password\":\"<≥8 символов>\",\"displayName\":\"Me\",\"inviteCode\":\"$CODE\"}" | jq '.me.email'
 # без inviteCode → ERROR_CODE_REGISTRATION_CLOSED 403
 ```
-В workspace `team` — по инвайту владельца (`POST /api/workspaces/{id}/invites` с токеном owner) или создать свой (`POST /api/workspaces`). В десктоп-приложении адрес сервера — `https://app.calab.ru` (или `https://meet.gptunnel.ru`).
+В workspace `team` — по инвайту владельца (`POST /api/workspaces/{id}/invites` с токеном owner) или создать свой (`POST /api/workspaces`). В десктоп-приложении адрес сервера — `https://app.calab.io` (или `https://meet.gptunnel.ru`).
 
 Сбросить данные стенда (все пользователи/сообщения/файлы!) — только по согласованию: `ssh $H "$DC exec -T postgres psql -U calaba -c 'drop schema public cascade; create schema public;' && $DC exec -T valkey sh -c 'VALKEYCLI_AUTH="$REDIS_PASSWORD" valkey-cli flushall' && $DC restart api"` (+ очистить volume `calaba_files_data`).
 
@@ -99,7 +114,7 @@ curl -s -XPOST $A/api/auth/register -d "{\"email\":\"me@example.com\",\"password
 
 **Нельзя трогать чужое на хосте:** `python` (pid 3695), `ffmpeg`, `chromium`, `Xvfb`, контейнеры `gromtv-broadcast`, `dcgm-exporter`. Не делать `docker system prune`, `docker compose down` вне `/opt/calaba/infra/docker`, `iptables -F`, рестарт Docker. Наш compose-проект называется `calaba`.
 
-Обозначения в командах разделов 3–4: `D=app.calab.ru` (для алиаса — `D=meet.gptunnel.ru`), `DOM=calab.ru` (LiveKit и TURN: `rtc.$DOM`, `turn.$DOM`), `H=root@141.105.69.177`, `DC='cd /opt/calaba/infra/docker && docker compose'`, `A=https://$D`.
+Обозначения в командах разделов 3–4: `D=app.calab.io` (для алиаса — `D=meet.gptunnel.ru`), `DOM=calab.io` (LiveKit и TURN: `rtc.$DOM`, `turn.$DOM`), `H=root@141.105.69.177`, `DC='cd /opt/calaba/infra/docker && docker compose'`, `A=https://$D`.
 
 ---
 
@@ -152,7 +167,7 @@ CALABA_WEB_URL=http://localhost:4173 pnpm -F @calaba/desktop e2e:web            
 
 Известно: Firefox не проходит ICE до LiveKit в Docker на `127.0.0.1` (локальный dev-стенд). На стенде с публичным IP это ограничение не действует.
 
-### 1.4 Стенд: `https://app.calab.ru` и `https://meet.gptunnel.ru`
+### 1.4 Стенд: `https://app.calab.io` и `https://meet.gptunnel.ru`
 После публикации `dist-web` (infra, `sync.sh`): сценарий W1–W12 и e2e ниже. Стенд в режиме приглашений: e2e входит существующим аккаунтом (`CALABA_WEB_LOGIN`/`CALABA_WEB_PASSWORD`) или регистрируется по коду (`CALABA_WEB_INVITE`) — подробно ниже.
 
 #### Статика, заголовки, e2e
@@ -160,29 +175,29 @@ CALABA_WEB_URL=http://localhost:4173 pnpm -F @calaba/desktop e2e:web            
 Публикация: `pnpm -F @calaba/desktop build:web` (→ `apps/desktop/dist-web`), затем (infra) `infra/docker/sync.sh caddy` (статика уезжает в `/opt/calaba/web` без `*.map`; `caddy` в аргументах — чтобы заодно применить правки Caddyfile, для одной статики перезапуск не нужен).
 
 ```sh
-for d in app.calab.ru meet.gptunnel.ru; do A=https://$d
+for d in app.calab.io meet.gptunnel.ru; do A=https://$d
   for p in / /rooms/x /assets/missing.js /metrics /readyz /healthz /api/me; do echo "$d$p $(curl -s -o /dev/null -w '%{http_code}' $A$p)"; done
   W=$(curl -s $A/ | grep -oE 'assets/index-[A-Za-z0-9_-]+\.js'); echo "$W: $(curl -sI $A/$W | grep -iE 'content-type|cache-control' | tr -d '\r' | tr '\n' ' ')"
 done
 curl -sI https://$D/ | grep -iE 'content-security|permissions-policy|x-content|referrer|x-frame|cache-control'
 ```
-Ожидается: `/` и `/rooms/x` → 200 (`<title>Calab`), `/assets/missing.js` → 404 (без `immutable`), `/metrics` и `/readyz` → 404, `/healthz` → 200, `/api/me` → 401; ассеты (`index-*.js`, `mic-processor.worklet-*.js`) → `text/javascript`, `public, max-age=31536000, immutable`, `content-encoding: zstd|gzip`; на `/`: `cache-control: no-cache`, CSP с `script-src 'self' 'wasm-unsafe-eval'` и `connect-src 'self' wss://rtc.calab.ru https://rtc.calab.ru wss://rtc.calab.ru https://rtc.calab.ru`, `permissions-policy: microphone=(self), display-capture=(self), speaker-selection=(self), autoplay=(self)`, `nosniff`, `same-origin`, `DENY`.
+Ожидается: `/` и `/rooms/x` → 200 (`<title>Calab`), `/assets/missing.js` → 404 (без `immutable`), `/metrics` и `/readyz` → 404, `/healthz` → 200, `/api/me` → 401; ассеты (`index-*.js`, `mic-processor.worklet-*.js`) → `text/javascript`, `public, max-age=31536000, immutable`, `content-encoding: zstd|gzip`; на `/`: `cache-control: no-cache`, CSP с `script-src 'self' 'wasm-unsafe-eval'` и `connect-src 'self' wss://rtc.calab.io https://rtc.calab.io wss://rtc.calab.io https://rtc.calab.io`, `permissions-policy: microphone=(self), display-capture=(self), speaker-selection=(self), autoplay=(self)`, `nosniff`, `same-origin`, `DENY`.
 
 E2E против стенда. С 2026-09-26 стенд в `invite`-режиме, поэтому спека умеет два пути:
 - **вход существующим аккаунтом** (предпочтительно, не тратит использования кода): `CALABA_WEB_LOGIN` + `CALABA_WEB_PASSWORD` (например `owner@calaba.test`; пароль в `/opt/calaba/infra/docker/.env.accounts` на стенде). Каждый прогон создаёт у аккаунта новое пространство `Web <browser>-<id>`;
 - **регистрация по коду**: `CALABA_WEB_INVITE=<код>` (код пространства `team` — в том же `.env.accounts`; 10 использований, каждый прогон тратит одно на браузер). Создаёт пользователя `web-<browser>-<id>@example.com`.
 ```sh
 P=$(ssh root@141.105.69.177 "awk '\$1==\"owner@calaba.test\"{print \$2}' /opt/calaba/infra/docker/.env.accounts")   # строки файла: «email пароль»
-CALABA_WEB_LOGIN=owner@calaba.test CALABA_WEB_PASSWORD="$P" CALABA_WEB_URL=https://app.calab.ru pnpm -F @calaba/desktop e2e:web   # 4 passed
-CALABA_WEB_FF_VOICE=1 CALABA_WEB_LOGIN=owner@calaba.test CALABA_WEB_PASSWORD="$P" CALABA_WEB_URL=https://app.calab.ru pnpm -F @calaba/desktop e2e:web   # 4 passed (голос и в Firefox)
+CALABA_WEB_LOGIN=owner@calaba.test CALABA_WEB_PASSWORD="$P" CALABA_WEB_URL=https://app.calab.io pnpm -F @calaba/desktop e2e:web   # 4 passed
+CALABA_WEB_FF_VOICE=1 CALABA_WEB_LOGIN=owner@calaba.test CALABA_WEB_PASSWORD="$P" CALABA_WEB_URL=https://app.calab.io pnpm -F @calaba/desktop e2e:web   # 4 passed (голос и в Firefox)
 CALABA_WEB_LOGIN=owner@calaba.test CALABA_WEB_PASSWORD="$P" CALABA_WEB_URL=https://meet.gptunnel.ru pnpm -F @calaba/desktop e2e:web   # 4 passed
 ```
 Electron-E2E так же: `CALABA_LOGIN` + `CALABA_PASSWORD` или `CALABA_INVITE`, плюс `CALABA_E2E_SERVER_URL`.
 Сервер ограничивает частоту создания пространств: три прогона подряд одним аккаунтом за минуту дают «too many requests» на шаге «Создать». Поэтому между прогонами делайте паузу ≥ 1 мин или используйте для `.ru` другой аккаунт (`bob@calaba.test`). После прогонов удалите тестовые пространства `Web …` (Настройки пространства → «Удаление» или `DELETE /api/workspaces/<id>`), чтобы не засорять стенд.
 Если падает на `cookie?.httpOnly` (`undefined`) — на стенде старый api без cookie-режима: `infra/docker/sync.sh api`.
-Если падает на `page.goto: net::ERR_TUNNEL_CONNECTION_FAILED` / `NS_ERROR_CONNECTION_REFUSED`, а `curl --resolve app.calab.ru:443:141.105.69.177 https://app.calab.ru/healthz` даёт 200 — это локальный VPN/прокси (fake-IP DNS), а не стенд. Обход — конфиг `infra/docker/tools/playwright.stand.config.ts` (все имена резолвятся в IP стенда, прокси выключен; пример запуска — в его шапке): `cd apps/desktop && CALABA_FORCE_IP=141.105.69.177 CALABA_WEB_URL=https://app.calab.ru CALABA_WEB_LOGIN=… CALABA_WEB_PASSWORD=… pnpm exec playwright test --config ../../infra/docker/tools/playwright.stand.config.ts`.
+Если падает на `page.goto: net::ERR_TUNNEL_CONNECTION_FAILED` / `NS_ERROR_CONNECTION_REFUSED`, а `curl --resolve app.calab.io:443:141.105.69.177 https://app.calab.io/healthz` даёт 200 — это локальный VPN/прокси (fake-IP DNS), а не стенд. Обход — конфиг `infra/docker/tools/playwright.stand.config.ts` (все имена резолвятся в IP стенда, прокси выключен; пример запуска — в его шапке): `cd apps/desktop && CALABA_FORCE_IP=141.105.69.177 CALABA_WEB_URL=https://app.calab.io CALABA_WEB_LOGIN=… CALABA_WEB_PASSWORD=… pnpm exec playwright test --config ../../infra/docker/tools/playwright.stand.config.ts`.
 
-CSP/RNNoise вручную: открыть `https://app.calab.ru`, войти, зайти в голосовую комнату, DevTools → Console. Не должно быть `Refused to …`/`Content Security Policy` и `RNNoise unavailable, falling back…` (это предупреждение пишется, если worklet с WASM не стартовал за 2 с). Допустимо: `Unrecognized feature: 'speaker-selection'` (Chrome), `401` на первый `/api/auth/refresh` до входа. В «Настройки → Голос и устройства» строка «Вероятность речи (RNNoise)» показывает проценты, а не «нет — RNNoise выключен».
+CSP/RNNoise вручную: открыть `https://app.calab.io`, войти, зайти в голосовую комнату, DevTools → Console. Не должно быть `Refused to …`/`Content Security Policy` и `RNNoise unavailable, falling back…` (это предупреждение пишется, если worklet с WASM не стартовал за 2 с). Допустимо: `Unrecognized feature: 'speaker-selection'` (Chrome), `401` на первый `/api/auth/refresh` до входа. В «Настройки → Голос и устройства» строка «Вероятность речи (RNNoise)» показывает проценты, а не «нет — RNNoise выключен».
 
 ---
 
@@ -190,9 +205,9 @@ CSP/RNNoise вручную: открыть `https://app.calab.ru`, войти, �
 
 Полное приложение: вход, пространства, комнаты, чат, голос, стрим, управление. Контролы описаны в `apps/desktop/README.md`. Разделы 2.2–2.10 выполнимы агентом на одном Mac, 2.11 — только для людей.
 
-### 2.1 Установка с `releases.calab.ru`
+### 2.1 Установка с `releases.calab.io`
 
-Установщики публикуются на `https://releases.calab.ru/` (страница со списком; с лендинга — кнопка «Скачать»; `https://app.calab.ru/download/` ведёт туда же). Файлы лежат в `releases/<версия>/`. Какой брать:
+Установщики публикуются на `https://releases.calab.io/` (страница со списком; с лендинга — кнопка «Скачать»; `https://app.calab.io/download/` ведёт туда же). Файлы лежат в `releases/<версия>/`. Какой брать:
 
 | ОС | Файл | Установка |
 |---|---|---|
@@ -201,11 +216,11 @@ CSP/RNNoise вручную: открыть `https://app.calab.ru`, войти, �
 | Linux x64 (любой дистрибутив) | `Calab-<версия>-x86_64.AppImage` | `chmod +x Calab-*.AppImage && ./Calab-*.AppImage` (нужен FUSE 2: Ubuntu 22.04+ — `sudo apt install libfuse2`; без него: `./Calab-*.AppImage --appimage-extract-and-run`) |
 | Debian/Ubuntu x64 | `calab_<версия>_amd64.deb` | `sudo apt install ./calab_*_amd64.deb`, запуск — «Calab» в меню или `calab` |
 
-После запуска — онбординг; в поле «Сервер» по умолчанию `https://app.calab.ru` (можно `https://meet.gptunnel.ru`), вход — аккаунтом из 0.2 или регистрация по коду приглашения.
+После запуска — онбординг; в поле «Сервер» по умолчанию `https://app.calab.io` (можно `https://meet.gptunnel.ru`), вход — аккаунтом из 0.2 или регистрация по коду приглашения.
 
-Проверка целостности (если скачано с ошибками): `latest-mac.yml` / `latest-linux.yml` / `latest.yml` в корне `https://releases.calab.ru/` содержат `sha512` (base64) и `size` каждого файла: `shasum -a 512 -b <файл> | cut -d' ' -f1 | xxd -r -p | base64` (macOS/Linux) должно совпасть.
+Проверка целостности (если скачано с ошибками): `latest-mac.yml` / `latest-linux.yml` / `latest.yml` в корне `https://releases.calab.io/` содержат `sha512` (base64) и `size` каждого файла: `shasum -a 512 -b <файл> | cut -d' ' -f1 | xxd -r -p | base64` (macOS/Linux) должно совпасть.
 
-Сборка (infra, не тестировщик): `apps/desktop/scripts/build-release.sh` — docs/06 «Релизы десктопа: сборка»; публикация — только GitHub Actions `release.yml` (push тега `v*`) → S3 → `https://releases.calab.ru/`; `/download/` на стенде — редирект туда (docs/06 «Релизы: GitHub Actions → S3», «Релиз: runbook»).
+Сборка (infra, не тестировщик): `apps/desktop/scripts/build-release.sh` — docs/06 «Релизы десктопа: сборка»; публикация — только GitHub Actions `release.yml` (push тега `v*`) → S3 → `https://releases.calab.io/`; `/download/` на стенде — редирект туда (docs/06 «Релизы: GitHub Actions → S3», «Релиз: runbook»).
 
 ### 2.2 Предусловия (локальный API)
 ```bash
@@ -218,17 +233,17 @@ cd apps/server && DATABASE_URL=postgres://calaba:calaba@localhost:55432/calaba R
   LIVEKIT_URL=ws://127.0.0.1:7880 LIVEKIT_INTERNAL_URL=http://127.0.0.1:7880 LIVEKIT_API_KEY=devkey LIVEKIT_API_SECRET=secret \
   go run ./cmd/server                                            # слушает 127.0.0.1:3000
 ```
-Порты postgres и valkey смотрите в `docker ps`: в dev-compose они проброшены как 55432 и 56379. Если стенд `https://app.calab.ru` поднят, вместо локального API используйте `CALABA_SERVER_URL=https://app.calab.ru`.
+Порты postgres и valkey смотрите в `docker ps`: в dev-compose они проброшены как 55432 и 56379. Если стенд `https://app.calab.io` поднят, вместо локального API используйте `CALABA_SERVER_URL=https://app.calab.io`.
 
 ### 2.3 Против стенда; статистика медиа
-Аккаунты `owner@calaba.test` и `bob@calaba.test`, пространство «Team». Пароль лежит на сервере: `ssh root@141.105.69.177 cat /opt/calaba/infra/docker/.env.accounts`. Не копируйте его в отчёты. LiveKit (`wss://rtc.calab.ru`) клиент получает из `/join` сам.
+Аккаунты `owner@calaba.test` и `bob@calaba.test`, пространство «Team». Пароль лежит на сервере: `ssh root@141.105.69.177 cat /opt/calaba/infra/docker/.env.accounts`. Не копируйте его в отчёты. LiveKit (`wss://rtc.calab.io`) клиент получает из `/join` сам.
 ```bash
 pnpm -F @calaba/desktop build                 # → apps/desktop/dist/mac-arm64/Calab.app (+ dmg/zip)
 APP=apps/desktop/dist/mac-arm64/Calab.app/Contents/MacOS/Calab
 # клиент А (owner, настоящие микрофон и экран):
-CALABA_SERVER_URL=https://app.calab.ru CALABA_USER_DATA=/tmp/cal-owner CALABA_MULTI_INSTANCE=1 "$APP" &
+CALABA_SERVER_URL=https://app.calab.io CALABA_USER_DATA=/tmp/cal-owner CALABA_MULTI_INSTANCE=1 "$APP" &
 # клиент Б (bob; fake-медиа, чтобы не было эха на одной машине):
-CALABA_SERVER_URL=https://app.calab.ru CALABA_USER_DATA=/tmp/cal-bob CALABA_MULTI_INSTANCE=1 CALABA_FAKE_MEDIA=1 "$APP" &
+CALABA_SERVER_URL=https://app.calab.io CALABA_USER_DATA=/tmp/cal-bob CALABA_MULTI_INSTANCE=1 CALABA_FAKE_MEDIA=1 "$APP" &
 ```
 Dev-режим тоже работает: `CALABA_SERVER_URL=… pnpm -F @calaba/desktop dev`. Но тест с заморозкой процесса (пункт 2.29) в dev не показателен: Vite перезагружает страницу, когда его HMR-сокет переподключается.
 
@@ -326,13 +341,13 @@ cd apps/desktop && ELECTRON_RENDERER_URL=http://localhost:5173 CALABA_MULTI_INST
 pnpm -F @calaba/desktop build        # → apps/desktop/dist/Calab-<ver>-arm64.dmg и -mac.zip (без подписи)
 open apps/desktop/dist/mac-arm64/Calab.app   # при первом запуске ПКМ → «Открыть» (приложение не подписано)
 ```
-Ожидается: окно входа. В поле «Сервер» надо ввести адрес (по умолчанию `https://app.calab.ru` из `.env.production`; переопределяется `MAIN_VITE_DEFAULT_SERVER_URL` при сборке). Логи пишутся в `~/Library/Application Support/Calaba/logs/main.log` (папка данных сохранила имя до переименования, docs/10). Ссылка `calab://join/<код>` (и старая `calaba://join/<код>`), открытая из браузера или через `open calab://join/<код>`, запускает Calab и показывает диалог входа в пространство.
+Ожидается: окно входа. В поле «Сервер» надо ввести адрес (по умолчанию `https://app.calab.io` из `.env.production`; переопределяется `MAIN_VITE_DEFAULT_SERVER_URL` при сборке). Логи пишутся в `~/Library/Application Support/Calaba/logs/main.log` (папка данных сохранила имя до переименования, docs/10). Ссылка `calab://join/<код>` (и старая `calaba://join/<код>`), открытая из браузера или через `open calab://join/<код>`, запускает Calab и показывает диалог входа в пространство.
 
 ### 2.8 Безопасность десктопа S.1–S.4 (ревью 2026-09-26: M2, M3, L1–L3)
 | # | Проверка | Ожидается |
 |---|---|---|
 | S.1 | Скачать вложение из чата, затем `xattr -l ~/Downloads/<файл>` | `com.apple.quarantine: 0083;…;Calab;`. Windows: у файла есть `Zone.Identifier` (ZoneId=3) — «Свойства» → «Разблокировать» |
-| S.2 | Собранное приложение, сервер `https://…` | само скачивает и ставит обновления только из фида, зашитого при сборке (`MAIN_VITE_UPDATE_FEED`, в релизе `https://releases.calab.ru/`). Фид из адреса сервера (`app.X` → `https://releases.X/`, иначе `https://<сервер>/download/`) и `CALABA_UPDATE_URL` дают только уведомление «Доступна версия X — Скачать», без загрузки. Только https. Задать адрес из интерфейса нельзя. Поведение по платформам — 2.10 |
+| S.2 | Собранное приложение, сервер `https://…` | само скачивает и ставит обновления только из фида, зашитого при сборке (`MAIN_VITE_UPDATE_FEED`, в релизе `https://releases.calab.io/`). Фид из адреса сервера (`app.X` → `https://releases.X/`, иначе `https://<сервер>/download/`) и `CALABA_UPDATE_URL` дают только уведомление «Доступна версия X — Скачать», без загрузки. Только https. Задать адрес из интерфейса нельзя. Поведение по платформам — 2.10 |
 | S.3 | DevTools renderer: `await fetch('https://example.com')` | ошибка CSP (`connect-src` ограничен сервером, его поддоменами (`rtc.`) и `calaba-api:`). Голос и gateway работают. LiveKit на другом домене → `CALABA_CSP_CONNECT="wss://… https://…"` |
 | S.4 | DevTools: `location.href = 'file:///etc/hosts'` или `<iframe src=…>` на внешний сайт | навигация заблокирована, `<webview>` не создаётся |
 
@@ -352,7 +367,7 @@ open apps/desktop/dist/mac-arm64/Calab.app   # при первом запуск�
 Логика — `apps/desktop/src/main/updateFlow.ts` (unit-тесты `updateFlow.test.ts`, `src/shared/updateFeed.test.ts` в `pnpm -F @calaba/desktop test`).
 
 Фиды:
-- **Зашитый при сборке** — `MAIN_VITE_UPDATE_FEED`. В релизе это `https://releases.calab.ru/`: `apps/desktop/.env.production`, а `build-release.sh` передаёт `UPDATE_FEED`. Только из него обновление скачивается и ставится само.
+- **Зашитый при сборке** — `MAIN_VITE_UPDATE_FEED`. В релизе это `https://releases.calab.io/`: `apps/desktop/.env.production`, а `build-release.sh` передаёт `UPDATE_FEED`. Только из него обновление скачивается и ставится само.
 - **Из адреса сервера** — `https://app.<домен>` → `https://releases.<домен>/`, любой другой адрес → `https://<сервер>/download/`. Используется, только если зашитого фида нет, и только для уведомления.
 - **`CALABA_UPDATE_URL`** при запуске заменяет фид, но тоже только для уведомления.
 
@@ -376,7 +391,7 @@ open apps/desktop/dist/mac-arm64/Calab.app   # при первом запуск�
 | U.4 | Недоступный фид (например, `CALABA_UPDATE_URL=https://releases.invalid/` при запуске) | приложение работает как обычно, никаких тостов и уведомлений; в «О программе» «Не удалось проверить обновления», в логе `[update] failed` |
 | U.5 | Windows, сборка **без** зашитого фида (`MAIN_VITE_UPDATE_FEED=` пустой при `pnpm build:app`), вход на сервер `https://app.<домен>`, в `https://releases.<домен>/` лежит 0.1.1. Затем то же со сборкой с фидом, но запуском с `CALABA_UPDATE_URL=https://releases.<домен>/` | в обоих случаях только уведомление «Доступна версия 0.1.1 — Скачать», ничего не скачивается, баннера «Перезапустить» нет. Клик открывает `https://app.<домен>/download/`, а не корень фида |
 | U.6 | Собранная версия. Выключить сеть, запустить Calab, дождаться «Не удалось проверить обновления»; подождать 10 мин, включить сеть. Отдельно: усыпить машину на ≥ 10 мин, разбудить; заблокировать/разблокировать экран | после возврата сети, пробуждения и разблокировки — проверка через ~5 с (в логе `[update] check on online` / `resume` / `unlock`, затем `checking for update`), если прошлая была ≥ 10 мин назад; чаще — нет. Во время загрузки повторных проверок нет (при готовом «Перезапустить» — есть: вдруг вышла версия новее); то же при возврате в окно (`[update] check on focus`) |
-| U.7 | **Первый реальный апдейт macOS через фид** (когда в `https://releases.calab.ru/` опубликованы 0.1.0 и 0.1.1, обе подписаны и нотаризованы). На Mac (Apple Silicon или Intel — берётся своя архитектура): `apps/desktop/scripts/update-smoke.sh` (параметры: `OLD=0.1.0 NEW=0.1.1 FEED=https://releases.calab.ru/ TIMEOUT=90`, `KEEP=1` — оставить папку с логом). Скрипт ставит старую версию во временную папку в `$TMPDIR` (не в «Программы»), запускает с отдельным профилем (`CALABA_USER_DATA`), реальный профиль и открытый Calab не трогает | по шагам `PASS`: фид объявляет 0.1.1 → DMG 0.1.0 скачан и распакован, версия 0.1.0 → `codesign` Developer ID, `spctl` «accepted, Notarized Developer ID» → старт 0.1.0 → в логе «Found version 0.1.1» → «[update] downloaded 0.1.1» и «nativeUpdater.update-downloaded» (Squirrel.Mac забрал обновление) за ≤ `TIMEOUT` с → после выхода (SIGTERM → обычный quit; сборки новее 1.5.0 передают обновление Squirrel.Mac только здесь, выход держится ≤ 20 с, в логе `[update] quit: installing` и `nativeUpdater.update-downloaded`; Squirrel.Mac ставит на выходе) `Info.plist` = 0.1.1 → перезапуск пишет «Calab 0.1.1 starting». Итог `RESULT: PASS`. При `FAIL` — лог `<work>/profile/logs/main.log` (с `KEEP=1`) и `~/Library/Caches/app.calaba.desktop.ShipIt/ShipIt_stderr.log` |
+| U.7 | **Первый реальный апдейт macOS через фид** (когда в `https://releases.calab.io/` опубликованы 0.1.0 и 0.1.1, обе подписаны и нотаризованы). На Mac (Apple Silicon или Intel — берётся своя архитектура): `apps/desktop/scripts/update-smoke.sh` (параметры: `OLD=0.1.0 NEW=0.1.1 FEED=https://releases.calab.io/ TIMEOUT=90`, `KEEP=1` — оставить папку с логом). Скрипт ставит старую версию во временную папку в `$TMPDIR` (не в «Программы»), запускает с отдельным профилем (`CALABA_USER_DATA`), реальный профиль и открытый Calab не трогает | по шагам `PASS`: фид объявляет 0.1.1 → DMG 0.1.0 скачан и распакован, версия 0.1.0 → `codesign` Developer ID, `spctl` «accepted, Notarized Developer ID» → старт 0.1.0 → в логе «Found version 0.1.1» → «[update] downloaded 0.1.1» и «nativeUpdater.update-downloaded» (Squirrel.Mac забрал обновление) за ≤ `TIMEOUT` с → после выхода (SIGTERM → обычный quit; сборки новее 1.5.0 передают обновление Squirrel.Mac только здесь, выход держится ≤ 20 с, в логе `[update] quit: installing` и `nativeUpdater.update-downloaded`; Squirrel.Mac ставит на выходе) `Info.plist` = 0.1.1 → перезапуск пишет «Calab 0.1.1 starting». Итог `RESULT: PASS`. При `FAIL` — лог `<work>/profile/logs/main.log` (с `KEEP=1`) и `~/Library/Caches/app.calaba.desktop.ShipIt/ShipIt_stderr.log` |
 | U.8 | **Расписание, звонок, баннер.** Собранная версия с зашитым фидом (Windows/AppImage/подписанный macOS), установлена 0.1.0. (1) Войти в голосовую комнату, опубликовать 0.1.1, нажать «Проверить». (2) Не выходя из голоса, дождаться загрузки. (3) Закрыть баннер ✕, подождать час (или перезапустить — баннер вернётся через ~10 с). (4) Трей → «Перезапустить для обновления 0.1.1». (5) Отдельно: выключить «Проверять обновления автоматически», перезапустить | (1) сразу «Загружается версия 0.1.1» (звонок загрузку не откладывает). (2) полоса «Доступна версия 0.1.1 — обновление уже загружено · Перезапустить и обновить» (подсказка — «…вернётесь в ту же комнату или звонок») и пункт в трее. (3) баннер скрыт до следующей проверки, затем снова виден. (4) приложение ставит 0.1.1 и перезапускается. (5) в логе нет `checking for update` ни через 10 с, ни через час; «Проверить» работает |
 | U.9 | **Обратно в комнату после обновления** (docs/09 #126). Собранная версия с зашитым фидом, обновление загружено. (1) В голосовой комнате «Переговорка», микрофон выключен, камера включена → полоса «Перезапустить и обновить». (2) То же в звонке 1:1 (собеседник остаётся). (3) Как (1), но пока идёт установка — войти в голос с телефона/веба. (4) Обычный запуск без обновления. (5) Как (1), но идёт показ экрана | (1) после перезапуска — снова в «Переговорке», микрофон выключен, камера выключена, тост «Вы снова в «Переговорке»»; в логе `[resume-voice] seat stored for the restart room …` и `resume voice after the update restart: join`. (2) снова в звонке, тост «Вы снова в звонке с …» (перезапуск дольше 30 с — звонок завершён сервером, ничего не происходит). (3) тост «Вы уже в голосе на другом устройстве», телефон остаётся в голосе. (4) никуда не подключается. (5) снова в комнате со звуком «переподключение», экран не показывается, тостов ошибок нет |
 | U.10 | **Два релиза подряд — одно обновление до новейшей** (docs/09 #125). Собранная с зашитым фидом версия N (Windows / AppImage / подписанный macOS), фид — тестовый канал стенда или локальный (`CALABA_UPDATE_URL` не подходит — только уведомление; нужна сборка с `MAIN_VITE_UPDATE_FEED=<тестовый фид>`). (1) Опубликовать N+1, дождаться полосы «Доступна версия N+1 — обновление уже загружено». (2) Опубликовать N+2; вернуться в окно через ≥ 10 мин или «Проверить» в «О программе». (3) «Перезапустить и обновить». (4) Повторить (1)–(2) с N+2 → N+3/N+4 и в шаге (3) нажать «Перезапустить», пока N+4 ещё грузится (сразу после «Проверить»). (5) Повторить (1)–(2), а вместо (3) выйти из приложения (трей → «Выход» / ⌘Q) — один раз, пока N+2 грузится, и один раз после её загрузки | (2) полоса пропадает на время загрузки, в «О программе» «Загружается версия N+2 — …», затем полоса «Доступна версия N+2». (3) один перезапуск — запущена N+2 («О программе»), полосы нет, повторного обновления после старта нет. (4) полоса показывает прогресс N+4, после загрузки — сам перезапуск в N+4 (не в N+3). (5) выход во время загрузки: ничего не ставится, следующий запуск скачивает новейшую и после «Перезапустить» стоит она; выход после загрузки: следующий запуск — сразу N+2. Лог: `[update] feed has N+2 newer than the pending N+1 — replacing it`, `[update] downloaded N+2`, `[update] quit and install N+2`; macOS — `[update] staging N+2` и `nativeUpdater.update-downloaded` только после «Перезапустить»/выхода |
@@ -845,10 +860,10 @@ docker rm -f calaba-hc
 ### 3.3 Сценарии API против стенда (HTTPS)
 
 Разделы 3.1 (шаг 4) и 3.2 (шаг 2) выполняются против стенда как есть, с заменами:
-- `A=https://app.calab.ru`; сервер запускать не нужно; `/readyz` (4.1) — только на хосте: `ssh $H 'curl -s 127.0.0.1:3000/readyz'`; `/metrics` — только на хосте: `ssh $H 'curl -s 127.0.0.1:3000/metrics | grep -c ^calaba_'`.
+- `A=https://app.calab.io`; сервер запускать не нужно; `/readyz` (4.1) — только на хосте: `ssh $H 'curl -s 127.0.0.1:3000/readyz'`; `/metrics` — только на хосте: `ssh $H 'curl -s 127.0.0.1:3000/metrics | grep -c ^calaba_'`.
 - БД стенда не пустая, регистрация по инвайтам: регистрировать новых пользователей с `inviteCode` (инвайт владельца — в `.env.accounts`, или создать свой в своём пространстве); шаг «второй пользователь без инвайта → 403» совпадает. Email-ы брать новые (`…@calaba.test` заняты), slug workspace — новый (`team` занят → ожидаемый `409` на первом же создании).
 - gateway: `A=$A node /tmp/gw.mjs $BT 4` (скрипт сам меняет `https` → `wss`).
-- 2.6: `url` в ответе join — `wss://rtc.calab.ru`, `media` — по настройкам комнаты.
+- 2.6: `url` в ответе join — `wss://rtc.calab.ru` (`LIVEKIT_URL`, docs/06 «Домены»), `media` — по настройкам комнаты.
 - 4.7 (rate limit) — последним: после него логин с этого IP ~1 мин отвечает 429. Подмена `X-Forwarded-For` не помогает (Caddy перезаписывает заголовок, api видит реальный IP).
 
 Факт 2026-09-25 (все шаги PASS): 4.1–4.8 — ответы и коды как в 3.1; 2.1 HELLO(41000) → READY seq 1 → presenceUpdate → один messageCreate, повтор nonce → 200; 2.2 RESUME → `while away` seq 4, `{"resumed":{"replayed":1}}`; 2.3 INVALID_SESSION `resumable:false`; 2.4 `{"n":2,"first":"m3","hasMore":true}`; 2.5 upload 201, Range `hello 206`, `304`, 60 MB → 413, 20 MB upload через VPN ~1.5 с; 2.6 join → токен, webhook без подписи 401, voice/self до подключения 409.
@@ -1245,30 +1260,41 @@ curl -sI http://$D | head -3                             # HTTP/1.1 308 → http
 curl -sI https://rtc.$DOM | grep -i alt-svc               # пусто (HTTP/3 выключен, UDP 443 — TURN)
 openssl s_client -connect turn.$DOM:443 -servername turn.$DOM </dev/null 2>/dev/null \
   | grep -E 'subject=|issuer=|Verify return'
-# subject=CN=turn.calab.ru / issuer=… Let's Encrypt … / Verify return code: 0 (ok)
-# все имена: приложение и алиас; LiveKit и TURN — только на calab.ru
-for d in app.calab.ru meet.gptunnel.ru; do
+# subject=CN=turn.calab.io / issuer=… Let's Encrypt … / Verify return code: 0 (ok)
+# все имена: приложение и алиасы; LiveKit и TURN — на calab.io и calab.ru
+for d in app.calab.io app.calab.ru meet.gptunnel.ru; do
   echo "$d healthz=$(curl -s -o /dev/null -w %{http_code} https://$d/healthz) metrics=$(curl -s -o /dev/null -w %{http_code} https://$d/metrics) readyz=$(curl -s -o /dev/null -w %{http_code} https://$d/readyz)"
 done
 echo "rtc=$(curl -s https://rtc.$DOM/) turn=$(openssl s_client -connect turn.$DOM:443 -servername turn.$DOM </dev/null 2>/dev/null | grep -c 'Verify return code: 0')"
 # ожидается: для каждого healthz=200 metrics=404 readyz=404; rtc=OK turn=1
-ssh $H "$DC logs caddy | grep 'certificate obtained' | grep -o 'identifier\":\"[^\"]*' | sort -u"   # calab.ru, app., rtc., turn., releases., meet.gptunnel.ru (только при первом выпуске; позже — openssl s_client выше)
+ssh $H "$DC logs caddy | grep 'certificate obtained' | grep -o 'identifier\":\"[^\"]*' | sort -u"   # calab.io, app., rtc., turn., releases., meet.gptunnel.ru (только при первом выпуске; позже — openssl s_client выше)
 ```
 `curl https://turn.$DOM` **висит** — это нормально: SNI `turn.*` уходит в layer4 → TURN, HTTP там никто не отвечает.
 
-### 4.4 `/download/` и `releases.calab.ru`
+### 4.4 `/download/` и `releases.calab.io`
 
 ```sh
-for h in app.calab.ru calab.ru meet.gptunnel.ru; do curl -s -o /dev/null -w "$h %{http_code} %{redirect_url}\n" https://$h/download/latest.yml; done
-                                                                                   # у всех: 302 https://releases.calab.ru/latest.yml
-curl -s -o /dev/null -w '%{http_code} %{content_type}\n' https://releases.calab.ru/  # 200 text/html (список файлов); до первой публикации — 404
-curl -sI https://releases.calab.ru/latest.yml | grep -iE '^HTTP|cache-control'      # 200, no-cache (после публикации релиза; до неё — 404)
-curl -s https://releases.calab.ru/latest-mac.yml | grep -E 'url:|path:' | head -3  # пути вида releases/<версия>/Calab-…
-curl -sI https://releases.calab.ru/releases/<версия>/<установщик> | grep -iE '^HTTP|cache-control'   # 200, immutable
-curl -s -o /dev/null -w '%{http_code}\n' -H 'Range: bytes=0-99' https://releases.calab.ru/releases/<версия>/<установщик>   # 206
-curl -sI https://app.calab.ru/manifest.webmanifest | grep -i content-type          # application/manifest+json
+for h in app.calab.io calab.io meet.gptunnel.ru; do curl -s -o /dev/null -w "$h %{http_code} %{redirect_url}\n" https://$h/download/latest.yml; done
+                                                                                   # у всех: 302 https://releases.calab.io/latest.yml
+curl -s -o /dev/null -w '%{http_code} %{content_type}\n' https://releases.calab.io/  # 200 text/html (список файлов); до первой публикации — 404
+curl -sI https://releases.calab.io/latest.yml | grep -iE '^HTTP|cache-control'      # 200, no-cache (после публикации релиза; до неё — 404)
+curl -s https://releases.calab.io/latest-mac.yml | grep -E 'url:|path:' | head -3  # пути вида releases/<версия>/Calab-…
+curl -sI https://releases.calab.io/releases/<версия>/<установщик> | grep -iE '^HTTP|cache-control'   # 200, immutable
+curl -s -o /dev/null -w '%{http_code}\n' -H 'Range: bytes=0-99' https://releases.calab.io/releases/<версия>/<установщик>   # 206
+curl -sI https://app.calab.io/manifest.webmanifest | grep -i content-type          # application/manifest+json
 ```
 Публикация — только GitHub Actions `release.yml` (push тега `v*`) → S3; фиды и `index.html` загружаются последними. Стенд лишь перенаправляет `/download/` (docs/06 «Релизы: GitHub Actions → S3»).
+
+### 4.4a Алиасы `calab.ru` (клиенты до 2.0.0, docs/06 «Домены»)
+
+```sh
+curl -s -o /dev/null -w '%{http_code} %{redirect_url}\n' https://calab.ru/en/       # 301 https://calab.io/en/
+for y in latest.yml latest-mac.yml latest-linux.yml; do
+  cmp <(curl -s https://releases.calab.io/$y) <(curl -s https://releases.calab.ru/$y) && echo "$y same"; done   # same ×3
+curl -s https://releases.calab.ru/latest-mac.yml | grep -cE '(url|path): *https?:'  # 0 (только относительные пути)
+for h in app.calab.ru/healthz rtc.calab.ru/ rtc.calab.io/; do curl -s -o /dev/null -w "$h %{http_code}\n" https://$h; done   # 200 ×3 (rtc: OK от LiveKit)
+```
+Десктоп 1.x с сервером `https://app.calab.ru`: обновляется до 2.0.0 и **остаётся** на `app.calab.ru` (без выхода из аккаунта, «Настройки → Сервер» не изменился); голос подключается (DevTools: нет `Refused to connect`). Чистая установка 2.0.0: сервер по умолчанию `https://app.calab.io`, голос подключается.
 
 ### 4.5 LiveKit
 
@@ -1324,7 +1350,7 @@ lk room delete loadtest
 Как в 4.6, но токен — `lk token create --join --room loadtest --identity relay-check --valid-for 1h | grep -oE 'eyJ[A-Za-z0-9._-]+'` (или из API join), источник медиа — `lk load-test --room loadtest --audio-publishers 1 --video-publishers 1 --subscribers 0 --duration 5m &`, и `mode=tls` / `mode=udp`.
 
 Ожидается через ~30 с:
-- `mode=tls`: `setConfiguration iceServers: [["turns:turn.calab.ru:443?transport=tcp"]]`, `PASS [{"local":"relay",…,"relayProtocol":"tls",…,"bytesIn":<растёт>}]`; на сервере `ss -tn '( dport = :5349 )'` — соединения `127.0.0.1:* → 127.0.0.1:5349` (Caddy layer4 → LiveKit TURN).
+- `mode=tls`: `setConfiguration iceServers: [["turns:turn.calab.io:443?transport=tcp"]]`, `PASS [{"local":"relay",…,"relayProtocol":"tls",…,"bytesIn":<растёт>}]`; на сервере `ss -tn '( dport = :5349 )'` — соединения `127.0.0.1:* → 127.0.0.1:5349` (Caddy layer4 → LiveKit TURN).
 - `mode=udp`: `turn:141.105.69.177:443?transport=udp`, `PASS [{"local":"relay",…,"relayProtocol":"udp",…}]`.
 - `mode=any`: `"local":"host"|"srflx"|"prflx","protocol":"udp"`, remote `141.105.69.177:7882/udp`.
 
@@ -1394,7 +1420,7 @@ ssh $H 'systemctl start calaba-backup.service'                  # внеочер
 
 <details><summary>Веб на стенде, 2026-09-26 (обход VPN для `.ai`)</summary>
 
-Если падает на `page.goto: net::ERR_TUNNEL_CONNECTION_FAILED` / `NS_ERROR_CONNECTION_REFUSED`, а `curl --resolve app.calab.ru:443:141.105.69.177 https://colaba.gptunnel.ai/readyz` даёт 200 — это локальный VPN/прокси (fake-IP DNS, особые правила для `gptunnel.ai`), а не стенд. Обход для прогона: Chromium — `--host-resolver-rules=MAP colaba.gptunnel.ai 141.105.69.177 --proxy-server=direct://`, Firefox — prefs `network.proxy.type=0`, `network.dns.forceResolve=141.105.69.177` (через локальный playwright-конфиг, не в репо). Факт 2026-09-26: так `e2e:web` на `.ai` — 2 passed (Firefox с `CALABA_WEB_FF_VOICE=1`), на `.ru` — 2 passed без обхода.
+Если падает на `page.goto: net::ERR_TUNNEL_CONNECTION_FAILED` / `NS_ERROR_CONNECTION_REFUSED`, а `curl --resolve app.calab.io:443:141.105.69.177 https://colaba.gptunnel.ai/readyz` даёт 200 — это локальный VPN/прокси (fake-IP DNS, особые правила для `gptunnel.ai`), а не стенд. Обход для прогона: Chromium — `--host-resolver-rules=MAP colaba.gptunnel.ai 141.105.69.177 --proxy-server=direct://`, Firefox — prefs `network.proxy.type=0`, `network.dns.forceResolve=141.105.69.177` (через локальный playwright-конфиг, не в репо). Факт 2026-09-26: так `e2e:web` на `.ai` — 2 passed (Firefox с `CALABA_WEB_FF_VOICE=1`), на `.ru` — 2 passed без обхода.
 
 </details>
 
@@ -1406,7 +1432,7 @@ ssh $H 'systemctl start calaba-backup.service'                  # внеочер
 
 <details><summary>Установка до 2026-09-26 (`/download/` на стенде, mac без подписи)</summary>
 
-Сборки публикуются на `https://app.calab.ru/download/` (листинг каталога; то же на `.ru`). Какой файл брать:
+Сборки публикуются на `https://app.calab.io/download/` (листинг каталога; то же на `.ru`). Какой файл брать:
 
 | ОС | Файл | Установка |
 |---|---|---|
@@ -1415,11 +1441,11 @@ ssh $H 'systemctl start calaba-backup.service'                  # внеочер
 | Linux x64 (любой дистрибутив) | `Calab-<версия>-x86_64.AppImage` | `chmod +x Calab-*.AppImage && ./Calab-*.AppImage` (нужен FUSE 2: Ubuntu 22.04+ — `sudo apt install libfuse2`; без него: `./Calab-*.AppImage --appimage-extract-and-run`) |
 | Debian/Ubuntu x64 | `calab_<версия>_amd64.deb` | `sudo apt install ./calab_*_amd64.deb`, запуск — «Calab» в меню или `calab` |
 
-После запуска — в поле «Сервер» ввести `https://app.calab.ru` (или `.ru`), войти (регистрация — по коду приглашения, см. 0.2).
+После запуска — в поле «Сервер» ввести `https://app.calab.io` (или `.ru`), войти (регистрация — по коду приглашения, см. 0.2).
 
 Проверка целостности (если скачано с ошибками): `latest-mac.yml` / `latest-linux.yml` / `latest.yml` рядом содержат `sha512` (base64) и `size` каждого файла: `shasum -a 512 -b <файл> | cut -d' ' -f1 | xxd -r -p | base64` (macOS/Linux) должно совпасть.
 
-Сборка (infra, не тестировщик): `apps/desktop/scripts/build-release.sh` — docs/06 «Релизы десктопа: сборка»; публикация — только GitHub Actions `release.yml` (push тега `v*`) → S3 → `https://releases.calab.ru/`; `/download/` на стенде — редирект туда (docs/06 «Релизы: GitHub Actions → S3», «Релиз: runbook»).
+Сборка (infra, не тестировщик): `apps/desktop/scripts/build-release.sh` — docs/06 «Релизы десктопа: сборка»; публикация — только GitHub Actions `release.yml` (push тега `v*`) → S3 → `https://releases.calab.io/`; `/download/` на стенде — редирект туда (docs/06 «Релизы: GitHub Actions → S3», «Релиз: runbook»).
 
 </details>
 
@@ -1487,7 +1513,7 @@ go test -race -tags integration -count=1 -v -run TestMoveAppLevel ./internal/app
 Сценарии H.1–H.6 независимы, выполнять можно в любом порядке.
 
 **Где что брать:**
-- Веб — `https://app.calab.ru`, аккаунт из раздела 0.2.
+- Веб — `https://app.calab.io`, аккаунт из раздела 0.2.
 - Десктоп — собранное приложение (раздел 2.1) или dev-сборка (2.2/2.6).
 - Лог десктопа — `<профиль>/logs/main.log`. Лог веба — консоль DevTools, строки `[gateway] …`.
 
@@ -1529,11 +1555,11 @@ cd apps/server && go build -o /tmp/calaba-api ./cmd/server
 
 | # | Действие | Ожидается |
 |---|---|---|
-| H.2.1 | Посмотреть на поле | Подпись поля «Ссылка или код приглашения». Плейсхолдер строится от адреса сервера: на вебе `https://app.calab.ru/join/AbC123xYz` (адрес текущей страницы), на десктопе — адрес сервера, куда выполнен вход (например, `http://localhost:3000/join/AbC123xYz`) |
+| H.2.1 | Посмотреть на поле | Подпись поля «Ссылка или код приглашения». Плейсхолдер строится от адреса сервера: на вебе `https://app.calab.io/join/AbC123xYz` (адрес текущей страницы), на десктопе — адрес сервера, куда выполнен вход (например, `http://localhost:3000/join/AbC123xYz`) |
 | H.2.2 | Ввести `abc`, затем `https://example.com/foo` | Кнопка «Присоединиться» неактивна, Enter ничего не делает, превью нет |
 | H.2.3 | Ввести `AbC123xYz` (правильная форма, но такого приглашения нет) | «Приглашение не найдено или истекло». Кнопка неактивна, Enter ничего не делает |
-| H.2.4 | Создать приглашение (меню пространства → «Пригласить людей» → «Создать приглашение»). Вставить его ссылку `https://app.calab.ru/join/<код>` вторым аккаунтом. Затем то же с голым `<код>` и с `calab://join/<код>` | Во всех трёх случаях появляется превью с названием пространства, кнопка активна. Enter или кнопка — вход в пространство, диалог закрывается |
-| H.2.5 | Вставить ссылку на комнату `https://app.calab.ru/r/<код>` | Превью комнаты, как до 0.1.1 (регрессии нет) |
+| H.2.4 | Создать приглашение (меню пространства → «Пригласить людей» → «Создать приглашение»). Вставить его ссылку `https://app.calab.io/join/<код>` вторым аккаунтом. Затем то же с голым `<код>` и с `calab://join/<код>` | Во всех трёх случаях появляется превью с названием пространства, кнопка активна. Enter или кнопка — вход в пространство, диалог закрывается |
+| H.2.5 | Вставить ссылку на комнату `https://app.calab.io/r/<код>` | Превью комнаты, как до 0.1.1 (регрессии нет) |
 | H.2.6 | Сервер без открытых пространств | Ни заголовка «Открытые пространства», ни текста «Открытых пространств нет», ни спиннера под полем |
 | H.2.7 | В настройках своего пространства поставить «Доступ» → «Открытое», открыть диалог вторым аккаунтом | Заголовок «Открытые пространства» и список с этим пространством |
 
@@ -1640,7 +1666,7 @@ kill %1
 ```
 Против стенда (A — администратор своего пространства «E2E web», B — второй аккаунт; идемпотентно, повторные прогоны ничего не создают):
 ```sh
-cd apps/desktop && CALABA_FORCE_IP=141.105.69.177 CALABA_WEB_URL=https://app.calab.ru \
+cd apps/desktop && CALABA_FORCE_IP=141.105.69.177 CALABA_WEB_URL=https://app.calab.io \
   CALABA_WEB_LOGIN=… CALABA_WEB_PASSWORD=… CALABA_WEB_LOGIN2=… CALABA_WEB_PASSWORD2=… \
   pnpm exec playwright test --config ../../infra/docker/tools/playwright.stand.config.ts move --project chromium
 ```
@@ -1840,7 +1866,7 @@ CALABA_WEB_URL=http://127.0.0.1:39571 npx playwright test --config playwright.we
 2. 5 неверных кодов → `CODE_INVALID` ×4, затем `CODE_EXPIRED`; `verify/send` раньше 60 с → 429.
 3. `password/forgot` (свой и чужой адрес) → 200 оба (`similar_account` только для того же логина на другом домене, docs/09 #137), письмо только своему; `password/reset` → 204, все устройства разлогинены, вход с новым паролем.
 4. `invites/lookup` своего участника → `member: true`; неизвестного → `{}`; `invites/email` → письмо со ссылкой `/join/<code>`, шагами и кодом текстом; регистрация по ней → код подтверждения → в пространстве (ADR-0027); повтор приглашения < 24 ч → 429.
-5. Письма: светлая/тёмная тема клиента, подвал «Powered by GPTunneL · calab.ru».
+5. Письма: светлая/тёмная тема клиента, подвал «Powered by GPTunneL · calab.io».
 
 ## Client: почта (ADR-0023, ветка `feat/email-client`)
 Авто: `pnpm -F @calaba/desktop test` (emailCode, reset, emailLookup), `pnpm -F @calaba/desktop exec vitest run --config e2e-support/vitest.config.ts` (describe «email»), снимки `e2e:visual -g "verify-banner|invite-email|auth-forgot|web join card"`. Код в моке — всегда `123456`.
@@ -2039,3 +2065,24 @@ CALABA_WEB_URL=http://127.0.0.1:39571 npx playwright test --config playwright.we
 7. Инвайт: `curl -X POST $CALAB/api/workspaces/$WS/invites -H "Authorization: Bearer $TOKEN" -H 'Content-Type: application/json' -d '{"maxUses":1}'` → 201 с `code`; ссылка `/join/<code>` пускает нового человека. Снять у роли `INVITE_MEMBERS` → тот же запрос 403 (не `BOT_NOT_ALLOWED`).
 8. `GET …/freebusy?users=$BOB&from=…&to=…` → 200, в `busy` нет `title`; `POST …/invites/lookup` → 403 `BOT_NOT_ALLOWED`.
 9. В логе сервера на шаги 3–5 и 7 — строки `bot action` с `bot_id` и `bot_owner`.
+
+
+### Identity 2.0: совместимость локальных событий и чтения
+
+- Go 1.26.8: gateway race units проверяют собственный receipt без membership, A/B isolation, версии/expiry, final socket/replay и bounded cold preparation с resync при overload.
+- На отдельной PG18 БД/Redis выполнить App race с фильтром `TestIdentityCompatibility.*|TestIdentityFileReferences.*|TestForwardMessages|TestIdentityProfileImagesRequireCurrentScopedMembership`.
+- READY сохраняет все 258 разрешённых memberships; удалённые memberships и истёкшие receipts удаляются из lease state.
+- Operator-off local reauth принимает только local bearer/password и точный непустой trusted Origin, сохраняет limiter; bot/scoped/recovery запрещены, SSO остаётся 503.
+- Архивная временная комната: разрешённая history читается, POST/voice дают ROOM_ARCHIVED; существующий message-edit handler сохраняет 404. Permanent archive, B и recovery не открываются.
+- Invite preview учитывает неизвестные коды и не списывает успешный preview дважды; GET/HEAD file/thumbnail используют каждую разрешённую live reference через WithPolicy/CanRead.
+
+- Suspended workspace: `TestWorkspaceSuspension|TestIdentitySuspensionLocalReadIsolation|TestGatewayFlow` (PG18 race) сохраняют local off/optional history/member/READY; проверяют scoped/recovery/enforced/ACL/directory-denials и запрет TYPING при receive lease (ADR-0056).
+
+### Built-in Calab Stikers (ADR-0057)
+
+- `go test ./internal/builtinstickers ./internal/stickers ./internal/pbconv ./internal/messages` in `apps/server`: embedded WebP validation and public allowlist/cache.
+- PG17 + Valkey 9/Redis 7.4: `go test -tags integration -run 'Test(BuiltinStickers|Sticker)' ./internal/app` with isolated TEST_PG_URL / TEST_REDIS_URL.
+- Desktop Vitest: `src/renderer/lib/{stickers,builtinStickers,stickerSuggest}.test.ts`; build:web + build:app include the same 16 assets.
+- Manual: fresh account → stickers → Calab Stikers; emoji search, send to room and DM, reload history, view pack, check fixed built-in label in My stickers.
+- Guest with SEND_MESSAGES: send and forward succeed; without SEND_MESSAGES: send rejected. Free workspace: custom pack allowance unchanged.
+- Unknown asset ID: 404; public built-in route never serves uploads.

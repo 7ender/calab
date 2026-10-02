@@ -180,7 +180,7 @@ func Observe(next http.Handler) http.Handler {
 			level = slog.LevelError
 		}
 		slog.Log(r.Context(), level, "http",
-			"method", r.Method, "path", r.URL.Path, "route", route, "status", sw.status,
+			"method", r.Method, "path", safeLogPath(r), "route", route, "status", sw.status,
 			"bytes", sw.bytes, "dur_ms", float64(d.Microseconds())/1000,
 			"ip", ClientIP(r.Context()), "request_id", RequestID(r.Context()))
 	})

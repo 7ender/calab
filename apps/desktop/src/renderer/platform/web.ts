@@ -1,3 +1,18 @@
+import { consentReturnPath } from '../../shared/ssoReturn';
+import { create, fromJson, toJson, type JsonValue } from '@bufbuild/protobuf';
+import { timestampDate } from '@bufbuild/protobuf/wkt';
+import {
+  SSOBeginRequestSchema,
+  SSOBeginResponseSchema,
+  SSOFinishRequestSchema,
+  SSOCompleteResponseSchema,
+  SSOClientKind,
+  SSOFlowPurpose,
+  SessionAuthoritySchema,
+  SessionAuthorityKind,
+  IdentityRecoverRequestSchema,
+} from '@calaba/protocol';
+import type { SsoStart, SsoResult } from '../../shared/ipc';
 import type {
   ApiErrorJson,
   AppInfo,
@@ -29,6 +44,10 @@ import type { GuestJoin, Platform } from './types';
  *   a rotation (reuse detection would revoke the session).
  */
 
+const ssoStorage = typeof sessionStorage === 'undefined' ? null : sessionStorage;
+let recovery: { workspaceId: string; token: string; expiresAt: number } | null = null;
+let ssoGeneration = 0;
+let scopedWorkspace = ssoStorage?.getItem('calab-sso-workspace') ?? '';
 const WEB_HEADER = { 'X-Client': 'web' } as const;
 const REFRESH_MARGIN_MS = 60_000;
 
@@ -54,8 +73,12 @@ function applyTokens(t: TokensJson): void {
 /** Bumped on every sign-out: a refresh answer that arrives later must not resurrect it. */
 let epoch = 0;
 
-function clear(reason: LogoutReason | null): void {
+function clear(reason: LogoutReason | null, preserveFlow = false): void {
   epoch++;
+  recovery = null;
+  scopedWorkspace = '';
+  ssoStorage?.removeItem('calab-sso-workspace');
+  if (!preserveFlow) ssoStorage?.removeItem('calab-sso-flow');
   access = null;
   bodyRefresh = null;
   refreshes.reset();
@@ -99,7 +122,10 @@ async function doRefresh(): Promise<string | null> {
   const started = epoch;
   const run = async (attempt = 0): Promise<string | null> => {
     try {
-      const res = await postAuth('/api/auth/refresh', bodyRefresh ? { refreshToken: bodyRefresh } : {});
+      const res = await postAuth(
+        scopedWorkspace ? `/api/auth/sso/workspaces/${encodeURIComponent(scopedWorkspace)}/refresh` : '/api/auth/refresh',
+        bodyRefresh ? { refreshToken: bodyRefresh } : {},
+      );
       if (started !== epoch) return null; // signed out meanwhile
       // 409 = another tab rotated the cookie a moment ago: the cookie already holds the new token.
       if (res.status === 409 && attempt < REFRESH_CONFLICT_RETRIES) {
@@ -119,7 +145,7 @@ async function doRefresh(): Promise<string | null> {
           const body = (await res.json().catch(() => ({}))) as { code?: string; reason?: string };
           reason = logoutReasonFromRefresh(body.code, body.reason);
         }
-        clear(hadSession ? reason : null);
+        clear(hadSession ? reason : null, !hadSession && location.pathname === '/sso/complete');
         return null;
       }
       return null; // 5xx / rate limit: keep the session, retry later
@@ -148,11 +174,15 @@ function deviceName(): string {
 }
 
 async function authenticate(path: string, body: Record<string, unknown>): Promise<IpcResult<AuthSession>> {
+  const started = ++epoch;
+  ssoStorage?.removeItem('calab-sso-flow');
   try {
     const res = await postAuth(path, { ...body, deviceName: deviceName() });
     if (!res.ok) return { ok: false, error: await readError(res) };
     const data = (await res.json()) as { tokens?: TokensJson; me: unknown; similarAccount?: boolean };
     if (!data.tokens) return { ok: false, error: noSession(data.similarAccount, res.status) };
+    if (started !== epoch) throw new Error('Account changed');
+    clear(null);
     applyTokens(data.tokens);
     return { ok: true, data: { serverUrl: location.origin, sessionId: data.tokens.sessionId, me: data.me } };
   } catch (e) {
@@ -162,11 +192,16 @@ async function authenticate(path: string, body: Record<string, unknown>): Promis
 
 /** Guest account from a room link (ADR-0016): the server sets the refresh cookie like on login. */
 async function guestJoin(code: string, nickname: string): Promise<IpcResult<GuestJoin>> {
+  const started = ++epoch; ++ssoGeneration;
+  ssoStorage?.removeItem('calab-sso-flow');
   try {
     const res = await postAuth(`/api/room-invites/${encodeURIComponent(code)}/join`, { nickname, deviceName: deviceName() });
     if (!res.ok) return { ok: false, error: await readError(res) };
     const data = (await res.json()) as { roomId: string; workspaceId: string; tokens?: TokensJson; me?: unknown; admission?: unknown };
-    if (!data.tokens) return { ok: false, error: { code: 'ERROR_CODE_INTERNAL', message: 'no guest session in the response', status: res.status } };
+    if (!data.tokens)
+      return { ok: false, error: { code: 'ERROR_CODE_INTERNAL', message: 'no guest session in the response', status: res.status } };
+    if (started !== epoch) throw new Error('Account changed');
+    clear(null);
     applyTokens(data.tokens);
     return {
       ok: true,
@@ -188,10 +223,14 @@ async function apiFetch(path: string, init: RequestInit = {}): Promise<Response>
     if (token) headers.set('Authorization', `Bearer ${token}`);
     return fetch(path, { ...init, headers, credentials: 'same-origin' });
   };
-  let res = await go(await accessToken());
+  const recoveryToken =
+    recovery && recovery.expiresAt > Date.now() && path === `/api/workspaces/${encodeURIComponent(recovery.workspaceId)}/identity/policy`
+      ? recovery.token
+      : null;
+  let res = await go(recoveryToken ?? (await accessToken()));
   // Retry once after a forced refresh if the body can be replayed (not a stream).
   const replayable = init.body === undefined || init.body === null || typeof init.body === 'string';
-  if (res.status === 401 && replayable && access) {
+  if (res.status === 401 && replayable && access && !recoveryToken) {
     const t = await refreshOnce();
     if (t) res = await go(t);
   }
@@ -212,6 +251,7 @@ interface MediaEntry {
   objectUrl: string | null;
   bytes: number;
   evicted: boolean;
+  protectedEviction?: boolean;
 }
 const MEDIA_MAX_ENTRIES = 300;
 const MEDIA_MAX_BYTES = 150 * 1024 * 1024;
@@ -239,7 +279,10 @@ function trimMedia(): void {
 }
 
 function clearMediaCache(): void {
-  for (const [path, e] of [...mediaCache]) evictMedia(path, e, 0);
+  for (const [path, e] of [...mediaCache]) {
+    e.protectedEviction = true;
+    evictMedia(path, e, 0);
+  }
   mediaBytes = 0;
 }
 
@@ -256,7 +299,10 @@ function mediaUrl(path: string): Promise<string> {
     const blob = await res.blob();
     const u = URL.createObjectURL(blob);
     if (e.evicted) {
-      // Evicted (or signed out) while loading: the caller still gets a URL for a moment.
+      if (e.protectedEviction) {
+        URL.revokeObjectURL(u);
+        throw new Error('Protected media evicted');
+      }
       window.setTimeout(() => URL.revokeObjectURL(u), MEDIA_REVOKE_GRACE_MS);
       return u;
     }
@@ -424,9 +470,51 @@ export function createWebPlatform(): Platform {
     mediaUrl,
     directMedia: false,
     guestJoin,
+    clearProtectedMedia: clearMediaCache,
+    finishSso: finishWebSso,
     auth: {
+      clearProtectedCache: () => {
+        clearMediaCache();
+        return Promise.resolve();
+      },
+      recover: async (workspaceId, code) => {
+        const started = epoch;
+        try {
+          if (scopedWorkspace) throw new Error('Local sign-in required');
+          const token = await accessToken();
+          const res = await postAuth(
+            `/api/auth/sso/workspaces/${encodeURIComponent(workspaceId)}/recover`,
+            toJson(IdentityRecoverRequestSchema, create(IdentityRecoverRequestSchema, { recoveryCode: code })),
+            token ?? undefined,
+          );
+          if (!res.ok) return { ok: false, error: await readError(res) };
+          const result = fromJson(SSOCompleteResponseSchema, (await res.json()) as JsonValue);
+          const t = result.tokens;
+          if (
+            started !== epoch ||
+            !t?.accessExpiresAt ||
+            t.authority?.kind !== SessionAuthorityKind.RECOVERY ||
+            t.authority.workspaceId !== workspaceId
+          )
+            throw new Error('Invalid recovery authority');
+          const expiresAt = timestampDate(t.accessExpiresAt).getTime();
+          recovery = { workspaceId, token: t.accessToken, expiresAt };
+          return { ok: true, data: { expiresAt } };
+        } catch {
+          return { ok: false, error: { code: 'ERROR_CODE_UNAVAILABLE', message: 'Recovery unavailable', status: 0 } };
+        }
+      },
+      ssoBegin: beginWebSso,
+      ssoCancel: () => {
+        ++ssoGeneration;
+        ssoStorage?.removeItem('calab-sso-flow');
+        return Promise.resolve();
+      },
+      onSsoResult: () => () => undefined,
       restore: async () => {
+        const started = epoch;
         const t = await refreshOnce();
+        if (started !== epoch) return null;
         if (!t) {
           if (!navigator.onLine) throw new Error('offline');
           return null;
@@ -434,7 +522,20 @@ export function createWebPlatform(): Platform {
         const res = await apiFetch('/api/me');
         if (!res.ok) return null;
         const body = (await res.json()) as { me: unknown };
-        return { serverUrl: location.origin, sessionId: access?.sessionId ?? '', me: body.me };
+        if (started !== epoch) return null;
+        return {
+          serverUrl: location.origin,
+          sessionId: access?.sessionId ?? '',
+          me: body.me,
+          ...(scopedWorkspace
+            ? {
+                authority: toJson(
+                  SessionAuthoritySchema,
+                  create(SessionAuthoritySchema, { kind: SessionAuthorityKind.WORKSPACE_SSO, workspaceId: scopedWorkspace }),
+                ),
+              }
+            : {}),
+        };
       },
       login: (a: LoginArgs) => authenticate('/api/auth/login', { email: a.email, password: a.password }),
       register: (a: RegisterArgs) =>
@@ -448,13 +549,19 @@ export function createWebPlatform(): Platform {
         }),
       guestJoin,
       logout: async (allSessions) => {
+        const started = ++epoch; ++ssoGeneration;
+        ssoStorage?.removeItem('calab-sso-flow');
         const t = access?.token;
         try {
-          await postAuth('/api/auth/logout', { allSessions, ...(bodyRefresh ? { refreshToken: bodyRefresh } : {}) }, t);
+          await postAuth(
+            scopedWorkspace ? `/api/auth/sso/workspaces/${encodeURIComponent(scopedWorkspace)}/logout` : '/api/auth/logout',
+            { allSessions, ...(bodyRefresh ? { refreshToken: bodyRefresh } : {}) },
+            t,
+          );
         } catch {
           // cleared locally anyway
         }
-        clear('logout');
+        if (started === epoch) clear('logout');
       },
       accessToken,
       forceRefresh: () => (access || bodyRefresh ? refreshOnce() : Promise.resolve(null)),
@@ -656,4 +763,91 @@ function webIdleSeconds(): number {
     });
   }
   return Math.floor((Date.now() - lastInput) / 1000);
+}
+
+async function beginWebSso(args: SsoStart): Promise<IpcResult<{ attemptId: string; expiresAt: number }>> {
+  const generation = ++ssoGeneration;
+  try {
+    if (args.purpose === 'login' && access) throw new Error('Local session active');
+    const token = await accessToken();
+    const purpose = {
+      login: SSOFlowPurpose.SSO_FLOW_PURPOSE_LOGIN,
+      step_up: SSOFlowPurpose.SSO_FLOW_PURPOSE_STEP_UP,
+      link: SSOFlowPurpose.SSO_FLOW_PURPOSE_LINK,
+      test: SSOFlowPurpose.SSO_FLOW_PURPOSE_TEST,
+    }[args.purpose];
+    const path =
+      args.purpose === 'test'
+        ? `/api/workspaces/${encodeURIComponent(args.workspaceId)}/identity/test`
+        : `/api/auth/sso/workspaces/${encodeURIComponent(args.workspaceId)}/begin`;
+    const res = await postAuth(
+      path,
+      toJson(SSOBeginRequestSchema, create(SSOBeginRequestSchema, { purpose, clientKind: SSOClientKind.SSO_CLIENT_KIND_WEB })),
+      token ?? undefined,
+    );
+    if (!res.ok) return { ok: false, error: await readError(res) };
+    const result = fromJson(SSOBeginResponseSchema, (await res.json()) as JsonValue);
+    const expiresAt = result.expiresAt ? timestampDate(result.expiresAt).getTime() : 0;
+    if (!result.flowId || expiresAt <= Date.now()) throw new Error('Invalid SSO response');
+    if (generation !== ssoGeneration) throw new Error('Cancelled');
+    const target = new URL(result.authorizationUrl);
+    if (target.protocol !== 'https:' || target.username || target.password) throw new Error('Invalid authorization URL');
+    // Only public context survives navigation. Credentials remain in memory/HttpOnly cookies.
+    ssoStorage?.setItem(
+      'calab-sso-flow',
+      JSON.stringify({ ...args, flowId: result.flowId, expiresAt, sessionId: access?.sessionId ?? '',
+        ...(args.purpose === 'step_up' ? { returnTo: consentReturnPath(`${location.origin}${location.pathname}${location.search}`, location.origin) } : {}) }),
+    );
+    location.assign(target.href);
+    return { ok: true, data: { attemptId: result.flowId, expiresAt } };
+  } catch {
+    return { ok: false, error: { code: 'ERROR_CODE_UNAVAILABLE', message: 'SSO unavailable', status: 0 } };
+  }
+}
+
+async function finishWebSso(): Promise<IpcResult<SsoResult>> {
+  const started = epoch;
+  try {
+    const saved = JSON.parse(ssoStorage?.getItem('calab-sso-flow') ?? 'null') as
+      | (SsoStart & { flowId: string; expiresAt: number; sessionId: string; returnTo?: string })
+      | null;
+    ssoStorage?.removeItem('calab-sso-flow');
+    if (!saved || saved.expiresAt <= Date.now() || !['login', 'step_up', 'link', 'test'].includes(saved.purpose))
+      throw new Error('SSO expired');
+    const token = saved.purpose === 'login' ? null : await accessToken();
+    if (saved.purpose !== 'login' && saved.sessionId !== access?.sessionId) throw new Error('Account changed');
+    if (saved.purpose === 'login' && access) throw new Error('Account changed');
+    const res = await postAuth(
+      '/api/auth/sso/finish',
+      toJson(SSOFinishRequestSchema, create(SSOFinishRequestSchema, { flowId: saved.flowId })),
+      token ?? undefined,
+    );
+    if (!res.ok) return { ok: false, error: await readError(res) };
+    const result = fromJson(SSOCompleteResponseSchema, (await res.json()) as JsonValue);
+    if (started !== epoch) throw new Error('Account changed');
+    let installed: AuthSession | undefined;
+    if (saved.purpose === 'login') {
+      const t = result.tokens;
+      if (!t || t.authority?.kind !== SessionAuthorityKind.WORKSPACE_SSO || t.authority.workspaceId !== saved.workspaceId)
+        throw new Error('Unexpected authority');
+      const profile = await fetch('/api/me', { headers: { Authorization: `Bearer ${t.accessToken}` }, credentials: 'same-origin' });
+      if (!profile.ok) throw new Error('Profile unavailable');
+      const me = ((await profile.json()) as { me: unknown }).me;
+      if (started !== epoch) throw new Error('Account changed');
+      scopedWorkspace = saved.workspaceId;
+      ssoStorage?.setItem('calab-sso-workspace', scopedWorkspace);
+      applyTokens({
+        accessToken: t.accessToken,
+        accessExpiresAt: t.accessExpiresAt ? timestampDate(t.accessExpiresAt).toISOString() : '',
+        refreshToken: t.refreshToken,
+        sessionId: t.sessionId,
+      });
+      installed = { serverUrl: location.origin, sessionId: t.sessionId, me, authority: toJson(SessionAuthoritySchema, t.authority) };
+    } else if (result.tokens || (saved.purpose === 'test' ? !result.tested : result.assurance?.workspaceId !== saved.workspaceId))
+      throw new Error('Unexpected SSO result');
+    const returnTo = saved.purpose === 'step_up' && saved.sessionId === access?.sessionId ? consentReturnPath(saved.returnTo ?? '', location.origin) : undefined;
+    return { ok: true, data: { workspaceId: saved.workspaceId, purpose: saved.purpose, ok: true, ...(returnTo ? { returnTo } : {}), ...(installed ? { session: installed } : {}) } };
+  } catch {
+    return { ok: false, error: { code: 'ERROR_CODE_IDENTITY_CONFIG_CHANGED', message: 'Restart SSO', status: 409 } };
+  }
 }

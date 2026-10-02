@@ -88,6 +88,14 @@ enum ErrorCode {
   // 502: LiveKit refused the SIP settings (PUT …/sip); the message is LiveKit's text, also
   // stored as SipSettings.last_error.
   ERROR_CODE_SIP_PROVIDER_ERROR = 59;
+  ERROR_CODE_SSO_REQUIRED = 60;
+  ERROR_CODE_IDENTITY_SCOPE_DENIED = 61;
+  ERROR_CODE_DIRECTORY_ACCESS_DENIED = 62;
+  ERROR_CODE_RECOVERY_ONLY = 63;
+  ERROR_CODE_IDENTITY_CONFIG_CHANGED = 64;
+  ERROR_CODE_IDENTITY_NOT_LINKED = 65;
+  ERROR_CODE_IDENTITY_DEPENDENCY_UNAVAILABLE = 66;
+  ERROR_CODE_RECENT_AUTH_REQUIRED = 67;
 }
 
 // Error body of every non-2xx REST response.
@@ -107,7 +115,10 @@ message ApiError {
   // by the organizer, "ADMISSION_QUEUE_FULL" = RATE_LIMITED when 50 guests already wait for
   // the room (ADR-0040); "NOTES_LIMIT" = CONFLICT on creating a 21st notes shelf and
   // "PERSONAL_QUOTA" = FILE_QUOTA_EXCEEDED of the uploader's personal quota in a shelf
-  // (ADR-0039). Absent otherwise.
+  // (ADR-0039); "FEATURE_DISABLED" = CONFLICT on setting a field of a board feature that is
+  // switched off on the board, with `field` (ADR-0058 §3); "BOARD_CATEGORY_LIMIT",
+  // "CHECKLIST_LIMIT", "CHECKLIST_ITEM_LIMIT" = CONFLICT on the 51st board category, the 11th
+  // checklist of a task, the 101st item of a checklist (ADR-0058). Absent otherwise.
   optional string reason = 4;
   // The counter and limit that were hit, when meaningful: ROOM_FULL — users in the room and
   // the room limit; FILE_QUOTA_EXCEEDED — bytes used and the effective quota in bytes;

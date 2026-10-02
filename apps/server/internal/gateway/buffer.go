@@ -14,7 +14,7 @@ import (
 
 // Session buffer in Redis (docs/05, RESUME):
 //
-//	gw:sess:<gsid>  hash {user, asess, owner, seq}; TTL = resume window, renewed while alive
+//	gw:sess:<gsid>  hash {user, asess, owner, seq, bot, tab}; TTL = resume window, renewed while alive
 //	gw:buf:<gsid>   list of entries: 16-byte event id + binary GatewayFrame (DISPATCH with seq)
 //	                capped at bufferMax entries, same TTL
 //
@@ -26,10 +26,13 @@ const (
 )
 
 type entry struct {
-	id    uuid.UUID
-	seq   uint64
-	frame []byte        // binary GatewayFrame
-	flush chan struct{} // writer barrier (not stored)
+	enc            *encEvent // resolved replay attribution; not serialized
+	workspace      uuid.UUID
+	identityFormat bool
+	id             uuid.UUID
+	seq            uint64
+	frame          []byte        // binary GatewayFrame
+	flush          chan struct{} // writer barrier (not stored)
 }
 
 func (e entry) encode() []byte {
@@ -37,6 +40,8 @@ func (e entry) encode() []byte {
 	b = append(b, e.id[:]...)
 	b = strconv.AppendUint(b, e.seq, 10)
 	b = append(b, ':')
+	b = append(b, 'I', '2', ':')
+	b = append(b, e.workspace[:]...)
 	return append(b, e.frame...)
 }
 
@@ -57,7 +62,14 @@ func decodeEntry(b []byte) (entry, error) {
 	if err != nil {
 		return entry{}, err
 	}
-	return entry{id: id, seq: seq, frame: rest[i+1:]}, nil
+	payload := rest[i+1:]
+	e := entry{id: id, seq: seq, frame: payload}
+	if len(payload) >= 19 && string(payload[:3]) == "I2:" {
+		e.identityFormat = true
+		e.workspace, _ = uuid.FromBytes(payload[3:19])
+		e.frame = payload[19:]
+	}
+	return e, nil
 }
 
 // since returns the entries after seq. ok=false when the buffer no longer covers seq+1
@@ -85,6 +97,7 @@ type sessMeta struct {
 	owner       string
 	seq         uint64
 	bot         bool
+	tab         string // Identify.tab_id ("" = the device itself), see tabs.go
 }
 
 type bufferStore struct{ c rueidis.Client }
@@ -92,14 +105,14 @@ type bufferStore struct{ c rueidis.Client }
 func sessKey(g uuid.UUID) string { return redisx.Key("gw:sess:" + g.String()) }
 func bufKey(g uuid.UUID) string  { return redisx.Key("gw:buf:" + g.String()) }
 
-func (b bufferStore) create(ctx context.Context, gsid, user, asess uuid.UUID, owner string, bot bool) error {
+func (b bufferStore) create(ctx context.Context, gsid, user, asess uuid.UUID, owner string, bot bool, tab string) error {
 	isBot := "0"
 	if bot {
 		isBot = "1"
 	}
 	res := b.c.DoMulti(ctx,
 		b.c.B().Hset().Key(sessKey(gsid)).FieldValue().FieldValue("user", user.String()).
-			FieldValue("asess", asess.String()).FieldValue("owner", owner).FieldValue("seq", "0").FieldValue("bot", isBot).Build(),
+			FieldValue("asess", asess.String()).FieldValue("owner", owner).FieldValue("seq", "0").FieldValue("bot", isBot).FieldValue("tab", tab).Build(),
 		b.c.B().Expire().Key(sessKey(gsid)).Seconds(int64(resumeWindow.Seconds())).Build())
 	return res[0].Error()
 }
@@ -118,7 +131,7 @@ func (b bufferStore) meta(ctx context.Context, gsid uuid.UUID) (sessMeta, bool, 
 	if err1 != nil || err2 != nil || err3 != nil {
 		return sessMeta{}, false, nil
 	}
-	return sessMeta{user: u, asess: a, owner: m["owner"], seq: seq, bot: m["bot"] == "1"}, true, nil
+	return sessMeta{user: u, asess: a, owner: m["owner"], seq: seq, bot: m["bot"] == "1", tab: validTabID(m["tab"])}, true, nil
 }
 
 func (b bufferStore) setOwner(ctx context.Context, gsid uuid.UUID, owner string) error {
