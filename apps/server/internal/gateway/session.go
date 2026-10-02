@@ -100,11 +100,11 @@ type Session struct {
 	// omitted: workspaces left out of READY while their lease was pending. Their events
 	// queued before the sweep's WORKSPACE_CREATE are undeliverable and dropped (emit).
 	omitted map[uuid.UUID]bool
-	dmPeers    map[uuid.UUID]uuid.UUID // DM room -> peer; uuid.Nil = not a DM of this user (see Hub.dmPeer)
-	status     v1.PresenceStatus
-	recent     [128]uuid.UUID
-	recentN    int
-	detachT    *time.Timer
+	dmPeers map[uuid.UUID]uuid.UUID // DM room -> peer; uuid.Nil = not a DM of this user (see Hub.dmPeer)
+	status  v1.PresenceStatus
+	recent  [128]uuid.UUID
+	recentN int
+	detachT *time.Timer
 
 	wq     chan entry
 	qmu    sync.RWMutex       // guards sends on wq against closeQueue (no send on a closed channel)

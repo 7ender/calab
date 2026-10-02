@@ -2,16 +2,12 @@ package gateway
 
 import (
 	"context"
-	"errors"
 	"sync"
 	"time"
 
 	"github.com/calaba/calaba/server/internal/identitypolicy"
 	"github.com/google/uuid"
 )
-
-// errLeaseUnavailable: a positive decision whose lease could not be stored.
-var errLeaseUnavailable = errors.New("identity lease unavailable")
 
 // A lease is owned by one exact Session, never shared by user ID. until retains
 // time.Now's monotonic component; the absolute DB deadline can only shorten it.

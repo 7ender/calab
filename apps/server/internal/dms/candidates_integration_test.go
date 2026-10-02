@@ -56,7 +56,7 @@ func TestCandidatesFollowIdentityPolicy(t *testing.T) {
 	h := NewHandlers(d, nil, nil)
 	request := func(guard perm.AccessGuard, q string) []string {
 		t.Helper()
-		r := httptest.NewRequest(http.MethodGet, "/api/dms/candidates?q="+q, nil)
+		r := httptest.NewRequestWithContext(ctx, http.MethodGet, "/api/dms/candidates?q="+q, nil)
 		c := auth.WithIdentity(r.Context(), auth.Identity{UserID: me, SessionID: uuid.New()})
 		if guard != nil {
 			c = perm.WithAccessGuard(c, guard)
