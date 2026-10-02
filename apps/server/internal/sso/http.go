@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"net/url"
 	"strconv"
+	"strings"
 	"time"
 
 	pb "github.com/calaba/calaba/server/gen/calaba/v1"
@@ -153,16 +154,84 @@ func (h *HTTP) guard(w http.ResponseWriter, r *http.Request, optional bool, quot
 	}
 	return p, true
 }
-func cookieName(flow uuid.UUID) string { return "__Host-calab-sso-" + flow.String() }
-func setBrowser(w http.ResponseWriter, flow uuid.UUID, browser string) {
-	http.SetCookie(w, &http.Cookie{Name: cookieName(flow), Value: browser, Secure: true, HttpOnly: true, SameSite: http.SameSiteLaxMode, Path: "/", MaxAge: 300})
+
+// Pending SSO flows share one browser-binding cookie holding the browserCookieMax newest
+// entries "<flow id>:<browser secret>", newest first (like the OAuth provider's request
+// cookie). A cookie per flow would let a begin/browser-start loop fill the browser's
+// per-site cookie jar and evict Calab session cookies.
+const (
+	browserCookieName = "__Host-calab-sso"
+	browserCookieMax  = 4
+)
+
+type browserBinding struct {
+	flow    uuid.UUID
+	browser string
+}
+
+func browserSecretShape(v string) bool {
+	if len(v) != 43 {
+		return false
+	}
+	for _, c := range v {
+		if (c < 'a' || c > 'z') && (c < 'A' || c > 'Z') && (c < '0' || c > '9') && c != '-' && c != '_' {
+			return false
+		}
+	}
+	return true
+}
+func browserBindings(r *http.Request) []browserBinding {
+	c, e := r.Cookie(browserCookieName)
+	if e != nil {
+		return nil
+	}
+	var out []browserBinding
+	for _, entry := range strings.Split(c.Value, ".") {
+		raw, browser, ok := strings.Cut(entry, ":")
+		flow, e := uuid.Parse(raw)
+		if !ok || e != nil || len(raw) != 36 || !browserSecretShape(browser) || len(out) == browserCookieMax {
+			continue
+		}
+		out = append(out, browserBinding{flow: flow, browser: browser})
+	}
+	return out
+}
+func setBrowserBindings(w http.ResponseWriter, bindings []browserBinding) {
+	if len(bindings) == 0 {
+		http.SetCookie(w, &http.Cookie{Name: browserCookieName, Value: "", Secure: true, HttpOnly: true, SameSite: http.SameSiteLaxMode, Path: "/", MaxAge: -1})
+		return
+	}
+	entries := make([]string, 0, len(bindings))
+	for _, b := range bindings {
+		entries = append(entries, b.flow.String()+":"+b.browser)
+	}
+	http.SetCookie(w, &http.Cookie{Name: browserCookieName, Value: strings.Join(entries, "."), Secure: true, HttpOnly: true, SameSite: http.SameSiteLaxMode, Path: "/", MaxAge: 300})
+}
+func setBrowser(w http.ResponseWriter, r *http.Request, flow uuid.UUID, browser string) {
+	bindings := []browserBinding{{flow: flow, browser: browser}}
+	for _, b := range browserBindings(r) {
+		if b.flow != flow {
+			bindings = append(bindings, b)
+		}
+	}
+	setBrowserBindings(w, bindings[:min(len(bindings), browserCookieMax)])
+}
+func dropBrowser(w http.ResponseWriter, r *http.Request, flow uuid.UUID) {
+	var kept []browserBinding
+	for _, b := range browserBindings(r) {
+		if b.flow != flow {
+			kept = append(kept, b)
+		}
+	}
+	setBrowserBindings(w, kept)
 }
 func browserCookie(r *http.Request, flow uuid.UUID) string {
-	c, e := r.Cookie(cookieName(flow))
-	if e != nil {
-		return ""
+	for _, b := range browserBindings(r) {
+		if b.flow == flow {
+			return b.browser
+		}
 	}
-	return c.Value
+	return ""
 }
 func workspaceID(r *http.Request) (uuid.UUID, error) {
 	id, e := uuid.Parse(r.PathValue("workspace_id"))
@@ -217,7 +286,7 @@ func (h *HTTP) beginPurpose(w http.ResponseWriter, r *http.Request, test bool) {
 	}
 	if out.Browser != "" {
 		flow, _ := uuid.Parse(out.Response.FlowId)
-		setBrowser(w, flow, out.Browser)
+		setBrowser(w, r, flow, out.Browser)
 	}
 	writeProto(w, out.Response)
 }
@@ -235,7 +304,7 @@ func (h *HTTP) browserStart(w http.ResponseWriter, r *http.Request) {
 		h.fail(w, r, e)
 		return
 	}
-	setBrowser(w, flow, browser)
+	setBrowser(w, r, flow, browser)
 	http.Redirect(w, r, target, http.StatusSeeOther) //nolint:gosec // G710: encrypted, server-discovered operator-approved authorization URL or fixed completion target.
 }
 func (h *HTTP) callback(w http.ResponseWriter, r *http.Request) {
@@ -294,6 +363,7 @@ func (h *HTTP) finish(w http.ResponseWriter, r *http.Request) {
 		h.fail(w, r, e)
 		return
 	}
+	dropBrowser(w, r, flow)
 	h.deliver(w, r, out)
 }
 func (h *HTTP) exchange(w http.ResponseWriter, r *http.Request) {
