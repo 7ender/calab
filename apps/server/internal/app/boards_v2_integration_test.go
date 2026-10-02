@@ -14,6 +14,7 @@ import (
 
 	v1 "github.com/calaba/calaba/server/gen/calaba/v1"
 	"github.com/calaba/calaba/server/internal/perm"
+	"github.com/calaba/calaba/server/internal/redisx"
 )
 
 // Boards 2.0 (ADR-0058): board features (§3) and board categories (§1).
@@ -218,6 +219,8 @@ func TestBoardFeatures(t *testing.T) {
 	for _, c := range cases {
 		for _, a := range actors {
 			name := c.f.String() + "/" + a.name
+			// The bot's request budget (30/s burst) is not what this test checks.
+			_ = testRedis.Do(context.Background(), testRedis.B().Del().Key(redisx.Key("rl:bot:req:"+bt.id)).Build()).Error()
 			tk := createTask(t, a.u, b.GetId(), &v1.CreateTaskRequest{Title: name}, 201).GetId()
 			do := func(r req, want int) {
 				t.Helper()
