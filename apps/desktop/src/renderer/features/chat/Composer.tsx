@@ -39,7 +39,7 @@ import { IMAGE_ACCEPT } from '../../lib/image';
 import { namedHeif } from '../../lib/image/decode';
 import { voiceSupported, type VoiceResult } from '../../services/voiceRecorder';
 
-import { drafts, draftMentions } from './drafts';
+import { loadDraft, saveDraft } from './drafts';
 const NO_MENTIONS: ReadonlyMap<string, string> = new Map();
 /** Field grows up to 6 lines (15 px text on a 20 px line — integer line boxes keep layout pixel-exact). */
 const MAX_FIELD_H = 6 * 20 + 16;
@@ -67,7 +67,7 @@ export function Composer({
   setFiles: (f: OutgoingFile[]) => void;
   addFiles: (f: File[]) => void;
 }): ReactNode {
-  const [text, setText] = useState(() => drafts.get(room.id) ?? '');
+  const [text, setText] = useState(() => loadDraft(useSession.getState().me?.user?.id ?? '', room.id).text);
   const ref = useRef<HTMLTextAreaElement>(null);
   const fileInput = useRef<HTMLInputElement>(null);
   const imageInput = useRef<HTMLInputElement>(null);
@@ -94,7 +94,7 @@ export function Composer({
   const [editTrack, setEditTrack] = useState<string | undefined>(undefined);
   const [draftBeforeEdit, setDraftBeforeEdit] = useState<{ text: string; mentions: ReadonlyMap<string, string> } | null>(null);
   // Mentions picked in the field (name → id); `@<id>` is what goes over the wire.
-  const [mentions, setMentions] = useState<ReadonlyMap<string, string>>(() => draftMentions.get(room.id) ?? NO_MENTIONS);
+  const [mentions, setMentions] = useState<ReadonlyMap<string, string>>(() => loadDraft(useSession.getState().me?.user?.id ?? '', room.id).mentions ?? NO_MENTIONS);
   if (editMsg?.id !== editTrack) {
     setEditTrack(editMsg?.id);
     if (editMsg) {
@@ -112,9 +112,8 @@ export function Composer({
 
   useEffect(() => {
     if (draftBeforeEdit !== null) return;
-    drafts.set(room.id, text);
-    draftMentions.set(room.id, new Map(mentions));
-  }, [room.id, text, mentions, draftBeforeEdit]);
+    saveDraft(me, room.id, text, mentions);
+  }, [me, room.id, text, mentions, draftBeforeEdit]);
 
   // ---- mention autocomplete (docs/05, «Упоминания»)
   const listId = useId();
