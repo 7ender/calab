@@ -97,11 +97,14 @@ type Session struct {
 	dead       bool
 	workspaces map[uuid.UUID]bool
 	subscribed map[uuid.UUID]bool
-	dmPeers    map[uuid.UUID]uuid.UUID // DM room -> peer; uuid.Nil = not a DM of this user (see Hub.dmPeer)
-	status     v1.PresenceStatus
-	recent     [128]uuid.UUID
-	recentN    int
-	detachT    *time.Timer
+	// omitted: workspaces left out of READY while their lease was pending. Their events
+	// queued before the sweep's WORKSPACE_CREATE are undeliverable and dropped (emit).
+	omitted map[uuid.UUID]bool
+	dmPeers map[uuid.UUID]uuid.UUID // DM room -> peer; uuid.Nil = not a DM of this user (see Hub.dmPeer)
+	status  v1.PresenceStatus
+	recent  [128]uuid.UUID
+	recentN int
+	detachT *time.Timer
 
 	wq     chan entry
 	qmu    sync.RWMutex       // guards sends on wq against closeQueue (no send on a closed channel)
@@ -247,6 +250,9 @@ func (s *Session) emit(id uuid.UUID, enc *encEvent) {
 	if s.dead {
 		return
 	}
+	if s.omittedEventLocked(enc) {
+		return
+	}
 	if s.identityEnabled() && !s.allowsEvent(enc) {
 		s.broken.Store(true)
 		if s.conn != nil {
@@ -279,6 +285,39 @@ func (s *Session) emit(id uuid.UUID, enc *encEvent) {
 			s.conn.sendEvent(typ, b, s, enc)
 		}
 	}
+}
+
+// omitWorkspace records a workspace left out of READY (see omitted).
+func (s *Session) omitWorkspace(ws uuid.UUID) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.omitted == nil {
+		s.omitted = map[uuid.UUID]bool{}
+	}
+	s.omitted[ws] = true
+}
+
+// omittedEventLocked reports an event of a workspace omitted from READY, emitted before
+// that workspace's WORKSPACE_CREATE (which ends the omission); s.mu must be held. The client
+// has no state for it and the snapshot supersedes it, so it is dropped rather than closing
+// the session with "identity resync required".
+func (s *Session) omittedEventLocked(enc *encEvent) bool {
+	if len(s.omitted) == 0 || enc == nil || enc.ev == nil {
+		return false
+	}
+	if created := enc.ev.GetWorkspaceCreate(); created != nil {
+		delete(s.omitted, parseID(created.GetSnapshot().GetWorkspace().GetId()))
+		return false
+	}
+	if s.omitted[enc.workspace] {
+		return true
+	}
+	for _, ws := range enc.scopes {
+		if s.omitted[ws] {
+			return true
+		}
+	}
+	return false
 }
 
 // flushPending emits queued events once nothing holds them back; s.mu must be held.

@@ -11,6 +11,7 @@ import (
 
 	v1 "github.com/calaba/calaba/server/gen/calaba/v1"
 	"github.com/calaba/calaba/server/internal/auth"
+	"github.com/calaba/calaba/server/internal/db"
 	"github.com/calaba/calaba/server/internal/identitypolicy"
 	"github.com/calaba/calaba/server/internal/perm"
 	"github.com/calaba/calaba/server/internal/workspaces"
@@ -199,7 +200,7 @@ func (s *Session) allowsEvent(enc *encEvent) bool {
 	}
 	for _, ws := range enc.scopes {
 		if ws == uuid.Nil {
-			if s.principal.Authority != identitypolicy.LocalAccount {
+			if s.principal.Authority != identitypolicy.LocalAccount || !ownProfileOrPresence(s.user, ev) {
 				return false
 			}
 		} else if !s.workspaceLeaseAllows(ws) {
@@ -209,14 +210,59 @@ func (s *Session) allowsEvent(enc *encEvent) bool {
 	return len(enc.scopes) > 0
 }
 
-// The existing wire variants are explicit; a new or absent oneof needs classification.
-func knownScopedEvent(ev *v1.DispatchEvent) bool {
-	f := ev.ProtoReflect().WhichOneof(ev.ProtoReflect().Descriptor().Oneofs().ByName("event"))
-	if f == nil {
-		return false
+// ownProfileOrPresence: a profile/presence event without workspace attribution (user
+// channel) may only be about the recipient. Another person's profile or presence goes
+// through a shared workspace's lease, so it never bypasses that workspace's policy.
+func ownProfileOrPresence(user uuid.UUID, ev *v1.DispatchEvent) bool {
+	if p := ev.GetPresenceUpdate(); p != nil {
+		return parseID(p.GetPresence().GetUserId()) == user
 	}
-	n := f.Number()
-	return n >= 2 && n <= 85 && n != 22 && n != 31 && n != 39 && n != 46 && n != 47 && (n < 57 || n > 59) && (n < 72 || n > 74) && n != 82
+	if u := ev.GetUserUpdate(); u != nil && u.GetUser() != nil {
+		return parseID(u.GetUser().GetId()) == user
+	}
+	return true
+}
+
+// eventScope classifies every DispatchEvent variant by name. workspaceScoped variants may
+// travel as workspace-attributed events (lease-gated by that workspace); unscoped ones are
+// delivered only through their own explicit allowsEvent/prepareEvent paths. A variant
+// missing from this list is denied when workspace-attributed; TestEventScopeClassified
+// fails until a new oneof field is classified here.
+var eventScope = map[protoreflect.Name]bool{
+	"ready": false, "resumed": false, "dm_create": false, "dm_state_update": false,
+	"call_ring": false, "call_state": false, "notes_create": false, "notes_update": false,
+	"notes_delete": false, "bot_callback": false, "workspace_identity_access_update": false,
+
+	"workspace_create": true, "workspace_update": true, "workspace_delete": true,
+	"workspace_member_add": true, "workspace_member_update": true, "workspace_member_remove": true,
+	"room_create": true, "room_update": true, "room_delete": true, "room_permissions_update": true,
+	"message_create": true, "message_update": true, "message_delete": true, "typing_start": true,
+	"presence_update": true, "voice_state_update": true, "voice_stream_start": true,
+	"voice_stream_stop": true, "read_state_update": true, "user_update": true,
+	"category_create": true, "category_update": true, "category_delete": true,
+	"message_reaction_add": true, "message_reaction_remove": true, "voice_moved": true,
+	"room_notification_update": true, "voice_camera_stop": true, "workspace_notification_update": true,
+	"room_recording": true, "workspace_ban_add": true, "workspace_ban_remove": true,
+	"role_create": true, "role_update": true, "role_delete": true,
+	"sticker_pack_create": true, "sticker_pack_update": true, "sticker_pack_delete": true,
+	"badge_create": true, "badge_update": true, "badge_delete": true, "read_receipt": true,
+	"background_create": true, "background_update": true, "background_delete": true,
+	"voice_disconnected": true, "sound_create": true, "sound_update": true, "sound_delete": true,
+	"sound_play": true, "bot_create": true, "bot_update": true, "bot_delete": true,
+	"event_create": true, "event_update": true, "event_delete": true, "event_rsvp": true,
+	"event_reminder": true, "room_event_active": true, "room_event_ended": true,
+	"room_admission_request": true, "room_admission_decided": true,
+	"board_create": true, "board_update": true, "board_delete": true,
+	"task_create": true, "task_update": true, "task_delete": true, "task_activity": true,
+	"sip_call_update": true, "workspace_app_upsert": true, "workspace_app_delete": true,
+}
+
+// knownScopedEvent: the variant is explicitly classified as workspace-scoped; an absent
+// or unclassified oneof denies.
+func knownScopedEvent(ev *v1.DispatchEvent) bool {
+	m := ev.ProtoReflect()
+	f := m.WhichOneof(m.Descriptor().Oneofs().ByName("event"))
+	return f != nil && eventScope[f.Name()]
 }
 
 // prepareEvent resolves resource parents once, outside all gateway locks. Its result is
@@ -392,34 +438,30 @@ func (h *Hub) enforceIdentitySession(ctx context.Context, s *Session) {
 		}
 	}
 	slices.SortFunc(ids, func(a, b uuid.UUID) int { return bytes.Compare(a[:], b[:]) })
-	s.leases.mu.Lock()
-	cursor := s.leases.cursor
-	s.leases.mu.Unlock()
-	offset := 0
-	for offset < len(ids) && bytes.Compare(ids[offset][:], cursor[:]) <= 0 {
-		offset++
-	}
-	if offset == len(ids) {
-		offset = 0
-	}
-	allowed := map[uuid.UUID]bool{}
-	// At most four workspace checks per session per pass. Rotation persists across
-	// canceled passes, so a slow first workspace cannot repeatedly starve the tail.
-	for i := 0; i < min(len(ids), 4) && ctx.Err() == nil; i++ {
-		ws := ids[(offset+i)%len(ids)]
+	due, probes := s.dueWorkspaceChecks(ids, old)
+	allowed := map[uuid.UUID]identitypolicy.Decision{}
+	check := func(ws uuid.UUID) {
 		gate, cancel := context.WithTimeout(ctx, 500*time.Millisecond)
 		decision, err := s.refreshWorkspaceLease(gate, ws)
 		cancel()
-		s.leases.mu.Lock()
-		s.leases.cursor = ws
-		s.leases.mu.Unlock()
 		if err == nil && decision.Allowed && s.workspaceLeaseAllows(ws) {
-			allowed[ws] = true
+			allowed[ws] = decision
 		} else if old[ws] {
 			h.identityRemoveWorkspace(s, ws, decision, err)
 		}
 	}
-	for ws := range allowed {
+	for i := 0; i < len(due) && ctx.Err() == nil; i++ {
+		check(due[i])
+	}
+	// Rotation persists across canceled passes, so a slow first workspace cannot
+	// repeatedly starve the tail of the probes.
+	for i := 0; i < len(probes) && ctx.Err() == nil; i++ {
+		check(probes[i])
+		s.leases.mu.Lock()
+		s.leases.cursor = probes[i]
+		s.leases.mu.Unlock()
+	}
+	for ws, decision := range allowed {
 		if old[ws] {
 			continue
 		}
@@ -436,11 +478,80 @@ func (h *Hub) enforceIdentitySession(ctx context.Context, s *Session) {
 		if err != nil {
 			continue
 		}
+		access := identityAccessStatus(ws, decision, nil, s.principal)
+		if policy, e := h.db.Q.GetIdentityPolicy(ctx, ws); e == nil {
+			access.Mode = identityMode(policy.Mode)
+		} else if db.IsNotFound(e) {
+			access.Mode = v1.IdentityPolicyMode_IDENTITY_POLICY_MODE_OFF
+		}
+		snap.Workspace.IdentityAccess = access
 		h.fillLive(ctx, ws, snap)
 		h.joinWorkspace(s, ws)
 		h.ensureState(ctx, ws)
+		// The access status first: the client may hold a stale lock for this workspace
+		// (an earlier denial) that would otherwise drop its events after the snapshot.
+		s.dispatch(uuid.New(), &v1.DispatchEvent{Event: &v1.DispatchEvent_WorkspaceIdentityAccessUpdate{WorkspaceIdentityAccessUpdate: &v1.WorkspaceIdentityAccessUpdate{SessionId: s.asess.String(), Access: access}}})
 		s.dispatchScoped(ws, uuid.New(), &v1.DispatchEvent{Event: &v1.DispatchEvent_WorkspaceCreate{WorkspaceCreate: &v1.WorkspaceCreate{Snapshot: snap}}})
 	}
+}
+
+const (
+	identityPass = 5 * time.Second // runIdentityEnforcement period
+	// identityRefreshAhead: a lease is re-evaluated once it has less than this left, so
+	// each one gets about three passes to be refreshed before it lapses.
+	identityRefreshAhead = identitypolicy.ReadLeaseTTL / 2
+	// identityProbes bounds the per-pass checks of workspaces the session holds no lease
+	// for (SSO required, suspended, left out of READY): a step-up is noticed within
+	// ⌈n/4⌉ passes without a DB query per such workspace per pass.
+	identityProbes = 4
+)
+
+// dueWorkspaceChecks splits the session's workspaces into lease re-evaluations and probes.
+// due: subscribed workspaces whose lease is missing or expires within identityRefreshAhead
+// (earliest deadline first) and leased-but-undelivered ones, up to max(4, ⌈2N·pass/horizon⌉)
+// per pass, which covers all N within the horizon; fresh leases cost no query, so DB load
+// follows lease expiry (about one check per workspace per lease), not the pass rate.
+// probes: unsubscribed workspaces without a lease, at most identityProbes, rotating from
+// the cursor.
+func (s *Session) dueWorkspaceChecks(ids []uuid.UUID, subscribed map[uuid.UUID]bool) (due, probes []uuid.UUID) {
+	now := time.Now()
+	s.leases.mu.Lock()
+	cursor := s.leases.cursor
+	offset := 0
+	for offset < len(ids) && bytes.Compare(ids[offset][:], cursor[:]) <= 0 {
+		offset++
+	}
+	type candidate struct {
+		ws    uuid.UUID
+		until time.Time
+	}
+	refresh := make([]candidate, 0, len(ids))
+	for i := range ids {
+		ws := ids[(offset+i)%len(ids)]
+		l := s.leases.workspaces[ws]
+		until := time.Time{}
+		if s.validLease(l, ws) {
+			until = l.until
+		}
+		switch {
+		case !subscribed[ws] && until.IsZero():
+			if len(probes) < identityProbes {
+				probes = append(probes, ws)
+			}
+		case !subscribed[ws]:
+			refresh = append(refresh, candidate{ws, time.Time{}}) // leased, not delivered: re-add now
+		case until.IsZero() || until.Sub(now) <= identityRefreshAhead:
+			refresh = append(refresh, candidate{ws, until})
+		}
+	}
+	s.leases.mu.Unlock()
+	slices.SortStableFunc(refresh, func(a, b candidate) int { return a.until.Compare(b.until) })
+	budget := max(4, (2*len(ids)*int(identityPass)+int(identityRefreshAhead)-1)/int(identityRefreshAhead))
+	due = make([]uuid.UUID, 0, min(len(refresh), budget))
+	for _, c := range refresh[:min(len(refresh), budget)] {
+		due = append(due, c.ws)
+	}
+	return due, probes
 }
 
 func (h *Hub) identityRemoveWorkspace(s *Session, ws uuid.UUID, d identitypolicy.Decision, err error) {

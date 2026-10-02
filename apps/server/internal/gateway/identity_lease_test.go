@@ -130,7 +130,7 @@ func TestIdentityLeaseExpiryInvalidationScopeAndPending(t *testing.T) {
 	s.principal.Authority = identitypolicy.WorkspaceSSO
 	s.principal.WorkspaceID = a
 	s.principal.ConnectionID = uuid.New()
-	global := newEnc(&v1.DispatchEvent{Event: &v1.DispatchEvent_PresenceUpdate{PresenceUpdate: &v1.PresenceUpdate{}}})
+	global := newEnc(&v1.DispatchEvent{Event: &v1.DispatchEvent_PresenceUpdate{PresenceUpdate: &v1.PresenceUpdate{Presence: &v1.Presence{UserId: s.user.String()}}}})
 	h.prepareEvent(context.Background(), global)
 	if s.allowsEvent(global) {
 		t.Fatal("scoped session saw global/DM authority")
@@ -268,7 +268,7 @@ func TestIdentityLeaseScopedInvalidationPreservesIndependentBAndDM(t *testing.T)
 	s := leasedSession(h, a)
 	h.joinWorkspace(s, b)
 	_, _ = s.refreshWorkspaceLease(context.Background(), b)
-	global := newEnc(&v1.DispatchEvent{Event: &v1.DispatchEvent_PresenceUpdate{PresenceUpdate: &v1.PresenceUpdate{}}})
+	global := newEnc(&v1.DispatchEvent{Event: &v1.DispatchEvent_PresenceUpdate{PresenceUpdate: &v1.PresenceUpdate{Presence: &v1.Presence{UserId: s.user.String()}}}})
 	h.prepareEvent(context.Background(), global)
 	before := s.leases.workspaces[b].until
 	payload := fmt.Sprintf(`{"workspace":%q,"policy_version":2}`, a.String())
@@ -287,18 +287,7 @@ func TestIdentityLeaseScopedInvalidationPreservesIndependentBAndDM(t *testing.T)
 	}
 }
 
-func TestIdentityLeaseWorkspaceRefreshRotationDoesNotStarveTail(t *testing.T) {
-	h := leaseTestHub()
-	ids := make([]uuid.UUID, 19)
-	for i := range ids {
-		ids[i] = uuid.New()
-	}
-	s := leasedSession(h, ids[0])
-	for _, ws := range ids[1:] {
-		h.joinWorkspace(s, ws)
-		_, _ = s.refreshWorkspaceLease(context.Background(), ws)
-	}
-	h.identityWorkspaces = func(context.Context, uuid.UUID) ([]uuid.UUID, error) { return append([]uuid.UUID{}, ids...), nil }
+func countingChecks(h *Hub) (map[uuid.UUID]int, func() int, *sync.Mutex) {
 	var mu sync.Mutex
 	seen := map[uuid.UUID]int{}
 	original := h.checkWorkspace
@@ -308,18 +297,147 @@ func TestIdentityLeaseWorkspaceRefreshRotationDoesNotStarveTail(t *testing.T) {
 		mu.Unlock()
 		return original(ctx, id, ws)
 	}
-	for i := 0; i < 5; i++ {
-		h.EnforceIdentity(context.Background())
+	total := func() int {
+		mu.Lock()
+		defer mu.Unlock()
+		n := 0
+		for _, c := range seen {
+			n += c
+		}
+		return n
 	}
+	return seen, total, &mu
+}
+
+// A user in many workspaces: every lease is re-evaluated before it lapses (the per-pass
+// budget covers all of them within the refresh horizon), while fresh leases cost nothing.
+func TestIdentitySweepCoversAllWorkspacesWithinLease(t *testing.T) {
+	h := leaseTestHub()
+	ids := make([]uuid.UUID, 40)
+	for i := range ids {
+		ids[i] = uuid.New()
+	}
+	s := leasedSession(h, ids[0])
+	for _, ws := range ids[1:] {
+		h.joinWorkspace(s, ws)
+		_, _ = s.refreshWorkspaceLease(context.Background(), ws)
+	}
+	h.identityWorkspaces = func(context.Context, uuid.UUID) ([]uuid.UUID, error) { return append([]uuid.UUID{}, ids...), nil }
+	seen, total, mu := countingChecks(h)
+	h.EnforceIdentity(context.Background())
+	if n := total(); n != 0 {
+		t.Fatalf("fresh leases re-evaluated: %d checks", n)
+	}
+	// All leases now inside the refresh horizon (e.g. they were granted together).
+	s.leases.mu.Lock()
+	for _, ws := range ids {
+		l := s.leases.workspaces[ws]
+		l.until = time.Now().Add(identityRefreshAhead - 3*time.Second)
+		s.leases.workspaces[ws] = l
+	}
+	s.leases.mu.Unlock()
+	budget := (2*len(ids)*int(identityPass) + int(identityRefreshAhead) - 1) / int(identityRefreshAhead)
+	h.EnforceIdentity(context.Background())
+	if n := total(); n != budget {
+		t.Fatalf("first pass: %d checks, want the budget %d", n, budget)
+	}
+	h.EnforceIdentity(context.Background())
+	mu.Lock()
 	if len(seen) != len(ids) {
-		t.Fatalf("rotating budget starved %d memberships", len(ids)-len(seen))
+		t.Fatalf("%d of %d leases not re-evaluated within two passes", len(ids)-len(seen), len(ids))
 	}
-	total := 0
-	for _, n := range seen {
-		total += n
+	for ws, n := range seen {
+		if n != 1 {
+			t.Fatalf("workspace %s checked %d times", ws, n)
+		}
 	}
-	if total != 20 {
-		t.Fatalf("workspace budget unbounded: %d checks", total)
+	mu.Unlock()
+	for _, ws := range ids {
+		if !s.workspaceLeaseAllows(ws) {
+			t.Fatal("lease lapsed")
+		}
+	}
+	h.EnforceIdentity(context.Background())
+	if n := total(); n != len(ids) {
+		t.Fatalf("refreshed leases re-evaluated again: %d checks", n-len(ids))
+	}
+}
+
+// Workspaces the session may not read are probed a bounded number per pass, rotating, so a
+// step-up is noticed without a DB query per denied workspace per pass.
+func TestIdentitySweepDeniedWorkspaceProbesRotate(t *testing.T) {
+	h := leaseTestHub()
+	a := uuid.New()
+	leasedSession(h, a)
+	denied := map[uuid.UUID]bool{}
+	ids := []uuid.UUID{a}
+	for i := 0; i < 10; i++ {
+		ws := uuid.New()
+		denied[ws] = true
+		ids = append(ids, ws)
+	}
+	original := h.checkWorkspace
+	h.checkWorkspace = func(ctx context.Context, id auth.Identity, ws uuid.UUID) (identitypolicy.Decision, time.Time, error) {
+		if denied[ws] {
+			return identitypolicy.Decision{Reason: identitypolicy.SSORequired}, time.Now(), identitypolicy.ErrDenied
+		}
+		return original(ctx, id, ws)
+	}
+	h.identityWorkspaces = func(context.Context, uuid.UUID) ([]uuid.UUID, error) { return append([]uuid.UUID{}, ids...), nil }
+	seen, total, mu := countingChecks(h)
+	for pass := 1; pass <= 3; pass++ {
+		h.EnforceIdentity(context.Background())
+		if n := total(); n != pass*identityProbes {
+			t.Fatalf("pass %d: %d checks", pass, n)
+		}
+	}
+	mu.Lock()
+	defer mu.Unlock()
+	if seen[a] != 0 || len(seen) != len(denied) {
+		t.Fatalf("probes did not rotate over all denied workspaces: %d of %d (leased checked %d)", len(seen), len(denied), seen[a])
+	}
+}
+
+// Events of a workspace left out of READY (its lease was pending), queued while READY was
+// built, are dropped instead of closing the session; its WORKSPACE_CREATE ends the omission.
+func TestIdentityOmittedWorkspaceEventsDropped(t *testing.T) {
+	h := leaseTestHub()
+	a, omitted := uuid.New(), uuid.New()
+	s := leasedSession(h, a)
+	_, _ = s.refreshWorkspaceLease(context.Background(), omitted)
+	s.mu.Lock()
+	s.ready = false
+	s.mu.Unlock()
+	s.dispatchEnc(uuid.New(), leaseEvent(omitted)) // allowed now, queued
+	s.dispatchEnc(uuid.New(), leaseEvent(a))
+	s.omitWorkspace(omitted)
+	s.leases.mu.Lock()
+	l := s.leases.workspaces[omitted]
+	l.until = time.Time{} // the lease lapsed before emission
+	s.leases.workspaces[omitted] = l
+	s.leases.mu.Unlock()
+	s.mu.Lock()
+	s.ready = true
+	s.flushPending(nil)
+	s.mu.Unlock()
+	if s.broken.Load() {
+		t.Fatal("omitted workspace event closed the session")
+	}
+	out := drain(s)
+	if len(out) != 1 || out[0].workspace != a {
+		t.Fatalf("delivered %d events", len(out))
+	}
+	// Still omitted: a leased event of it before WORKSPACE_CREATE is dropped too.
+	_, _ = s.refreshWorkspaceLease(context.Background(), omitted)
+	s.dispatchEnc(uuid.New(), leaseEvent(omitted))
+	if len(drain(s)) != 0 {
+		t.Fatal("event delivered before the workspace snapshot")
+	}
+	snap := &v1.WorkspaceSnapshot{Workspace: &v1.Workspace{Id: omitted.String()}}
+	s.dispatchScoped(omitted, uuid.New(), &v1.DispatchEvent{Event: &v1.DispatchEvent_WorkspaceCreate{WorkspaceCreate: &v1.WorkspaceCreate{Snapshot: snap}}})
+	s.dispatchEnc(uuid.New(), leaseEvent(omitted))
+	if out := drain(s); len(out) != 2 || s.broken.Load() {
+		t.Fatalf("after WORKSPACE_CREATE: %d events, broken %v", len(out), s.broken.Load())
 	}
 }
 
@@ -380,5 +498,28 @@ func TestIdentityLeaseRefreshRetriesAfterConcurrentInvalidation(t *testing.T) {
 	d, err := s.refreshWorkspaceLease(context.Background(), ws)
 	if err != nil || !d.Allowed || !s.allowsEvent(leaseEvent(ws)) {
 		t.Fatalf("authorized refresh lost to a concurrent revision bump (calls %d)", calls)
+	}
+}
+
+// User-channel (unattributed) profile/presence events are only about the recipient; another
+// person's would bypass the lease of the workspace they share (ADR-0054).
+func TestIdentityUserChannelPresenceOnlyAboutSelf(t *testing.T) {
+	h := leaseTestHub()
+	s := leasedSession(h, uuid.New())
+	other := uuid.NewString()
+	for _, c := range []struct {
+		ev   *v1.DispatchEvent
+		want bool
+	}{
+		{&v1.DispatchEvent{Event: &v1.DispatchEvent_PresenceUpdate{PresenceUpdate: &v1.PresenceUpdate{Presence: &v1.Presence{UserId: s.user.String()}}}}, true},
+		{&v1.DispatchEvent{Event: &v1.DispatchEvent_PresenceUpdate{PresenceUpdate: &v1.PresenceUpdate{Presence: &v1.Presence{UserId: other}}}}, false},
+		{&v1.DispatchEvent{Event: &v1.DispatchEvent_UserUpdate{UserUpdate: &v1.UserUpdate{Me: &v1.Me{}}}}, true},
+		{&v1.DispatchEvent{Event: &v1.DispatchEvent_UserUpdate{UserUpdate: &v1.UserUpdate{User: &v1.User{Id: other}}}}, false},
+	} {
+		enc := newEnc(c.ev)
+		h.prepareEvent(context.Background(), enc)
+		if got := s.allowsEvent(enc); got != c.want {
+			t.Errorf("%v: allowed %v, want %v", c.ev, got, c.want)
+		}
 	}
 }

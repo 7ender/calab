@@ -220,9 +220,6 @@ func (s *Service) Reconcile(ctx context.Context) error {
 	if err := s.redis.Do(ctx, lock).Error(); err != nil {
 		return nil //nolint:nilerr // another instance holds the lock (or Redis is down)
 	}
-	if err := s.EnforceIdentity(ctx); err != nil {
-		return err
-	}
 	start := time.Now()
 	known, err := s.voice.Workspaces(ctx)
 	if err != nil {
@@ -266,11 +263,13 @@ func (s *Service) Reconcile(ctx context.Context) error {
 				if !ok {
 					continue
 				}
-				if err := s.checkIdentity(ctx, wid, ref.rid, uid, sid); err != nil {
-					s.removeIdentities(ctx, voice.RoomName(wid, ref.rid), []string{p.Identity})
-					continue
-				}
 				if !hasState(states, sid, ref.rid) {
+					// Re-adding voice state needs a fresh identity check; evicting denied
+					// participants with state is the identity sweep's job (identity.go).
+					if err := s.checkIdentity(ctx, wid, ref.rid, uid, sid); err != nil {
+						s.removeIdentities(ctx, voice.RoomName(wid, ref.rid), []string{p.Identity})
+						continue
+					}
 					if s.superseded(ctx, wid, ref.rid, sid) {
 						// Taken out for another device of the user (devices.go): not back in.
 						s.removeIdentities(ctx, voice.RoomName(wid, ref.rid), []string{p.Identity})

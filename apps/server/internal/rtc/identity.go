@@ -8,8 +8,10 @@ import (
 	"sync"
 	"time"
 
+	"github.com/calaba/calaba/server/internal/redisx"
 	"github.com/calaba/calaba/server/internal/voice"
 	"github.com/google/uuid"
+	"github.com/redis/rueidis"
 )
 
 // checkIdentity is session-specific and separate from member permission computation.
@@ -213,24 +215,58 @@ func (s *Service) EnforceIdentity(ctx context.Context) error {
 	return firstErr
 }
 
+// Cluster-wide sweep claims (Valkey): one replica sweeps per period instead of every
+// replica re-checking every participant. A wake (revocation notice, delivered to all
+// replicas) claims separately and briefly, so a periodic claim never delays it.
+const (
+	identitySweepPeriod = 5 * time.Second
+	identitySweepHold   = identitySweepPeriod - 500*time.Millisecond
+	identityWakeHold    = time.Second
+)
+
+// claimIdentitySweep reports whether this replica runs the sweep. Valkey errors other
+// than "already claimed" sweep locally: losing the lock store must not stop enforcement.
+func (s *Service) claimIdentitySweep(ctx context.Context, key string, hold time.Duration) bool {
+	if s.redis == nil {
+		return true
+	}
+	err := s.redis.Do(ctx, s.redis.B().Set().Key(redisx.Key(key)).Value("1").Nx().Px(hold).Build()).Error()
+	return err == nil || !rueidis.IsRedisNil(err)
+}
+
 // RunIdentityEnforcement supplements immediate mutation hooks with a short DB/SFU sweep.
 func (s *Service) RunIdentityEnforcement(ctx context.Context) {
-	ticker := time.NewTicker(5 * time.Second)
+	ticker := time.NewTicker(identitySweepPeriod)
 	defer ticker.Stop()
+	var retry <-chan time.Time
 	for {
+		key, hold := "rtc:identity:sweep", identitySweepHold
 		select {
 		case <-ctx.Done():
 			return
 		case <-ticker.C:
 		case <-s.identityWake:
+			key, hold = "rtc:identity:wake", identityWakeHold
+		case <-retry:
+			retry = nil
+			key, hold = "rtc:identity:wake", identityWakeHold
 		}
-		{
-			work, cancel := context.WithTimeout(ctx, 20*time.Second)
-			if err := s.EnforceIdentity(work); err != nil && ctx.Err() == nil {
-				slog.WarnContext(ctx, "RTC identity sweep failed", "err", err)
+		claim, cancel := context.WithTimeout(ctx, time.Second)
+		ok := s.claimIdentitySweep(claim, key, hold)
+		cancel()
+		if !ok {
+			// Another replica is sweeping for a wake; it may have read the DB before
+			// this notice, so try once more after its claim expires.
+			if key == "rtc:identity:wake" && retry == nil {
+				retry = time.After(hold)
 			}
-			cancel()
+			continue
 		}
+		work, done := context.WithTimeout(ctx, 20*time.Second)
+		if err := s.EnforceIdentity(work); err != nil && ctx.Err() == nil {
+			slog.WarnContext(ctx, "RTC identity sweep failed", "err", err)
+		}
+		done()
 	}
 }
 

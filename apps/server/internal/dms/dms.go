@@ -21,6 +21,7 @@ import (
 	"github.com/calaba/calaba/server/internal/events"
 	"github.com/calaba/calaba/server/internal/httpx"
 	"github.com/calaba/calaba/server/internal/pbconv"
+	"github.com/calaba/calaba/server/internal/perm"
 	"github.com/calaba/calaba/server/internal/redisx"
 )
 
@@ -305,15 +306,29 @@ func (h *Handlers) candidates(w http.ResponseWriter, r *http.Request) error {
 	if err := h.notGuest(r); err != nil {
 		return err
 	}
-	q := strings.TrimSpace(r.URL.Query().Get("q"))
-	if utf8.RuneCountInString(q) > maxQuery {
+	raw := strings.TrimSpace(r.URL.Query().Get("q"))
+	if utf8.RuneCountInString(raw) > maxQuery {
 		return httpx.Validation("q", "query must be at most 64 characters")
 	}
 	// LIKE wildcards in the query are literal text.
-	q = strings.NewReplacer(`\`, `\\`, `%`, `\%`, `_`, `\_`).Replace(q)
-	rows, err := h.db.Q.ListDMCandidates(r.Context(), sqlc.ListDMCandidatesParams{UserID: uid(r), Q: q, Lim: MaxCandidates})
+	q := strings.NewReplacer(`\`, `\\`, `%`, `\%`, `_`, `\_`).Replace(raw)
+	me := uid(r)
+	readable, all, err := readableWorkspaces(r.Context(), h.db.Q, me)
 	if err != nil {
 		return err
+	}
+	lim := int32(MaxCandidates)
+	if !all {
+		lim = MaxCandidates * 5 // some are filtered out below
+	}
+	rows, err := h.db.Q.ListDMCandidates(r.Context(), sqlc.ListDMCandidatesParams{UserID: me, Q: q, Lim: lim})
+	if err != nil {
+		return err
+	}
+	if !all {
+		if rows, err = readableCandidates(r.Context(), h.db.Q, me, readable, rows, raw); err != nil {
+			return err
+		}
 	}
 	out := &v1.ListDmCandidatesResponse{Users: make([]*v1.User, len(rows))}
 	for i, u := range rows {
@@ -321,6 +336,65 @@ func (h *Handlers) candidates(w http.ResponseWriter, r *http.Request) error {
 	}
 	httpx.Write(w, http.StatusOK, out)
 	return nil
+}
+
+// readableWorkspaces lists the caller's workspaces this session may read under the
+// identity policy (the request's access guard, ADR-0054): a password-only session does not
+// see an enforced workspace's members through DMs either. all: none is denied, so the plain
+// membership queries apply unchanged. A gate error counts as denied (fail closed).
+// Read-only requests only: the guard records each workspace into a mutation's admission.
+func readableWorkspaces(ctx context.Context, q *sqlc.Queries, me uuid.UUID) ([]uuid.UUID, bool, error) {
+	ids, err := q.ListUserWorkspaceIDs(ctx, me)
+	if err != nil {
+		return nil, false, err
+	}
+	readable := make([]uuid.UUID, 0, len(ids))
+	for _, ws := range ids {
+		if perm.CheckAccess(ctx, ws, me) == nil {
+			readable = append(readable, ws)
+		}
+	}
+	return readable, len(readable) == len(ids), nil
+}
+
+// readableCandidates keeps the candidates who share a readable workspace with the caller
+// (as a full member there) and match the query there: by display name or that workspace's
+// nickname, never a nickname of a workspace the session may not read.
+func readableCandidates(ctx context.Context, q *sqlc.Queries, me uuid.UUID, readable []uuid.UUID, rows []sqlc.User, query string) ([]sqlc.User, error) {
+	ids := make([]uuid.UUID, len(rows))
+	for i, u := range rows {
+		ids[i] = u.ID
+	}
+	needle := strings.ToLower(query)
+	matches := func(name string) bool { return needle == "" || strings.Contains(strings.ToLower(name), needle) }
+	member, named := map[uuid.UUID]bool{}, map[uuid.UUID]bool{}
+	for _, ws := range readable {
+		if len(ids) == 0 {
+			break
+		}
+		if m, err := q.GetMember(ctx, sqlc.GetMemberParams{WorkspaceID: ws, UserID: me}); err != nil || m.Role == "guest" {
+			if err != nil && !db.IsNotFound(err) {
+				return nil, err
+			}
+			continue
+		}
+		names, err := q.ListMemberNames(ctx, sqlc.ListMemberNamesParams{WorkspaceID: ws, UserIds: ids})
+		if err != nil {
+			return nil, err
+		}
+		for _, n := range names {
+			name, _ := n.Name.(string)
+			member[n.UserID] = true
+			named[n.UserID] = named[n.UserID] || matches(name)
+		}
+	}
+	out := make([]sqlc.User, 0, min(len(rows), MaxCandidates))
+	for _, u := range rows {
+		if len(out) < MaxCandidates && member[u.ID] && (named[u.ID] || matches(u.DisplayName)) {
+			out = append(out, u)
+		}
+	}
+	return out, nil
 }
 
 // ErrBotBlocked means the person blocked this bot (ADR-0031, POST /api/me/blocked-bots/{id}).

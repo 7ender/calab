@@ -461,9 +461,13 @@ func (h *Hub) buildReady(ctx context.Context, s *Session, uid uuid.UUID) (*v1.Re
 			if err == nil && decision.Allowed && !s.workspaceLeaseAllows(w.ID) {
 				// Allowed but not leased (invalidations kept racing the evaluation): READY
 				// filtering would close the fresh connection. Leave the workspace out and
-				// unsubscribe; the identity sweep re-adds it with WORKSPACE_CREATE once leased.
-				err = errLeaseUnavailable
+				// unsubscribe; the identity sweep re-adds it with an access update and
+				// WORKSPACE_CREATE once leased. It is pending, not denied: no access entry,
+				// so the client does not lock it as "unavailable" meanwhile, and its events
+				// queued while READY was built are dropped (omitWorkspace).
 				h.leaveWorkspace(s, w.ID)
+				s.omitWorkspace(w.ID)
+				continue
 			}
 			access = identityAccessStatus(w.ID, decision, err, s.principal)
 			if policy, e := h.db.Q.GetIdentityPolicy(ctx, w.ID); e == nil {
