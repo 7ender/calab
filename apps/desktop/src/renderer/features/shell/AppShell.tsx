@@ -46,6 +46,7 @@ import { WorkspaceRail } from './WorkspaceRail';
 import { AppScreen } from '../webapps/AppScreen';
 import { installWebApps } from '../../services/webApps';
 import { useOpenApp } from '../../stores/webApps';
+import { useVoice } from '../../stores/voice';
 import { StreamPopout } from '../voice/StreamArea';
 
 export function AppShell(): ReactNode {
@@ -224,7 +225,7 @@ function ShellLayout(): ReactNode {
             <Welcome />
           </div>
         )}
-        {ready && (home || (hasWs && wsId)) ? <IslandSlot appOpen={!!appId} /> : null}
+        {ready && (home || (hasWs && wsId)) ? <IslandSlot appOpen={!!appId} workTab={boards || (calDay !== null && !guestWs)} /> : null}
         {ready ? <CreateTaskDialog /> : null}
       </div>
     </div>
@@ -234,8 +235,9 @@ function ShellLayout(): ReactNode {
 /**
  * Web apps use the entire content area, including while a voice call continues.
  */
-function IslandSlot({ appOpen }: { appOpen: boolean }): ReactNode {
-  return showBottomIsland(appOpen) ? <BottomIsland /> : null;
+function IslandSlot({ appOpen, workTab }: { appOpen: boolean; workTab: boolean }): ReactNode {
+  const inCall = useVoice((s) => s.roomId !== null || s.joining !== null);
+  return showBottomIsland(appOpen, workTab, inCall) ? <BottomIsland /> : null;
 }
 
 /**

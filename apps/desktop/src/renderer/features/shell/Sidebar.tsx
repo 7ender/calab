@@ -185,14 +185,16 @@ export function Sidebar({ workspaceId }: { workspaceId: string }): ReactNode {
     return { groups: groupRooms(rooms, cats, manageRooms), temps: sortTempRooms(rooms.filter((r) => !!r.expiresAt)) };
   }, [roomsById, categoriesById, workspaceId, manageRooms, hideMuted, notify, activeRoom, voiceRoom]);
   if (!entry) return null;
+  // Calendar mode (owner, 02.10): the column is the header and the mini calendar only — no room list.
+  const calList = calOpen && !guest && !boards;
   const empty = groups.length === 0 && temps.length === 0;
 
   return (
     <aside className="mat-sidebar island-fade flex w-[var(--sidebar-width)] shrink-0 flex-col" aria-label={t('room.list')}>
       <WorkspaceHeader workspaceId={workspaceId} onCreateCategory={() => setCatDialog(true)} />
-      {calOpen && !guest && !boards ? <MiniCalendar workspaceId={workspaceId} /> : null}
+      {calList ? <MiniCalendar workspaceId={workspaceId} /> : null}
       {boards ? <BoardsList workspaceId={workspaceId} /> : null}
-      {boards ? null : (
+      {boards || calList ? null : (
       <SidebarDnd workspaceId={workspaceId} listRef={listRef}>
         <SidebarMenu workspaceId={workspaceId} onCreateCategory={() => setCatDialog(true)}>
           {/* The bottom island (AppShell) floats over the column's foot: the list ends above it. */}

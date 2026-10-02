@@ -8,7 +8,7 @@ import { addDays, addMonths, dayEnd, dayKey, dayStart, formatLongDay, formatMont
 import { ensureMonth } from '../../services/calendar';
 import { ensureBusy } from '../../services/freebusy';
 import { useCalendar } from '../../stores/calendar';
-import { entryKey, selectMine, selectPeople, useFreeBusy, type FbEntry } from '../../stores/freebusy';
+import { entryKey, selectPeople, useFreeBusy, type FbEntry } from '../../stores/freebusy';
 import { myUserId } from '../../stores/session';
 import { useUi } from '../../stores/ui';
 import { clockFor } from '../shell/voiceFormat';
@@ -60,11 +60,10 @@ export const MiniCalendar = memo(function MiniCalendar({ workspaceId }: { worksp
   useEffect(() => {
     if (people.length) ensureBusy(workspaceId, people, from, to);
   }, [workspaceId, people, from, to]);
-  // «Только мои» (docs/09 #140): only days of meetings I organize or attend; nobody else's busy time.
-  const mineOn = useFreeBusy(selectMine(workspaceId));
-  const mine = mineOn ? myUserId() : '';
+  // Default scope (owner, 02.10): days of meetings I organize or attend, plus the selected people's.
+  const mine = myUserId();
   const busy = useCalendar(useShallow((s) => busyDays(s.occ, workspaceId, from, to, undefined, peopleSet, mine)));
-  const fbBusy = useFreeBusy(useShallow((s) => (peopleSet && !mineOn ? peopleBusyDays(people.map((u) => s.entries[entryKey(workspaceId, u)]), from, to) : NO_DAYS)));
+  const fbBusy = useFreeBusy(useShallow((s) => (peopleSet ? peopleBusyDays(people.map((u) => s.entries[entryKey(workspaceId, u)]), from, to) : NO_DAYS)));
   const busySet = useMemo(() => new Set([...busy, ...fbBusy]), [busy, fbBusy]);
   const names = useMemo(() => weekdayNames(first), [first, locale]); // eslint-disable-line react-hooks/exhaustive-deps
   const [focusDay, setFocus] = useState<string>(selected ?? today);
