@@ -17,6 +17,8 @@ vi.stubGlobal('localStorage', {
   removeItem: (k: string) => void mem.delete(k),
 });
 vi.stubGlobal('document', { hasFocus: () => true });
+// No Web Locks: a single tab, sounds fire synchronously (the cross-tab claim: lib/crossTab.test.ts).
+vi.stubGlobal('navigator', {});
 vi.stubGlobal('Notification', class { onclick: (() => void) | null = null; });
 
 const played = vi.hoisted((): Array<[string, unknown]> => []);

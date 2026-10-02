@@ -2,6 +2,7 @@ package gateway
 
 import (
 	"bytes"
+	"strings"
 	"testing"
 	"time"
 
@@ -300,5 +301,29 @@ func TestEventScopeClassified(t *testing.T) {
 	}
 	if knownScopedEvent(&v1.DispatchEvent{}) {
 		t.Error("an absent variant must deny")
+	}
+}
+
+func TestValidTabID(t *testing.T) {
+	long := strings.Repeat("a", maxTabIDLen)
+	for in, want := range map[string]string{
+		"":                      "",
+		"tab-1_X":               "tab-1_X",
+		long:                    long,
+		long + "a":              "",
+		"a|b":                   "", // the member separator of gw:tabs
+		"a b":                   "",
+		"таб":                   "",
+		"0f8c7d2e-1b2a-4c3d-9e": "0f8c7d2e-1b2a-4c3d-9e",
+	} {
+		if got := validTabID(in); got != want {
+			t.Errorf("validTabID(%q) = %q, want %q", in, got, want)
+		}
+	}
+	if c, why := killClose(true); c != 4011 || why == "" {
+		t.Errorf("evicted close: %d %q", c, why)
+	}
+	if c, why := killClose(false); c != 4000 || why != "replaced by a new session" {
+		t.Errorf("replaced close: %d %q (bots rely on the reason, docs/19)", c, why)
 	}
 }

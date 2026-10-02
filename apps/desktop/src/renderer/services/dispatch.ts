@@ -15,6 +15,7 @@ import { log } from '../lib/log';
 import { HOME, isDm, useDms } from '../stores/dms';
 import { useInbox } from '../stores/inbox';
 import { useMessages } from '../stores/messages';
+import { useArchiveView } from '../stores/archiveView';
 import { toast } from '../stores/toasts';
 import { mayMentionAll } from '../lib/permissions';
 import { useReadReceipts } from '../stores/readReceipts';
@@ -184,7 +185,10 @@ export function applyDispatch(ev: DispatchEvent): void {
       useRooms.setState((st) => ({ unread: { ...carry(prevUnread), ...st.unread }, mentions: { ...carry(prevMentions), ...st.mentions } }));
       void loadMentions(); // the inbox list: mentions missed while disconnected
       const msgs = useMessages.getState();
-      for (const id of Object.keys(msgs.rooms)) if (!(id in alive)) msgs.unload(id);
+      // The history of an archived temporary room (ADR-0044) is read outside the live store: it
+      // stays open and is resynced like any loaded window (#48).
+      const archived = useArchiveView.getState().room?.id;
+      for (const id of Object.keys(msgs.rooms)) if (!(id in alive) && id !== archived) msgs.unload(id);
       void resyncLoadedRooms();
       void retryFailedLoads(); // a room left on «Не удалось загрузить» (docs/09 #146)
       void resyncPins();

@@ -1,4 +1,4 @@
-import { CallOutcome, PresenceStatus, levelNotifies, type Message } from '@calaba/protocol';
+import { CallOutcome, PresenceStatus, levelNotifies, type Message, type Room } from '@calaba/protocol';
 import { chatSound } from '../lib/chatSound';
 import { mentionsMe } from '../lib/mentions';
 import { playSound } from '../lib/sounds';
@@ -11,6 +11,7 @@ import { useSession } from '../stores/session';
 import { useUi } from '../stores/ui';
 import { memberName, rolesOf, useWorkspaces } from '../stores/workspaces';
 import { platform } from '../platform';
+import { onceAcrossTabs, type CrossTabDeps } from '../lib/crossTab';
 import { previewText } from '../features/chat/mentionText';
 import { roomLabel } from '../features/chat/roomLabel';
 import { t } from '../i18n';
@@ -18,6 +19,16 @@ import { systemPreview } from '../lib/recording';
 import { callCardOf } from '../lib/callModel';
 
 export { mentionsMe };
+
+/** Web: browser tabs share the auth session and all get the message (#40) — notify in one. */
+const tabs: CrossTabDeps = {
+  get locks() {
+    // Web Locks exist only in secure contexts (https, localhost).
+    return platform.kind === 'web' && typeof navigator !== 'undefined' && 'locks' in navigator ? navigator.locks : null;
+  },
+  hidden: () => document.visibilityState === 'hidden',
+  setTimeout: (fn, ms) => window.setTimeout(fn, ms),
+};
 
 export interface NotifyDecision {
   dm: boolean;
@@ -77,13 +88,20 @@ export function onIncomingMessage(m: Message, workspaceId: string, visible: bool
     dnd: p.presence === PresenceStatus.DND,
     openChat: p.messageSoundOpenChat,
   });
-  if (sound) playSound(sound.name, { volume: sound.volume });
-  if (visible) return; // chat is on screen: the read marker moves when it is seen
-  // Badges count regardless of the notification settings.
-  useRooms.getState().addUnread(m.roomId, m.id, mention);
-  if (!notify) return;
-  if (p.presence === PresenceStatus.DND) return;
-  if (!(mention && p.notifyMentions) && !p.notifyAll) return;
+  // Badges count regardless of the notification settings (chat on screen: the read marker
+  // moves when it is seen).
+  if (!visible) useRooms.getState().addUnread(m.roomId, m.id, mention);
+  const system = !visible && notify && p.presence !== PresenceStatus.DND && ((mention && p.notifyMentions) || p.notifyAll);
+  // A tab showing the chat claims the message even when it stays quiet, so another tab does
+  // not notify about what is on screen.
+  if (!sound && !system && !visible) return;
+  onceAcrossTabs(`msg:${m.id}`, tabs, () => {
+    if (sound) playSound(sound.name, { volume: sound.volume });
+    if (system) showMessageNotification(m, workspaceId, room, dm);
+  });
+}
+
+function showMessageNotification(m: Message, workspaceId: string, room: Room | undefined, dm: boolean): void {
   const author = memberName(workspaceId || null, m.authorId);
   const body = systemPreview(m, author) || previewText(workspaceId || null, m.content).slice(0, 180) || (m.attachments.length ? t('notify.attachment') : '');
   try {
