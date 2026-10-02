@@ -227,10 +227,6 @@ export function StickerPanel({ place, onSend, onClose }: { place: StickerPlace; 
   );
 }
 
-function Note({ children }: { children: ReactNode }): ReactNode {
-  return <p className="grid flex-1 place-items-center px-6 text-center text-body text-muted">{children}</p>;
-}
-
 /**
  * No packs to show: «Добавьте пак в настройках пространства», with a button to «Стикеры» of
  * the workspace settings for whoever holds MANAGE_STICKERS there (in a room; a DM has no one
