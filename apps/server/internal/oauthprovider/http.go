@@ -7,6 +7,7 @@ import (
 	"mime"
 	"net/http"
 	"net/url"
+	"strconv"
 	"strings"
 
 	v1 "github.com/calaba/calaba/server/gen/calaba/v1"
@@ -62,7 +63,14 @@ func jsonResponse(w http.ResponseWriter, status int, v any) {
 }
 func writeError(w http.ResponseWriter, err error) {
 	var e *protocolError
-	if !errors.As(err, &e) {
+	var api *httpx.Error
+	if errors.As(err, &api) && api.Status == http.StatusTooManyRequests {
+		if api.RetryAfter > 0 {
+			w.Header().Set("Retry-After", strconv.Itoa(max(1, int(api.RetryAfter.Seconds()))))
+		}
+		e = &protocolError{code: "temporarily_unavailable", status: http.StatusTooManyRequests}
+	}
+	if e == nil && !errors.As(err, &e) {
 		e = &protocolError{code: "server_error", status: http.StatusServiceUnavailable}
 	}
 	if e.code == "invalid_client" {
@@ -255,12 +263,14 @@ func (s *Service) token(w http.ResponseWriter, r *http.Request) {
 		writeError(w, err)
 		return
 	}
-	out, err := s.exchange(r.Context(), ws, r, f)
+	out, client, err := s.exchange(r.Context(), ws, r, f)
+	if client != nil {
+		cors(w, r)
+	}
 	if err != nil {
 		writeError(w, err)
 		return
 	}
-	cors(w, r)
 	jsonResponse(w, http.StatusOK, out)
 }
 func (s *Service) preflight(w http.ResponseWriter, r *http.Request) {

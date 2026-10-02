@@ -123,9 +123,9 @@ ON CONFLICT(workspace_id,user_id) DO UPDATE SET subject=oauth_subjects.subject R
 SELECT * FROM oauth_consents WHERE workspace_id=$1 AND user_id=$2 AND client_id=$3;
 
 -- name: UpsertOAuthConsent :one
-INSERT INTO oauth_consents(workspace_id,user_id,client_id,scopes,refresh_allowed) VALUES($1,$2,$3,$4,$5)
+INSERT INTO oauth_consents(workspace_id,user_id,client_id,scopes,refresh_allowed,client_name) VALUES($1,$2,$3,$4,$5,$6)
 ON CONFLICT(workspace_id,user_id,client_id) DO UPDATE SET scopes=EXCLUDED.scopes,refresh_allowed=EXCLUDED.refresh_allowed,
-version=oauth_consents.version+1,granted_at=clock_timestamp(),revoked_at=NULL RETURNING *;
+client_name=EXCLUDED.client_name,version=oauth_consents.version+1,granted_at=clock_timestamp(),revoked_at=NULL RETURNING *;
 
 -- name: RevokeOAuthConsent :one
 UPDATE oauth_consents SET revoked_at=clock_timestamp(),version=version+1 WHERE workspace_id=$1 AND user_id=$2 AND client_id=$3 RETURNING *;
@@ -211,9 +211,50 @@ AND (sqlc.narg('client_id')::uuid IS NULL OR client_id=sqlc.narg('client_id'));
 -- name: ListUserOAuthGrants :many
 SELECT * FROM oauth_grants WHERE user_id=$1 AND (sqlc.narg('workspace_id')::uuid IS NULL OR workspace_id=sqlc.narg('workspace_id')) ORDER BY created_at DESC;
 -- name: LockOAuthWorkspace :one
-SELECT * FROM workspaces WHERE id=$1 FOR UPDATE;
+-- NO KEY UPDATE serializes identity writers and provider issuance without blocking
+-- workspace-wide FK key-share inserts (messages, members, files) behind it.
+SELECT * FROM workspaces WHERE id=$1 FOR NO KEY UPDATE;
 
 -- name: UpdateOAuthClientName :one
 UPDATE oauth_clients SET name=sqlc.arg('name')
 WHERE workspace_id=sqlc.arg('workspace_id') AND id=sqlc.arg('id') AND version=sqlc.arg('expected_version')
 RETURNING *;
+
+-- name: FindOAuthCodeForClient :one
+-- Unlocked pre-authentication lookup; the issuing transaction re-reads under lock.
+SELECT * FROM oauth_authorization_codes
+WHERE workspace_id=$1 AND client_id=$2 AND code_hash=$3 AND redirect_uri=$4 AND pkce_challenge=$5;
+
+-- name: ListUserOAuthGrantsWithClient :many
+SELECT g.id, g.workspace_id, c.name AS client_name, g.scopes, g.created_at, g.expires_at, g.revoked_at
+FROM oauth_grants g JOIN oauth_clients c ON c.workspace_id=g.workspace_id AND c.id=g.client_id
+WHERE g.user_id=$1 AND (sqlc.narg('workspace_id')::uuid IS NULL OR g.workspace_id=sqlc.narg('workspace_id'))
+ORDER BY g.created_at DESC;
+
+-- Retention (one sweeper per cluster). Each statement deletes at most a batch.
+
+-- name: DeleteExpiredOAuthRequests :execrows
+DELETE FROM oauth_authorization_requests WHERE id IN (
+    SELECT id FROM oauth_authorization_requests WHERE expires_at < clock_timestamp() LIMIT sqlc.arg('batch')::int);
+
+-- name: DeleteExpiredOAuthCodes :execrows
+DELETE FROM oauth_authorization_codes WHERE id IN (
+    SELECT id FROM oauth_authorization_codes WHERE expires_at < clock_timestamp() - make_interval(secs => sqlc.arg('window_seconds')::int) LIMIT sqlc.arg('batch')::int);
+
+-- name: DeleteExpiredOAuthAccessTokens :execrows
+-- Access tokens are never parents; refresh tokens leave with their grant (parent FK cascades).
+DELETE FROM oauth_tokens WHERE id IN (
+    SELECT id FROM oauth_tokens WHERE token_type='access' AND expires_at < clock_timestamp() - make_interval(secs => sqlc.arg('window_seconds')::int) LIMIT sqlc.arg('batch')::int);
+
+-- name: DeleteFinishedOAuthGrants :execrows
+-- Expired or revoked (incl. superseded by re-consent) grants after the replay window;
+-- codes and tokens of the family cascade.
+DELETE FROM oauth_grants WHERE id IN (
+    SELECT id FROM oauth_grants WHERE expires_at < clock_timestamp() - make_interval(secs => sqlc.arg('window_seconds')::int)
+    UNION
+    SELECT id FROM oauth_grants WHERE revoked_at < clock_timestamp() - make_interval(secs => sqlc.arg('window_seconds')::int)
+    LIMIT sqlc.arg('batch')::int);
+
+-- name: GetOAuthTokenForClient :one
+-- Unlocked pre-authentication lookup for revocation.
+SELECT * FROM oauth_tokens WHERE workspace_id=$1 AND client_id=$2 AND token_hash=$3 AND token_type=$4;

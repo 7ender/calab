@@ -110,38 +110,47 @@ func TestIdentityProviderTokenClientAndIPQuotas(t *testing.T) {
 	c := quotaClient(t, base, f.a.Id, v1.OAuthClientType_OAUTH_CLIENT_TYPE_CONFIDENTIAL_WEB)
 	path := "/oidc/workspaces/" + f.a.Id + "/token"
 	form := url.Values{"grant_type": {"authorization_code"}, "redirect_uri": {"https://client.example/callback"}, "code": {"calab_oc_" + base64.RawURLEncoding.EncodeToString(bytes.Repeat([]byte{22}, 32))}, "code_verifier": {strings.Repeat("v", 43)}}
-	// Invalid credentials must not let an attacker spend the client's budget.
+	// Neither invalid credentials nor a valid secret with an unknown code spend the
+	// client's budget: per-(client,user) buckets are charged only after the
+	// provider found a live code or token, so no amount of such traffic is 429.
 	for i := range 8 {
 		status, _, _ := quotaWire(t, base, "POST", path, fmt.Sprintf("10.90.1.%d", i+1), "", c.Client.ClientId, "calab_os_"+base64.RawURLEncoding.EncodeToString(bytes.Repeat([]byte{55}, 32)), form)
 		if status != 401 {
 			t.Fatalf("invalid client credentials=%d", status)
 		}
 	}
-	started := time.Now()
-	allowed := 0
 	for i := range 75 {
-		status, headers, raw := quotaWire(t, base, "POST", path, fmt.Sprintf("10.90.2.%d", i+1), "", c.Client.ClientId, c.SecretOnce, form)
-		if status == 429 {
-			quotaDenied(t, status, headers, raw)
-			break
-		}
+		status, _, raw := quotaWire(t, base, "POST", path, fmt.Sprintf("10.90.2.%d", i+1), "", c.Client.ClientId, c.SecretOnce, form)
 		// Invalid code proves that the quota parser preserved and restored the form
 		// and Basic credentials for the provider's own authentication/parser.
 		if status != 400 || !bytes.Contains(raw, []byte("invalid_grant")) {
 			t.Fatalf("restored form=%d %s", status, raw)
 		}
+	}
+	// Public client_id + IP bucket: one IP cannot exhaust a shared NAT's budget.
+	form.Set("client_id", "unregistered")
+	started := time.Now()
+	allowed := 0
+	for range 75 {
+		status, headers, raw := quotaWire(t, base, "POST", path, "10.90.3.1", "", "", "", form)
+		if status == 429 {
+			quotaDenied(t, status, headers, raw)
+			break
+		}
+		if status != 401 {
+			t.Fatalf("unknown client=%d %s", status, raw)
+		}
 		allowed++
 	}
 	if allowed < 60 || allowed > 60+int(math.Ceil(time.Since(started).Seconds())) || allowed >= 75 {
-		t.Fatalf("client bucket permits %d over %s", allowed, time.Since(started))
+		t.Fatalf("client+IP bucket permits %d over %s", allowed, time.Since(started))
 	}
-	// The separate IP bucket covers unregistered clients too, independent of the
-	// authenticated-client bucket. Its refill is exactly two requests per second.
-	form.Set("client_id", "unregistered")
+	// The IP bucket covers rotating client_ids too. Its refill is two per second.
 	started = time.Now()
 	allowed = 0
-	for range 140 {
-		status, headers, raw := quotaWire(t, base, "POST", path, "10.90.3.1", "", "", "", form)
+	for i := range 140 {
+		form.Set("client_id", fmt.Sprintf("unregistered-%d", i))
+		status, headers, raw := quotaWire(t, base, "POST", path, "10.90.4.1", "", "", "", form)
 		if status == 429 {
 			quotaDenied(t, status, headers, raw)
 			break
@@ -229,9 +238,16 @@ func TestIdentityProviderUserInfoQuotaAcrossMethodsAndTokens(t *testing.T) {
 		}
 		tokens = append(tokens, raw)
 	}
+	// Unknown bearers from many IPs are 401 and never spend the client budget.
+	for i := range 100 {
+		random := "calab_oa_" + base64.RawURLEncoding.EncodeToString(bytes.Repeat([]byte{byte(i + 140)}, 32))
+		if status, _, raw := quotaWire(t, base, "GET", "/oidc/workspaces/"+ws.String()+"/userinfo", fmt.Sprintf("10.92.2.%d", i+1), random, "", "", nil); status != 401 {
+			t.Fatalf("unknown bearer=%d %s", status, raw)
+		}
+	}
 	started := time.Now()
 	allowed := 0
-	for i := range 150 {
+	for i := range 80 {
 		method := "GET"
 		if i%2 == 1 {
 			method = "POST"
@@ -246,8 +262,9 @@ func TestIdentityProviderUserInfoQuotaAcrossMethodsAndTokens(t *testing.T) {
 		}
 		allowed++
 	}
-	if allowed < 120 || allowed > 120+int(math.Ceil(time.Since(started).Seconds()*2)) || allowed >= 150 {
-		t.Fatalf("userinfo client bucket permits %d over %s", allowed, time.Since(started))
+	// Both tokens belong to one (client,user) bucket of 60/min.
+	if allowed < 60 || allowed > 60+int(math.Ceil(time.Since(started).Seconds())) || allowed >= 80 {
+		t.Fatalf("userinfo client-user bucket permits %d over %s", allowed, time.Since(started))
 	}
 }
 
@@ -284,5 +301,39 @@ func TestIdentityProviderManagementDependencyIs503(t *testing.T) {
 	}
 	if _, err := testApp.Auth.AuthenticateToken(context.Background(), f.local.token); err != nil {
 		t.Fatal("dependency failure revoked the valid device")
+	}
+}
+
+// Anonymous provider endpoints have IP buckets in front of any database work.
+func TestIdentityProviderAnonymousIPQuotas(t *testing.T) {
+	f := identitySetup(t, "optional")
+	_, base := identityHTTP(t)
+	for _, tc := range []struct {
+		name, method, path string
+		limit, want        int
+	}{
+		{"authorize", "GET", "/oidc/workspaces/" + f.a.Id + "/authorize", 60, 400},
+		{"discovery", "GET", "/oidc/workspaces/" + f.a.Id + "/.well-known/openid-configuration", 120, 200},
+		{"revoke", "POST", "/oidc/workspaces/" + f.a.Id + "/revoke", 120, 400},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			ip := "10.94." + fmt.Sprint(len(tc.name)) + ".1"
+			started := time.Now()
+			allowed := 0
+			for range tc.limit + 15 {
+				status, headers, raw := quotaWire(t, base, tc.method, tc.path, ip, "", "", "", nil)
+				if status == 429 {
+					quotaDenied(t, status, headers, raw)
+					break
+				}
+				if status != tc.want {
+					t.Fatalf("%s=%d %s", tc.name, status, raw)
+				}
+				allowed++
+			}
+			if allowed < tc.limit || allowed > tc.limit+int(math.Ceil(time.Since(started).Seconds()*float64(tc.limit)/60)) || allowed >= tc.limit+15 {
+				t.Fatalf("%s IP bucket permits %d over %s", tc.name, allowed, time.Since(started))
+			}
+		})
 	}
 }

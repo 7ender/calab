@@ -164,6 +164,9 @@ func (a *App) Run(ctx context.Context) {
 	go a.Boards.Run(ctx, a.redis, boards.SweepInterval)
 	go a.Rooms.RunTempRooms(ctx, a.redis, a.tempRetention)
 	go a.SIP.Run(ctx)
+	if a.OAuth != nil {
+		go a.OAuth.Run(ctx, a.redis, oauthprovider.SweepInterval) // provider retention
+	}
 }
 
 // mailSender: the test override, else SMTP from config, else nil (mail disabled).

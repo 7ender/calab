@@ -36,9 +36,11 @@ type tokenResponse struct {
 	IDToken      string `json:"id_token,omitempty"`
 }
 
-// authenticateClient locks before checking credentials, preventing secret rotation
-// or disabling a client between authentication and a transactional issuance.
-func (s *Service) authenticateClient(ctx context.Context, q *sqlc.Queries, ws uuid.UUID, r *http.Request, f url.Values) (sqlc.OauthClient, error) {
+// authenticateClient checks client credentials. With lock it re-reads the client
+// FOR UPDATE, preventing secret rotation or disabling between authentication and
+// a transactional issuance. Without lock it is the cheap pre-authentication pass
+// that runs before any workspace lock or per-client quota is touched.
+func (s *Service) authenticateClient(ctx context.Context, q *sqlc.Queries, ws uuid.UUID, r *http.Request, f url.Values, lock bool) (sqlc.OauthClient, error) {
 	id := f.Get("client_id")
 	user, secret, basic := r.BasicAuth()
 	if r.Header.Get("Authorization") != "" && !basic {
@@ -66,9 +68,11 @@ func (s *Service) authenticateClient(ctx context.Context, q *sqlc.Queries, ws uu
 	if err != nil {
 		return c, invalidClient()
 	}
-	c, err = q.GetOAuthClientForUpdate(ctx, sqlc.GetOAuthClientForUpdateParams{WorkspaceID: ws, ID: c.ID})
-	if err != nil {
-		return c, err
+	if lock {
+		c, err = q.GetOAuthClientForUpdate(ctx, sqlc.GetOAuthClientForUpdateParams{WorkspaceID: ws, ID: c.ID})
+		if err != nil {
+			return c, err
+		}
 	}
 	if c.DisabledAt != nil {
 		return c, invalidClient()
@@ -197,14 +201,67 @@ func (s *Service) issueTokens(ctx context.Context, q *sqlc.Queries, c sqlc.Oauth
 	return r, err
 }
 
-func (s *Service) exchange(ctx context.Context, ws uuid.UUID, r *http.Request, f url.Values) (tokenResponse, error) {
+// preExchange authenticates the client and finds the presented code or refresh
+// token without locks. Only a caller passing it reaches the per-client quota and
+// the locking transaction; the transaction re-validates everything.
+func (s *Service) preExchange(ctx context.Context, ws uuid.UUID, r *http.Request, f url.Values) (sqlc.OauthClient, uuid.UUID, error) {
+	c, err := s.authenticateClient(ctx, s.c.DB.Q, ws, r, f, false)
+	if err != nil {
+		return c, uuid.Nil, err
+	}
+	if err = s.checkCORS(r, c); err != nil {
+		return c, uuid.Nil, err
+	}
+	switch f.Get("grant_type") {
+	case "authorization_code":
+		if !tokenShape(f.Get("code"), "calab_oc_") || !validVerifier(f.Get("code_verifier")) || f.Get("redirect_uri") == "" || f.Has("scope") {
+			return c, uuid.Nil, oauthError("invalid_grant")
+		}
+		challenge := base64.RawURLEncoding.EncodeToString(hash(f.Get("code_verifier")))
+		code, err := s.c.DB.Q.FindOAuthCodeForClient(ctx, sqlc.FindOAuthCodeForClientParams{WorkspaceID: ws, ClientID: c.ID, CodeHash: hash(f.Get("code")), RedirectUri: f.Get("redirect_uri"), PkceChallenge: challenge})
+		if errors.Is(err, dbNoRows()) {
+			return c, uuid.Nil, oauthError("invalid_grant")
+		}
+		return c, code.UserID, err
+	case "refresh_token":
+		if !tokenShape(f.Get("refresh_token"), "calab_or_") {
+			return c, uuid.Nil, oauthError("invalid_grant")
+		}
+		t, err := s.c.DB.Q.FindOAuthToken(ctx, sqlc.FindOAuthTokenParams{WorkspaceID: ws, TokenHash: hash(f.Get("refresh_token")), TokenType: "refresh"})
+		if errors.Is(err, dbNoRows()) || err == nil && t.ClientID != c.ID {
+			return c, uuid.Nil, oauthError("invalid_grant")
+		}
+		return c, t.UserID, err
+	default:
+		return c, uuid.Nil, oauthError("unsupported_grant_type")
+	}
+}
+
+// exchange returns the client once it is authenticated and its CORS origin is
+// allowed, so protocol errors after that point stay readable by a registered SPA.
+func (s *Service) exchange(ctx context.Context, ws uuid.UUID, r *http.Request, f url.Values) (tokenResponse, *sqlc.OauthClient, error) {
+	pre, user, err := s.preExchange(ctx, ws, r, f)
+	var allowed *sqlc.OauthClient
+	if pre.ID != uuid.Nil && pre.DisabledAt == nil && s.checkCORS(r, pre) == nil {
+		allowed = &pre
+	}
+	if err != nil {
+		var pe *protocolError
+		if !errors.As(err, &pe) || pe.code == "invalid_client" {
+			allowed = nil
+		}
+		return tokenResponse{}, allowed, err
+	}
+	if err = s.quota(ctx, "token", ws, pre.ID, user); err != nil {
+		return tokenResponse{}, allowed, err
+	}
 	var out tokenResponse
 	var wireErr error
-	err := s.c.DB.Tx(ctx, func(q *sqlc.Queries) error {
+	err = s.c.DB.Tx(ctx, func(q *sqlc.Queries) error {
 		if err := s.lockWorkspace(ctx, q, ws); err != nil {
 			return err
 		}
-		c, err := s.authenticateClient(ctx, q, ws, r, f)
+		c, err := s.authenticateClient(ctx, q, ws, r, f, true)
 		if err != nil {
 			return err
 		}
@@ -338,10 +395,10 @@ func (s *Service) exchange(ctx context.Context, ws uuid.UUID, r *http.Request, f
 		}
 	})
 	if err != nil {
-		return tokenResponse{}, err
+		return tokenResponse{}, allowed, err
 	}
 	if wireErr != nil {
-		return tokenResponse{}, wireErr
+		return tokenResponse{}, allowed, wireErr
 	}
-	return out, nil
+	return out, allowed, nil
 }

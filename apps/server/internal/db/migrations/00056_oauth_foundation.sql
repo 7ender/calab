@@ -50,6 +50,8 @@ CREATE TABLE oauth_consents (
     scopes text[] NOT NULL CHECK (scopes <@ ARRAY['openid', 'profile', 'email']::text[] AND 'openid' = ANY(scopes)),
     version bigint NOT NULL DEFAULT 1 CHECK (version > 0),
     refresh_allowed boolean NOT NULL DEFAULT false,
+    -- Display name the user agreed to; a rename requires interactive consent again.
+    client_name text NOT NULL DEFAULT '',
     granted_at timestamptz NOT NULL DEFAULT now(),
     revoked_at timestamptz,
     FOREIGN KEY (workspace_id, client_id) REFERENCES oauth_clients(workspace_id, id) ON DELETE CASCADE,
@@ -115,6 +117,9 @@ CREATE INDEX oauth_grants_session_idx ON oauth_grants(session_id);
 CREATE INDEX oauth_grants_client_idx ON oauth_grants(workspace_id, client_id);
 CREATE INDEX oauth_grants_user_idx ON oauth_grants(workspace_id, user_id);
 CREATE INDEX oauth_grants_consent_idx ON oauth_grants(consent_id);
+-- Retention sweeper scans (expired / revoked families).
+CREATE INDEX oauth_grants_expiry_idx ON oauth_grants(expires_at);
+CREATE INDEX oauth_grants_revoked_idx ON oauth_grants(revoked_at) WHERE revoked_at IS NOT NULL;
 CREATE TABLE oauth_authorization_codes (
     id uuid PRIMARY KEY DEFAULT uuidv7(),
     workspace_id uuid NOT NULL,
@@ -132,6 +137,7 @@ CREATE TABLE oauth_authorization_codes (
     CHECK (expires_at > created_at AND expires_at <= created_at + interval '60 seconds')
 );
 CREATE INDEX oauth_authorization_codes_grant_idx ON oauth_authorization_codes(grant_id);
+CREATE INDEX oauth_authorization_codes_expiry_idx ON oauth_authorization_codes(expires_at);
 CREATE TABLE oauth_tokens (
     id uuid PRIMARY KEY DEFAULT uuidv7(),
     workspace_id uuid NOT NULL,

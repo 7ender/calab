@@ -23,6 +23,25 @@ func (s *Service) userinfo(w http.ResponseWriter, r *http.Request) {
 		writeError(w, invalid)
 		return
 	}
+	// Unlocked hash lookup first: an unknown, expired or revoked bearer never
+	// opens a transaction, locks the workspace or charges a client quota.
+	pre, err := s.c.DB.Q.FindOAuthToken(r.Context(), sqlc.FindOAuthTokenParams{WorkspaceID: ws, TokenHash: hash(raw), TokenType: "access"})
+	if err != nil {
+		if !errors.Is(err, dbNoRows()) {
+			writeError(w, err)
+			return
+		}
+		writeError(w, invalid)
+		return
+	}
+	if pre.RevokedAt != nil || !s.c.Now().Before(pre.ExpiresAt) {
+		writeError(w, invalid)
+		return
+	}
+	if err = s.quota(r.Context(), "userinfo", ws, pre.ClientID, pre.UserID); err != nil {
+		writeError(w, err)
+		return
+	}
 	out := map[string]any{}
 	var wireErr error
 	err = s.c.DB.Tx(r.Context(), func(q *sqlc.Queries) error {
@@ -99,26 +118,50 @@ func (s *Service) revoke(w http.ResponseWriter, r *http.Request) {
 		writeError(w, oauthError("invalid_request"))
 		return
 	}
+	// Authenticate the client and find the token without locks; only a client's
+	// own existing token reaches the locking transaction. RFC 7009 answers 200
+	// for unknown tokens, so those return before any lock as well.
+	c, err := s.authenticateClient(r.Context(), s.c.DB.Q, ws, r, f, false)
+	if err != nil {
+		writeError(w, err)
+		return
+	}
+	if err = s.checkCORS(r, c); err != nil {
+		writeError(w, err)
+		return
+	}
+	cors(w, r)
+	kind := ""
+	if tokenShape(f.Get("token"), "calab_oa_") {
+		kind = "access"
+	}
+	if tokenShape(f.Get("token"), "calab_or_") {
+		kind = "refresh"
+	}
+	if kind != "" {
+		_, err = s.c.DB.Q.GetOAuthTokenForClient(r.Context(), sqlc.GetOAuthTokenForClientParams{WorkspaceID: ws, ClientID: c.ID, TokenHash: hash(f.Get("token")), TokenType: kind})
+		if errors.Is(err, dbNoRows()) {
+			kind = ""
+		} else if err != nil {
+			writeError(w, err)
+			return
+		}
+	}
+	if kind == "" {
+		headers(w)
+		w.WriteHeader(http.StatusOK)
+		return
+	}
 	err = s.c.DB.Tx(r.Context(), func(q *sqlc.Queries) error {
 		if err := s.lockWorkspace(r.Context(), q, ws); err != nil {
 			return err
 		}
-		c, err := s.authenticateClient(r.Context(), q, ws, r, f)
+		c, err := s.authenticateClient(r.Context(), q, ws, r, f, true)
 		if err != nil {
 			return err
 		}
 		if err = s.checkCORS(r, c); err != nil {
 			return err
-		}
-		kind := ""
-		if tokenShape(f.Get("token"), "calab_oa_") {
-			kind = "access"
-		}
-		if tokenShape(f.Get("token"), "calab_or_") {
-			kind = "refresh"
-		}
-		if kind == "" {
-			return nil
 		}
 		t, err := q.GetOAuthTokenForUpdate(r.Context(), sqlc.GetOAuthTokenForUpdateParams{WorkspaceID: ws, ClientID: c.ID, TokenHash: hash(f.Get("token")), TokenType: kind})
 		if errors.Is(err, dbNoRows()) {
@@ -137,7 +180,6 @@ func (s *Service) revoke(w http.ResponseWriter, r *http.Request) {
 		writeError(w, err)
 		return
 	}
-	cors(w, r)
 	headers(w)
 	w.WriteHeader(http.StatusOK)
 }
