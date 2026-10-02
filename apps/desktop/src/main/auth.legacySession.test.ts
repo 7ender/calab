@@ -16,7 +16,7 @@ const mocks = vi.hoisted(() => ({
     | null,
   settings: { serverUrl: 'https://app.calab.io' },
   // userData/session.bin exactly as 1.7.x wrote it (no workspaceId / authority).
-  stored: JSON.stringify({ serverUrl: 'https://app.calab.ru', refreshToken: 'legacy-session.secret', sessionId: 'legacy-session' }) as string | null,
+  stored: null as string | null,
 }));
 vi.mock('electron', () => ({
   app: { getPath: () => '/tmp/calab-legacy-session-unit' },
