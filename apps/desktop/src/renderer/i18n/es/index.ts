@@ -253,6 +253,7 @@ export const es: Dict = {
   'media.maxPreset': 'Calidad máxima de pantalla compartida',
   'media.maxStreams': 'Pantallas compartidas simultáneas',
   'media.maxStreamsHint': 'Cuántas personas pueden compartir pantalla a la vez (0 — no permitido)',
+  'media.planClamp': 'Se aplica min(valor, límite del plan): {limit}',
   'media.default': 'Predeterminado del espacio ({v})',
   'audioTier.8': 'Baja',
   'audioTier.16': 'Normal',

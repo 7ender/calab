@@ -96,7 +96,7 @@ function PackList({ workspaceId, packs, loaded, onOpen }: { workspaceId: string;
         </form>
         {full ? (
           <div className="px-2 pb-2.5">
-            <PlanFullNote text={t('stk.planPacks', { n: limit })} testId="sticker-plan-full" />
+            <PlanFullNote text={plural('stk.planPacks', limit)} testId="sticker-plan-full" />
           </div>
         ) : null}
         {error ? (

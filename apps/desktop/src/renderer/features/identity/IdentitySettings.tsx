@@ -10,9 +10,10 @@ import {
   DirectoryMemberStatus,
   type IdentityConnection,
   type IdentityDirectory,
+  type IdentityDirectoryMember,
 } from '@calaba/protocol';
 import { timestampDate, type Timestamp } from '@bufbuild/protobuf/wkt';
-import { useCallback, useRef, useState, type ReactNode } from 'react';
+import { memo, useCallback, useRef, useState, type ReactNode } from 'react';
 import { Button, Card, Field, Input, Modal, PasswordInput, Select, Switch as Toggle } from '../../components/ui';
 import { confirmIdentity as confirmAction } from './confirm';
 import { t, getLocale } from '../../i18n';
@@ -197,7 +198,7 @@ export function IdentitySettings({ workspaceId, owner }: { workspaceId: string; 
               <h3 className="mt-3 text-body font-semibold">{t('identity.recoverySection')}</h3>
               <Toggle label={t('identity.recoverySaved')} checked={kitSaved} onChange={setKitSaved} />
               <Button
-              className="self-end mobile:self-stretch"
+                className="self-end mobile:self-stretch"
                 disabled={!access || (mode === IdentityPolicyMode.ENFORCED && !kitSaved)}
                 busy={action.busy}
                 onClick={() =>
@@ -220,7 +221,7 @@ export function IdentitySettings({ workspaceId, owner }: { workspaceId: string; 
                 {t('identity.save')}
               </Button>
               <Button
-              className="self-end mobile:self-stretch"
+                className="self-end mobile:self-stretch"
                 variant="secondary"
                 busy={action.busy}
                 onClick={() =>
@@ -336,7 +337,7 @@ function ConnectionForm({
           </p>
         ) : null}
         <Button
-              className="self-end mobile:self-stretch"
+          className="self-end mobile:self-stretch"
           busy={action.busy}
           disabled={
             !name.trim() ||
@@ -371,6 +372,26 @@ export function DirectorySettings({ workspaceId }: { workspaceId: string }): Rea
   const action = useIdentityAction();
   const [userId, setUserId] = useState('');
   const [guid, setGuid] = useState('');
+  const { run } = action;
+  const { refetch: refetchMembers } = members;
+  const detachMember = useCallback(
+    (userId: string): void => {
+      void run(async () => {
+        if (
+          await confirmAction({
+            title: t('identity.detach'),
+            body: t('identity.directoryHelp'),
+            confirm: t('identity.detach'),
+            danger: true,
+          })
+        ) {
+          await identityApi.directoryLink(workspaceId, userId, '');
+          await refetchMembers();
+        }
+      });
+    },
+    [run, workspaceId, refetchMembers],
+  );
   return (
     <>
       <Card title={t('identity.directory')}>
@@ -382,7 +403,7 @@ export function DirectorySettings({ workspaceId }: { workspaceId: string }): Rea
           {config.data?.lastError ? <p role="alert">{config.data.lastError}</p> : null}
           {config.error ? <p role="alert">{errorText(config.error)}</p> : null}
           <Button
-              className="self-end mobile:self-stretch"
+            className="self-end mobile:self-stretch"
             variant="secondary"
             busy={action.busy}
             onClick={() =>
@@ -394,7 +415,7 @@ export function DirectorySettings({ workspaceId }: { workspaceId: string }): Rea
             {t('identity.connectionTest')}
           </Button>
           <Button
-              className="self-end mobile:self-stretch"
+            className="self-end mobile:self-stretch"
             variant="secondary"
             busy={action.busy}
             onClick={() =>
@@ -428,7 +449,7 @@ export function DirectorySettings({ workspaceId }: { workspaceId: string }): Rea
             <Input value={guid} onChange={(e) => setGuid(e.target.value)} />
           </Field>
           <Button
-              className="self-end mobile:self-stretch"
+            className="self-end mobile:self-stretch"
             busy={action.busy}
             disabled={!userId || !guid}
             onClick={() =>
@@ -444,41 +465,7 @@ export function DirectorySettings({ workspaceId }: { workspaceId: string }): Rea
           {members.data?.pages
             .flatMap((page) => page.members)
             .map((m) => (
-              <div key={m.userId} className="flex flex-wrap items-center gap-2 rounded-[var(--radius-card)] bg-hover p-3">
-                <span className="min-w-0 flex-1 text-body">
-                  <span className="block break-all">{m.userId}</span>
-                  <span className="block break-all">{m.objectGuid || '—'}</span>
-                  {t(
-                    m.status === DirectoryMemberStatus.ACTIVE
-                      ? 'identity.enabled'
-                      : m.status === DirectoryMemberStatus.UNMAPPED
-                        ? 'identity.noLink'
-                        : 'identity.off',
-                  )}
-                </span>
-                <Button
-              className="self-end mobile:self-stretch"
-                  variant="destructive"
-                  busy={action.busy}
-                  onClick={() =>
-                    void action.run(async () => {
-                      if (
-                        await confirmAction({
-                          title: t('identity.detach'),
-                          body: t('identity.directoryHelp'),
-                          confirm: t('identity.detach'),
-                          danger: true,
-                        })
-                      ) {
-                        await identityApi.directoryLink(workspaceId, m.userId, '');
-                        await members.refetch();
-                      }
-                    })
-                  }
-                >
-                  {t('identity.detach')}
-                </Button>
-              </div>
+              <MemberRow key={m.userId} member={m} busy={action.busy} onDetach={detachMember} />
             ))}
           {members.hasNextPage ? (
             <Button className="self-end mobile:self-stretch" variant="secondary" busy={members.isFetchingNextPage} onClick={() => void members.fetchNextPage()}>
@@ -495,6 +482,34 @@ export function DirectorySettings({ workspaceId }: { workspaceId: string }): Rea
     </>
   );
 }
+const MemberRow = memo(function MemberRow({
+  member,
+  busy,
+  onDetach,
+}: {
+  member: IdentityDirectoryMember;
+  busy: boolean;
+  onDetach: (userId: string) => void;
+}): ReactNode {
+  return (
+    <div className="flex flex-wrap items-center gap-2 rounded-[var(--radius-card)] bg-hover p-3">
+      <span className="min-w-0 flex-1 text-body">
+        <span className="block break-all">{member.userId}</span>
+        <span className="block break-all">{member.objectGuid || '—'}</span>
+        {t(
+          member.status === DirectoryMemberStatus.ACTIVE
+            ? 'identity.enabled'
+            : member.status === DirectoryMemberStatus.UNMAPPED
+              ? 'identity.noLink'
+              : 'identity.off',
+        )}
+      </span>
+      <Button className="self-end mobile:self-stretch" variant="destructive" busy={busy} onClick={() => onDetach(member.userId)}>
+        {t('identity.detach')}
+      </Button>
+    </div>
+  );
+});
 function DirectoryForm({
   workspaceId,
   config,
@@ -539,7 +554,7 @@ function DirectoryForm({
           />
         </Field>
         <Button
-              className="self-end mobile:self-stretch"
+          className="self-end mobile:self-stretch"
           busy={action.busy}
           onClick={() =>
             void action.run(async () => {

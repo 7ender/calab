@@ -76,6 +76,14 @@ describe('plural', () => {
     expect(plural('chat.typingN', 5)).toBe('5 человек печатают');
   });
 
+  it('declines plan-limit gates (#50)', () => {
+    expect(plural('stk.planPacks', 1)).toBe('Тариф пространства: не больше 1 пака стикеров');
+    expect(plural('stk.planPacks', 5)).toBe('Тариф пространства: не больше 5 паков стикеров');
+    expect(plural('bots.planFull', 1)).toContain('лимит тарифа: 1 бот.');
+    expect(plural('bots.planFull', 3)).toContain('лимит тарифа: 3 бота.');
+    expect(plural('bots.planLimit', 1)).toBe('По тарифу пространства — до 1 бота');
+  });
+
   it('picks English forms and lets params override {n}', async () => {
     await setLocale('en');
     expect(plural('streamView.viewers', 1)).toMatch(/^1 /);

@@ -2,6 +2,7 @@ import { useQuery } from '@tanstack/react-query';
 import {
   OAuthClientType,
   type OAuthClient,
+  type OAuthGrant,
   type OAuthConsentSnapshot,
   type OAuthClientSecretResponse,
 } from '@calaba/protocol';
@@ -207,7 +208,7 @@ function ClientForm({
             {t('identity.cancel')}
           </Button>
           <Button
-          className="self-end mobile:self-stretch"
+            className="self-end mobile:self-stretch"
             busy={action.busy}
             disabled={!name.trim() || !lines(redirects).length || lines(redirects).length > 10 || lines(origins).length > 10}
             onClick={() => void action.run(save)}
@@ -271,35 +272,24 @@ export function AuthorizedApps(): ReactNode {
     refetchOnWindowFocus: false,
   });
   const action = useIdentityAction();
+  const { run } = action;
+  const { refetch } = grants;
+  const revokeGrant = useCallback(
+    (id: string): void => {
+      void run(async () => {
+        await identityApi.revoke(id);
+        await refetch();
+      });
+    },
+    [run, refetch],
+  );
   return (
     <Card title={t('identity.grants')}>
       <div className="flex flex-col gap-3 p-4">
         {grants.data?.grants
           .filter((g) => !g.revokedAt)
           .map((g) => (
-            <div key={g.id} className="flex flex-wrap items-center justify-between gap-3 rounded-[var(--radius-card)] bg-hover p-3">
-              <div>
-                <h3 className="font-semibold">{g.clientName}</h3>
-                <p className="break-all text-body text-muted">
-                  {g.workspaceId} · {g.scopes.join(', ')}
-                  <br />
-                  {t('identity.deadline')}: {identityDate(g.expiresAt)}
-                </p>
-              </div>
-              <Button
-          className="self-end mobile:self-stretch"
-                variant="destructive"
-                busy={action.busy}
-                onClick={() =>
-                  void action.run(async () => {
-                    await identityApi.revoke(g.id);
-                    await grants.refetch();
-                  })
-                }
-              >
-                {t('identity.revoke')}
-              </Button>
-            </div>
+            <GrantRow key={g.id} grant={g} busy={action.busy} onRevoke={revokeGrant} />
           ))}
         {grants.data?.grants.length === 0 ? <p>{t('identity.noApps')}</p> : null}
         {grants.error || action.error ? (
@@ -311,6 +301,31 @@ export function AuthorizedApps(): ReactNode {
     </Card>
   );
 }
+const GrantRow = memo(function GrantRow({
+  grant,
+  busy,
+  onRevoke,
+}: {
+  grant: OAuthGrant;
+  busy: boolean;
+  onRevoke: (id: string) => void;
+}): ReactNode {
+  return (
+    <div className="flex flex-wrap items-center justify-between gap-3 rounded-[var(--radius-card)] bg-hover p-3">
+      <div>
+        <h3 className="font-semibold">{grant.clientName}</h3>
+        <p className="break-all text-body text-muted">
+          {grant.workspaceId} · {grant.scopes.join(', ')}
+          <br />
+          {t('identity.deadline')}: {identityDate(grant.expiresAt)}
+        </p>
+      </div>
+      <Button className="self-end mobile:self-stretch" variant="destructive" busy={busy} onClick={() => onRevoke(grant.id)}>
+        {t('identity.revoke')}
+      </Button>
+    </div>
+  );
+});
 export function OAuthConsent({ handle }: { handle: string }): ReactNode {
   const sessionId = useSession((s) => s.sessionId);
   const status = useSession((s) => s.status);
@@ -417,7 +432,7 @@ function BoundConsent({ handle, sessionId }: { handle: string; sessionId: string
                   />
                 ) : null}
                 <Button
-          className="self-end mobile:self-stretch"
+                  className="self-end mobile:self-stretch"
                   variant="secondary"
                   onClick={() => {
                     setError('');
