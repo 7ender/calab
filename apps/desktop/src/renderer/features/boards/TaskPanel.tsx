@@ -1,6 +1,6 @@
 import * as Dropdown from '@radix-ui/react-dropdown-menu';
 import { timestampMs } from '@bufbuild/protobuf/wkt';
-import { MessageKind, Permission, TaskRelationKind, type Room, type Task, type TaskActivity } from '@calaba/protocol';
+import { BoardFeature, MessageKind, Permission, TaskRelationKind, taskRoomPermissions, type Room, type Task, type TaskActivity } from '@calaba/protocol';
 import {
   Archive,
   ArrowLeft,
@@ -61,9 +61,12 @@ import { MessageRow, SystemRow } from '../chat/MessageBubble';
 import { useFileDrop } from '../chat/useFileDrop';
 import { menuBox, menuItem, menuSeparator } from '../shell/menu';
 import { DRAG_USER, dragKind } from '../calendar/dragState';
+import { featureOn, type Disabled } from '../../lib/boards/features';
 import { ApprovalsSection } from './Approvals';
-import { AssigneeMenu, ChoiceMenu, DateMenu, EstimateMenu, LabelMenu, MemberAvatar, MilestoneMenu, PriorityMenu, StatusMenu, useToday, type Choice } from './menus';
-import { doneType, hasBit, mayArchiveTask, mayEditTask, CREATE_TASKS, EDIT_TASKS, MANAGE_BOARD, VIEW_BOARD } from './model';
+import { Checklists } from './Checklists';
+import { AssigneeMenu, ChoiceMenu, DateMenu, EstimateMenu, LabelMenu, MemberAvatar, MilestoneMenu, PriorityMenu, StatusMenu, estimateLabel, useToday, type Choice } from './menus';
+import { doneType, hasBit, mayArchiveTask, mayEditTask, CREATE_TASKS, MANAGE_BOARD } from './model';
+import { useDisabledFeatures, useEstimateScale } from './useBoardView';
 import { Dot, PRIORITY_LABEL, PriorityIcon, StatusIcon, formatDue, isOverdue } from './visuals';
 
 const TITLE_MAX = 200;
@@ -116,6 +119,9 @@ function PanelBody({ task, onClose, wide, mobile }: { task: Task; onClose: () =>
   const room = useRooms((s) => (task.roomId ? s.byId[task.roomId] : undefined));
   const me = myUserId();
   const canEdit = mayEditTask(task, perms, me);
+  // Board features (ADR-0058 §3): a disabled feature's fields and sections are hidden, data kept.
+  const disabled = useDisabledFeatures(task.boardId);
+  const on = (f: BoardFeature): boolean => featureOn(disabled, f);
   const scroller = useRef<HTMLDivElement>(null);
   const toEnd = useCallback(() => {
     const el = scroller.current;
@@ -127,14 +133,16 @@ function PanelBody({ task, onClose, wide, mobile }: { task: Task; onClose: () =>
       <div ref={scroller} className="scrollbar-thin min-h-0 flex-1 overflow-y-auto" data-testid="task-scroll">
         <div className={cx('flex flex-col gap-5 px-5 pb-6 pt-4', wide && 'mx-auto w-full max-w-[860px]')}>
           <TitleEditor task={task} canEdit={canEdit} />
-          <DescriptionEditor task={task} canEdit={canEdit} />
-          <Properties task={task} canEdit={canEdit} perms={perms} />
-          <Subtasks task={task} ids={detail?.subtasks ?? []} canCreate={hasBit(perms, CREATE_TASKS)} />
-          <Relations task={task} ids={detail?.related ?? []} canEdit={canEdit} />
-          {room ? <Activity task={task} room={room} toEnd={toEnd} /> : <div className="grid h-16 place-items-center"><Spinner /></div>}
+          <DescriptionEditor task={task} canEdit={canEdit} attachments={on(BoardFeature.ATTACHMENTS)} />
+          <Properties task={task} canEdit={canEdit} perms={perms} disabled={disabled} />
+          {/* Checklists: their own subscriber (a toggle re-renders that section only, ADR-0058 §2). */}
+          {on(BoardFeature.CHECKLISTS) ? <Checklists taskId={task.id} workspaceId={task.workspaceId} canEdit={canEdit} subtasks={on(BoardFeature.SUBTASKS) && !task.parentId} /> : null}
+          {on(BoardFeature.SUBTASKS) ? <Subtasks task={task} ids={detail?.subtasks ?? []} canCreate={hasBit(perms, CREATE_TASKS)} /> : null}
+          {on(BoardFeature.RELATIONS) ? <Relations task={task} ids={detail?.related ?? []} canEdit={canEdit} /> : null}
+          {room ? <Activity task={task} room={room} toEnd={toEnd} commentsOff={!on(BoardFeature.COMMENTS)} /> : <div className="grid h-16 place-items-center"><Spinner /></div>}
         </div>
       </div>
-      {room ? <CommentBox task={task} room={room} perms={perms} /> : null}
+      {room ? <CommentBox task={task} room={room} perms={perms} commentsOff={!on(BoardFeature.COMMENTS)} /> : null}
     </>
   );
 }
@@ -267,7 +275,7 @@ function TitleEditor({ task, canEdit }: { task: Task; canEdit: boolean }): React
   );
 }
 
-function DescriptionEditor({ task, canEdit }: { task: Task; canEdit: boolean }): ReactNode {
+function DescriptionEditor({ task, canEdit, attachments }: { task: Task; canEdit: boolean; attachments: boolean }): ReactNode {
   const [editing, setEditing] = useState(false);
   const [v, setV] = useState(task.description);
   const [busy, setBusy] = useState(false);
@@ -350,7 +358,7 @@ function DescriptionEditor({ task, canEdit }: { task: Task; canEdit: boolean }):
           {task.description ? <Markdown text={task.description} mention={mention} /> : canEdit ? t('boards.descriptionPlaceholder') : t('boards.noDescription')}
         </div>
       )}
-      {task.attachments.length || canEdit ? (
+      {attachments && (task.attachments.length || canEdit) ? (
         <div className="flex flex-wrap items-center gap-1.5">
           {task.attachments.map((f) => (
             <span key={f.id} className="inline-flex h-7 max-w-[240px] items-center gap-1.5 rounded-full border border-line pl-2 pr-1 text-caption">
@@ -392,7 +400,7 @@ function Prop({ label, children, testId }: { label: string; children: ReactNode;
 
 const valueBtn = 'inline-flex h-7 min-w-0 max-w-full items-center gap-1.5 rounded-[var(--radius-row)] px-2 text-control text-fg hover:bg-hover disabled:hover:bg-transparent data-[state=open]:bg-active';
 
-function Properties({ task, canEdit, perms }: { task: Task; canEdit: boolean; perms: bigint | undefined }): ReactNode {
+function Properties({ task, canEdit, perms, disabled }: { task: Task; canEdit: boolean; perms: bigint | undefined; disabled: Disabled }): ReactNode {
   const statuses = useBoards((s) => s.boards[task.boardId]?.statuses);
   const status = statuses?.find((x) => x.id === task.statusId);
   // ADR-0049: statuses «further» are disabled while the task waits for approval.
@@ -401,6 +409,8 @@ function Properties({ task, canEdit, perms }: { task: Task; canEdit: boolean; pe
   const milestone = useBoards((s) => s.boards[task.boardId]?.milestones.find((m) => m.id === task.milestoneId));
   const parent = useBoards((s) => (task.parentId ? s.tasks[task.parentId] : undefined));
   const today = useToday();
+  const scale = useEstimateScale(task.boardId);
+  const on = (f: BoardFeature): boolean => featureOn(disabled, f);
   const done = doneType(status?.type);
   const mine = (labels ?? []).filter((l) => task.labelIds.includes(l.id));
   const menu = useBoardsUi((s) => (s.menu?.taskId === task.id ? s.menu.kind : null));
@@ -414,79 +424,93 @@ function Properties({ task, canEdit, perms }: { task: Task; canEdit: boolean; pe
           </button>
         </StatusMenu>
       </Prop>
-      <Prop label={t('boards.f.priority')}>
-        <PriorityMenu value={task.priority} onPick={(p) => p !== task.priority && void updateTask(task.id, { priority: p })} {...req('priority')}>
-          <button type="button" disabled={!canEdit} className={valueBtn} data-testid="prop-priority">
-            <PriorityIcon priority={task.priority} /> {t(PRIORITY_LABEL[task.priority] ?? 'boards.prio.none')}
-          </button>
-        </PriorityMenu>
-      </Prop>
+      {on(BoardFeature.PRIORITY) ? (
+        <Prop label={t('boards.f.priority')}>
+          <PriorityMenu value={task.priority} onPick={(p) => p !== task.priority && void updateTask(task.id, { priority: p })} {...req('priority')}>
+            <button type="button" disabled={!canEdit} className={valueBtn} data-testid="prop-priority">
+              <PriorityIcon priority={task.priority} /> {t(PRIORITY_LABEL[task.priority] ?? 'boards.prio.none')}
+            </button>
+          </PriorityMenu>
+        </Prop>
+      ) : null}
       <Assignees task={task} canEdit={canEdit} req={req('assignee')} />
-      <ApprovalsSection task={task} canEdit={canEdit} perms={perms} />
-      <Prop label={t('boards.f.label')}>
-        {mine.map((l) => (
-          <span key={l.id} className="inline-flex h-6 items-center gap-1.5 rounded-full border border-line px-2 text-caption" draggable onDragStart={(e) => e.dataTransfer.setData('application/x-calab-label', l.id)}>
-            <Dot color={l.color} /> {l.name}
-          </span>
-        ))}
-        <LabelMenu
-          boardId={task.boardId}
-          value={task.labelIds}
-          canCreate={hasBit(perms, CREATE_TASKS)}
-          onToggle={(l) => void updateTask(task.id, { labelIds: task.labelIds.includes(l) ? task.labelIds.filter((x) => x !== l) : [...task.labelIds, l] })}
-          {...req('label')}
-        >
-          <button type="button" disabled={!canEdit} aria-label={t('boards.addLabel')} className={cx(valueBtn, 'text-muted')} data-testid="prop-labels">
-            <Plus className="size-3.5" aria-hidden /> {mine.length ? null : t('boards.addLabel')}
-          </button>
-        </LabelMenu>
-      </Prop>
-      <Prop label={t('boards.f.startOn')}>
-        <DateMenu value={task.startOn} onPick={(d) => void updateTask(task.id, { startOn: d })} title={t('boards.f.startOn')}>
-          <button type="button" disabled={!canEdit} className={cx(valueBtn, !task.startOn && 'text-muted')} data-testid="prop-start">
-            {task.startOn ? formatDue(task.startOn, today) : t('boards.setDate')}
-          </button>
-        </DateMenu>
-      </Prop>
-      <Prop label={t('boards.f.dueOn')}>
-        <DateMenu value={task.dueOn} onPick={(d) => void updateTask(task.id, { dueOn: d })} title={t('boards.f.dueOn')} {...req('due')}>
-          <button type="button" disabled={!canEdit} className={cx(valueBtn, !task.dueOn && 'text-muted', isOverdue(task.dueOn, today, done) && 'text-danger-text')} data-testid="prop-due">
-            {task.dueOn ? formatDue(task.dueOn, today) : t('boards.setDate')}
-          </button>
-        </DateMenu>
-      </Prop>
-      <Prop label={t('boards.f.estimate')}>
-        <EstimateMenu value={task.estimate} onPick={(n) => void updateTask(task.id, { estimate: n })} {...req('estimate')}>
-          <button type="button" disabled={!canEdit} className={cx(valueBtn, !task.estimate && 'text-muted')} data-testid="prop-estimate">
-            {task.estimate ? t('boards.points', { n: task.estimate }) : t('boards.noEstimate')}
-          </button>
-        </EstimateMenu>
-      </Prop>
-      <Prop label={t('boards.f.milestone')}>
-        <MilestoneMenu boardId={task.boardId} value={task.milestoneId} onPick={(m) => void updateTask(task.id, { milestoneId: m })} {...req('milestone')}>
-          <button type="button" disabled={!canEdit} className={cx(valueBtn, !milestone && 'text-muted')} data-testid="prop-milestone">
-            {milestone ? milestone.name : t('boards.noMilestone')}
-          </button>
-        </MilestoneMenu>
-      </Prop>
-      <Prop label={t('boards.f.parent')}>
-        <ParentMenu task={task}>
-          <button type="button" disabled={!canEdit} className={cx(valueBtn, !parent && 'text-muted')} data-testid="prop-parent">
-            {parent ? (
-              <>
-                <span className="tabular-nums text-muted">{parent.key}</span> <span className="truncate">{parent.title}</span>
-              </>
-            ) : (
-              t('boards.noParent')
-            )}
-          </button>
-        </ParentMenu>
-        {parent ? (
-          <button type="button" onClick={() => useBoardsUi.getState().openTask(parent.id)} className="text-caption text-accent-text hover:underline">
-            {t('boards.open')}
-          </button>
-        ) : null}
-      </Prop>
+      {on(BoardFeature.APPROVALS) ? <ApprovalsSection task={task} canEdit={canEdit} perms={perms} /> : null}
+      {on(BoardFeature.LABELS) ? (
+        <Prop label={t('boards.f.label')}>
+          {mine.map((l) => (
+            <span key={l.id} className="inline-flex h-6 items-center gap-1.5 rounded-full border border-line px-2 text-caption" draggable onDragStart={(e) => e.dataTransfer.setData('application/x-calab-label', l.id)}>
+              <Dot color={l.color} /> {l.name}
+            </span>
+          ))}
+          <LabelMenu
+            boardId={task.boardId}
+            value={task.labelIds}
+            canCreate={hasBit(perms, CREATE_TASKS)}
+            onToggle={(l) => void updateTask(task.id, { labelIds: task.labelIds.includes(l) ? task.labelIds.filter((x) => x !== l) : [...task.labelIds, l] })}
+            {...req('label')}
+          >
+            <button type="button" disabled={!canEdit} aria-label={t('boards.addLabel')} className={cx(valueBtn, 'text-muted')} data-testid="prop-labels">
+              <Plus className="size-3.5" aria-hidden /> {mine.length ? null : t('boards.addLabel')}
+            </button>
+          </LabelMenu>
+        </Prop>
+      ) : null}
+      {on(BoardFeature.START_DATE) ? (
+        <Prop label={t('boards.f.startOn')}>
+          <DateMenu value={task.startOn} onPick={(d) => void updateTask(task.id, { startOn: d })} title={t('boards.f.startOn')}>
+            <button type="button" disabled={!canEdit} className={cx(valueBtn, !task.startOn && 'text-muted')} data-testid="prop-start">
+              {task.startOn ? formatDue(task.startOn, today) : t('boards.setDate')}
+            </button>
+          </DateMenu>
+        </Prop>
+      ) : null}
+      {on(BoardFeature.DUE_DATE) ? (
+        <Prop label={t('boards.f.dueOn')}>
+          <DateMenu value={task.dueOn} onPick={(d) => void updateTask(task.id, { dueOn: d })} title={t('boards.f.dueOn')} {...req('due')}>
+            <button type="button" disabled={!canEdit} className={cx(valueBtn, !task.dueOn && 'text-muted', isOverdue(task.dueOn, today, done) && 'text-danger-text')} data-testid="prop-due">
+              {task.dueOn ? formatDue(task.dueOn, today) : t('boards.setDate')}
+            </button>
+          </DateMenu>
+        </Prop>
+      ) : null}
+      {on(BoardFeature.ESTIMATE) ? (
+        <Prop label={t('boards.f.estimate')}>
+          <EstimateMenu value={task.estimate} scale={scale} onPick={(n) => void updateTask(task.id, { estimate: n })} {...req('estimate')}>
+            <button type="button" disabled={!canEdit} className={cx(valueBtn, !task.estimate && 'text-muted')} data-testid="prop-estimate">
+              {task.estimate ? estimateLabel(task.estimate, scale) : t('boards.noEstimate')}
+            </button>
+          </EstimateMenu>
+        </Prop>
+      ) : null}
+      {on(BoardFeature.MILESTONES) ? (
+        <Prop label={t('boards.f.milestone')}>
+          <MilestoneMenu boardId={task.boardId} value={task.milestoneId} onPick={(m) => void updateTask(task.id, { milestoneId: m })} {...req('milestone')}>
+            <button type="button" disabled={!canEdit} className={cx(valueBtn, !milestone && 'text-muted')} data-testid="prop-milestone">
+              {milestone ? milestone.name : t('boards.noMilestone')}
+            </button>
+          </MilestoneMenu>
+        </Prop>
+      ) : null}
+      {on(BoardFeature.SUBTASKS) ? (
+        <Prop label={t('boards.f.parent')}>
+          <ParentMenu task={task}>
+            <button type="button" disabled={!canEdit} className={cx(valueBtn, !parent && 'text-muted')} data-testid="prop-parent">
+              {parent ? (
+                <>
+                  <span className="tabular-nums text-muted">{parent.key}</span> <span className="truncate">{parent.title}</span>
+                </>
+              ) : (
+                t('boards.noParent')
+              )}
+            </button>
+          </ParentMenu>
+          {parent ? (
+            <button type="button" onClick={() => useBoardsUi.getState().openTask(parent.id)} className="text-caption text-accent-text hover:underline">
+              {t('boards.open')}
+            </button>
+          ) : null}
+        </Prop>
+      ) : null}
     </section>
   );
 }
@@ -763,13 +787,13 @@ function Relations({ task, canEdit }: { task: Task; ids: string[]; canEdit: bool
 type FeedRow = { kind: 'msg'; at: number; key: string; index: number } | { kind: 'act'; at: number; key: string; a: TaskActivity };
 
 /** Comments (the task room) and the journal in one timeline, oldest first (Linear). */
-function Activity({ task, room, toEnd }: { task: Task; room: Room; toEnd: () => void }): ReactNode {
+function Activity({ task, room, toEnd, commentsOff }: { task: Task; room: Room; toEnd: () => void; commentsOff: boolean }): ReactNode {
   const state = useMessages((s) => s.rooms[room.id] ?? EMPTY_ROOM_MESSAGES);
   const live = useBoards((s) => s.activity[task.id]);
   const [loaded, setLoaded] = useState<TaskActivity[]>([]);
   const me = useSession((s) => s.me?.user?.id ?? '');
   const perms = useBoards((s) => s.boards[task.boardId]?.permissions);
-  const roomPerms = useMemo(() => taskRoomPerms(perms, !!task.archivedAt), [perms, task.archivedAt]);
+  const roomPerms = useMemo(() => taskRoomPermissions(perms ?? 0n, !!task.archivedAt, commentsOff), [perms, task.archivedAt, commentsOff]);
   useEffect(() => {
     void openRoom(room.id);
     subscribeRooms([room.id]);
@@ -856,14 +880,6 @@ function Activity({ task, room, toEnd }: { task: Task; room: Room; toEnd: () => 
   );
 }
 
-/** Room rights of a task comment room, from the board bits (boards.proto). */
-export function taskRoomPerms(perms: bigint | undefined, archived: boolean): bigint {
-  const VIEW = BigInt(Permission.VIEW_ROOM);
-  if (!hasBit(perms, VIEW_BOARD)) return 0n;
-  if (archived) return VIEW;
-  return VIEW | BigInt(Permission.SEND_MESSAGES) | BigInt(Permission.ATTACH_FILES) | (hasBit(perms, EDIT_TASKS) ? BigInt(Permission.MANAGE_MESSAGES) : 0n);
-}
-
 function ActivityRow({ a, task, className }: { a: TaskActivity; task: Task; className?: string }): ReactNode {
   const name = useMemberName(task.workspaceId, a.actorId);
   const board = useBoards((s) => s.boards[task.boardId]);
@@ -936,14 +952,47 @@ export function activityText(a: Pick<TaskActivity, 'kind' | 'before' | 'after'>,
     }
     case 'approvals_reset':
       return t('boards.act.approvalsReset');
+    case 'checklist':
+      return checklistActivity(f);
     default:
       return t('boards.act.changed');
   }
 }
 
+/** A «checklist» journal row (ADR-0058 §2): after {checklist_id, title, item_id?, text?, action}. */
+function checklistActivity(f: Json): string {
+  const title = typeof f?.['title'] === 'string' ? f['title'] : '';
+  const text = typeof f?.['text'] === 'string' ? f['text'] : '';
+  switch (f?.['action']) {
+    case 'created':
+      return t('boards.act.clCreated', { title });
+    case 'renamed':
+      return t('boards.act.clRenamed', { title });
+    case 'deleted':
+      return t('boards.act.clDeleted', { title });
+    case 'item_added':
+      return t('boards.act.clItemAdded', { text, title });
+    case 'item_edited':
+      return t('boards.act.clItemEdited', { text });
+    case 'item_done':
+      return t('boards.act.clItemDone', { text });
+    case 'item_undone':
+      return t('boards.act.clItemUndone', { text });
+    case 'item_removed':
+      return t('boards.act.clItemRemoved', { text });
+    case 'item_moved':
+      return t('boards.act.clItemMoved', { text, title });
+    case 'converted':
+      return t('boards.act.clConverted', { text });
+    default:
+      return t('boards.act.clChanged', { title });
+  }
+}
+
 /** The chat composer of the task room (attachments, stickers, voice, replies, mentions). */
-function CommentBox({ task, room, perms }: { task: Task; room: Room; perms: bigint | undefined }): ReactNode {
-  const roomPerms = useMemo(() => taskRoomPerms(perms, !!task.archivedAt), [perms, task.archivedAt]);
+function CommentBox({ task, room, perms, commentsOff }: { task: Task; room: Room; perms: bigint | undefined; commentsOff: boolean }): ReactNode {
+  // COMMENTS off (ADR-0058 §3): the room is read-only like an archived task's — no composer.
+  const roomPerms = useMemo(() => taskRoomPermissions(perms ?? 0n, !!task.archivedAt, commentsOff), [perms, task.archivedAt, commentsOff]);
   const [files, setFiles] = useState<OutgoingFile[]>([]);
   const canAttach = (roomPerms & BigInt(Permission.ATTACH_FILES)) !== 0n;
   const addFiles = useCallback((list: File[]) => canAttach && setFiles((cur) => [...cur, ...list.map(toOutgoing)].slice(0, 20)), [canAttach]);

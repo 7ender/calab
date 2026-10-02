@@ -203,6 +203,29 @@ describe('admin CUSTOM form', () => {
     expect(setPlanBody({ plan: Plan.CUSTOM, limits: { ...limits, storageMb: 'x' }, validUntil: '', note: '' })).toEqual({ error: 'storageMb' });
     expect(validUntilFromInput('garbage')).toBeNull();
   });
+
+  it('ADR-0058 §5: the CUSTOM form carries checklists / board webhooks (new: checklists on, webhooks off)', () => {
+    const fresh = limitsFormFrom(Plan.FREE, undefined);
+    expect(fresh).toMatchObject({ checklistsDisabled: false, boardWebhooksDisabled: true });
+    const stored = create(PlanLimitsSchema, { checklistsDisabled: true, boardWebhooksDisabled: false });
+    expect(limitsFormFrom(Plan.CUSTOM, stored)).toMatchObject({ checklistsDisabled: true, boardWebhooksDisabled: false });
+    const body = setPlanBody({ plan: Plan.CUSTOM, limits: fresh, validUntil: '', note: '' });
+    // Saving the form without touching them does not switch webhooks on.
+    expect('body' in body && body.body.limits).toMatchObject({ checklistsDisabled: false, boardWebhooksDisabled: true });
+  });
+});
+
+describe('ADR-0058 §5: checklists and board webhooks by plan', () => {
+  const plan = (l: MessageInitShape<typeof PlanLimitsSchema>) => create(WorkspacePlanSchema, { plan: Plan.FREE, limits: l });
+  it('planHas reads the flags; the 409 PLAN_LIMIT texts name the plan', () => {
+    expect(planHas(plan({ checklistsDisabled: true }), 'checklists')).toBe(false);
+    expect(planHas(plan({ checklistsDisabled: true }), 'boardWebhooks')).toBe(true);
+    expect(planHas(plan({ boardWebhooksDisabled: true }), 'boardWebhooks')).toBe(false);
+    expect(planHas(undefined, 'boardWebhooks')).toBe(true);
+    const err = (msg: string) => new ApiError('ERROR_CODE_CONFLICT', msg, 409, undefined, { reason: 'PLAN_LIMIT', used: 0, limit: 0 });
+    expect(planErrorNotice(err('checklists is not included in the plan'), Plan.FREE)?.text).toBe(t('plan.checklistsLocked'));
+    expect(planErrorNotice(err('board_webhooks is not included in the plan'), Plan.TEAM)?.text).toBe(t('plan.boardWebhooksLocked'));
+  });
 });
 
 describe('planUsage', () => {

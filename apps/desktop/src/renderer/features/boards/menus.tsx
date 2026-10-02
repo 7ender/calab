@@ -1,5 +1,5 @@
 import * as Popover from '@radix-ui/react-popover';
-import { WorkspaceRole, type BoardStatus, type TaskPriority } from '@calaba/protocol';
+import { WorkspaceRole, type BoardStatus, type EstimateScale, type TaskPriority } from '@calaba/protocol';
 import { Check, ChevronLeft, ChevronRight, CircleSlash, Diamond, Plus, Send, UserRound } from 'lucide-react';
 import { useMemo, useRef, useState, type ReactNode } from 'react';
 import { useShallow } from 'zustand/react/shallow';
@@ -10,6 +10,7 @@ import { cx } from '../../components/ui';
 import { t } from '../../i18n';
 import { addDays, addMonths, dayKey, formatMonth, monthGrid, monthOf, weekStart, weekdayNames } from '../../lib/calendar/time';
 import { MAX_APPROVERS } from '../../lib/boards/approvals';
+import { estimateName, isSized, scaleValues } from '../../lib/boards/features';
 import { autoFocusAllowed } from '../../lib/mobile';
 import { createLabel } from '../../services/boards';
 import { useBoards } from '../../stores/boards';
@@ -393,20 +394,24 @@ export function MilestoneMenu({ boardId, value, onPick, ...shell }: MenuShell & 
   return <ChoiceMenu {...shell} groups={groups} onPick={(c) => onPick(c.id)} placeholder={t('boards.menu.milestone')} label={t('boards.f.milestone')} testId="milestone-menu" />;
 }
 
-/** Estimate points (ADR-0042: 1..21, Fibonacci as in Linear). */
-export const ESTIMATES: readonly number[] = [1, 2, 3, 5, 8, 13, 21];
+/** An estimate as the board's scale shows it: «5 б.», «M» (ADR-0058 §3). */
+export function estimateLabel(n: number, scale: EstimateScale | undefined): string {
+  return isSized(n, scale) ? estimateName(n, scale) : t('boards.points', { n: estimateName(n, scale) });
+}
 
-export function EstimateMenu({ value, onPick, ...shell }: MenuShell & { value: number; onPick: (n: number) => void }): ReactNode {
-  const groups = useMemo(
-    () => [
+/** The board's scale (ADR-0058 §3); a value outside it (the scale changed) stays listed while set. */
+export function EstimateMenu({ value, onPick, scale, ...shell }: MenuShell & { value: number; onPick: (n: number) => void; scale?: EstimateScale | undefined }): ReactNode {
+  const groups = useMemo(() => {
+    const values = scaleValues(scale);
+    const list = value && !values.includes(value) ? [...values, value].sort((a, b) => a - b) : values;
+    return [
       {
         id: 'e',
         label: '',
-        items: [0, ...ESTIMATES].map((n): Choice => ({ id: String(n), search: [n ? String(n) : t('boards.noEstimate')], label: n ? t('boards.points', { n }) : t('boards.noEstimate'), checked: n === value })),
+        items: [0, ...list].map((n): Choice => ({ id: String(n), search: [n ? estimateName(n, scale) : t('boards.noEstimate'), n ? String(n) : ''], label: n ? estimateLabel(n, scale) : t('boards.noEstimate'), checked: n === value })),
       },
-    ],
-    [value],
-  );
+    ];
+  }, [value, scale]);
   return <ChoiceMenu {...shell} groups={groups} onPick={(c) => onPick(Number(c.id))} placeholder={t('boards.menu.estimate')} label={t('boards.f.estimate')} digits testId="estimate-menu" />;
 }
 

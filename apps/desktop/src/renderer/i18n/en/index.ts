@@ -17,6 +17,7 @@ import { enPicker } from './picker';
 import { enRoles } from './roles';
 import { enCalendar } from './calendar';
 import { enBoards } from './boards';
+import { enBoards2 } from './boards2';
 import { enPlan } from './plan';
 import { enShell } from './shell';
 import { enVideo } from './video';
@@ -58,6 +59,7 @@ export const en: Dict = {
   ...enRoles,
   ...enCalendar,
   ...enBoards,
+  ...enBoards2,
   'voice.pendingMember': 'Connecting…',
   // common
   'common.cancel': 'Cancel',
