@@ -546,6 +546,14 @@ func publicIdentityGate(q *sqlc.Queries, previews *redisx.RateLimiter) func(stri
 				httpx.WriteError(w, r, auth.ErrBotNotAllowed)
 				return
 			}
+			// A join with an account is decided by the guests handler: a fresh local_account
+			// principal (CheckGlobal GlobalWrite) and, in an enforced workspace, a current SSO
+			// assurance of that session, checked inside its transaction. Account-less joins
+			// and previews stay public capabilities refused by an enforced policy here.
+			if pattern == "POST /api/room-invites/{code}/join" && auth.HasBearer(r) {
+				next.ServeHTTP(w, r)
+				return
+			}
 			var ws uuid.UUID
 			var err error
 			if pattern == "GET /api/invites/{code}" {

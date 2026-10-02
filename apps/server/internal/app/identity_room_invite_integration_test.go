@@ -60,3 +60,70 @@ func TestIdentityRoomInviteJoinNeedsLocalAuthority(t *testing.T) {
 		t.Fatal("local join did not add the membership")
 	}
 }
+
+// In an enforced workspace a room link still works for a member whose local session holds a
+// current SSO assurance for it; a password-only session, scoped sessions (workspace_sso,
+// recovery: never a global-membership authority, whatever their workspace) and an
+// account-less join are refused.
+func TestIdentityRoomInviteEnforcedNeedsAssurance(t *testing.T) {
+	f := identitySetup(t, "optional")
+	ctx := context.Background()
+	o := owner(t)
+	var room v1.CreateRoomResponse
+	o.must(201, "POST", "/api/workspaces/"+f.a.Id+"/rooms", &v1.CreateRoomRequest{Name: "Enforced private", Type: v1.RoomType_ROOM_TYPE_TEXT, IsPrivate: true}, &room)
+	link := roomLink(t, o, room.Room.Id, &v1.CreateRoomInviteRequest{AllowGuests: func() *bool { b := true; return &b }()})
+	ws, uid := uuid.MustParse(f.a.Id), uuid.MustParse(f.local.id)
+	policy, err := testDB.Q.GetIdentityPolicy(ctx, ws)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err = testDB.Q.SetIdentityPolicy(ctx, sqlc.SetIdentityPolicyParams{WorkspaceID: ws, Mode: "enforced", AssuranceMaxAgeSeconds: 3600, ExpectedVersion: policy.Version}); err != nil {
+		t.Fatal(err)
+	}
+	overrides := func() int {
+		var n int
+		if err := testDB.Pool.QueryRow(ctx, "SELECT count(*) FROM room_permissions WHERE room_id=$1 AND target_type='user' AND target_id=$2", uuid.MustParse(room.Room.Id), f.local.id).Scan(&n); err != nil {
+			t.Fatal(err)
+		}
+		return n
+	}
+	join := "/api/room-invites/" + link.GetCode() + "/join"
+
+	// Scoped sessions: workspace_sso of B (not A's authority) and recovery of A.
+	at := time.Now()
+	issue := func(p sqlc.CreateScopedIdentitySessionParams) *user {
+		t.Helper()
+		_, hash, _ := auth.NewRefreshSecret()
+		p.UserID, p.RefreshTokenHash, p.ExpiresAt = uid, hash, at.Add(10*time.Minute)
+		s, err := testDB.Q.CreateScopedIdentitySession(ctx, p)
+		if err != nil {
+			t.Fatal(err)
+		}
+		token, _, err := testApp.Auth.Tokens().Issue(s.UserID, s.ID, 0)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return &user{client: &client{t: t, token: token}, id: f.local.id}
+	}
+	recovery := issue(sqlc.CreateScopedIdentitySessionParams{AuthorityKind: "recovery", AuthorityWorkspaceID: &ws, RecoveryAuthenticatedAt: &at})
+	anon := &client{t: t, ip: "10.77.9.1"}
+	for name, st := range map[string]int{
+		"password-only local": f.local.do("POST", join, &v1.JoinRoomInviteRequest{}, nil),
+		"workspace_sso(A)":    f.scoped.do("POST", join, &v1.JoinRoomInviteRequest{}, nil),
+		"recovery(A)":         recovery.do("POST", join, &v1.JoinRoomInviteRequest{}, nil),
+		"account-less":        anon.do("POST", join, &v1.JoinRoomInviteRequest{Nickname: "Guest"}, nil),
+	} {
+		if st != 403 {
+			t.Fatalf("%s joined an enforced room link: %d", name, st)
+		}
+	}
+	if overrides() != 0 {
+		t.Fatal("refused join granted access")
+	}
+	// With a current SSO assurance on the local session the member joins.
+	f.prove(t, uuid.MustParse(f.local.session), time.Now())
+	f.local.must(200, "POST", join, &v1.JoinRoomInviteRequest{}, nil)
+	if overrides() != 1 {
+		t.Fatal("assured member got no access through the link")
+	}
+}
