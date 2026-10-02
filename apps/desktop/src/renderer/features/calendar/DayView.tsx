@@ -1,8 +1,8 @@
 import * as ContextMenu from '@radix-ui/react-context-menu';
 import { AttendeeStatus, EventRepeat } from '@calaba/protocol';
-import { CalendarPlus, CalendarSearch, ChevronLeft, ChevronRight, Link2, Pencil, Plus, Copy, Repeat, Trash2, Users, Video, X } from 'lucide-react';
+import { CalendarPlus, CalendarSearch, ChevronLeft, ChevronRight, Link2, Pencil, Plus, Copy, Repeat, Trash2, Users, Video } from 'lucide-react';
 import { memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type PointerEvent as ReactPointerEvent, type ReactNode } from 'react';
-import { Button, IconButton, Modal, Toggle, cx } from '../../components/ui';
+import { Button, IconButton, Modal, cx } from '../../components/ui';
 import { plural, t, useLocale } from '../../i18n';
 import { CLICK_DURATION, DRAG_THRESHOLD_PX, createRange, minutesAt, moveRange, resizeRange, type Range } from '../../lib/calendar/drag';
 import { dayKeys, daySignature, keyEventId, myStatusOf, parseSignature, type SigItem } from '../../lib/calendar/events';
@@ -16,7 +16,7 @@ import { useMobile } from '../../lib/mobile';
 import { calendarAvailable, canEditEvent, copyEventLink, ensureMonth, eventOf, moveOccurrence } from '../../services/calendar';
 import { useCalendar } from '../../stores/calendar';
 import { busySignature, ensureBusy, ensureExternal, loadCalDav, parseBusySignature } from '../../services/freebusy';
-import { entryKey, selectMine, selectPeople, useFreeBusy } from '../../stores/freebusy';
+import { entryKey, selectPeople, useFreeBusy } from '../../stores/freebusy';
 import { useRooms } from '../../stores/rooms';
 import { myUserId } from '../../stores/session';
 import { useWorkspaces } from '../../stores/workspaces';
@@ -72,29 +72,27 @@ function DayGrid({ workspaceId }: { workspaceId: string }): ReactNode {
   // not on an answer / title (the blocks subscribe to those themselves).
   const people = useFreeBusy(selectPeople(workspaceId));
   const peopleSet = useMemo(() => (people.length ? new Set(people) : undefined), [people]);
-  // «Только мои» (docs/09 #140): on top of the people filter, only meetings I organize or attend.
-  const mineOn = useFreeBusy(selectMine(workspaceId));
+  // Default scope (owner, 02.10): only meetings I organize or attend; selected people add theirs.
   const me = myUserId();
-  const mine = mineOn ? me : '';
+  const mine = me;
   const sig = useCalendar((s) => daySignature(s.occ, dayKeys(s.occ, workspaceId, day, peopleSet, mine)));
   const items = useMemo(() => parseSignature(sig), [sig]);
   // Busy time from free / busy: the selected people's (what I cannot see as a meeting), else — and
-  // with «Только мои» — my external calendar's. A primitive per person: a busy change of someone
+  // my external calendar's (shown with the filter too). A primitive per person: a busy change of someone
   // else re-renders nothing.
-  const own = people.length === 0 || mineOn;
+  const own = people.length === 0;
   const watched = useMemo(() => (!own ? people : me ? [me] : NO_PEOPLE), [own, people, me]);
   useEffect(() => ensureBusy(workspaceId, watched, dayStart(day), dayEnd(day)), [workspaceId, watched, day]);
   const fbSig = useFreeBusy((s) => watched.map((u) => `${u}#${busySignature(s.entries[entryKey(workspaceId, u)], dayStart(day), dayEnd(day))}`).join('¦'));
   // My external calendar's events with their details (ADR-0045 §3) wherever my busy time shows:
   // cards instead of my grey external blocks once the day is loaded.
-  const ownExt = own || (!!me && people.includes(me));
   const extOn = useFreeBusy((s) => !!s.caldav?.calendarHref && s.caldav.import);
   const extLoaded = useFreeBusy((s) => s.externalWs === workspaceId && !!s.externalChunks[chunkOf(dayStart(day))] && !!s.externalChunks[chunkOf(dayEnd(day) - 1)]);
   useEffect(() => {
-    if (ownExt && extOn && !extLoaded) ensureExternal(workspaceId, dayStart(day), dayEnd(day));
-  }, [workspaceId, day, ownExt, extOn, extLoaded]);
-  const extSig = useFreeBusy((s) => (ownExt && s.externalWs === workspaceId ? externalSignature(s.external[day]) : ''));
-  const extHeld = useFreeBusy((s) => ownExt && s.externalWs === workspaceId && s.external[day] !== undefined);
+    if (extOn && !extLoaded) ensureExternal(workspaceId, dayStart(day), dayEnd(day));
+  }, [workspaceId, day, extOn, extLoaded]);
+  const extSig = useFreeBusy((s) => (s.externalWs === workspaceId ? externalSignature(s.external[day]) : ''));
+  const extHeld = useFreeBusy((s) => s.externalWs === workspaceId && s.external[day] !== undefined);
   const ext = useMemo<SigItem[]>(() => parseExternalSignature(extSig).map((e) => ({ key: e.key, allDay: e.allDay, start: e.start, end: e.end })), [extSig]);
   const busy = useMemo(() => busyItems(fbSig, items, own, extHeld ? me : ''), [fbSig, items, own, extHeld, me]);
   const timed = useMemo(() => [...items.filter((i) => !i.allDay), ...busy.filter((i) => !i.allDay), ...ext.filter((i) => !i.allDay)], [items, busy, ext]);
@@ -202,7 +200,6 @@ function DropCursor(): ReactNode {
 
 function DayHeader({ workspaceId, day, today, creatable, mobile, people }: { workspaceId: string; day: string; today: string; creatable: boolean; mobile: boolean; people: number }): ReactNode {
   const open = useUi((s) => s.openCalendarDay);
-  const close = useUi((s) => s.closeCalendar);
   const [sheet, setSheet] = useState(false);
   // Phone: «15 янв.» leaves room for «Люди», «Подобрать время» and «+» (the weekday is in the grid's context).
   const title = mobile ? dateTimeFormat({ day: 'numeric', month: 'short' }).format(dayStart(day)) : formatLongDay(dayStart(day));
@@ -252,9 +249,6 @@ function DayHeader({ workspaceId, day, today, creatable, mobile, people }: { wor
           {t('cal.newEvent')}
         </Button>
       ) : null}
-      <IconButton label={t('cal.close')} onClick={close} className={touch}>
-        <X className="size-[18px]" />
-      </IconButton>
       {sheet ? <PeopleSheet workspaceId={workspaceId} onClose={() => setSheet(false)} /> : null}
     </header>
   );
@@ -268,7 +262,7 @@ export function startFind(workspaceId: string): void {
   fb.setFind({ workspaceId, users, durationMin: 30, workHours: true });
 }
 
-/** «Люди» over the grid (desktop): the chips of the filter; «Только мои» at the right end. */
+/** «Люди» over the grid (desktop): the chips of the filter; the CalDAV hint at the right end. */
 function FilterRow({ workspaceId, people }: { workspaceId: string; people: readonly string[] }): ReactNode {
   const dispatch = useFreeBusy((s) => s.dispatchPeople);
   const onAdd = useCallback((ids: readonly string[]) => dispatch({ type: 'add', workspaceId, ids }), [dispatch, workspaceId]);
@@ -278,46 +272,36 @@ function FilterRow({ workspaceId, people }: { workspaceId: string; people: reado
     <div className="@container flex h-10 shrink-0 items-center gap-2 border-b border-line pl-3 pr-2" data-testid="day-filter">
       <Users className="size-4 shrink-0 text-muted" aria-hidden />
       <PeopleBar workspaceId={workspaceId} people={people} onAdd={onAdd} onRemove={onRemove} onClear={onClear} testId="people-filter" />
-      <MineControl workspaceId={workspaceId} />
+      <ConnectControl />
     </div>
   );
 }
 
 /**
- * The right end of the filter (owner, 30.09; docs/09 #140): with my CalDAV calendar connected —
- * the «Только мои» switch; without one — the orange «Подключить свой календарь» (Settings →
- * Calendar). Nothing until the account is known (asked once, here).
+ * The right end of the filter (owner, 30.09; docs/09 #140): without my CalDAV calendar — the
+ * orange «Подключить свой календарь» (Settings → Calendar); nothing when connected (the «Только
+ * мои» switch is gone, 02.10) or until the account is known (asked once, here).
  */
-function MineControl({ workspaceId }: { workspaceId: string }): ReactNode {
+function ConnectControl(): ReactNode {
   const caldav = useFreeBusy((s) => (s.caldav === undefined ? 'unknown' : s.caldav ? 'yes' : 'no'));
-  const on = useFreeBusy(selectMine(workspaceId));
-  const setMine = useFreeBusy((s) => s.setMine);
   useEffect(() => {
     if (caldav === 'unknown') void loadCalDav();
   }, [caldav]);
-  if (caldav === 'unknown') return null;
-  if (caldav === 'no') {
-    return (
-      <Button
-        variant="attention"
-        size="sm"
-        title={t('fb.connectHint')}
-        aria-label={t('fb.connect')}
-        onClick={() => useUi.getState().openDialog({ kind: 'settings', tab: 'calendar' })}
-        data-testid="connect-calendar"
-      >
-        <CalendarPlus className="size-3.5" aria-hidden />
-        {/* A narrow row (960 px window, chips selected): the short label keeps the chips room. */}
-        <span className="@[720px]:hidden">{t('fb.connectShort')}</span>
-        <span className="hidden @[720px]:inline">{t('fb.connect')}</span>
-      </Button>
-    );
-  }
+  if (caldav !== 'no') return null;
   return (
-    <label className="flex shrink-0 cursor-default items-center gap-2 text-caption text-muted" title={t('fb.onlyMineHint')} data-testid="only-mine">
-      {t('fb.onlyMine')}
-      <Toggle checked={on} onChange={(v) => setMine(workspaceId, v)} label={t('fb.onlyMine')} />
-    </label>
+    <Button
+      variant="attention"
+      size="sm"
+      title={t('fb.connectHint')}
+      aria-label={t('fb.connect')}
+      onClick={() => useUi.getState().openDialog({ kind: 'settings', tab: 'calendar' })}
+      data-testid="connect-calendar"
+    >
+      <CalendarPlus className="size-3.5" aria-hidden />
+      {/* A narrow row (960 px window, chips selected): the short label keeps the chips room. */}
+      <span className="@[720px]:hidden">{t('fb.connectShort')}</span>
+      <span className="hidden @[720px]:inline">{t('fb.connect')}</span>
+    </Button>
   );
 }
 
@@ -347,7 +331,7 @@ function PeopleSheet({ workspaceId, onClose }: { workspaceId: string; onClose: (
         testId="people-filter"
       />
       <div className="mt-3 flex justify-end">
-        <MineControl workspaceId={workspaceId} />
+        <ConnectControl />
       </div>
     </Modal>
   );
