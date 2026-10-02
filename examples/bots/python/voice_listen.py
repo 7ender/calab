@@ -3,7 +3,7 @@
 their levels.
 
     pip install -r requirements.txt
-    BOT_TOKEN=calab_bot_... VOICE_ROOM_ID=<room id> [CALAB_SERVER=https://app.calab.ru] python voice_listen.py
+    BOT_TOKEN=calab_bot_... VOICE_ROOM_ID=<room id> [CALAB_SERVER=https://app.calab.io] python voice_listen.py
 
 The bot needs CONNECT in the room (docs/19-bot-api.en.md, "Voice"). Ctrl+C leaves the room.
 """
@@ -20,7 +20,7 @@ import urllib.request
 
 from livekit import rtc
 
-SERVER = os.environ.get("CALAB_SERVER", "https://app.calab.ru").rstrip("/")
+SERVER = os.environ.get("CALAB_SERVER", "https://app.calab.io").rstrip("/")
 TOKEN = os.environ.get("BOT_TOKEN", "")
 ROOM_ID = os.environ.get("VOICE_ROOM_ID", "")
 PRINT_EVERY = 0.5  # seconds

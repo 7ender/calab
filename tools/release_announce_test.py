@@ -79,7 +79,7 @@ SHORT = """## [2.0.0] — 2026-10-02
 
 ### Коротко
 - Вход через корпоративный SSO.
-- Новый сайт calab.ru.
+- Новый сайт calab.io.
 
 ### Добавлено
 - **SSO**: полный текст (#1).
@@ -93,7 +93,7 @@ class ShortTest(unittest.TestCase):
     def test_short_only(self):
         self.assertEqual(ra.render("2.0.0", SHORT), "\n\n".join([
             "🚀 **Calab 2.0.0** — 2 октября 2026",
-            "• Вход через корпоративный SSO.\n• Новый сайт calab.ru.",
+            "• Вход через корпоративный SSO.\n• Новый сайт calab.io.",
             "Подробнее: https://github.com/itrcz/calab/releases/tag/v2.0.0",
             "Обновление придёт само",
         ]))

@@ -1,6 +1,6 @@
 // Voice echo bot: joins a voice room through LiveKit, listens to everyone and repeats each phrase back
 // ("parrot"), or plays a WAV file on /play.
-//   BOT_TOKEN=calab_bot_… [CALAB_SERVER=https://app.calab.ru] [VOICE_ROOM_ID=…] [WAV_FILE=hello.wav] node index.mjs
+//   BOT_TOKEN=calab_bot_… [CALAB_SERVER=https://app.calab.io] [VOICE_ROOM_ID=…] [WAV_FILE=hello.wav] node index.mjs
 // In the chat of a voice room: /join (the bot enters that room), /leave, /play.
 // The bot needs CONNECT (and SPEAK to be heard) in the room — the same rights as a person.
 import { readFile } from 'node:fs/promises';
@@ -30,7 +30,7 @@ if (!token) {
   console.error('Set BOT_TOKEN (Workspace settings → Bots → Create bot).');
   process.exit(1);
 }
-const bot = new Bot(token, { server: process.env.CALAB_SERVER ?? 'https://app.calab.ru' });
+const bot = new Bot(token, { server: process.env.CALAB_SERVER ?? 'https://app.calab.io' });
 
 /** @type {VoiceSession | null} */
 let session = null;

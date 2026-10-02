@@ -1,5 +1,5 @@
 // Echo bot: answers every message with its text, and /echo <text> with <text>.
-//   BOT_TOKEN=calab_bot_… [CALAB_SERVER=https://app.calab.ru] node index.mjs
+//   BOT_TOKEN=calab_bot_… [CALAB_SERVER=https://app.calab.io] node index.mjs
 import { ApiError, Bot } from '@calaba/bot-sdk';
 
 const token = process.env.BOT_TOKEN;
@@ -7,7 +7,7 @@ if (!token) {
   console.error('Set BOT_TOKEN (Workspace settings → Bots → Create bot).');
   process.exit(1);
 }
-const bot = new Bot(token, { server: process.env.CALAB_SERVER ?? 'https://app.calab.ru' });
+const bot = new Bot(token, { server: process.env.CALAB_SERVER ?? 'https://app.calab.io' });
 
 // Replying to everything is noisy in a busy room: ECHO_ALL=0 answers only /echo, mentions and DMs.
 const echoAll = process.env.ECHO_ALL !== '0';

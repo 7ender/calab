@@ -1,7 +1,7 @@
 // TTS bot: /say <text> in the chat of a voice room — the bot joins that room and speaks the text.
 // Speech comes from an OpenAI-compatible /v1/audio/speech endpoint; without TTS_API_KEY it plays a
 // tone instead (one beep per word), so the voice path can be tried without any key.
-//   BOT_TOKEN=calab_bot_… [CALAB_SERVER=https://app.calab.ru] \
+//   BOT_TOKEN=calab_bot_… [CALAB_SERVER=https://app.calab.io] \
 //   [TTS_API_KEY=sk-…] [TTS_URL=https://api.openai.com/v1/audio/speech] [TTS_MODEL=gpt-4o-mini-tts] [TTS_VOICE=alloy] \
 //   node index.mjs
 import { Bot, RoomType } from '@calaba/bot-sdk';
@@ -31,7 +31,7 @@ if (!token) {
   console.error('Set BOT_TOKEN (Workspace settings → Bots → Create bot).');
   process.exit(1);
 }
-const bot = new Bot(token, { server: process.env.CALAB_SERVER ?? 'https://app.calab.ru' });
+const bot = new Bot(token, { server: process.env.CALAB_SERVER ?? 'https://app.calab.io' });
 
 /** The voice room the bot is in: LiveKit room, audio source, and a queue so phrases do not overlap. */
 let voice = null;

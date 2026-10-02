@@ -42,7 +42,7 @@ const (
 )
 
 // ProductURL is the product site linked from every mail's footer (docs/10-branding.md).
-const ProductURL = "https://calab.ru"
+const ProductURL = "https://calab.io"
 
 // Params are a template's values (strings only).
 type Params map[string]string
@@ -140,7 +140,7 @@ var htmlPage = htmltemplate.Must(htmltemplate.New("mail").Parse(`<!doctype html>
 <p class="fg" style="margin:0 0 24px;font-size:15px;line-height:1.55;color:#18181b">{{.CodeLabel}}: <span style="font-weight:600;letter-spacing:1px;font-family:ui-monospace,'SF Mono',Menlo,Consolas,monospace">{{.InviteCode}}</span></p>
 {{end}}<p class="muted" style="margin:0;font-size:13px;line-height:1.55;color:#71717a">{{.Note}}</p>
 </div>
-<p class="muted" style="max-width:560px;margin:16px auto 0;text-align:center;font-size:12px;line-height:1.5;color:#71717a"><a class="muted" href="{{.AttributionURL}}" style="color:#71717a">{{.Attribution}}</a> · <a class="muted" href="{{.ProductURL}}" style="color:#71717a">calab.ru</a></p>
+<p class="muted" style="max-width:560px;margin:16px auto 0;text-align:center;font-size:12px;line-height:1.5;color:#71717a"><a class="muted" href="{{.AttributionURL}}" style="color:#71717a">{{.Attribution}}</a> · <a class="muted" href="{{.ProductURL}}" style="color:#71717a">calab.io</a></p>
 </body></html>
 `))
 
