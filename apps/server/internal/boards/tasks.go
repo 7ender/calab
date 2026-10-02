@@ -645,7 +645,7 @@ func (s *Service) createTask(w http.ResponseWriter, r *http.Request) error {
 	me, now := uid(r), s.Now()
 	var taskID uuid.UUID
 	var c change
-	err = s.tx(r.Context(), func(q *sqlc.Queries, tx pgx.Tx) error {
+	err = s.taskTx(r.Context(), &c, func(q *sqlc.Queries, tx pgx.Tx) error {
 		b, err := q.GetBoardForUpdate(r.Context(), boardID)
 		if err != nil {
 			return err
@@ -1093,7 +1093,7 @@ func (s *Service) updateTask(w http.ResponseWriter, r *http.Request) error {
 	me, now := uid(r), s.Now()
 	var c change
 	var taskID uuid.UUID
-	err := s.tx(r.Context(), func(q *sqlc.Queries, tx pgx.Tx) error {
+	err := s.taskTx(r.Context(), &c, func(q *sqlc.Queries, tx pgx.Tx) error {
 		t, acc, err := s.loadTask(r, tx, true)
 		if err != nil {
 			return err
@@ -1517,7 +1517,7 @@ func (s *Service) setArchived(w http.ResponseWriter, r *http.Request, archived b
 	me := uid(r)
 	var c change
 	var t taskRow
-	err := s.tx(r.Context(), func(q *sqlc.Queries, tx pgx.Tx) error {
+	err := s.taskTx(r.Context(), &c, func(q *sqlc.Queries, tx pgx.Tx) error {
 		var acc perm.BoardAccess
 		var err error
 		if t, acc, err = s.loadTask(r, tx, true); err != nil {
@@ -1581,7 +1581,7 @@ func (s *Service) setAssignees(w http.ResponseWriter, r *http.Request) error {
 	me := uid(r)
 	var c change
 	var taskID uuid.UUID
-	err := s.tx(r.Context(), func(q *sqlc.Queries, tx pgx.Tx) error {
+	err := s.taskTx(r.Context(), &c, func(q *sqlc.Queries, tx pgx.Tx) error {
 		t, acc, err := s.loadTask(r, tx, true)
 		if err != nil {
 			return err
@@ -1660,7 +1660,7 @@ func (s *Service) relation(w http.ResponseWriter, r *http.Request, other uuid.UU
 	me := uid(r)
 	var c change
 	var taskID uuid.UUID
-	err := s.tx(r.Context(), func(q *sqlc.Queries, tx pgx.Tx) error {
+	err := s.taskTx(r.Context(), &c, func(q *sqlc.Queries, tx pgx.Tx) error {
 		t, acc, err := s.loadTask(r, tx, true)
 		if err != nil {
 			return err

@@ -42,6 +42,7 @@ type Service struct {
 	ev    events.Publisher
 	plans *plans.Service
 	files Uploader
+	hooks *Webhooks // board webhooks (EnableWebhooks); nil = off
 	// PublicURL is PUBLIC_APP_URL: links to messages in «Создать задачу из сообщения».
 	PublicURL string
 	// CreateLimit / SearchLimit: per-user budgets of task creation and of ⌘K task search
@@ -114,9 +115,7 @@ func (s *Service) Routes(mux httpx.Router, wrap func(http.Handler) http.Handler)
 	h("PATCH /api/checklist-items/{id}", s.updateChecklistItem)
 	h("DELETE /api/checklist-items/{id}", s.deleteChecklistItem)
 	h("POST /api/checklist-items/{id}/convert", s.convertChecklistItem)
-	for _, p := range contractStubRoutes {
-		h(p, notImplemented)
-	}
+	s.webhookRoutes(mux, wrap)
 }
 
 func uid(r *http.Request) uuid.UUID { return auth.MustFromContext(r.Context()).UserID }

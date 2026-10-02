@@ -930,7 +930,7 @@ func (s *Service) deleteStatus(w http.ResponseWriter, r *http.Request) error {
 	}
 	var moved []uuid.UUID
 	var c change
-	err = s.tx(r.Context(), func(q *sqlc.Queries, tx pgx.Tx) error {
+	err = s.taskTx(r.Context(), &c, func(q *sqlc.Queries, tx pgx.Tx) error {
 		if _, err := q.GetBoardForUpdate(r.Context(), id); err != nil {
 			return err
 		}
