@@ -83,6 +83,7 @@ type Session struct {
 	id, user, asess uuid.UUID
 	principal       identitypolicy.Principal
 	bot             bool       // a bot token (ADR-0031): no read receipts (docs/09 #92)
+	tab             string     // Identify.tab_id: the browser tab of the auth session (tabs.go)
 	client          clientInfo // Identify.device (docs/09 #143); set before register, then read-only
 	hub             *Hub
 

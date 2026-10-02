@@ -138,10 +138,10 @@ describe('«Только мои» (docs/09 #140)', () => {
   const m = map(invited, organized, others);
   const day = dayKey(T0);
 
-  it('keeps the meetings I organize or attend, on top of the people filter', () => {
+  it('shows the meetings I organize or attend, plus the selected people\'s', () => {
     expect(dayKeys(m, 'ws', day)).toHaveLength(3);
     expect(dayKeys(m, 'ws', day, undefined, ME).map((k) => m[k]?.id)).toEqual(['invited', 'organized']);
-    expect(dayKeys(m, 'ws', day, new Set([BOB]), ME).map((k) => m[k]?.id)).toEqual(['invited']);
+    expect(dayKeys(m, 'ws', day, new Set([BOB]), ME).map((k) => m[k]?.id)).toEqual(['invited', 'organized', 'others']);
   });
 
   it('the mini month dots follow it', () => {

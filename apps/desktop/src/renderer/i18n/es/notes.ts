@@ -13,7 +13,6 @@ export const esNotes: DictShape<typeof ruNotes> = {
   'notes.rename': 'Cambiar nombre',
   'notes.changeEmoji': 'Cambiar emoji',
   'notes.removeEmoji': 'Quitar emoji',
-  'notes.delete': 'Eliminar estante',
   'notes.deleteTitle': '¿Eliminar el estante «{name}»?',
   'notes.deleteConfirm': 'Se eliminarán todos los mensajes y archivos del estante. Las copias reenviadas a otros chats se conservan.',
   'notes.empty': 'Guarda aquí mensajes y archivos para ti',

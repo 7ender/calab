@@ -2,6 +2,7 @@ package gateway
 
 import (
 	"bytes"
+	"strings"
 	"testing"
 	"time"
 
@@ -168,21 +169,55 @@ func TestVisibilityTransitions(t *testing.T) {
 		t.Fatal("guest visibility")
 	}
 	other := uuid.New()
-	st.setRoom(other, &v1.Room{Id: other.String(), PermissionOverrides: []*v1.RoomPermissionOverride{
+	guestIn := []*v1.RoomPermissionOverride{
 		{TargetType: v1.PermissionTargetType_PERMISSION_TARGET_TYPE_USER, TargetId: bob.String(), Allow: uint64(perm.ViewRoom)},
-	}})
-	if st.hiddenFrom(bob, carol) {
-		t.Fatal("guest must see a member of a shared room")
 	}
-	// B2: cached viewers are invalidated by role and override changes.
-	st.setMember(carol, perm.RoleGuest, []string{"guest"})
+	st.setRoom(other, &v1.Room{Id: other.String(), PermissionOverrides: guestIn})
+	// A room open to every member does not open the directory to its guest (owner report
+	// 02.10): carol can view it, but is not one of its people.
 	if !st.hiddenFrom(bob, carol) {
-		t.Fatal("stale viewers cache after a role change")
+		t.Fatal("guest sees a member who merely can view the guest's public room")
+	}
+	// Its people: invited by name, its creator, whoever is in its call, its authors.
+	st.setRoom(other, &v1.Room{Id: other.String(), PermissionOverrides: append(guestIn,
+		&v1.RoomPermissionOverride{TargetType: v1.PermissionTargetType_PERMISSION_TARGET_TYPE_USER, TargetId: carol.String(), Allow: uint64(perm.Speak)})})
+	if st.hiddenFrom(bob, carol) {
+		t.Fatal("guest must see a member invited into its room")
+	}
+	st.setRoom(other, &v1.Room{Id: other.String(), PermissionOverrides: guestIn, CreatedBy: carol.String()})
+	if st.hiddenFrom(bob, carol) {
+		t.Fatal("guest must see the creator of its room")
+	}
+	st.setRoom(other, &v1.Room{Id: other.String(), PermissionOverrides: guestIn})
+	if !st.setVoice(carol, other) || st.setVoice(carol, other) || st.hiddenFrom(bob, carol) {
+		t.Fatal("guest must see a member in its call")
+	}
+	if !st.setVoice(carol, uuid.New()) || !st.hiddenFrom(bob, carol) || !st.setVoice(carol, uuid.Nil) {
+		t.Fatal("a member who left the guest's call is hidden again")
+	}
+	if ev := (&v1.DispatchEvent{Event: &v1.DispatchEvent_MessageCreate{MessageCreate: &v1.MessageCreate{Message: &v1.Message{
+		RoomId: other.String(), AuthorId: carol.String()}}}}); !changesVisibility(st, ev) {
+		t.Fatal("a new author is a visibility change")
+	}
+	st.addAuthor(other, carol)
+	if st.hiddenFrom(bob, carol) {
+		t.Fatal("guest must see an author of its room")
+	}
+	// B2: the cached set is invalidated by role and override changes.
+	st.setMember(carol, perm.RoleGuest, []string{"guest"})
+	st.delRoom(other)
+	if !st.hiddenFrom(bob, carol) {
+		t.Fatal("stale guest cache after a room deletion")
+	}
+	st.setRoom(other, &v1.Room{Id: other.String(), PermissionOverrides: append(guestIn,
+		&v1.RoomPermissionOverride{TargetType: v1.PermissionTargetType_PERMISSION_TARGET_TYPE_USER, TargetId: carol.String(), Allow: uint64(perm.ViewRoom)})})
+	if st.hiddenFrom(bob, carol) {
+		t.Fatal("two guests of one room see each other")
 	}
 	st.setMember(carol, perm.RoleMember, []string{"member"})
 	st.setRoom(other, &v1.Room{Id: other.String()})
 	if !st.hiddenFrom(bob, carol) {
-		t.Fatal("stale viewers cache after an override change")
+		t.Fatal("stale guest cache after an override change")
 	}
 	// ADR-0026: a custom role allowed into the private room; its permissions / deletion
 	// change what its holders see.
@@ -300,5 +335,29 @@ func TestEventScopeClassified(t *testing.T) {
 	}
 	if knownScopedEvent(&v1.DispatchEvent{}) {
 		t.Error("an absent variant must deny")
+	}
+}
+
+func TestValidTabID(t *testing.T) {
+	long := strings.Repeat("a", maxTabIDLen)
+	for in, want := range map[string]string{
+		"":                      "",
+		"tab-1_X":               "tab-1_X",
+		long:                    long,
+		long + "a":              "",
+		"a|b":                   "", // the member separator of gw:tabs
+		"a b":                   "",
+		"таб":                   "",
+		"0f8c7d2e-1b2a-4c3d-9e": "0f8c7d2e-1b2a-4c3d-9e",
+	} {
+		if got := validTabID(in); got != want {
+			t.Errorf("validTabID(%q) = %q, want %q", in, got, want)
+		}
+	}
+	if c, why := killClose(true); c != 4011 || why == "" {
+		t.Errorf("evicted close: %d %q", c, why)
+	}
+	if c, why := killClose(false); c != 4000 || why != "replaced by a new session" {
+		t.Errorf("replaced close: %d %q (bots rely on the reason, docs/19)", c, why)
 	}
 }

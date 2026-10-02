@@ -45,7 +45,7 @@ export const ruPeople = {
   'people.menu.renameSelf': 'Сменить ник',
   'people.menu.promote': 'Сделать участником',
   'people.menu.removeGuest': 'Удалить гостя',
-  'people.menu.kick': 'Исключить из пространства',
+  'people.menu.kick': 'Исключить',
   'people.menu.mention': 'Упомянуть',
   'people.menu.deafen': 'Не слышать',
   'people.menu.deafenHint': 'Ни голоса, ни звука стрима — только для вас',

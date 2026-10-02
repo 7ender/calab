@@ -140,7 +140,7 @@ func TestAdminMoveIntoFullRoom(t *testing.T) {
 }
 
 // R7: fast room switching (many SUBSCRIBE / TYPING) is dropped, not disconnected.
-// R8: a guest gets MEMBER_ADD when a member becomes visible through a shared room.
+// R8: a guest gets MEMBER_ADD when a member becomes one of the people of its room.
 func TestSoftLimitAndGuestMemberAdd(t *testing.T) {
 	o, bob, ws, room := setupTeam(t)
 	wid, rid := ws.GetId(), room.GetId()
@@ -170,7 +170,14 @@ func TestSoftLimitAndGuestMemberAdd(t *testing.T) {
 			kept = append(kept, ov)
 		}
 	}
+	// Merely able to view the (public) room again: still not one of its people.
 	o.must(200, "PUT", "/api/rooms/"+rid+"/permissions", &v1.SetRoomPermissionsRequest{Overrides: kept}, nil)
+	gg.quiet("MEMBER_ADD of a member who only can view the room", 300*time.Millisecond, func(e *v1.DispatchEvent) bool {
+		return e.GetWorkspaceMemberAdd().GetMember().GetUser().GetId() == hermit.id
+	})
+	// Invited into it by name: visible.
+	o.must(200, "PUT", "/api/rooms/"+rid+"/permissions", &v1.SetRoomPermissionsRequest{Overrides: append(kept, &v1.RoomPermissionOverride{
+		TargetType: v1.PermissionTargetType_PERMISSION_TARGET_TYPE_USER, TargetId: hermit.id, Allow: uint64(perm.ViewRoom)})}, nil)
 	gg.wait("synthetic MEMBER_ADD", func(e *v1.DispatchEvent) bool {
 		return e.GetWorkspaceMemberAdd().GetMember().GetUser().GetId() == hermit.id
 	})

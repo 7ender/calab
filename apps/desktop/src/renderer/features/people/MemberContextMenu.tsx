@@ -312,7 +312,7 @@ function MemberMenuContent({
       ) : null}
       {a.removeGuest ? (
         <ContextMenu.Item className={cx(row, danger)} onSelect={() => void removeMember(workspaceId, userId, true)}>
-          <UserMinus className="size-4" aria-hidden /> {t('people.menu.removeGuest')}
+          <UserMinus className="size-4" aria-hidden /> {t('people.menu.kick')}
         </ContextMenu.Item>
       ) : null}
       {a.kick ? (

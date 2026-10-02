@@ -133,7 +133,6 @@ export const zhVideo: DictShape<typeof enVideo> = {
   // room «…» menu and meeting recording (docs/09 #30)
   'roomMenu.more': '更多',
   'roomMenu.moreOf': '“{name}”的操作',
-  'roomMenu.invite': '邀请加入房间',
   'roomMenu.record': '录制会议',
   'rec.badge': 'REC',
   'rec.label': '录制中',

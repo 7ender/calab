@@ -320,3 +320,35 @@ func TestTempRooms(t *testing.T) {
 	b.must(200, "PATCH", "/api/rooms/"+br.GetRoom().GetId(), &v1.UpdateRoomRequest{ExpiresAt: timestamppb.New(time.Now().Add(time.Hour))}, &ur)
 	b.must(204, "DELETE", "/api/rooms/"+br.GetRoom().GetId(), nil, nil)
 }
+
+// Extending a temporary room moves its meeting that ended with it; a meeting edited to another
+// time stays (#46).
+func TestTempRoomExtendFollowsMeeting(t *testing.T) {
+	o := owner(t)
+	ws := createWorkspace(t, o, v1.WorkspaceVisibility_WORKSPACE_VISIBILITY_PRIVATE)
+	wid := ws.GetId()
+	end := func(id string) time.Time {
+		t.Helper()
+		var e time.Time
+		if err := testDB.Pool.QueryRow(context.Background(), "SELECT ends_at FROM events WHERE id = $1", id).Scan(&e); err != nil {
+			t.Fatal(err)
+		}
+		return e
+	}
+	follow := tempRoom(t, o, wid, &v1.CreateTempRoomRequest{Name: "follow", TtlSeconds: 3600, WithEvent: true})
+	edited := tempRoom(t, o, wid, &v1.CreateTempRoomRequest{Name: "edited", TtlSeconds: 3600, WithEvent: true})
+	manual := edited.GetEvent().GetEndsAt().AsTime().Add(-10 * time.Minute)
+	sqlExec(t, "UPDATE events SET ends_at = $1 WHERE id = $2", manual, edited.GetEvent().GetId())
+
+	newEnd := time.Now().Add(3 * time.Hour).Truncate(time.Second)
+	var ur v1.UpdateRoomResponse
+	o.must(200, "PATCH", "/api/rooms/"+follow.GetRoom().GetId(), &v1.UpdateRoomRequest{ExpiresAt: timestamppb.New(newEnd)}, &ur)
+	o.must(200, "PATCH", "/api/rooms/"+edited.GetRoom().GetId(), &v1.UpdateRoomRequest{ExpiresAt: timestamppb.New(newEnd)}, &ur)
+
+	if got := end(follow.GetEvent().GetId()); !got.Equal(newEnd) {
+		t.Fatalf("meeting end %v, want %v", got, newEnd)
+	}
+	if got := end(edited.GetEvent().GetId()); !got.Equal(manual.Truncate(time.Microsecond)) {
+		t.Fatalf("hand-edited meeting moved to %v, want %v", got, manual)
+	}
+}

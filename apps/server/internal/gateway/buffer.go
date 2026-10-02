@@ -14,7 +14,7 @@ import (
 
 // Session buffer in Redis (docs/05, RESUME):
 //
-//	gw:sess:<gsid>  hash {user, asess, owner, seq}; TTL = resume window, renewed while alive
+//	gw:sess:<gsid>  hash {user, asess, owner, seq, bot, tab}; TTL = resume window, renewed while alive
 //	gw:buf:<gsid>   list of entries: 16-byte event id + binary GatewayFrame (DISPATCH with seq)
 //	                capped at bufferMax entries, same TTL
 //
@@ -97,6 +97,7 @@ type sessMeta struct {
 	owner       string
 	seq         uint64
 	bot         bool
+	tab         string // Identify.tab_id ("" = the device itself), see tabs.go
 }
 
 type bufferStore struct{ c rueidis.Client }
@@ -104,14 +105,14 @@ type bufferStore struct{ c rueidis.Client }
 func sessKey(g uuid.UUID) string { return redisx.Key("gw:sess:" + g.String()) }
 func bufKey(g uuid.UUID) string  { return redisx.Key("gw:buf:" + g.String()) }
 
-func (b bufferStore) create(ctx context.Context, gsid, user, asess uuid.UUID, owner string, bot bool) error {
+func (b bufferStore) create(ctx context.Context, gsid, user, asess uuid.UUID, owner string, bot bool, tab string) error {
 	isBot := "0"
 	if bot {
 		isBot = "1"
 	}
 	res := b.c.DoMulti(ctx,
 		b.c.B().Hset().Key(sessKey(gsid)).FieldValue().FieldValue("user", user.String()).
-			FieldValue("asess", asess.String()).FieldValue("owner", owner).FieldValue("seq", "0").FieldValue("bot", isBot).Build(),
+			FieldValue("asess", asess.String()).FieldValue("owner", owner).FieldValue("seq", "0").FieldValue("bot", isBot).FieldValue("tab", tab).Build(),
 		b.c.B().Expire().Key(sessKey(gsid)).Seconds(int64(resumeWindow.Seconds())).Build())
 	return res[0].Error()
 }
@@ -130,7 +131,7 @@ func (b bufferStore) meta(ctx context.Context, gsid uuid.UUID) (sessMeta, bool, 
 	if err1 != nil || err2 != nil || err3 != nil {
 		return sessMeta{}, false, nil
 	}
-	return sessMeta{user: u, asess: a, owner: m["owner"], seq: seq, bot: m["bot"] == "1"}, true, nil
+	return sessMeta{user: u, asess: a, owner: m["owner"], seq: seq, bot: m["bot"] == "1", tab: validTabID(m["tab"])}, true, nil
 }
 
 func (b bufferStore) setOwner(ctx context.Context, gsid uuid.UUID, owner string) error {

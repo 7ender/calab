@@ -40,8 +40,15 @@ export function involvesAny(ev: Pick<CalendarEvent, 'organizerId' | 'attendees'>
 
 export const isAttendee =(ev: Pick<CalendarEvent, 'attendees'>, me: string): boolean => ev.attendees.some((a) => a.userId === me);
 
-/** «Только мои» (docs/09 #140): I organize it or I am on its attendee list. `mine` '' = no filter. */
+/** My meetings (docs/09 #140): I organize it or I am on its attendee list. `mine` '' = no filter. */
 export const isMine = (ev: Pick<CalendarEvent, 'organizerId' | 'attendees'>, mine: string): boolean => !mine || ev.organizerId === mine || isAttendee(ev, mine);
+
+/**
+ * The calendar's default scope (owner, 02.10): my meetings (`mine`), plus those involving the people
+ * selected in the «Люди» filter. Neither given = everything.
+ */
+const inScope = (ev: Pick<CalendarEvent, 'organizerId' | 'attendees'>, people: ReadonlySet<string> | undefined, mine: string): boolean =>
+  (!people && !mine) || (!!mine && isMine(ev, mine)) || (!!people && involvesAny(ev, people));
 
 const overlaps = (ev: CalendarEvent, from: number, to: number): boolean => {
   const { start, end } = eventSpan(ev);
@@ -178,7 +185,7 @@ export function dayKeys(occ: OccMap, workspaceId: string, day: string, people?: 
   const from = dayStart(day);
   const to = dayEnd(day);
   return Object.entries(occ)
-    .filter(([, ev]) => ev.workspaceId === workspaceId && (ev.allDay ? eventDays(ev).includes(day) : overlaps(ev, from, to)) && (!people || involvesAny(ev, people)) && isMine(ev, mine))
+    .filter(([, ev]) => ev.workspaceId === workspaceId && (ev.allDay ? eventDays(ev).includes(day) : overlaps(ev, from, to)) && inScope(ev, people, mine))
     .sort(([ka, a], [kb, b]) => eventSpan(a).start - eventSpan(b).start || eventSpan(b).end - eventSpan(a).end || (ka < kb ? -1 : 1))
     .map(([k]) => k);
 }
@@ -188,7 +195,7 @@ export function busyDays(occ: OccMap, workspaceId: string, from: number, to: num
   const days = new Set<string>();
   for (const ev of Object.values(occ)) {
     if (ev.workspaceId !== workspaceId || !overlaps(ev, from, to)) continue;
-    if ((people && !involvesAny(ev, people)) || !isMine(ev, mine)) continue;
+    if (!inScope(ev, people, mine)) continue;
     for (const d of eventDays(ev, tz)) days.add(d);
   }
   return [...days].sort();

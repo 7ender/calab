@@ -45,7 +45,7 @@ export const ruTemp = {
   'temp.unit.m': '{n} м',
   'temp.islandMin': '{n} мин',
   'temp.icon': 'Временная комната',
-  'temp.copyLink': 'Скопировать ссылку',
+  'temp.copyLink': 'Копировать ссылку',
   'temp.extend': 'Продлить',
   'temp.extend1h': 'На 1 час',
   'temp.extend1d': 'На 1 день',

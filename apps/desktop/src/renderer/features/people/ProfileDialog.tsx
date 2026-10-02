@@ -76,7 +76,7 @@ function useBannerColor(userId: string, fileId: string | undefined): string {
 }
 
 /**
- * Member profile (docs/09 #20, reference docs/images/reference/discord-profile-full.png): banner in
+ * Member profile (docs/09 #20, reference: Discord profile): banner in
  * the avatar's colour, avatar 80 with presence, name + profile name, local time «UTC+3 · 14:05», «Написать»
  * (accent) · «Упомянуть» · «…» (the member menu), «Участник с» (registration · this workspace),
  * «Роли» chips with × and + (by rights; the server re-checks), and «Заметка (видна только вам)»

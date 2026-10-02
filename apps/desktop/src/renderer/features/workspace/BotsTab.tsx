@@ -328,7 +328,7 @@ function BotRow({ workspaceId, bot, onIssued }: { workspaceId: string; bot: Bot;
                 ) : null}
                 <Dropdown.Separator className={menuSeparator} />
                 <Dropdown.Item className={cx(menuItem, 'text-danger-text')} onSelect={() => void remove()}>
-                  <Trash2 className="size-4" aria-hidden /> {t('bots.delete')}
+                  <Trash2 className="size-4" aria-hidden /> {t('common.delete')}
                 </Dropdown.Item>
               </>
             ) : (

@@ -177,3 +177,11 @@ FOR UPDATE;
 UPDATE events SET ends_at = sqlc.arg('at'), sequence = sequence + 1, updated_at = now()
 WHERE id = sqlc.arg('id') AND cancelled_at IS NULL AND starts_at < sqlc.arg('at') AND ends_at > sqlc.arg('at')
 RETURNING *;
+
+-- name: FollowRoomExpiryEvents :many
+-- A temporary room was extended or shortened (ADR-0044): its one-off meetings that ended with the
+-- room (ends_at = the old end) follow the new end; a meeting moved by hand is left alone.
+UPDATE events SET ends_at = sqlc.arg('ends_at'), sequence = sequence + 1, updated_at = now()
+WHERE room_id = sqlc.arg('room_id') AND cancelled_at IS NULL AND rrule IS NULL
+  AND ends_at = sqlc.arg('old_ends_at') AND starts_at < sqlc.arg('ends_at')
+RETURNING *;

@@ -47,7 +47,7 @@ export const enPeople: DictShape<typeof ruPeople> = {
   'people.menu.renameSelf': 'Change nickname',
   'people.menu.promote': 'Make member',
   'people.menu.removeGuest': 'Remove guest',
-  'people.menu.kick': 'Remove from workspace',
+  'people.menu.kick': 'Remove',
   'people.menu.mention': 'Mention',
   'people.menu.deafen': 'Don’t hear',
   'people.menu.deafenHint': 'No voice and no screen share sound — just for you',

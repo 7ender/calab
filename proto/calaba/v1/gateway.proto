@@ -50,6 +50,10 @@ enum GatewayCloseCode {
   // Do not reconnect; login screen. The close reason is "session revoked" or "session revoked:
   // <REASON>" with the ApiError.reason of ERROR_CODE_SESSION_REVOKED (REUSE, LOGOUT_ALL, ...).
   GATEWAY_CLOSE_CODE_SESSION_REVOKED = 4010;
+  // This tab's gateway session was evicted: its auth session reached the cap of concurrent
+  // tabs (Identify.tab_id) and this one was claimed longest ago (#40). Do not reconnect while
+  // the tab is hidden; reconnect (new IDENTIFY) when it is shown again, else with backoff.
+  GATEWAY_CLOSE_CODE_SESSION_EVICTED = 4011;
 }
 
 enum PresenceStatus {
@@ -99,6 +103,13 @@ message Identify {
   string token = 1; // access JWT
   DeviceInfo device = 2;
   uint64 capabilities = 3; // reserved bit flags for future protocol features
+  // A browser tab of the auth session (#40): tabs of one browser share the auth session, each
+  // keeps its own gateway session under its own tab_id (at most 64 of [A-Za-z0-9_-], random
+  // per tab, kept across reloads). A new IDENTIFY replaces only the gateway session of the same
+  // tab_id (close 4000 "replaced by a new session"); the auth session holds at most 8 tabs and
+  // the one claimed longest ago is evicted (close 4011). Empty (desktop, bots) = one gateway
+  // session per auth session, as before. An invalid value is treated as empty.
+  string tab_id = 4;
 }
 
 message Resume {

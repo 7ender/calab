@@ -74,7 +74,6 @@ export const ruRecording = {
   'rec.card.listen': 'Слушать запись',
   'rec.card.pause': 'Пауза',
   'rec.card.transcript': 'Полный транскрипт',
-  'rec.delete.item': 'Удалить запись',
   'rec.delete.title': 'Удалить запись встречи?',
   'rec.delete.text': 'Запись, транскрипт и саммари будут удалены у всех.',
   'rec.delete.action': 'Удалить',

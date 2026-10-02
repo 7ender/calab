@@ -254,7 +254,7 @@ function DmMenu({ roomId, unread, archived, children }: { roomId: string; unread
             {t(archived ? 'dm.unarchive' : 'dm.archive')}
           </ContextMenu.Item>
           <ContextMenu.Item className={cx(menuItem, 'text-danger-text')} onSelect={() => void confirmDeleteDm(roomId)}>
-            {t('dm.delete')}
+            {t('common.delete')}
           </ContextMenu.Item>
         </ContextMenu.Content>
       </ContextMenu.Portal>

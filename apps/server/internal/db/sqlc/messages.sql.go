@@ -859,6 +859,38 @@ func (q *Queries) ListReadStates(ctx context.Context, arg ListReadStatesParams) 
 	return items, nil
 }
 
+const listRoomAuthors = `-- name: ListRoomAuthors :many
+SELECT DISTINCT room_id, author_id FROM messages
+WHERE room_id = ANY($1::uuid[]) AND deleted_at IS NULL
+`
+
+type ListRoomAuthorsRow struct {
+	RoomID   uuid.UUID
+	AuthorID uuid.UUID
+}
+
+// Distinct authors of the live messages of rooms (what a guest may see of them, ADR-0016);
+// an index-only scan of messages_live_room_id_idx.
+func (q *Queries) ListRoomAuthors(ctx context.Context, roomIds []uuid.UUID) ([]ListRoomAuthorsRow, error) {
+	rows, err := q.db.Query(ctx, listRoomAuthors, roomIds)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []ListRoomAuthorsRow{}
+	for rows.Next() {
+		var i ListRoomAuthorsRow
+		if err := rows.Scan(&i.RoomID, &i.AuthorID); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const lockMessage = `-- name: LockMessage :exec
 SELECT 1 FROM messages WHERE id = $1 FOR NO KEY UPDATE
 `

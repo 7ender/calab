@@ -94,7 +94,8 @@ test('register → workspace → room → message → reload → voice', async (
     await page.getByLabel('Название').fill('Созвон');
     await page.getByRole('button', { name: 'Создать', exact: true }).click();
   }
-  await page.locator('aside button', { hasText: 'Созвон' }).first().click();
+  await page.locator('aside button', { hasText: 'Созвон' }).first().hover();
+  await page.getByRole('button', { name: 'Войти в голос «Созвон»' }).click();
   await expect(page.getByText('Голос подключён')).toBeVisible({ timeout: 30_000 });
   // Camera (docs/09 #41; server from feat/webcam): the browser's fake camera, first start through
   // the preview sheet. Chromium publishes VP9 simulcast, Firefox / Safari plain VP8 simulcast.

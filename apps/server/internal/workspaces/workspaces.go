@@ -62,6 +62,7 @@ type Handlers struct {
 	limits Limits
 	email  EmailInvites
 	files  *files.Service
+	voice  rooms.VoiceRooms // nil: guests see nobody through a call (WithVoice)
 }
 
 // Limits against abuse of the shared disk (security review H2).
@@ -202,8 +203,8 @@ func Snapshot(ctx context.Context, q *sqlc.Queries, pl *plans.Service, ws sqlc.W
 		}
 	}
 	var allowed map[uuid.UUID]bool
-	if role == perm.RoleGuest {
-		if allowed, err = guestVisibleUsers(ctx, q, ws.ID, userID); err != nil {
+	if role == perm.RoleGuest { // the people in the guest's calls are added by the gateway (fillLive)
+		if allowed, err = rooms.GuestVisibleUsers(ctx, q, nil, ws.ID, userID); err != nil {
 			return nil, err
 		}
 	}
@@ -970,7 +971,7 @@ func (h *Handlers) listMembers(w http.ResponseWriter, r *http.Request) error {
 	}
 	var allowed map[uuid.UUID]bool
 	if role == perm.RoleGuest {
-		if allowed, err = guestVisibleUsers(r.Context(), h.db.Q, wsID, uid(r)); err != nil {
+		if allowed, err = rooms.GuestVisibleUsers(r.Context(), h.db.Q, h.voice, wsID, uid(r)); err != nil {
 			return err
 		}
 	}
@@ -996,7 +997,7 @@ func (h *Handlers) getMember(w http.ResponseWriter, r *http.Request) error {
 		return err
 	}
 	if role == perm.RoleGuest {
-		allowed, err := guestVisibleUsers(r.Context(), h.db.Q, wsID, uid(r))
+		allowed, err := rooms.GuestVisibleUsers(r.Context(), h.db.Q, h.voice, wsID, uid(r))
 		if err != nil {
 			return err
 		}
@@ -1031,42 +1032,11 @@ func (h *Handlers) getMember(w http.ResponseWriter, r *http.Request) error {
 	return nil
 }
 
-// guestVisibleUsers is what a guest may see of a workspace (ADR-0016): the members who can
-// view at least one of the rooms the guest can view (the guest included).
-func guestVisibleUsers(ctx context.Context, q *sqlc.Queries, wsID, guest uuid.UUID) (map[uuid.UUID]bool, error) {
-	members, err := perm.LoadMembers(ctx, q, wsID)
-	if err != nil {
-		return nil, err
-	}
-	me, ok := members[guest]
-	if !ok {
-		return map[uuid.UUID]bool{guest: true}, nil
-	}
-	ovRows, err := q.ListWorkspaceRoomOverrides(ctx, wsID)
-	if err != nil {
-		return nil, err
-	}
-	byRoom := map[uuid.UUID][]perm.OverrideTarget{}
-	for _, o := range ovRows {
-		byRoom[o.RoomID] = append(byRoom[o.RoomID], pbconv.OverrideTargets([]sqlc.RoomPermission{o})...)
-	}
-	rs, err := q.ListRooms(ctx, wsID)
-	if err != nil {
-		return nil, err
-	}
-	out := map[uuid.UUID]bool{guest: true}
-	for _, room := range rs {
-		ovs := byRoom[room.ID]
-		if !perm.ComputeIn(me, room.Restricted, ovs).Has(perm.ViewRoom) {
-			continue
-		}
-		for id, m := range members {
-			if perm.ComputeIn(m, room.Restricted, ovs).Has(perm.ViewRoom) {
-				out[id] = true
-			}
-		}
-	}
-	return out, nil
+// WithVoice lets the member endpoints count the people in a guest's call (perm.GuestVisible).
+// Without it a guest does not see them through REST (fail-closed).
+func (h *Handlers) WithVoice(v rooms.VoiceRooms) *Handlers {
+	h.voice = v
+	return h
 }
 
 // targetUser resolves the {userId} path value; "@me" is the caller.

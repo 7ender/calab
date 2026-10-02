@@ -116,6 +116,10 @@ const (
 	// Do not reconnect; login screen. The close reason is "session revoked" or "session revoked:
 	// <REASON>" with the ApiError.reason of ERROR_CODE_SESSION_REVOKED (REUSE, LOGOUT_ALL, ...).
 	GatewayCloseCode_GATEWAY_CLOSE_CODE_SESSION_REVOKED GatewayCloseCode = 4010
+	// This tab's gateway session was evicted: its auth session reached the cap of concurrent
+	// tabs (Identify.tab_id) and this one was claimed longest ago (#40). Do not reconnect while
+	// the tab is hidden; reconnect (new IDENTIFY) when it is shown again, else with backoff.
+	GatewayCloseCode_GATEWAY_CLOSE_CODE_SESSION_EVICTED GatewayCloseCode = 4011
 )
 
 // Enum value maps for GatewayCloseCode.
@@ -131,6 +135,7 @@ var (
 		4008: "GATEWAY_CLOSE_CODE_RATE_LIMITED",
 		4009: "GATEWAY_CLOSE_CODE_SESSION_TIMED_OUT",
 		4010: "GATEWAY_CLOSE_CODE_SESSION_REVOKED",
+		4011: "GATEWAY_CLOSE_CODE_SESSION_EVICTED",
 	}
 	GatewayCloseCode_value = map[string]int32{
 		"GATEWAY_CLOSE_CODE_UNSPECIFIED":           0,
@@ -143,6 +148,7 @@ var (
 		"GATEWAY_CLOSE_CODE_RATE_LIMITED":          4008,
 		"GATEWAY_CLOSE_CODE_SESSION_TIMED_OUT":     4009,
 		"GATEWAY_CLOSE_CODE_SESSION_REVOKED":       4010,
+		"GATEWAY_CLOSE_CODE_SESSION_EVICTED":       4011,
 	}
 )
 
@@ -685,10 +691,17 @@ func (x *DeviceInfo) GetAppVersion() string {
 }
 
 type Identify struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	Token         string                 `protobuf:"bytes,1,opt,name=token,proto3" json:"token,omitempty"` // access JWT
-	Device        *DeviceInfo            `protobuf:"bytes,2,opt,name=device,proto3" json:"device,omitempty"`
-	Capabilities  uint64                 `protobuf:"varint,3,opt,name=capabilities,proto3" json:"capabilities,omitempty"` // reserved bit flags for future protocol features
+	state        protoimpl.MessageState `protogen:"open.v1"`
+	Token        string                 `protobuf:"bytes,1,opt,name=token,proto3" json:"token,omitempty"` // access JWT
+	Device       *DeviceInfo            `protobuf:"bytes,2,opt,name=device,proto3" json:"device,omitempty"`
+	Capabilities uint64                 `protobuf:"varint,3,opt,name=capabilities,proto3" json:"capabilities,omitempty"` // reserved bit flags for future protocol features
+	// A browser tab of the auth session (#40): tabs of one browser share the auth session, each
+	// keeps its own gateway session under its own tab_id (at most 64 of [A-Za-z0-9_-], random
+	// per tab, kept across reloads). A new IDENTIFY replaces only the gateway session of the same
+	// tab_id (close 4000 "replaced by a new session"); the auth session holds at most 8 tabs and
+	// the one claimed longest ago is evicted (close 4011). Empty (desktop, bots) = one gateway
+	// session per auth session, as before. An invalid value is treated as empty.
+	TabId         string `protobuf:"bytes,4,opt,name=tab_id,json=tabId,proto3" json:"tab_id,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -742,6 +755,13 @@ func (x *Identify) GetCapabilities() uint64 {
 		return x.Capabilities
 	}
 	return 0
+}
+
+func (x *Identify) GetTabId() string {
+	if x != nil {
+		return x.TabId
+	}
+	return ""
 }
 
 type Resume struct {
@@ -6936,11 +6956,12 @@ const file_calaba_v1_gateway_proto_rawDesc = "" +
 	"\x04name\x18\x01 \x01(\tR\x04name\x12\x1a\n" +
 	"\bplatform\x18\x02 \x01(\tR\bplatform\x12\x1f\n" +
 	"\vapp_version\x18\x03 \x01(\tR\n" +
-	"appVersion\"s\n" +
+	"appVersion\"\x8a\x01\n" +
 	"\bIdentify\x12\x14\n" +
 	"\x05token\x18\x01 \x01(\tR\x05token\x12-\n" +
 	"\x06device\x18\x02 \x01(\v2\x15.calaba.v1.DeviceInfoR\x06device\x12\"\n" +
-	"\fcapabilities\x18\x03 \x01(\x04R\fcapabilities\"O\n" +
+	"\fcapabilities\x18\x03 \x01(\x04R\fcapabilities\x12\x15\n" +
+	"\x06tab_id\x18\x04 \x01(\tR\x05tabId\"O\n" +
 	"\x06Resume\x12\x14\n" +
 	"\x05token\x18\x01 \x01(\tR\x05token\x12\x1d\n" +
 	"\n" +
@@ -7401,7 +7422,7 @@ const file_calaba_v1_gateway_proto_rawDesc = "" +
 	"\x1eGATEWAY_OPCODE_INVALID_SESSION\x10\t\x12\x18\n" +
 	"\x14GATEWAY_OPCODE_HELLO\x10\n" +
 	"\x12 \n" +
-	"\x1cGATEWAY_OPCODE_HEARTBEAT_ACK\x10\v*\xa4\x03\n" +
+	"\x1cGATEWAY_OPCODE_HEARTBEAT_ACK\x10\v*\xcd\x03\n" +
 	"\x10GatewayCloseCode\x12\"\n" +
 	"\x1eGATEWAY_CLOSE_CODE_UNSPECIFIED\x10\x00\x12%\n" +
 	" GATEWAY_CLOSE_CODE_UNKNOWN_ERROR\x10\xa0\x1f\x12&\n" +
@@ -7412,7 +7433,8 @@ const file_calaba_v1_gateway_proto_rawDesc = "" +
 	"\x1eGATEWAY_CLOSE_CODE_INVALID_SEQ\x10\xa7\x1f\x12$\n" +
 	"\x1fGATEWAY_CLOSE_CODE_RATE_LIMITED\x10\xa8\x1f\x12)\n" +
 	"$GATEWAY_CLOSE_CODE_SESSION_TIMED_OUT\x10\xa9\x1f\x12'\n" +
-	"\"GATEWAY_CLOSE_CODE_SESSION_REVOKED\x10\xaa\x1f*\xbc\x01\n" +
+	"\"GATEWAY_CLOSE_CODE_SESSION_REVOKED\x10\xaa\x1f\x12'\n" +
+	"\"GATEWAY_CLOSE_CODE_SESSION_EVICTED\x10\xab\x1f*\xbc\x01\n" +
 	"\x0ePresenceStatus\x12\x1f\n" +
 	"\x1bPRESENCE_STATUS_UNSPECIFIED\x10\x00\x12\x1a\n" +
 	"\x16PRESENCE_STATUS_ONLINE\x10\x01\x12\x18\n" +

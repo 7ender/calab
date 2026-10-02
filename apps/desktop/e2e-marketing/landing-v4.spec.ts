@@ -205,7 +205,7 @@ const scenes: Record<string, (ctx: Ctx) => Promise<void>> = {
     call(n[2] ?? '', U.vera, SipCallStatus.ENDED, 'remote', 6 * 60_000);
     await setLocale(page, short);
     await page.getByTestId('titlebar-title').or(aside(page).getByRole('button').first()).first().click();
-    await page.getByRole('menuitem', { name: /Настройки пространства|Workspace settings|Ajustes del espacio|工作区设置/ }).first().click();
+    await page.getByRole('menuitem', { name: /^(Настройки|Settings|Ajustes|设置)$/ }).first().click();
     await page.getByRole('dialog').getByRole('tab').filter({ hasText: /Телефония|Telephony|Telefonía|电话/ }).first().click();
     await expect(page.getByTestId('sip-form')).toBeVisible();
     await page.getByTestId('sip-test').click();

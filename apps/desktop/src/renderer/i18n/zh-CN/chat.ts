@@ -93,7 +93,7 @@ export const zhChat: DictShape<typeof enChat> = {
   'chat.notifyMuteForever': '永久',
   'chat.notifyMutedUntil': '已静音至{time}',
   'chat.notifyWsMutedUntil': '工作区已静音至{time}',
-  'chat.notifyUnmute': '取消静音通知',
+  'chat.notifyUnmute': '取消静音',
   'chat.notifyFailed': '通知设置保存失败',
   // mentions
   'chat.mentionUnknown': '未知用户',

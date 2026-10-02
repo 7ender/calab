@@ -82,6 +82,12 @@ export const ruMail = {
   'mail.invite.pending': 'Отправленные приглашения',
   'mail.invite.until': 'до {date}',
   'mail.invite.revoke': 'Отозвать',
+  'mail.invite.revokeTitle': 'Отозвать приглашение?',
+  'mail.invite.revokeText': 'Приглашение для {email} перестанет работать.',
+  'mail.invite.bad': 'Введите адрес полностью, например name@example.com',
+  'invite.revokeTitle': 'Отозвать приглашение?',
+  'invite.revokeText': 'Ссылка перестанет работать, по ней больше нельзя будет войти.',
+  'ws.slugInvalid': 'Адрес: 3–32 символа, только a–z, 0–9 и дефис, без дефиса в начале, в конце и без «--»',
   'mail.invite.revoked': 'Приглашение отозвано',
   // /join/<code> page (public preview)
   'mail.landing.members': { one: '{n} участник', few: '{n} участника', many: '{n} участников', other: '{n} участника' },

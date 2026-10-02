@@ -52,7 +52,11 @@ function linkTruth(page: Page): Promise<{ state: string | null; room: string | n
   return page.evaluate<{ state: string | null; room: string | null }>(`window.__calabaVoiceLink ? window.__calabaVoiceLink() : { state: null, room: null }`);
 }
 
-const roomButton = (page: Page, name: string) => page.locator('aside button', { hasText: name }).first();
+// A row click opens the chat; «Войти» (revealed on hover) joins the voice.
+async function joinRoom(page: Page, name: string): Promise<void> {
+  await page.locator('aside button', { hasText: name }).first().hover();
+  await page.getByRole('button', { name: `Войти в голос «${name}»` }).click();
+}
 
 test('switching voice rooms: B connected after A; ten fast clicks end connected in the last one', async ({ page, request }) => {
   test.setTimeout(120_000);
@@ -65,19 +69,19 @@ test('switching voice rooms: B connected after A; ten fast clicks end connected 
   await page.getByRole('button', { name: 'Войти', exact: true }).click();
 
   // A: «Созвон».
-  await roomButton(page, 'Созвон').click();
+  await joinRoom(page, 'Созвон');
   await expect(page.getByText('Голос подключён')).toBeVisible({ timeout: 30_000 });
   await expect.poll(async () => (await linkTruth(page)).room ?? '', { timeout: 15_000 }).toContain(IDS.rooms.call);
 
   // A → B: «Переговорка».
-  await roomButton(page, 'Переговорка').click();
+  await joinRoom(page, 'Переговорка');
   await expect.poll(async () => linkTruth(page), { timeout: 20_000 }).toMatchObject({ state: 'connected', room: expect.stringContaining(IDS.rooms.meeting) as unknown as string });
   await expect(page.getByText('Голос подключён')).toBeVisible();
   await expect(page.getByText('Подключение…')).toHaveCount(0);
 
   // Ten fast switches without waiting: the last click wins, nothing stays connecting.
   const order = ['Созвон', 'Переговорка'];
-  for (let i = 0; i < 10; i++) await roomButton(page, order[i % 2] ?? 'Созвон').click();
+  for (let i = 0; i < 10; i++) await joinRoom(page, order[i % 2] ?? 'Созвон');
   // i = 9 → «Переговорка».
   await expect.poll(async () => linkTruth(page), { timeout: 30_000 }).toMatchObject({ state: 'connected', room: expect.stringContaining(IDS.rooms.meeting) as unknown as string });
   await expect(page.getByText('Голос подключён')).toBeVisible();

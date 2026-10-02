@@ -9,6 +9,7 @@ import { Award, AudioLines, Ban, Music, Bot as BotIcon, Cake, CircleDot, Copy, G
 import { useRef, useState, type ReactNode } from 'react';
 import { Avatar } from '../../components/Avatar';
 import { confirmAction } from '../../components/Confirm';
+import { slugError } from './slugError';
 import { MediaImg } from '../../components/MediaImg';
 import { SettingsWindow, type SettingsSection } from '../../components/SettingsWindow';
 import { Button, Card, Empty, IconButton, Input, Row, Segmented, Select, Spinner, Toggle } from '../../components/ui';
@@ -218,7 +219,7 @@ function GeneralTab({
           <CommitInput label={t('ws.name')} value={ws.name} maxLength={100} onCommit={(v) => (v ? patchWorkspace(workspaceId, { name: v }) : undefined)} />
         </Row>
         <Row label={t('ws.slug')} hint={t('ws.slugHint')}>
-          <CommitInput label={t('ws.slug')} value={ws.slug} maxLength={32} onCommit={(v) => patchWorkspace(workspaceId, { slug: v.toLowerCase() })} />
+          <CommitInput label={t('ws.slug')} value={ws.slug} maxLength={32} validate={(v) => slugError(v.toLowerCase())} onCommit={(v) => patchWorkspace(workspaceId, { slug: v.toLowerCase() })} />
         </Row>
         <Row label={t('ws.visibility')} hint={ws.visibility === WorkspaceVisibility.OPEN ? t('ws.openHint') : t('ws.privateHint')}>
           <Select
@@ -487,6 +488,7 @@ function InvitesTab({ workspaceId, roomId }: { workspaceId: string; roomId: stri
   const revoke = useMutation({
     mutationFn: (id: string) => api.workspaces.deleteInvite(workspaceId, id),
     onSuccess: () => void qc.invalidateQueries({ queryKey: ['invites', workspaceId] }),
+    onError: (e) => toast.fail(e),
   });
   return (
     <>
@@ -542,7 +544,7 @@ function InvitesTab({ workspaceId, roomId }: { workspaceId: string; roomId: stri
               <IconButton label={t('invite.copy')} onClick={() => void navigator.clipboard.writeText(inviteLink(i)).then(() => toast.success(t('invite.copied')))}>
                 <Copy className="size-4" />
               </IconButton>
-              <IconButton label={t('invite.revoke')} className="text-muted hover:text-danger" onClick={() => revoke.mutate(i.id)}>
+              <IconButton label={t('invite.revoke')} className="text-muted hover:text-danger" onClick={() => void confirmAction(t('invite.revokeTitle'), t('invite.revokeText'), t('invite.revoke')).then((ok) => ok && revoke.mutate(i.id))}>
                 <Trash2 className="size-4" />
               </IconButton>
             </div>

@@ -85,7 +85,8 @@ test('register → workspace → room → message → voice', async () => {
   await page.getByRole('button', { name: 'Создать комнату' }).nth(1).click();
   await page.getByLabel('Название').fill('Созвон');
   await page.getByRole('button', { name: 'Создать', exact: true }).click();
-  await page.locator('aside button', { hasText: 'Созвон' }).click();
+  await page.locator('aside button', { hasText: 'Созвон' }).hover();
+  await page.getByRole('button', { name: 'Войти в голос «Созвон»' }).click();
   await expect(page.getByText('Голос подключён')).toBeVisible({ timeout: 30_000 });
   await page.getByRole('button', { name: 'Отключиться' }).click();
   await expect(page.getByText('Голос подключён')).toHaveCount(0);

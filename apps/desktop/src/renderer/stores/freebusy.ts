@@ -33,8 +33,6 @@ interface FreeBusyState {
   rev: number;
   /** The day view's filter: workspace → selected user ids (≤ 20). */
   people: PeopleMap;
-  /** «Только мои» over the day grid (docs/09 #140): workspace → on (kept in localStorage, off by default). */
-  mine: Readonly<Record<string, true>>;
   find: FindState | null;
   /** undefined = not loaded; null = none. */
   caldav: CalDavAccount | null | undefined;
@@ -50,7 +48,6 @@ interface FreeBusyState {
   /** Loaded (or loading) 14-day windows of `externalWs`. */
   externalChunks: Readonly<Record<number, true>>;
   dispatchPeople: (a: PeopleAction) => void;
-  setMine: (workspaceId: string, on: boolean) => void;
   setFind: (f: FindState | null) => void;
   patchFind: (p: Partial<Omit<FindState, 'workspaceId'>>) => void;
   reset: () => void;
@@ -65,7 +62,6 @@ export const useFreeBusy = create<FreeBusyState>()(
       chunks: {},
       rev: 0,
       people: {},
-      mine: {},
       find: null,
       caldav: undefined,
       caldavLocked: false,
@@ -76,22 +72,16 @@ export const useFreeBusy = create<FreeBusyState>()(
         const people = peopleReducer(s.people, a);
         return people === s.people ? s : { people };
       }),
-      setMine: (workspaceId, on) =>
-        set((s) => {
-          if (!!s.mine[workspaceId] === on) return s;
-          const mine = { ...s.mine };
-          if (on) mine[workspaceId] = true;
-          else delete mine[workspaceId];
-          return { mine };
-        }),
       setFind: (find) => set({ find }),
       patchFind: (p) => set((s) => (s.find ? { find: { ...s.find, ...p } } : s)),
       reset: () => set({ entries: {}, chunks: {}, find: null, caldav: undefined, caldavLocked: false, external: {}, externalWs: '', externalChunks: {} }),
     }),
     {
       name: 'calaba-cal-people',
-      version: 1,
-      partialize: (s) => ({ people: s.people, mine: s.mine }),
+      // v2 (02.10): «Только мои» is gone — a stored `mine` is dropped by partialize on the next write.
+      version: 2,
+      migrate: (old) => ({ people: (old as { people?: PeopleMap } | null)?.people ?? {} }),
+      partialize: (s) => ({ people: s.people }),
     },
   ),
 );
@@ -103,6 +93,3 @@ export const selectPeople = (workspaceId: string) => (s: FreeBusyState): readonl
 /** My external events of a day (a stable empty list when none / not loaded). */
 const NO_EXTERNAL: readonly ExternalEvent[] = [];
 export const selectExternalDay = (day: string) => (s: FreeBusyState): readonly ExternalEvent[] => s.external[day] ?? NO_EXTERNAL;
-
-/** «Только мои» of a workspace. */
-export const selectMine = (workspaceId: string) => (s: FreeBusyState): boolean => !!s.mine[workspaceId];

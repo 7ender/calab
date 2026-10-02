@@ -7,13 +7,11 @@ import (
 	"net/http"
 	"net/url"
 	"slices"
-	"strconv"
 	"strings"
 	"time"
 
 	"github.com/coder/websocket"
 	"github.com/google/uuid"
-	"github.com/redis/rueidis"
 	"google.golang.org/protobuf/types/known/timestamppb"
 
 	v1 "github.com/calaba/calaba/server/gen/calaba/v1"
@@ -275,77 +273,10 @@ func revokedCloseReason(reason string) string {
 	return base + ": " + reason
 }
 
-func deviceKey(user uuid.UUID) string { return redisx.Key("gw:user:" + user.String()) }
-func asessKey(asess uuid.UUID) string { return redisx.Key("gw:asess:" + asess.String()) }
 func typingKey(r, u uuid.UUID) string {
 	return redisx.Key("gw:typing:" + r.String() + ":" + u.String())
 }
 func expiryScore(d time.Duration) float64 { return float64(time.Now().Add(d).UnixMilli()) }
-
-// claimScript atomically enforces the per-user device limit and binds the auth session
-// (device) to the new gateway session (L1). Returns the previous gateway session of the
-// same device ("" if none), or false when the limit is reached.
-var claimScript = rueidis.NewLuaScript(`
-local zkey, akey = KEYS[1], KEYS[2]
-local now, expiry, max, asess, gsid, ttl = ARGV[1], ARGV[2], tonumber(ARGV[3]), ARGV[4], ARGV[5], tonumber(ARGV[6])
-redis.call('ZREMRANGEBYSCORE', zkey, '-inf', now)
-local same = redis.call('ZSCORE', zkey, asess)
-if not same and redis.call('ZCARD', zkey) >= max then return false end
-redis.call('ZADD', zkey, expiry, asess)
-redis.call('EXPIRE', zkey, ttl)
-local prev = redis.call('GET', akey)
-redis.call('SET', akey, gsid, 'EX', ttl)
-if prev and prev ~= gsid then return prev end
-return ''`)
-
-// forgetScript removes the device binding only if it still points to this gateway
-// session (a newer session of the same device must not be unbound).
-var forgetScript = rueidis.NewLuaScript(`
-if redis.call('GET', KEYS[2]) == ARGV[1] then
-  redis.call('DEL', KEYS[2])
-  redis.call('ZREM', KEYS[1], ARGV[2])
-end
-return 1`)
-
-// claimDevice enforces the per-user device limit. One auth session (device) has at most
-// one gateway session: a new IDENTIFY from the same device replaces the previous one.
-func (h *Hub) claimDevice(ctx context.Context, user, asess, gsid uuid.UUID) (bool, error) {
-	ttl := 2*h.cfg.HeartbeatInterval + resumeWindow
-	res := claimScript.Exec(ctx, h.redis, []string{deviceKey(user), asessKey(asess)}, []string{
-		strconv.FormatInt(time.Now().UnixMilli(), 10), strconv.FormatInt(int64(expiryScore(ttl)), 10),
-		strconv.Itoa(h.cfg.MaxSessionsPerUser), asess.String(), gsid.String(), strconv.Itoa(int(ttl.Seconds())),
-	})
-	prev, err := res.ToString()
-	if rueidis.IsRedisNil(err) {
-		return false, nil // limit reached (Lua false → nil)
-	}
-	if err != nil {
-		return false, err
-	}
-	if prev != "" {
-		h.kill(ctx, parseID(prev))
-	}
-	return true, nil
-}
-
-// kill destroys a gateway session wherever it lives.
-func (h *Hub) kill(ctx context.Context, gsid uuid.UUID) {
-	h.mu.RLock()
-	s := h.sessions[gsid]
-	h.mu.RUnlock()
-	if s != nil {
-		go h.destroy(s, 4000, "replaced by a new session") //nolint:gosec // G118: teardown must outlive the request
-		return
-	}
-	if m, ok, err := h.buf.meta(ctx, gsid); err == nil && ok && m.owner != "" {
-		h.sendControl(ctx, m.owner, "kill "+gsid.String())
-	}
-	h.buf.drop(ctx, gsid)
-}
-
-func (h *Hub) forgetDevice(ctx context.Context, s *Session) {
-	_ = forgetScript.Exec(ctx, h.redis, []string{deviceKey(s.user), asessKey(s.asess)}, []string{s.id.String(), s.asess.String()}).Error()
-}
 
 func (h *Hub) touch(s *Session) {
 	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
@@ -358,7 +289,7 @@ func (h *Hub) touch(s *Session) {
 	h.buf.touch(ctx, s.id)
 	h.redis.DoMulti(ctx,
 		h.redis.B().Zadd().Key(deviceKey(s.user)).ScoreMember().ScoreMember(expiryScore(ttl), s.asess.String()).Build(),
-		h.redis.B().Expire().Key(asessKey(s.asess)).Seconds(int64(ttl.Seconds())).Build())
+		h.redis.B().Expire().Key(tabsKey(s.asess)).Seconds(int64(ttl.Seconds())).Build())
 }
 
 func (h *Hub) identify(c *conn, req *v1.Identify) *Session {
@@ -369,7 +300,8 @@ func (h *Hub) identify(c *conn, req *v1.Identify) *Session {
 	ctx, cancel := context.WithTimeout(c.ctx, 15*time.Second)
 	defer cancel()
 	gsid := uuid.New()
-	allowed, err := h.claimDevice(ctx, id.UserID, id.SessionID, gsid)
+	tab := validTabID(req.GetTabId())
+	allowed, err := h.claimDevice(ctx, id.UserID, id.SessionID, gsid, tab)
 	if err != nil {
 		c.closeGraceful(4000, "try again")
 		return nil
@@ -383,11 +315,12 @@ func (h *Hub) identify(c *conn, req *v1.Identify) *Session {
 		c.closeGraceful(4000, "try again")
 		return nil
 	}
-	if err := h.buf.create(ctx, gsid, id.UserID, id.SessionID, h.instance, id.IsBot); err != nil {
+	if err := h.buf.create(ctx, gsid, id.UserID, id.SessionID, h.instance, id.IsBot, tab); err != nil {
 		c.closeGraceful(4000, "try again")
 		return nil
 	}
 	s := newSession(h, gsid, id.UserID, id.SessionID, id.IsBot)
+	s.tab = tab
 	s.principal = id.Principal
 	s.client = newClientInfo(req.GetDevice(), time.Now())
 	// Register first so that events published while READY is being built are queued.
@@ -491,7 +424,7 @@ func (h *Hub) buildReady(ctx context.Context, s *Session, uid uuid.UUID) (*v1.Re
 		if access != nil {
 			snap.Workspace.IdentityAccess = access
 		}
-		h.fillLive(ctx, w.ID, snap)
+		h.fillLive(ctx, w.ID, uid, snap)
 		if u.IsBot {
 			snap.Apps = nil // web apps are for people (ADR-0050)
 		}
@@ -631,6 +564,7 @@ func (h *Hub) resume(c *conn, req *v1.Resume) (s *Session, retry bool) {
 		return nil, true
 	}
 	h.touch(local)
+	h.reclaimTab(ctx, local)
 	h.publishPresence(ctx, local.user)
 	return local, false
 }
@@ -651,6 +585,7 @@ func (h *Hub) takeover(ctx context.Context, gsid uuid.UUID, meta sessMeta) *Sess
 		return nil
 	}
 	s := newSession(h, gsid, meta.user, meta.asess, meta.bot)
+	s.tab = meta.tab
 	if !meta.bot {
 		p, err := h.auth.ResolvePrincipal(ctx, s.identity())
 		if err != nil {

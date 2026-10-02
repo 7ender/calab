@@ -157,7 +157,7 @@ function ViewsMenu({ boardId }: { boardId: string }): ReactNode {
             </Dropdown.Item>
             {current && (current.shared ? hasBit(perms, MANAGE_BOARD) : current.createdBy === me) ? (
               <Dropdown.Item className={cx(menuItem, 'text-danger-text')} onSelect={() => void deleteView(boardId, current.id)}>
-                <Trash2 className="size-4" aria-hidden /> {t('boards.deleteView', { name: current.name })}
+                <Trash2 className="size-4" aria-hidden /> {t('boards.deleteView')}
               </Dropdown.Item>
             ) : null}
           </Dropdown.Content>
@@ -312,7 +312,7 @@ function BoardMoreMenu({ boardId, workspaceId, manage }: { boardId: string; work
             </>
           ) : null}
           <Dropdown.Item className={menuItem} onSelect={() => copyText(boardLink(boardId), t('boards.linkCopied'))}>
-            <Link2 className="size-4" aria-hidden /> {t('boards.copyBoardLink')}
+            <Link2 className="size-4" aria-hidden /> {t('boards.copyLink')}
           </Dropdown.Item>
           <Dropdown.Item className={menuItem} onSelect={() => exportCsv(boardId, ctx)}>
             <Download className="size-4" aria-hidden /> {t('boards.exportCsv')}
@@ -321,7 +321,7 @@ function BoardMoreMenu({ boardId, workspaceId, manage }: { boardId: string; work
             <>
               <Dropdown.Separator className={menuSeparator} />
               <Dropdown.Item className={cx(menuItem, 'text-danger-text')} onSelect={() => void archive()}>
-                <Archive className="size-4" aria-hidden /> {t('boards.archiveBoard')}
+                <Archive className="size-4" aria-hidden /> {t('boards.archive')}
               </Dropdown.Item>
             </>
           ) : null}

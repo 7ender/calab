@@ -100,7 +100,7 @@ function WorkspaceMenuItems({ workspaceId, name, owner }: { workspaceId: string;
       <Dropdown.Separator className={menuSeparator} />
       {/* The owner cannot leave (ownership is not transferable yet): shown, disabled, with the reason. */}
       <Dropdown.Item className={cx(menuItem, 'text-danger-text')} disabled={owner} title={owner ? t('shell.ownerCannotLeave') : undefined} onSelect={() => void leave()}>
-        <LogOut className="size-4" /> {t('ws.leave')}
+        <LogOut className="size-4" /> {t('ws.leaveItem')}
       </Dropdown.Item>
     </>
   );

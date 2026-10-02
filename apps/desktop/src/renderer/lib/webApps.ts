@@ -113,9 +113,12 @@ export function visibleViewRect(view: ViewRect, overlays: readonly ViewRect[], g
   return r.width >= MIN_VIEW_WIDTH && r.height >= MIN_VIEW_HEIGHT ? r : null;
 }
 
-/** Hide profile and voice controls while a web app fills the content area. */
-export function showBottomIsland(appOpen: boolean): boolean {
-  return !appOpen;
+/**
+ * Hide profile and voice controls while a web app fills the content area, and on the Calendar /
+ * Boards tabs — even during a call (owner, 02.10: the user returns to «Голос» to control it).
+ */
+export function showBottomIsland(appOpen: boolean, workTab = false): boolean {
+  return !appOpen && !workTab;
 }
 
 /**
