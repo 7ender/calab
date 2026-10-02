@@ -5,7 +5,7 @@ import { Fragment, type ReactNode } from 'react';
 export const BOT_SAMPLE = `import { Bot } from '@calaba/bot-sdk';
 
 const bot = new Bot(process.env.BOT_TOKEN, {
-  server: 'https://app.calab.ru',
+  server: 'https://app.calab.io',
 });
 await bot.commands([{ name: 'standup', description: 'Start' }]);
 
