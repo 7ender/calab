@@ -1,6 +1,7 @@
 import { useMemo } from 'react';
 import { useShallow } from 'zustand/react/shallow';
-import type { BoardStatus } from '@calaba/protocol';
+import { BoardFeature, EstimateScale, type BoardStatus } from '@calaba/protocol';
+import { featureOn } from '../../lib/boards/features';
 import type { MatchCtx } from '../../lib/boards/filter';
 import { useBoards } from '../../stores/boards';
 import { useSession } from '../../stores/session';
@@ -25,9 +26,34 @@ export function useMatchCtx(boardId: string): MatchCtx {
   }, [me, statuses, today]);
 }
 
-/** The board's view: the viewer's choice, else kanban (a phone: the list, ADR-0042 §5). */
+/**
+ * The board's view: the viewer's choice, else kanban (a phone: the list, ADR-0042 §5). The
+ * timeline with the TIMELINE feature off opens as the list (ADR-0058 §3); the choice is kept.
+ */
 export function useViewKind(boardId: string): ViewKind {
   const mobile = useMobile();
   const kind = useBoardsUi((s) => s.prefs[boardId]?.kind);
-  return kind ?? (mobile ? 'list' : 'kanban');
+  const timeline = useFeatureOn(boardId, BoardFeature.TIMELINE);
+  const k = kind ?? (mobile ? 'list' : 'kanban');
+  return k === 'timeline' && !timeline ? 'list' : k;
+}
+
+const NO_FEATURES: readonly BoardFeature[] = [];
+
+/**
+ * The board's disabled features (ADR-0058 §3): the board's own array, a stable reference until a
+ * BOARD_UPDATE — a task event does not re-render through it.
+ */
+export function useDisabledFeatures(boardId: string): readonly BoardFeature[] {
+  return useBoards((s) => s.boards[boardId]?.disabledFeatures ?? NO_FEATURES);
+}
+
+/** One feature of the board is on (a primitive selector). */
+export function useFeatureOn(boardId: string, f: BoardFeature): boolean {
+  return useBoards((s) => featureOn(s.boards[boardId]?.disabledFeatures, f));
+}
+
+/** The board's estimate scale (UNSPECIFIED from an older server reads as Fibonacci). */
+export function useEstimateScale(boardId: string): EstimateScale {
+  return useBoards((s) => s.boards[boardId]?.estimateScale ?? EstimateScale.FIBONACCI);
 }

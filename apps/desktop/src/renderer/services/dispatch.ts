@@ -235,6 +235,7 @@ export function applyDispatch(ev: DispatchEvent): void {
       ensureActiveWorkspace();
       return;
     }
+    // Boards (ADR-0042, events 75–81); board categories and task checklists (ADR-0058, 87–91).
     case 'boardCreate':
     case 'boardUpdate':
     case 'boardDelete':
@@ -242,6 +243,11 @@ export function applyDispatch(ev: DispatchEvent): void {
     case 'taskUpdate':
     case 'taskDelete':
     case 'taskActivity':
+    case 'boardCategoryCreate':
+    case 'boardCategoryUpdate':
+    case 'boardCategoryDelete':
+    case 'taskChecklistUpdate':
+    case 'taskChecklistDelete':
       applyBoardEvent(e);
       return;
     case 'dmCreate':

@@ -71,6 +71,9 @@ interface BoardsUiState {
   /** «Мои задачи»: which of my tasks (GET /me/tasks scope). */
   myScope: 'assigned' | 'lead' | 'created' | 'subscribed';
   setMyScope: (v: BoardsUiState['myScope']) => void;
+  /** Collapsed board categories (ADR-0058 §1: local to the client), persisted. */
+  collapsedCats: Readonly<Record<string, true>>;
+  toggleCategory: (categoryId: string) => void;
   /** The task panel's «Активность» tab (Все / Изменения / Комментарии), remembered. */
   activityTab: ActivityTab;
   setActivityTab: (v: ActivityTab) => void;
@@ -114,6 +117,14 @@ export const useBoardsUi = create<BoardsUiState>()(
       helpOpen: false,
       myScope: 'assigned',
       setMyScope: (myScope) => set({ myScope }),
+      collapsedCats: {},
+      toggleCategory: (id) =>
+        set((s) => {
+          const collapsedCats = { ...s.collapsedCats };
+          if (collapsedCats[id]) delete collapsedCats[id];
+          else collapsedCats[id] = true;
+          return { collapsedCats };
+        }),
       activityTab: 'all',
       setActivityTab: (activityTab) => set({ activityTab }),
       setActive: (active) => set(active ? { active } : { active, filterOpen: false, helpOpen: false, menu: null }),
@@ -143,11 +154,12 @@ export const useBoardsUi = create<BoardsUiState>()(
     {
       name: 'calaba-boards-ui',
       version: 1,
-      partialize: (s) => ({ boardOf: s.boardOf, prefs: s.prefs, myScope: s.myScope, lastBoard: s.lastBoard, activityTab: s.activityTab }),
+      partialize: (s) => ({ boardOf: s.boardOf, prefs: s.prefs, myScope: s.myScope, lastBoard: s.lastBoard, activityTab: s.activityTab, collapsedCats: s.collapsedCats }),
       // A stored value from an older / foreign build must not break the panel.
       merge: (stored, cur) => {
         const p = (stored ?? {}) as Partial<BoardsUiState>;
-        return { ...cur, ...p, activityTab: isActivityTab(p.activityTab) ? p.activityTab : cur.activityTab };
+        const cats = p.collapsedCats && typeof p.collapsedCats === 'object' ? p.collapsedCats : cur.collapsedCats;
+        return { ...cur, ...p, activityTab: isActivityTab(p.activityTab) ? p.activityTab : cur.activityTab, collapsedCats: cats };
       },
     },
   ),

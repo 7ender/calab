@@ -1,7 +1,7 @@
 import { ChevronRight } from 'lucide-react';
 import { memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type KeyboardEvent, type MouseEvent, type PointerEvent as ReactPointerEvent, type ReactNode } from 'react';
 import { useShallow } from 'zustand/react/shallow';
-import type { BoardMilestone } from '@calaba/protocol';
+import { BoardFeature, type BoardMilestone } from '@calaba/protocol';
 import { Button, Segmented, cx } from '../../components/ui';
 import { t } from '../../i18n';
 import { dateTimeFormat } from '../../lib/format';
@@ -36,7 +36,7 @@ import { memberName } from '../../stores/workspaces';
 import { EmptyBoard } from './ListView';
 import { MemberAvatar, useToday } from './menus';
 import { MANAGE_BOARD, hasBit, mayEditTask, visibleTasks } from './model';
-import { useMatchCtx } from './useBoardView';
+import { useFeatureOn, useMatchCtx } from './useBoardView';
 import { StatusIcon, colorCss } from './visuals';
 
 /**
@@ -229,8 +229,11 @@ export function Timeline({ boardId, workspaceId }: { boardId: string; workspaceI
   }, [active, boardId]);
 
   const [undatedOpen, setUndatedOpen] = useState(true);
+  // Dates of a switched-off feature are not written (ADR-0058 §3): the bars stay, read-only.
+  const startOn = useFeatureOn(boardId, BoardFeature.START_DATE);
+  const dueOn = useFeatureOn(boardId, BoardFeature.DUE_DATE);
   if (rows.length === 0 && undated.length === 0) return <EmptyBoard />;
-  const readOnly = mobile;
+  const readOnly = mobile || !startOn || !dueOn;
   const barDrag = drag?.kind === 'bar' && drag.moved ? drag : null;
   const msDrag = drag?.kind === 'ms' && drag.moved ? drag : null;
   const shownRows = rows.slice(win.first, win.last);

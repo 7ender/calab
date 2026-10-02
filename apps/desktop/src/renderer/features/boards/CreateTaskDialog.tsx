@@ -1,4 +1,4 @@
-import { TaskPriority } from '@calaba/protocol';
+import { BoardFeature, TaskPriority } from '@calaba/protocol';
 import * as Dropdown from '@radix-ui/react-dropdown-menu';
 import { BadgeCheck, CalendarClock, Check, Diamond, SquareKanban, Tag, Triangle, UserRound } from 'lucide-react';
 import { useMemo, useRef, useState, type ReactNode } from 'react';
@@ -6,6 +6,7 @@ import { useShallow } from 'zustand/react/shallow';
 import { Button, Modal, Toggle, cx } from '../../components/ui';
 import { t } from '../../i18n';
 import { clampRequired, quorumChoices, toggleApprover } from '../../lib/boards/approvals';
+import { featureOn, scaleValues } from '../../lib/boards/features';
 import { addAssignee, draftsOf, removeAssignee, type AssigneeDraft } from '../../lib/boards/assignees';
 import { MOD } from '../../components/ui';
 import { createTask, openTaskAnywhere } from '../../services/boards';
@@ -13,7 +14,7 @@ import { useBoards, workspaceBoards } from '../../stores/boards';
 import { menuBox, menuItem } from '../shell/menu';
 import { useBoardsUi } from '../../stores/boardsUi';
 import { useToasts } from '../../stores/toasts';
-import { ApproverMenu, AssigneeMenu, DateMenu, EstimateMenu, LabelMenu, MemberAvatar, MilestoneMenu, PriorityMenu, StatusMenu, useToday } from './menus';
+import { ApproverMenu, AssigneeMenu, DateMenu, EstimateMenu, LabelMenu, MemberAvatar, MilestoneMenu, PriorityMenu, StatusMenu, estimateLabel, useToday } from './menus';
 import { hasBit, sortedStatuses, CREATE_TASKS } from './model';
 import { Dot, PRIORITY_LABEL, PriorityIcon, StatusIcon, formatDue } from './visuals';
 
@@ -112,6 +113,8 @@ function Dialog({
     ),
   );
   if (!board || !hasBit(board.permissions, CREATE_TASKS)) return null;
+  // Board features (ADR-0058 §3): no chips of a disabled feature, and nothing of one is sent.
+  const on = (f: BoardFeature): boolean => featureOn(board.disabledFeatures, f);
   // Another board: its statuses, labels and milestones differ — those picks start over.
   const pickBoard = (id: string): void => {
     if (id === boardId) return;
@@ -120,6 +123,8 @@ function Dialog({
     setStatus(sortedStatuses(next).find((s) => s.isDefault)?.id ?? sortedStatuses(next)[0]?.id ?? '');
     setLabels([]);
     setMilestone('');
+    // Another estimate scale: a value outside it would be refused (422).
+    if (!scaleValues(next?.estimateScale).includes(estimate)) setEstimate(0);
   };
 
   const submit = async (): Promise<void> => {
@@ -129,14 +134,14 @@ function Dialog({
       title: title.trim(),
       description,
       statusId: status,
-      priority,
+      priority: on(BoardFeature.PRIORITY) ? priority : TaskPriority.NONE,
       assignees: draftsOf(assignees),
-      labelIds: labels,
-      dueOn: due,
-      estimate,
-      milestoneId: milestone,
-      approverIds: approvers,
-      approvalRequired: clampRequired(required, approvers.length),
+      labelIds: on(BoardFeature.LABELS) ? labels : [],
+      dueOn: on(BoardFeature.DUE_DATE) ? due : '',
+      estimate: on(BoardFeature.ESTIMATE) ? estimate : 0,
+      milestoneId: on(BoardFeature.MILESTONES) ? milestone : '',
+      approverIds: on(BoardFeature.APPROVALS) ? approvers : [],
+      approvalRequired: on(BoardFeature.APPROVALS) ? clampRequired(required, approvers.length) : 0,
       parentId: parentId ?? '',
       ...(fromMessage ? { fromMessageId: fromMessage.id } : {}),
     });
@@ -237,11 +242,13 @@ function Dialog({
               <StatusIcon type={st?.type ?? 0} color={st?.color ?? 0} /> {st?.name ?? ''}
             </button>
           </StatusMenu>
-          <PriorityMenu value={priority} onPick={setPriority}>
-            <button type="button" className={chip}>
-              <PriorityIcon priority={priority} /> {t(PRIORITY_LABEL[priority] ?? 'boards.prio.none')}
-            </button>
-          </PriorityMenu>
+          {on(BoardFeature.PRIORITY) ? (
+            <PriorityMenu value={priority} onPick={setPriority}>
+              <button type="button" className={chip}>
+                <PriorityIcon priority={priority} /> {t(PRIORITY_LABEL[priority] ?? 'boards.prio.none')}
+              </button>
+            </PriorityMenu>
+          ) : null}
           <AssigneeMenu
             workspaceId={board.workspaceId}
             boardId={boardId}
@@ -268,60 +275,68 @@ function Dialog({
               )}
             </button>
           </AssigneeMenu>
-          <LabelMenu boardId={boardId} value={labels} canCreate onToggle={(l) => setLabels((cur) => (cur.includes(l) ? cur.filter((x) => x !== l) : [...cur, l]))}>
-            <button type="button" className={chip}>
-              {chosen.length ? (
-                chosen.slice(0, 3).map((l) => (
-                  <span key={l.id} className="inline-flex items-center gap-1">
-                    <Dot color={l.color} /> {l.name}
-                  </span>
-                ))
-              ) : (
-                <>
-                  <Tag className="size-3.5 text-muted" aria-hidden /> {t('boards.f.label')}
-                </>
-              )}
-            </button>
-          </LabelMenu>
-          <DateMenu value={due} onPick={setDue} title={t('boards.f.dueOn')}>
-            <button type="button" className={cx(chip, !due && 'text-muted')}>
-              <CalendarClock className="size-3.5" aria-hidden /> {due ? formatDue(due, today) : t('boards.f.dueOn')}
-            </button>
-          </DateMenu>
-          <EstimateMenu value={estimate} onPick={setEstimate}>
-            <button type="button" className={cx(chip, !estimate && 'text-muted')}>
-              <Triangle className="size-3.5" aria-hidden /> {estimate ? t('boards.points', { n: estimate }) : t('boards.f.estimate')}
-            </button>
-          </EstimateMenu>
-          <ApproverMenu
-            workspaceId={board.workspaceId}
-            value={approvers}
-            onToggle={(u) => {
-              const next = toggleApprover(approvers, u);
-              setApprovers(next);
-              setRequired((r) => clampRequired(r, next.length));
-            }}
-          >
-            <button type="button" className={cx(chip, !approvers.length && 'text-muted')} data-testid="create-task-approvers">
-              {approvers.length ? (
-                <>
-                  <span className="flex -space-x-1.5">
-                    {approvers.slice(0, 3).map((u) => (
-                      <span key={u} className="rounded-full ring-2 ring-[var(--color-popover)]">
-                        <MemberAvatar workspaceId={board.workspaceId} userId={u} size={18} />
-                      </span>
-                    ))}
-                  </span>
-                  {t('boards.nApprovers', { n: approvers.length })}
-                </>
-              ) : (
-                <>
-                  <BadgeCheck className="size-3.5" aria-hidden /> {t('boards.approvals')}
-                </>
-              )}
-            </button>
-          </ApproverMenu>
-          {approvers.length > 1 ? (
+          {on(BoardFeature.LABELS) ? (
+            <LabelMenu boardId={boardId} value={labels} canCreate onToggle={(l) => setLabels((cur) => (cur.includes(l) ? cur.filter((x) => x !== l) : [...cur, l]))}>
+              <button type="button" className={chip}>
+                {chosen.length ? (
+                  chosen.slice(0, 3).map((l) => (
+                    <span key={l.id} className="inline-flex items-center gap-1">
+                      <Dot color={l.color} /> {l.name}
+                    </span>
+                  ))
+                ) : (
+                  <>
+                    <Tag className="size-3.5 text-muted" aria-hidden /> {t('boards.f.label')}
+                  </>
+                )}
+              </button>
+            </LabelMenu>
+          ) : null}
+          {on(BoardFeature.DUE_DATE) ? (
+            <DateMenu value={due} onPick={setDue} title={t('boards.f.dueOn')}>
+              <button type="button" className={cx(chip, !due && 'text-muted')}>
+                <CalendarClock className="size-3.5" aria-hidden /> {due ? formatDue(due, today) : t('boards.f.dueOn')}
+              </button>
+            </DateMenu>
+          ) : null}
+          {on(BoardFeature.ESTIMATE) ? (
+            <EstimateMenu value={estimate} scale={board.estimateScale} onPick={setEstimate}>
+              <button type="button" className={cx(chip, !estimate && 'text-muted')}>
+                <Triangle className="size-3.5" aria-hidden /> {estimate ? estimateLabel(estimate, board.estimateScale) : t('boards.f.estimate')}
+              </button>
+            </EstimateMenu>
+          ) : null}
+          {on(BoardFeature.APPROVALS) ? (
+            <ApproverMenu
+              workspaceId={board.workspaceId}
+              value={approvers}
+              onToggle={(u) => {
+                const next = toggleApprover(approvers, u);
+                setApprovers(next);
+                setRequired((r) => clampRequired(r, next.length));
+              }}
+            >
+              <button type="button" className={cx(chip, !approvers.length && 'text-muted')} data-testid="create-task-approvers">
+                {approvers.length ? (
+                  <>
+                    <span className="flex -space-x-1.5">
+                      {approvers.slice(0, 3).map((u) => (
+                        <span key={u} className="rounded-full ring-2 ring-[var(--color-popover)]">
+                          <MemberAvatar workspaceId={board.workspaceId} userId={u} size={18} />
+                        </span>
+                      ))}
+                    </span>
+                    {t('boards.nApprovers', { n: approvers.length })}
+                  </>
+                ) : (
+                  <>
+                    <BadgeCheck className="size-3.5" aria-hidden /> {t('boards.approvals')}
+                  </>
+                )}
+              </button>
+            </ApproverMenu>
+          ) : null}
+          {on(BoardFeature.APPROVALS) && approvers.length > 1 ? (
             <Dropdown.Root modal={false}>
               <Dropdown.Trigger asChild>
                 <button type="button" className={chip} data-testid="create-task-quorum">
@@ -340,7 +355,7 @@ function Dialog({
               </Dropdown.Portal>
             </Dropdown.Root>
           ) : null}
-          {board.milestones.length ? (
+          {board.milestones.length && on(BoardFeature.MILESTONES) ? (
             <MilestoneMenu boardId={boardId} value={milestone} onPick={setMilestone}>
               <button type="button" className={cx(chip, !ms && 'text-muted')}>
                 <Diamond className="size-3.5" aria-hidden /> {ms ? ms.name : t('boards.f.milestone')}

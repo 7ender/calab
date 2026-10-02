@@ -1,10 +1,12 @@
 import * as Dropdown from '@radix-ui/react-dropdown-menu';
 import * as Popover from '@radix-ui/react-popover';
 import { Archive, Check, ChevronDown, Columns3, Download, Ellipsis, GanttChart, Layers, Link2, List, Plus, Settings, Shield, SlidersHorizontal, Trash2 } from 'lucide-react';
+import { BoardFeature } from '@calaba/protocol';
 import { useState, type ReactNode } from 'react';
 import { confirmAction } from '../../components/Confirm';
 import { Button, Field, Input, Modal, Switch, Tip, Toggle, cx } from '../../components/ui';
 import { t } from '../../i18n';
+import { groupOn, sortOn } from '../../lib/boards/features';
 import { filterKey, fromTaskFilter } from '../../lib/boards/filter';
 import { applyView, boardLink, copyText, deleteView, removeBoard, saveView } from '../../services/boards';
 import { useBoards } from '../../stores/boards';
@@ -14,7 +16,7 @@ import { menuBox, menuItem, menuLabel, menuSeparator } from '../shell/menu';
 import { FilterButton, QuickChips } from './FilterBar';
 import { exportCsv } from './exportCsv';
 import { hasBit, CREATE_TASKS, MANAGE_BOARD } from './model';
-import { useMatchCtx, useViewKind } from './useBoardView';
+import { useDisabledFeatures, useFeatureOn, useMatchCtx, useViewKind } from './useBoardView';
 import { NavButton } from '../shell/MobileShell';
 import { useMobile } from '../../lib/mobile';
 
@@ -74,9 +76,11 @@ export function BoardHeader({ boardId, workspaceId }: { boardId: string; workspa
 function ViewSwitch({ boardId }: { boardId: string }): ReactNode {
   const kind = useViewKind(boardId);
   const setPrefs = useBoardsUi((s) => s.setPrefs);
+  // TIMELINE off (ADR-0058 §3): no «Таймлайн» (a saved timeline view opens as the list).
+  const timeline = useFeatureOn(boardId, BoardFeature.TIMELINE);
   return (
         <div role="radiogroup" aria-label={t('boards.view.label')} className="inline-flex shrink-0 rounded-[var(--radius-control)] bg-hover p-0.5" data-testid="view-switch">
-          {KINDS.map((k) => (
+          {KINDS.filter((k) => timeline || k.kind !== 'timeline').map((k) => (
             <Tip key={k.kind} label={t(k.label)} shortcut={k.key}>
               <button
                 type="button"
@@ -228,6 +232,7 @@ const SORTS: ReadonlyArray<{ v: SortBy; label: 'boards.sort.manual' | 'boards.so
 function DisplayMenu({ boardId }: { boardId: string }): ReactNode {
   const prefs = useBoardsUi((s) => prefsOf(s, boardId));
   const kind = useViewKind(boardId);
+  const disabled = useDisabledFeatures(boardId);
   const set = (p: Partial<BoardPrefs>): void => useBoardsUi.getState().setPrefs(boardId, p);
   const sel = 'h-7 rounded-[var(--radius-control)] border border-line bg-elev px-2 text-control text-fg';
   return (
@@ -244,8 +249,8 @@ function DisplayMenu({ boardId }: { boardId: string }): ReactNode {
             <>
               <label className="flex items-center justify-between gap-3">
                 <span className="text-muted">{t('boards.groupBy')}</span>
-                <select className={sel} value={prefs.groupBy} onChange={(e) => set({ groupBy: e.target.value as GroupBy })} data-testid="group-by">
-                  {GROUPS.map((g) => (
+                <select className={sel} value={groupOn(prefs.groupBy, disabled) ? prefs.groupBy : 'status'} onChange={(e) => set({ groupBy: e.target.value as GroupBy })} data-testid="group-by">
+                  {GROUPS.filter((g) => groupOn(g.v, disabled)).map((g) => (
                     <option key={g.v} value={g.v}>
                       {t(g.label)}
                     </option>
@@ -254,8 +259,8 @@ function DisplayMenu({ boardId }: { boardId: string }): ReactNode {
               </label>
               <label className="flex items-center justify-between gap-3">
                 <span className="text-muted">{t('boards.sortBy')}</span>
-                <select className={sel} value={prefs.sort} onChange={(e) => set({ sort: e.target.value as SortBy })} data-testid="sort-by">
-                  {SORTS.map((g) => (
+                <select className={sel} value={sortOn(prefs.sort, disabled) ? prefs.sort : 'manual'} onChange={(e) => set({ sort: e.target.value as SortBy })} data-testid="sort-by">
+                  {SORTS.filter((g) => sortOn(g.v, disabled)).map((g) => (
                     <option key={g.v} value={g.v}>
                       {t(g.label)}
                     </option>

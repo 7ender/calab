@@ -17,6 +17,7 @@ import { zhPicker } from './picker';
 import { zhRoles } from './roles';
 import { zhCalendar } from './calendar';
 import { zhBoards } from './boards';
+import { zhBoards2 } from './boards2';
 import { zhPlan } from './plan';
 import { zhShell } from './shell';
 import { zhVideo } from './video';
@@ -58,6 +59,7 @@ export const zhCN: Dict = {
   ...zhRoles,
   ...zhCalendar,
   ...zhBoards,
+  ...zhBoards2,
   'voice.pendingMember': '连接中…',
   // common
   'common.cancel': '取消',

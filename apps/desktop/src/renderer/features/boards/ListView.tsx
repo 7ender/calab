@@ -1,4 +1,4 @@
-import { TaskPriority, type Board, type Task } from '@calaba/protocol';
+import { BoardFeature, TaskPriority, type Board, type Task } from '@calaba/protocol';
 import { timestampMs } from '@bufbuild/protobuf/wkt';
 import { Archive, CalendarClock, Check, ChevronDown, CircleSlash, Tag, UserRound, X } from 'lucide-react';
 import { memo, useCallback, useMemo, type MouseEvent, type ReactNode } from 'react';
@@ -16,8 +16,9 @@ import { memberName } from '../../stores/workspaces';
 import { AssigneeMenu, DateMenu, LabelMenu, MemberAvatar, PriorityMenu, StatusMenu, useToday } from './menus';
 import { doneType, hasBit, mayArchiveTask, mayEditTask, sortedStatuses, CREATE_TASKS } from './model';
 import { ApprovalBadge } from './Approvals';
-import { TaskContextMenu, useBlockedStatuses } from './TaskCard';
-import { useMatchCtx } from './useBoardView';
+import { featureOn, groupOn, sortOn } from '../../lib/boards/features';
+import { ChecklistBadge, TaskContextMenu, useBlockedStatuses } from './TaskCard';
+import { useDisabledFeatures, useMatchCtx } from './useBoardView';
 import { Dot, PRIORITY_LABEL, PriorityIcon, StatusIcon, formatDue, isOverdue } from './visuals';
 
 type Item = { kind: 'group'; key: string; label: ReactNode; count: number } | { kind: 'row'; id: string };
@@ -47,10 +48,12 @@ export function listItems(tasks: Task[], b: Board, prefs: BoardPrefs, workspaceI
   const statuses = sortedStatuses(b);
   const order = new Map(statuses.map((s, i) => [s.id, i]));
   const groups: Array<{ key: string; label: ReactNode; tasks: Task[] }> = [];
+  // A grouping / sort by a feature the board switched off falls back (ADR-0058 §3; prefs kept).
+  const sort = sortOn(prefs.sort, b.disabledFeatures) ? prefs.sort : 'manual';
   const push = (key: string, label: ReactNode, list: Task[]): void => {
-    if (list.length) groups.push({ key, label, tasks: sortTasks(list, prefs.sort, order) });
+    if (list.length) groups.push({ key, label, tasks: sortTasks(list, sort, order) });
   };
-  switch (prefs.groupBy) {
+  switch (groupOn(prefs.groupBy, b.disabledFeatures) ? prefs.groupBy : 'status') {
     case 'status':
       for (const s of statuses)
         push(
@@ -243,9 +246,11 @@ export const ListRow = memo(function ListRow({ id, boardId, workspaceId, onClick
   const selected = useBoardsUi((s) => !!s.selected[id]);
   const focused = useBoardsUi((s) => s.focused === id || s.taskId === id);
   const menu = useBoardsUi((s) => (s.menu?.taskId === id ? s.menu.kind : null));
+  const disabled = useDisabledFeatures(boardId);
   const today = useToday();
   const me = myUserId();
   if (!task) return null;
+  const on = (f: BoardFeature): boolean => featureOn(disabled, f);
   const canEdit = mayEditTask(task, perms, me);
   const done = doneType(status?.type);
   const stop = (e: MouseEvent): void => e.stopPropagation();
@@ -279,11 +284,13 @@ export const ListRow = memo(function ListRow({ id, boardId, workspaceId, onClick
         >
           {selected ? <Check className="size-3" aria-hidden /> : null}
         </button>
-        <PriorityMenu value={task.priority} onPick={(p) => p !== task.priority && void updateTask(id, { priority: p })} {...req('priority')}>
-          <button type="button" onClick={stop} disabled={!canEdit} className={cx(cell, 'size-6')} aria-label={t('boards.f.priority')}>
-            <PriorityIcon priority={task.priority} />
-          </button>
-        </PriorityMenu>
+        {on(BoardFeature.PRIORITY) ? (
+          <PriorityMenu value={task.priority} onPick={(p) => p !== task.priority && void updateTask(id, { priority: p })} {...req('priority')}>
+            <button type="button" onClick={stop} disabled={!canEdit} className={cx(cell, 'size-6')} aria-label={t('boards.f.priority')}>
+              <PriorityIcon priority={task.priority} />
+            </button>
+          </PriorityMenu>
+        ) : null}
         <span className="w-[64px] shrink-0 truncate text-caption tabular-nums text-muted mobile:hidden">{task.key}</span>
         <StatusMenu boardId={boardId} value={task.statusId} blocked={blocked} onPick={(s) => s !== task.statusId && void updateTask(id, { statusId: s })} {...req('status')}>
           <button type="button" onClick={stop} disabled={!canEdit} className={cx(cell, 'size-6')} aria-label={t('boards.f.status')} data-testid="row-status">
@@ -291,8 +298,9 @@ export const ListRow = memo(function ListRow({ id, boardId, workspaceId, onClick
           </button>
         </StatusMenu>
         <span className={cx('min-w-0 flex-1 truncate', done ? 'text-muted' : 'text-fg')}>{task.title}</span>
-        <ApprovalBadge task={task} compact />
-        {mine.length || menu === 'label' ? (
+        {on(BoardFeature.APPROVALS) ? <ApprovalBadge task={task} compact /> : null}
+        {on(BoardFeature.CHECKLISTS) ? <ChecklistBadge id={id} /> : null}
+        {on(BoardFeature.LABELS) && (mine.length || menu === 'label') ? (
           <LabelMenu
             boardId={boardId}
             value={task.labelIds}
@@ -312,18 +320,20 @@ export const ListRow = memo(function ListRow({ id, boardId, workspaceId, onClick
             </button>
           </LabelMenu>
         ) : null}
-        <DateMenu value={task.dueOn} onPick={(d) => void updateTask(id, { dueOn: d })} title={t('boards.f.dueOn')} align="end" {...req('due')}>
-          <button
-            type="button"
-            onClick={stop}
-            disabled={!canEdit}
-            className={cx('inline-flex h-6 w-[76px] shrink-0 items-center justify-end gap-1 rounded-[var(--radius-icon)] px-1 text-caption tabular-nums hover:bg-hover', isOverdue(task.dueOn, today, done) ? 'text-danger-text' : 'text-muted', !task.dueOn && 'opacity-0 group-hover/row:opacity-100')}
-            aria-label={t('boards.f.dueOn')}
-          >
-            <CalendarClock className="size-3 shrink-0" aria-hidden />
-            {task.dueOn ? formatDue(task.dueOn, today) : ''}
-          </button>
-        </DateMenu>
+        {on(BoardFeature.DUE_DATE) ? (
+          <DateMenu value={task.dueOn} onPick={(d) => void updateTask(id, { dueOn: d })} title={t('boards.f.dueOn')} align="end" {...req('due')}>
+            <button
+              type="button"
+              onClick={stop}
+              disabled={!canEdit}
+              className={cx('inline-flex h-6 w-[76px] shrink-0 items-center justify-end gap-1 rounded-[var(--radius-icon)] px-1 text-caption tabular-nums hover:bg-hover', isOverdue(task.dueOn, today, done) ? 'text-danger-text' : 'text-muted', !task.dueOn && 'opacity-0 group-hover/row:opacity-100')}
+              aria-label={t('boards.f.dueOn')}
+            >
+              <CalendarClock className="size-3 shrink-0" aria-hidden />
+              {task.dueOn ? formatDue(task.dueOn, today) : ''}
+            </button>
+          </DateMenu>
+        ) : null}
         <AssigneeMenu
           workspaceId={workspaceId}
           boardId={boardId}

@@ -5,7 +5,7 @@ import { keepPreviousData, useMutation, useQuery, useQueryClient } from '@tansta
 import { Search, ShieldCheck } from 'lucide-react';
 import { useEffect, useState, type ReactNode } from 'react';
 import { confirmAction } from '../../components/Confirm';
-import { Button, Card, CloseButton, Empty, Input, Row, Segmented, Select, Spinner, cx } from '../../components/ui';
+import { Button, Card, CloseButton, Empty, Input, Row, Segmented, Select, Spinner, Toggle, cx } from '../../components/ui';
 import { plural, t, type MessageKey } from '../../i18n';
 import { adminApi } from '../../lib/api/endpoints';
 import { errorText } from '../../lib/api/errors';
@@ -419,6 +419,13 @@ function AdminDetail({ id, onClose }: { id: string; onClose: () => void }): Reac
               </Row>
               <NumberField field="bots" form={form.limits} onChange={setLimits} />
               <NumberField field="stickerPacks" form={form.limits} onChange={setLimits} />
+              {/* ADR-0058 §5: written with the plan — without them a save would switch both on. */}
+              <Row label={t('admin.limit.checklists')} hint={t('admin.limit.checklistsHint')}>
+                <Toggle label={t('admin.limit.checklists')} checked={!form.limits.checklistsDisabled} onChange={(v) => setLimits({ ...form.limits, checklistsDisabled: !v })} />
+              </Row>
+              <Row label={t('admin.limit.boardWebhooks')} hint={t('admin.limit.boardWebhooksHint')}>
+                <Toggle label={t('admin.limit.boardWebhooks')} checked={!form.limits.boardWebhooksDisabled} onChange={(v) => setLimits({ ...form.limits, boardWebhooksDisabled: !v })} />
+              </Row>
             </Card>
           ) : null}
 
