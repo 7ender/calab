@@ -297,7 +297,8 @@ export function dialErrorKey(e: unknown): MessageKey | null {
     case 'ERROR_CODE_VALIDATION':
       return 'sip.err.number';
     case 'ERROR_CODE_CONFLICT':
-      return 'sip.err.notInCall';
+      // 409 PLAN_LIMIT: telephony is Business only (ADR-0046, owner 02.10).
+      return (e as { extra?: { reason?: string } }).extra?.reason === 'PLAN_LIMIT' ? 'plan.telephonyLocked' : 'sip.err.notInCall';
     case 'ERROR_CODE_FORBIDDEN':
       return 'sip.err.forbidden';
     default:

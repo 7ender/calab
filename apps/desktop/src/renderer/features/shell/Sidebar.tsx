@@ -96,7 +96,8 @@ import { roomMenuGroups, type RoomMenuItem } from '../../lib/roomMenu';
 import { RoomRecBadge } from '../voice/Recording';
 import { useRecordings } from '../../stores/recordings';
 import { useSipCalls } from '../../stores/sipCalls';
-import { SipCallRow, useCanDial } from '../voice/Sip';
+import { SipCallRow, useCanDial, useTelephonyOnPlan } from '../voice/Sip';
+import { planToast } from '../../services/plan';
 import { dialFromMenu } from '../../lib/dialFromMenu';
 import { useSipDial } from '../../stores/sipDial';
 import { startRecording, stopRecording } from '../../services/recording';
@@ -822,6 +823,8 @@ function RoomMenu({
   const recording = useRecordings((s) => !!s.byRoom[room.id]);
   // «Позвонить на номер» (ADR-0046): the header button's gate minus «I am in the call».
   const dial = useCanDial(room.workspaceId, room.id, true) && voiceRoom;
+  // Business only (ADR-0046, owner 02.10): a downgraded workspace sees the item locked.
+  const dialOnPlan = useTelephonyOnPlan(room.workspaceId);
   // Categories are read when the menu renders (it mounts on open), like RoomOrderItems.
   const groups = roomMenuGroups({
     voice: voiceRoom,
@@ -878,6 +881,15 @@ function RoomMenu({
           </ContextMenu.Item>
         );
       case 'dial':
+        if (!dialOnPlan) {
+          const locked = t('plan.lockedFrom', { plan: t('plan.name.enterprise') });
+          return (
+            <ContextMenu.Item key={id} className={cx(menuItem, 'text-muted')} data-testid="room-menu-dial-locked" title={locked} onSelect={() => planToast(locked)}>
+              <Phone className="size-4" /> <span className="flex-1">{t('sip.dial')}</span>
+              <Lock className="size-3.5" aria-label={locked} />
+            </ContextMenu.Item>
+          );
+        }
         // In this room's call: the dial popover; otherwise join first, then the popover (lib/dialFromMenu).
         return (
           <ContextMenu.Item key={id} className={menuItem} data-testid="room-menu-dial" onSelect={() => void dialFromRoomMenu(room)}>

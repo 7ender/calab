@@ -12,12 +12,14 @@ import {
 import { useInfiniteQuery, useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { TriangleAlert, X } from 'lucide-react';
 import { useId, useState, type ReactNode } from 'react';
+import { PlanLock } from '../../components/PlanLock';
 import { Button, Card, Input, PasswordInput, Row, Select, Spinner, Switch, cx } from '../../components/ui';
 import { t, type MessageKey } from '../../i18n';
 import { ApiError } from '../../lib/api/client';
 import { describeError } from '../../lib/api/errors';
 import { api } from '../../lib/api/endpoints';
 import { fmt } from '../../lib/format';
+import { planHas } from '../../lib/plan';
 import { callDurationMs, formatPhone, isLiveStatus, normalizePrefix, reasonCode, reasonKey, statusKey } from '../../lib/sip';
 import { useRooms } from '../../stores/rooms';
 import { toast } from '../../stores/toasts';
@@ -29,7 +31,8 @@ import { formatDuration } from '../shell/voiceFormat';
  * provider account as one form saved with PUT (the password is write-only: empty keeps the stored
  * one), «Проверить подключение» (a real short call to the Caller ID), the last provider error and
  * the call journal (100 per page, «Показать ещё» by cursor). A primitive screen by the owner's
- * word (30.09); IVR and inbound numbers come later.
+ * word (30.09); IVR and inbound numbers come later. Business plan only (owner, 02.10): below it the
+ * form and the test are locked (PlanLock) — a saved trunk stays readable, the journal stays open.
  */
 
 /** SipSettings.port when never set (sip.proto: PUT 0 = 5060). */
@@ -61,6 +64,14 @@ const FIELD_ERROR: Record<string, MessageKey> = {
 export function TelephonyTab({ workspaceId }: { workspaceId: string }): ReactNode {
   const q = useQuery({ queryKey: settingsKey(workspaceId), queryFn: () => api.sip.settings(workspaceId) });
   const settings = q.data?.settings;
+  const allowed = useWorkspaces((s) => planHas(s.byId[workspaceId]?.ws.plan, 'telephony'));
+  const setup = settings ? (
+    <>
+      {/* Re-mounted when the server's copy changes: the form starts from what is saved. */}
+      <SettingsForm key={settings.updatedAt ? String(timestampMs(settings.updatedAt)) : 'new'} workspaceId={workspaceId} settings={settings} />
+      <TestCard workspaceId={workspaceId} settings={settings} />
+    </>
+  ) : null;
   return (
     <>
       <p className="px-1 text-body text-muted">{t('sip.intro')}</p>
@@ -82,9 +93,13 @@ export function TelephonyTab({ workspaceId }: { workspaceId: string }): ReactNod
       ) : (
         <>
           {settings.lastError ? <LastError text={settings.lastError} /> : null}
-          {/* Re-mounted when the server's copy changes: the form starts from what is saved. */}
-          <SettingsForm key={settings.updatedAt ? String(timestampMs(settings.updatedAt)) : 'new'} workspaceId={workspaceId} settings={settings} />
-          <TestCard workspaceId={workspaceId} settings={settings} />
+          {allowed ? (
+            setup
+          ) : (
+            <PlanLock plan="business" testId="sip-plan-lock">
+              <div className="flex flex-col gap-6">{setup}</div>
+            </PlanLock>
+          )}
           <Journal workspaceId={workspaceId} />
         </>
       )}

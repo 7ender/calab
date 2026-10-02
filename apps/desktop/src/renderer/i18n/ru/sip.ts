@@ -111,4 +111,7 @@ export const ruSip = {
   'sip.journal.live': 'Идёт',
   'sip.journal.loadFailed': 'Не удалось загрузить журнал',
   'roles.group.telephony': 'Телефония',
+  'admin.limit.telephony': 'Телефония (SIP)',
+  'admin.limit.telephonyHint': 'Выключена — сохранённый транк виден, звонки недоступны',
+  'plan.telephonyLocked': 'Телефония доступна на тарифе Business',
 };
