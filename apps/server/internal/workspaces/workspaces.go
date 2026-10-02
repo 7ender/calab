@@ -256,12 +256,21 @@ func Snapshot(ctx context.Context, q *sqlc.Queries, pl *plans.Service, ws sqlc.W
 	if err != nil {
 		return nil, err
 	}
+	// Board categories (ADR-0058 §1): names only, to everyone but guests.
+	var boardCats []*v1.BoardCategory
+	if role != perm.RoleGuest {
+		rows, err := q.ListBoardCategories(ctx, ws.ID)
+		if err != nil {
+			return nil, err
+		}
+		boardCats = boards.Categories(rows)
+	}
 	// active_events (ADR-0038 §6) are filled by the caller with calendar.FillActive: one query
 	// for all the snapshots of a READY.
 	return &v1.WorkspaceSnapshot{Workspace: pbconv.ForViewer(pw, role), Role: role.Proto(), Rooms: rs, Members: members,
 		Permissions: bits, Categories: pbconv.Categories(cats), Recordings: recordings, Roles: pbconv.Roles(roles),
 		Badges: pbconv.Badges(badges), Backgrounds: pbconv.Backgrounds(backgrounds), Sounds: pbconv.Sounds(sounds),
-		Boards: bs, UnreadTaskIds: unread, SipCalls: sipCalls, Apps: pbconv.WorkspaceApps(apps)}, nil
+		Boards: bs, UnreadTaskIds: unread, SipCalls: sipCalls, Apps: pbconv.WorkspaceApps(apps), BoardCategories: boardCats}, nil
 }
 
 // MemberPB loads a member's role ids and converts the membership row.

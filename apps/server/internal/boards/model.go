@@ -3,6 +3,7 @@ package boards
 import (
 	"math"
 	"regexp"
+	"slices"
 	"strconv"
 	"strings"
 	"time"
@@ -11,6 +12,7 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 
 	v1 "github.com/calaba/calaba/server/gen/calaba/v1"
+	"github.com/calaba/calaba/server/internal/httpx"
 )
 
 // Limits (ADR-0042 §6).
@@ -46,7 +48,103 @@ const (
 const (
 	ReasonBoardLimit     = "BOARD_LIMIT"      // 50 boards per workspace
 	ReasonBoardTaskLimit = "BOARD_TASK_LIMIT" // 5000 live tasks per board
+	// ReasonFeatureDisabled: a write sets a field of a board feature that is switched off
+	// (ADR-0058 §3); ApiError.field names the field.
+	ReasonFeatureDisabled = "FEATURE_DISABLED"
+	// ReasonBoardCategoryLimit: the 51st board category of a workspace (ADR-0058 §1).
+	ReasonBoardCategoryLimit = "BOARD_CATEGORY_LIMIT"
 )
+
+// MaxBoardCategories / MaxCategoryName: board categories (ADR-0058 §1).
+const (
+	MaxBoardCategories = 50
+	MaxCategoryName    = 100
+)
+
+// ---- board features (ADR-0058 §3) ----
+
+// featureBit is the bit of a feature in boards.disabled_features (bit = the enum value).
+func featureBit(f v1.BoardFeature) int64 { return 1 << uint(f) } //nolint:gosec // 1..13
+
+// Disabled reports whether feature f is switched off in a disabled_features mask.
+func Disabled(mask int64, f v1.BoardFeature) bool { return mask&featureBit(f) != 0 }
+
+// FeatureMask converts a requested disabled set to the stored mask: UNSPECIFIED and unknown
+// values are 422.
+func FeatureMask(fs []v1.BoardFeature) (int64, error) {
+	var m int64
+	for _, f := range fs {
+		if _, ok := v1.BoardFeature_name[int32(f)]; !ok || f == v1.BoardFeature_BOARD_FEATURE_UNSPECIFIED {
+			return 0, httpx.Validation("disabledFeatures", "unknown board feature")
+		}
+		m |= featureBit(f)
+	}
+	return m, nil
+}
+
+// FeaturesProto lists the features of a mask, ascending (Board.disabled_features).
+func FeaturesProto(mask int64) []v1.BoardFeature {
+	var out []v1.BoardFeature
+	for f := v1.BoardFeature(1); f < 63; f++ {
+		if Disabled(mask, f) {
+			out = append(out, f)
+		}
+	}
+	return out
+}
+
+// CommentsOff reports whether a board (broadcast form) has the feature COMMENTS switched off:
+// its task rooms are read-only (the gateway's taskRoomBits).
+func CommentsOff(b *v1.Board) bool {
+	return slices.Contains(b.GetDisabledFeatures(), v1.BoardFeature_BOARD_FEATURE_COMMENTS)
+}
+
+// requireFeature is the one feature check of every task write (ADR-0058 §3): a request that
+// sets a field of feature f to a new non-empty value (sets) on a board where f is switched off
+// is 409 CONFLICT FEATURE_DISABLED with field = the JSON name of the request field. Clearing the
+// field and repeating its current value pass, so clients and bots that send them do not break.
+func requireFeature(disabled int64, f v1.BoardFeature, field string, sets bool) error {
+	if !sets || !Disabled(disabled, f) {
+		return nil
+	}
+	e := httpx.Conflict("the board feature "+strings.TrimPrefix(f.String(), "BOARD_FEATURE_")+" is switched off").
+		WithDetails(ReasonFeatureDisabled, 0, 0)
+	e.Field = field
+	return e
+}
+
+var estimateScales = map[v1.EstimateScale]string{
+	v1.EstimateScale_ESTIMATE_SCALE_FIBONACCI: "fibonacci",
+	v1.EstimateScale_ESTIMATE_SCALE_LINEAR:    "linear",
+	v1.EstimateScale_ESTIMATE_SCALE_TSHIRT:    "tshirt",
+}
+
+// EstimateScaleFromDB maps a stored scale (fibonacci for an unknown one).
+func EstimateScaleFromDB(s string) v1.EstimateScale {
+	for k, v := range estimateScales {
+		if v == s {
+			return k
+		}
+	}
+	return v1.EstimateScale_ESTIMATE_SCALE_FIBONACCI
+}
+
+// scaleValues are the estimates of each stored scale (T-shirt: XS = 1, S = 2, M = 3, L = 5,
+// XL = 8).
+var scaleValues = map[string][]int16{
+	"fibonacci": {1, 2, 3, 5, 8, 13, 21},
+	"linear":    {1, 2, 3, 4, 5, 6, 7, 8, 9, 10},
+	"tshirt":    {1, 2, 3, 5, 8},
+}
+
+// InScale reports whether estimate n belongs to the stored scale (fibonacci when unknown).
+func InScale(scale string, n int16) bool {
+	vs, ok := scaleValues[scale]
+	if !ok {
+		vs = scaleValues["fibonacci"]
+	}
+	return slices.Contains(vs, n)
+}
 
 // SearchVector is the indexed text of a task (migration 00046, tasks_search_idx).
 const SearchVector = "to_tsvector('simple', t.title || ' ' || t.description)"

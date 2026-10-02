@@ -37,6 +37,8 @@ interface Vector {
   owner?: boolean;
   // ADR-0042: a board vector.
   board?: { private: boolean; guest?: boolean; restricted?: boolean; owner?: boolean };
+  // ADR-0042 / ADR-0058 §3: a task room vector (taskRoomPermissions from the board bits).
+  taskRoom?: { board: number; archived: boolean; commentsOff: boolean };
   expected: number;
 }
 
@@ -65,6 +67,12 @@ const toRoles = (rs: NonNullable<Vector['roles']>) =>
 describe('computePermissions (shared vectors)', () => {
   for (const v of vectors) {
     it(v.name, () => {
+      if (v.taskRoom) {
+        expect(taskRoomPermissions(BigInt(v.taskRoom.board), v.taskRoom.archived, v.taskRoom.commentsOff)).toBe(
+          BigInt(v.expected),
+        );
+        return;
+      }
       if (v.board) {
         const roles = toRoles(v.roles ?? []);
         const roleOverrides = Object.fromEntries(
@@ -234,5 +242,7 @@ describe('roles (ADR-0026)', () => {
       VIEW_ROOM | SEND_MESSAGES | ATTACH_FILES | MANAGE_MESSAGES,
     );
     expect(taskRoomPermissions(VIEW_BOARD, true)).toBe(VIEW_ROOM);
+    expect(taskRoomPermissions(VIEW_BOARD | EDIT_TASKS, false, true)).toBe(VIEW_ROOM | MANAGE_MESSAGES);
+    expect(vectors.filter((v) => v.taskRoom).length).toBeGreaterThanOrEqual(8);
   });
 });

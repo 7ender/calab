@@ -102,6 +102,11 @@ func (s *Service) Routes(mux httpx.Router, wrap func(http.Handler) http.Handler)
 	h("GET /api/t/{key}", s.lookup)
 	h("GET /api/me/tasks", s.myTasks)
 	h("GET /api/workspaces/{id}/tasks/search", s.search)
+	h("GET /api/workspaces/{id}/board-categories", s.listCategories)
+	h("POST /api/workspaces/{id}/board-categories", s.createCategory)
+	h("PATCH /api/board-categories/{id}", s.updateCategory)
+	h("DELETE /api/board-categories/{id}", s.deleteCategory)
+	h("PUT /api/workspaces/{id}/boards/order", s.setOrder)
 	for _, p := range contractStubRoutes {
 		h(p, notImplemented)
 	}

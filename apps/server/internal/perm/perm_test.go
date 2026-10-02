@@ -36,6 +36,12 @@ type vector struct {
 		Restricted bool `json:"restricted"`
 		Owner      bool `json:"owner"`
 	} `json:"board"`
+	// ADR-0042 / ADR-0058 §3: a task room vector (TaskRoom from the board bits).
+	TaskRoom *struct {
+		Board       Bits `json:"board"`
+		Archived    bool `json:"archived"`
+		CommentsOff bool `json:"commentsOff"`
+	} `json:"taskRoom"`
 	Expected Bits `json:"expected"`
 }
 
@@ -53,9 +59,14 @@ func loadVectors(t *testing.T) []vector {
 }
 
 func TestComputeVectors(t *testing.T) {
-	n, boards := 0, 0
+	n, boards, taskRooms := 0, 0, 0
 	for _, v := range loadVectors(t) {
 		switch {
+		case v.TaskRoom != nil:
+			taskRooms++
+			if got := TaskRoom(v.TaskRoom.Board, v.TaskRoom.Archived, v.TaskRoom.CommentsOff); got != v.Expected {
+				t.Errorf("%s: TaskRoom got %d want %d", v.Name, got, v.Expected)
+			}
 		case v.Board != nil:
 			boards++
 			roles := make([]RoleBits, len(v.Roles))
@@ -123,8 +134,8 @@ func TestComputeVectors(t *testing.T) {
 			}
 		}
 	}
-	if n < 12 || boards < 15 {
-		t.Fatalf("only %d multi-role vectors, %d board vectors", n, boards)
+	if n < 12 || boards < 15 || taskRooms < 8 {
+		t.Fatalf("only %d multi-role vectors, %d board vectors, %d task room vectors", n, boards, taskRooms)
 	}
 }
 
