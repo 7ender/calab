@@ -113,6 +113,8 @@ function limitRows(limits: PlanLimits | undefined, usage: ReturnType<typeof plan
     // ADR-0058 §5: checklists (Team and above), the board webhook (Business).
     { label: t('admin.limit.checklists'), used: '—', max: t(l?.checklistsDisabled ? 'plan.caldav.no' : 'plan.caldav.yes') },
     { label: t('admin.limit.boardWebhooks'), used: '—', max: t(l?.boardWebhooksDisabled ? 'plan.caldav.no' : 'plan.caldav.yes') },
+    // ADR-0046 (owner, 02.10): telephony SIP is Business only.
+    { label: t('admin.limit.telephony'), used: '—', max: t(l?.telephonyDisabled ? 'plan.caldav.no' : 'plan.caldav.yes') },
     packs === undefined
       ? { label: t('plan.limit.stickerPacks'), used: '—', max: countText(l?.stickerPacks ?? 0) }
       : counted(t('plan.limit.stickerPacks'), packs, l?.stickerPacks ?? 0),

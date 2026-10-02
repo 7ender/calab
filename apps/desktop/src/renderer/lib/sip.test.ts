@@ -169,6 +169,7 @@ describe('texts', () => {
     expect(dialErrorKey(e('ERROR_CODE_SIP_PROVIDER_ERROR', 502))).toBe('sip.err.provider');
     expect(dialErrorKey(e('ERROR_CODE_VALIDATION', 422))).toBe('sip.err.number');
     expect(dialErrorKey(e('ERROR_CODE_CONFLICT', 409))).toBe('sip.err.notInCall');
+    expect(dialErrorKey(Object.assign(e('ERROR_CODE_CONFLICT', 409), { extra: { reason: 'PLAN_LIMIT' } }))).toBe('plan.telephonyLocked');
     expect(dialErrorKey(e('ERROR_CODE_INTERNAL', 500))).toBeNull();
     expect(dialErrorKey(new Error('plain'))).toBeNull();
   });

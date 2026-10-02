@@ -426,6 +426,10 @@ function AdminDetail({ id, onClose }: { id: string; onClose: () => void }): Reac
               <Row label={t('admin.limit.boardWebhooks')} hint={t('admin.limit.boardWebhooksHint')}>
                 <Toggle label={t('admin.limit.boardWebhooks')} checked={!form.limits.boardWebhooksDisabled} onChange={(v) => setLimits({ ...form.limits, boardWebhooksDisabled: !v })} />
               </Row>
+              {/* ADR-0046 (owner, 02.10): telephony is Business only; a new Custom plan starts without it. */}
+              <Row label={t('admin.limit.telephony')} hint={t('admin.limit.telephonyHint')}>
+                <Toggle label={t('admin.limit.telephony')} checked={!form.limits.telephonyDisabled} onChange={(v) => setLimits({ ...form.limits, telephonyDisabled: !v })} />
+              </Row>
             </Card>
           ) : null}
 

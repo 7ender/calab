@@ -46,7 +46,7 @@ It is built for teams of up to 20–30 people in voice at once and up to 3 scree
 - **One-on-one calls** in direct messages, with ringing, camera and screen sharing.
 - **Meeting recordings** — the server records, GPTunneL transcribes; a card with the summary, audio and full transcript arrives in the room chat.
 - **Soundboard**, moderation (server mute, disconnect, move by drag and drop), statuses.
-- **Phone calls (SIP)** — connect your own SIP provider and dial a landline or mobile number from a voice room; the callee joins as a participant, everyone sees “Dialling → Ringing → On the call”. Provider settings, a call log, a “Place calls” permission that nobody has by default ([ADR-0046](docs/adr/0046-sip-telephony.md)).
+- **Phone calls (SIP)** — connect your own SIP provider and dial a landline or mobile number from a voice room; the callee joins as a participant, everyone sees “Dialling → Ringing → On the call”. Provider settings, a call log, a “Place calls” permission that nobody has by default. Business plan and Enterprise ([ADR-0046](docs/adr/0046-sip-telephony.md)).
 - **Temporary rooms** — a room for an hour or a day with a ready guest link and an optional calendar meeting: a Zoom replacement that disappears by itself ([ADR-0044](docs/adr/0044-temp-rooms.md)).
 
 ### 💬 Chat
@@ -184,7 +184,7 @@ Checks: `make lint` from the repository root, `make test` (Go + TS), `make test-
 | Task approvals | ✓ | ✓ | ✓ | ✓ |
 | Embedded web apps | ✓ | ✓ | ✓ | ✓ |
 | Identity 2.0: SSO / directory / OAuth provider | — | — | positive workspace grant | positive grant + operator workspace allowlist |
-| Telephony (SIP) | ✓ | ✓ | ✓ | ✓ |
+| Telephony (SIP) | — | — | ✓ | ✓ |
 | White-label | — | — | — | ✓ |
 | Support | — | support | priority | — |
 | Price | free | on request (**it@gptunnel.ai**) | on request (**it@gptunnel.ai**) | free for non-commercial use (BSL 1.1, “Powered by GPTunneL”); commercial licence on request |

@@ -293,9 +293,9 @@ func TestPlanCalDAV(t *testing.T) {
 	o.must(204, "DELETE", "/api/me/caldav", nil, nil)
 }
 
-// Web apps, task approvals and telephony are part of every plan (owner, 30.09): on Free they are
-// not refused with PLAN_LIMIT.
-func TestPlanFreeHasAppsApprovalsTelephony(t *testing.T) {
+// Web apps and task approvals are part of every plan (owner, 30.09): on Free they are not
+// refused with PLAN_LIMIT. Telephony is Business only since 02.10 (TestSIPPlanBusinessOnly).
+func TestPlanFreeHasAppsApprovals(t *testing.T) {
 	withFreeLimits(t)
 	o := owner(t)
 	wsID := createWorkspace(t, o, v1.WorkspaceVisibility_WORKSPACE_VISIBILITY_PRIVATE).GetId()
@@ -307,9 +307,6 @@ func TestPlanFreeHasAppsApprovalsTelephony(t *testing.T) {
 	if task.GetApprovalState() != v1.TaskApprovalState_TASK_APPROVAL_STATE_PENDING {
 		t.Fatalf("free approvals: %v", task)
 	}
-	pw := "s3cret-Пароль" //nolint:gosec // G101: a test fixture
-	o.must(200, "PUT", "/api/workspaces/"+wsID+"/sip", &v1.PutSipSettingsRequest{Enabled: true, Provider: "Zadarma", Host: "203.0.113.10:5060",
-		Transport: v1.SipTransport_SIP_TRANSPORT_TCP, Username: "u100", Password: &pw, CallerId: "8 (495) 123-45-67"}, nil)
 }
 
 // Musician mode (ADR-0052) is Team and above: PATCH /api/voice/self {musician: true} in a Free
