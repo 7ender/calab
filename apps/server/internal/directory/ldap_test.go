@@ -13,6 +13,7 @@ import (
 	"math/big"
 	"net"
 	"net/netip"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -47,6 +48,9 @@ type ldapFixture struct {
 	certificate string
 	mu          sync.Mutex
 	entries     []*ldap.Entry
+	nested      []*ldap.Entry // answers of the transitive (in-chain) group search
+	referrals   int           // continuation references added to every page
+	filters     []string
 	failPage    int
 	oversized   bool
 	connections sync.WaitGroup
@@ -121,7 +125,6 @@ func ldapResult(tag ber.Tag, code int64) *ber.Packet {
 func (f *ldapFixture) serve(conn net.Conn) {
 	defer func() { _ = conn.Close() }()
 	_ = conn.SetDeadline(time.Now().Add(5 * time.Second))
-	page := 0
 	for {
 		request, err := ber.ReadPacket(conn)
 		if err != nil || len(request.Children) < 2 {
@@ -142,9 +145,28 @@ func (f *ldapFixture) serve(conn net.Conn) {
 				return
 			}
 		case ldap.ApplicationSearchRequest:
+			page := 0
+			if len(request.Children) > 2 {
+				for _, child := range request.Children[2].Children {
+					if control, err := ldap.DecodeControl(child); err == nil {
+						if paging, ok := control.(*ldap.ControlPaging); ok && len(paging.Cookie) > 0 {
+							page = int(paging.Cookie[0])
+						}
+					}
+				}
+			}
+			filter := ""
+			if len(operation.Children) > 6 {
+				filter, _ = ldap.DecompileFilter(operation.Children[6])
+			}
 			f.mu.Lock()
+			f.filters = append(f.filters, filter)
 			entries := append([]*ldap.Entry(nil), f.entries...)
 			fail := f.failPage
+			if strings.Contains(filter, "1.2.840.113556.1.4.1941") {
+				entries, fail = append([]*ldap.Entry(nil), f.nested...), -1
+			}
+			referrals := f.referrals
 			oversized := f.oversized
 			f.mu.Unlock()
 			if oversized {
@@ -175,6 +197,13 @@ func (f *ldapFixture) serve(conn net.Conn) {
 					return
 				}
 			}
+			for range referrals {
+				reference := ber.Encode(ber.ClassApplication, ber.TypeConstructed, ldap.ApplicationSearchResultReference, nil, "reference")
+				reference.AppendChild(ber.NewString(ber.ClassUniversal, ber.TypePrimitive, ber.TagOctetString, "ldaps://ForestDnsZones.example.test/DC=ForestDnsZones,DC=example,DC=test", "uri"))
+				if _, err = conn.Write(ldapPacket(id, reference, nil).Bytes()); err != nil {
+					return
+				}
+			}
 			paging := ldap.NewControlPaging(500)
 			if page+1 < len(entries) {
 				paging.SetCookie([]byte{byte(page + 1)})
@@ -182,7 +211,6 @@ func (f *ldapFixture) serve(conn net.Conn) {
 			if _, err = conn.Write(ldapPacket(id, ldapResult(ldap.ApplicationSearchResultDone, 0), paging).Bytes()); err != nil {
 				return
 			}
-			page++
 		default:
 			return
 		}
@@ -231,5 +259,88 @@ func TestLDAPHostAndTLSRestrictions(t *testing.T) {
 	}
 	if allowed(HostPolicy{Networks: []netip.Prefix{netip.MustParsePrefix("169.254.0.0/16")}}, netip.MustParseAddr("169.254.169.254")) {
 		t.Fatal("metadata IP accepted")
+	}
+}
+
+// A base DN at the AD domain root returns continuation references to the DNS application
+// partitions: they are ignored (never followed), the scan succeeds.
+func TestLDAPContinuationReferralsIgnored(t *testing.T) {
+	f, client, c := newLDAPFixture(t)
+	f.entries = []*ldap.Entry{fixtureEntry("33221100554477668899aabbccddeeff", "512"), fixtureEntry("34221100554477668899aabbccddeeff", "512")}
+	f.referrals = 2
+	result, err := client.Scan(context.Background(), c, "fixture-password")
+	if err != nil || len(result) != 2 {
+		t.Fatalf("scan with continuation references: %v %+v", err, result)
+	}
+}
+
+// Nested groups: a user only in a child group of an allowed group is eligible through the
+// domain controller's in-chain rule; a user in neither stays ineligible.
+func TestLDAPNestedGroupEligibility(t *testing.T) {
+	f, client, c := newLDAPFixture(t)
+	nested, _ := hex.DecodeString("35221100554477668899aabbccddeeff")
+	outside, _ := hex.DecodeString("36221100554477668899aabbccddeeff")
+	child := func(raw []byte) *ldap.Entry {
+		return ldap.NewEntry("CN=Bob,DC=example,DC=test", map[string][]string{"objectGUID": {string(raw)}, "userAccountControl": {"512"}, "memberOf": {"CN=Child,DC=example,DC=test"}})
+	}
+	f.entries = []*ldap.Entry{fixtureEntry("33221100554477668899aabbccddeeff", "512"), child(nested), child(outside)}
+	f.nested = []*ldap.Entry{ldap.NewEntry("CN=Bob,DC=example,DC=test", map[string][]string{"objectGUID": {string(nested)}})}
+	result, err := client.Scan(context.Background(), c, "fixture-password")
+	if err != nil || len(result) != 3 || !result[0].Eligible || !result[1].Eligible || result[2].Eligible {
+		t.Fatalf("nested eligibility: %v %+v", err, result)
+	}
+	want := "(memberOf:1.2.840.113556.1.4.1941:=CN=Allowed,DC=example,DC=test)"
+	if last := f.filters[len(f.filters)-1]; !strings.Contains(last, want) {
+		t.Fatalf("in-chain filter: %q", last)
+	}
+	c.AllowedGroupDns = nil
+	f.filters = nil
+	if result, err = client.Scan(context.Background(), c, "fixture-password"); err != nil || !result[2].Eligible || strings.Contains(strings.Join(f.filters, ""), "1.2.840.113556.1.4.1941") {
+		t.Fatalf("no allowed groups: every account eligible, no in-chain search: %v %q", err, f.filters)
+	}
+}
+
+// An operator CA replaces the system pool: a certificate the system trusts but the
+// configured CA did not issue is rejected.
+func TestLDAPOperatorCAIsTheOnlyAnchor(t *testing.T) {
+	f, client, c := newLDAPFixture(t)
+	roots, err := trustAnchors(f.certificate)
+	if err != nil {
+		t.Fatal(err)
+	}
+	only := x509.NewCertPool()
+	only.AppendCertsFromPEM([]byte(f.certificate))
+	if !roots.Equal(only) {
+		t.Fatal("operator CA merged with the system pool")
+	}
+	if system, err := trustAnchors(""); err != nil || system.Equal(only) {
+		t.Fatal("no operator CA: system pool expected")
+	}
+	if _, err = trustAnchors("not a certificate"); err == nil {
+		t.Fatal("invalid operator CA accepted")
+	}
+	other, _, _ := newLDAPFixture(t)
+	c.CaPem = other.certificate
+	if _, err := client.Scan(context.Background(), c, "fixture-password"); err == nil {
+		t.Fatal("certificate outside the operator CA accepted")
+	}
+}
+
+func TestShrinkGuardThreshold(t *testing.T) {
+	for _, tc := range []struct {
+		g        shrinkGuard
+		snapshot int
+		want     bool
+	}{
+		{shrinkGuard{enabled: true, present: 10, dropped: 2}, 8, false},               // 20 %: not more
+		{shrinkGuard{enabled: true, present: 10, dropped: 3}, 7, true},                // 30 %
+		{shrinkGuard{enabled: true, present: 4, dropped: 1}, 3, false},                // a single departure
+		{shrinkGuard{enabled: true, present: 1}, 0, true},                             // empty after non-empty
+		{shrinkGuard{enabled: true, linkedActive: 5, lost: 2, present: 50}, 50, true}, // eligibility read lost
+		{shrinkGuard{enabled: false, present: 10, dropped: 10}, 0, false},             // acknowledged
+	} {
+		if got := tc.g.shrunk(tc.snapshot); got != tc.want {
+			t.Fatalf("%+v snapshot=%d: %v", tc.g, tc.snapshot, got)
+		}
 	}
 }

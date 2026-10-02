@@ -5,6 +5,7 @@ package directory
 import (
 	"context"
 	"errors"
+	"fmt"
 	"testing"
 	"time"
 
@@ -94,6 +95,11 @@ func (f *directoryFixture) object(t *testing.T) sqlc.DirectoryObject {
 	}
 	return object
 }
+
+// bystanderOnly is a complete snapshot without the fixture's managed account.
+func bystanderOnly() []*ldap.Entry {
+	return []*ldap.Entry{fixtureEntry("33221100554477668899aabbccddee99", "512")}
+}
 func (f *directoryFixture) sync(t *testing.T) {
 	t.Helper()
 	if err := f.service.Sync(context.Background(), f.ws); err != nil {
@@ -139,7 +145,7 @@ func TestDirectoryAtomicLifecycleAndStaleness(t *testing.T) {
 		t.Fatal("directory changed another workspace")
 	}
 	f.ldap.mu.Lock()
-	f.ldap.entries = nil
+	f.ldap.entries = bystanderOnly() // non-empty: an empty snapshot is quarantined
 	f.ldap.mu.Unlock()
 	f.sync(t)
 	object := f.object(t)
@@ -304,5 +310,67 @@ func TestDirectorySchedulerDoesNotBlockHealthyWorkspace(t *testing.T) {
 				return
 			}
 		}
+	}
+}
+
+// A complete but empty or sharply smaller scan (bind account lost read rights) publishes
+// nothing: the run is quarantined, access and freshness stay, the owner sees why. Saving
+// the settings again accepts the change on the next scan.
+func TestDirectoryShrinkQuarantined(t *testing.T) {
+	f := newDirectoryFixture(t)
+	ctx := context.Background()
+	q := f.service.Identity.DB.Q
+	all := []*ldap.Entry{fixtureEntry("33221100554477668899aabbccddeeff", "512")}
+	for i := range 5 {
+		all = append(all, fixtureEntry(fmt.Sprintf("33221100554477668899aabbccddee%02x", i), "512"))
+	}
+	f.ldap.entries = all
+	f.sync(t)
+	if err := f.service.Link(ctx, f.p, f.ws, f.user, f.guid); err != nil {
+		t.Fatal(err)
+	}
+	f.sync(t)
+	before, err := q.GetWorkspaceIdentityDirectory(ctx, f.ws)
+	if err != nil || f.object(t).Status != "active" {
+		t.Fatalf("setup: %v", err)
+	}
+	for name, entries := range map[string][]*ldap.Entry{"empty": nil, "shrunk": all[:2]} {
+		f.ldap.mu.Lock()
+		f.ldap.entries = entries
+		f.ldap.mu.Unlock()
+		if err = f.service.Sync(ctx, f.ws); err == nil {
+			t.Fatalf("%s scan published", name)
+		}
+		after, err := q.GetWorkspaceIdentityDirectory(ctx, f.ws)
+		if err != nil || after.Generation != before.Generation || !after.LastSuccessAt.Equal(*before.LastSuccessAt) || after.LastError != shrunkMessage {
+			t.Fatalf("%s scan changed freshness or hid the reason: %v %+v", name, err, after)
+		}
+		if object := f.object(t); object.Status != "active" || object.MissingFullScans != 0 {
+			t.Fatalf("%s scan closed access: %+v", name, object)
+		}
+		var status string
+		if err = f.service.Identity.DB.Pool.QueryRow(ctx, `SELECT status FROM directory_sync_runs WHERE workspace_id=$1 ORDER BY started_at DESC LIMIT 1`, f.ws).Scan(&status); err != nil || status != "quarantined" {
+			t.Fatalf("%s run status %q %v", name, status, err)
+		}
+	}
+	// A small change is an ordinary scan.
+	f.ldap.mu.Lock()
+	f.ldap.entries = all[:5]
+	f.ldap.mu.Unlock()
+	f.sync(t)
+	// The owner acknowledges a real large change by saving the settings again.
+	c, err := q.GetWorkspaceIdentityDirectory(ctx, f.ws)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err = f.service.Put(ctx, f.p, f.ws, &pb.PutIdentityDirectoryRequest{Version: uint64(max(c.Version, 0)), Enabled: true, Url: c.Url, BaseDn: c.BaseDn, BindDn: c.BindDn, AllowedGroupDns: c.AllowedGroupDns}); err != nil {
+		t.Fatal(err)
+	}
+	f.ldap.mu.Lock()
+	f.ldap.entries = bystanderOnly()
+	f.ldap.mu.Unlock()
+	f.sync(t)
+	if object := f.object(t); object.Status != "disabled" {
+		t.Fatalf("acknowledged change not published: %+v", object)
 	}
 }

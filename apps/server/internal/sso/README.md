@@ -27,8 +27,12 @@ reuse the old secret.
 `OIDC` uses a single discovery snapshot and guarded transports for discovery,
 JWKS and token exchange. Generic OIDC, fixed-tenant Entra, and ADFS configuration
 all require code/S256, state/nonce and issuer/audience/authorized-party/time claim
-validation. There is no email-based linking, account creation, or global email
-verification. ADFS operators must use 2019 or newer with S256 support.
+validation. auth_time is required from every provider (Entra: optional ID token claim);
+its absence fails with ErrAuthTimeMissing and an auth_time_missing audit record. ADFS discovery must list S256; a
+generic provider omitting the list is audited at test. There is no email-based
+linking, account creation, or global email verification. ADFS operators must use
+2019 or newer with S256 support. Pending browser flows share one bounded binding
+cookie.
 
 The integration suite exercises actual PostgreSQL transactions with a TLS fake
 IdP, native/web one-use races, policy revisions, recovery restrictions, clock

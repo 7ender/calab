@@ -60,7 +60,8 @@ func (d *Delivery) Mode(ctx context.Context, ws uuid.UUID) (Mode, error) {
 //
 // Off/optional: the member must still stand in the workspace — not disabled, a guest or bot,
 // banned or identity-suspended, and a directory-managed member needs an active object of a
-// complete sync within the staleness bound (the membership gates of Evaluate).
+// complete sync within the staleness bound and a live directory_sync entitlement (the
+// membership and directory gates of Evaluate).
 //
 // Enforced (also when the entitlement lapsed): one of the user's live sessions must pass
 // Evaluate(WorkspaceRead) for ws, i.e. hold a current SSO assurance with matching versions.
@@ -96,7 +97,17 @@ func (d *Delivery) Check(ctx context.Context, user, ws uuid.UUID) (Decision, err
 		}
 		until := now.Add(ReadLeaseTTL)
 		if m.DirectoryRequired {
-			until = minimum(until, m.DirectoryValidUntil)
+			// As Evaluate: a directory-managed member needs a live directory_sync entitlement,
+			// not only a fresh scan (a revoked grant stops scans but not staleness for 1 h).
+			g, err := d.Loader.LoadGrant(ctx, now, ws, DirectorySync)
+			if err != nil {
+				return deny(StateUnavailable), err
+			}
+			e := RequireEntitlement(now, ws, g, DirectorySync)
+			if !e.Allowed {
+				return e, nil
+			}
+			until = minimum(until, minimum(e.ValidUntil, m.DirectoryValidUntil))
 		}
 		return Decision{Allowed: true, Reason: Allowed, ValidUntil: until, Versions: Versions{Access: m.AccessVersion}}, nil
 	}

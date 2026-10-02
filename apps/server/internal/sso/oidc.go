@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"net/http"
 	"net/url"
 	"slices"
@@ -22,6 +23,13 @@ import (
 // ErrInvalidProof deliberately hides upstream tokens and provider diagnostics.
 var ErrInvalidProof = errors.New("SSO proof rejected")
 
+// ErrAuthTimeMissing is the one actionable proof diagnostic: every authorization request
+// carries max_age and prompt=login, but those travel in a browser-editable URL, so only the
+// signed auth_time bounds proof freshness; iat would only prove a live IdP session. It is
+// required from every provider. Entra v2 emits it only as an optional claim: app
+// registration → Token configuration → Add optional claim → ID → auth_time.
+var ErrAuthTimeMissing = fmt.Errorf("%w: ID token has no auth_time claim (Entra: add the optional ID token claim auth_time)", ErrInvalidProof)
+
 // EndpointPolicy is trusted operator configuration, never a workspace setting.
 // It receives the connection's workspace: an operator override may be bound to workspaces.
 type EndpointPolicy func(ws uuid.UUID, raw string) (identitynet.Endpoint, error)
@@ -36,6 +44,9 @@ type upstream struct {
 	oauth    oauth2.Config
 	verifier *oidc.IDTokenVerifier
 	client   *http.Client
+	// pkceAdvertised: discovery lists S256. Calab always sends an S256 challenge; a generic
+	// provider whose discovery omits the list is accepted, but the test records the gap.
+	pkceAdvertised bool
 }
 type metadata struct {
 	Issuer        string   `json:"issuer"`
@@ -100,7 +111,7 @@ func (o *OIDC) load(ctx context.Context, c sqlc.WorkspaceIdentityConnection, sec
 	err = json.NewDecoder(resp.Body).Decode(&m)
 	_ = resp.Body.Close()
 	guarded.CloseIdleConnections()
-	if err != nil || resp.StatusCode != 200 || m.Issuer != c.Issuer || m.Authorization == "" || m.Token == "" || m.JWKS == "" || (len(m.Methods) > 0 && !slices.Contains(m.Methods, "S256")) {
+	if err != nil || resp.StatusCode != 200 || m.Issuer != c.Issuer || m.Authorization == "" || m.Token == "" || m.JWKS == "" || !pkceAcceptable(c.Provider, m.Methods) {
 		return nil, ErrInvalidProof
 	}
 	var endpoints []identitynet.Endpoint
@@ -133,7 +144,19 @@ func (o *OIDC) load(ctx context.Context, c sqlc.WorkspaceIdentityConnection, sec
 		return nil, ErrInvalidProof
 	}
 	verifier := oidc.NewVerifier(c.Issuer, oidc.NewRemoteKeySet(ctx, m.JWKS), &config)
-	return &upstream{oauth: oauth2.Config{ClientID: c.ClientID, ClientSecret: secret, Endpoint: oauthEndpoint, Scopes: []string{"openid"}, RedirectURL: o.Origin + "/api/auth/sso/callback/" + c.ID.String()}, verifier: verifier, client: client}, nil
+	return &upstream{oauth: oauth2.Config{ClientID: c.ClientID, ClientSecret: secret, Endpoint: oauthEndpoint, Scopes: []string{"openid"}, RedirectURL: o.Origin + "/api/auth/sso/callback/" + c.ID.String()}, verifier: verifier, client: client, pkceAdvertised: slices.Contains(m.Methods, "S256")}, nil
+}
+
+// pkceAcceptable applies the per-provider PKCE rule to discovery's
+// code_challenge_methods_supported. A listed set must contain S256 for every provider.
+// AD FS must list it (ADR-0054: AD FS 2019+ with verified S256); Entra supports S256 by
+// documentation and its fixed tenant issuer; a generic provider may omit the list
+// (S256 is still sent, the connection test records "connection_tested_pkce_unadvertised").
+func pkceAcceptable(provider string, methods []string) bool {
+	if len(methods) > 0 {
+		return slices.Contains(methods, "S256")
+	}
+	return provider != "adfs"
 }
 
 // Authorization always uses code/S256, a fresh nonce and bounded authentication age.
@@ -150,9 +173,11 @@ func (o *OIDC) Authorization(ctx context.Context, c sqlc.WorkspaceIdentityConnec
 }
 
 // Proof contains only the validated immutable subject and authentication time.
+// PKCEAdvertised reports whether discovery listed S256 (connection test diagnostics only).
 type Proof struct {
 	Issuer, Subject string
 	AuthenticatedAt time.Time
+	PKCEAdvertised  bool
 }
 
 // Exchange validates signatures and the stricter Calaba claim profile after code exchange.
@@ -180,8 +205,11 @@ func (o *OIDC) Exchange(ctx context.Context, c sqlc.WorkspaceIdentityConnection,
 		NBF      int64  `json:"nbf"`
 	}
 	now := o.now()
-	if id.Claims(&claims) != nil || id.Issuer != c.Issuer || id.Subject == "" || len(id.Subject) > 512 || !identitycrypto.EqualHash(id.Nonce, nonceHash) || (len(id.Audience) > 1 && claims.AZP != c.ClientID) || (claims.AZP != "" && claims.AZP != c.ClientID) || id.IssuedAt.IsZero() || id.IssuedAt.After(now.Add(time.Minute)) || !id.Expiry.After(now) || id.Expiry.Before(id.IssuedAt) || claims.NBF > now.Add(time.Minute).Unix() || claims.AuthTime <= 0 || (c.Provider == "entra" && claims.Tenant != c.TenantID) {
+	if id.Claims(&claims) != nil || id.Issuer != c.Issuer || id.Subject == "" || len(id.Subject) > 512 || !identitycrypto.EqualHash(id.Nonce, nonceHash) || (len(id.Audience) > 1 && claims.AZP != c.ClientID) || (claims.AZP != "" && claims.AZP != c.ClientID) || id.IssuedAt.IsZero() || id.IssuedAt.After(now.Add(time.Minute)) || !id.Expiry.After(now) || id.Expiry.Before(id.IssuedAt) || claims.NBF > now.Add(time.Minute).Unix() || claims.AuthTime < 0 || (c.Provider == "entra" && claims.Tenant != c.TenantID) {
 		return Proof{}, ErrInvalidProof
+	}
+	if claims.AuthTime == 0 {
+		return Proof{}, ErrAuthTimeMissing
 	}
 	auth := time.Unix(claims.AuthTime, 0)
 	// Skew may validate the token, but never extends internal proof deadlines.
@@ -191,5 +219,5 @@ func (o *OIDC) Exchange(ctx context.Context, c sqlc.WorkspaceIdentityConnection,
 	if auth.After(now) {
 		auth = now
 	}
-	return Proof{Issuer: id.Issuer, Subject: id.Subject, AuthenticatedAt: auth}, nil
+	return Proof{Issuer: id.Issuer, Subject: id.Subject, AuthenticatedAt: auth, PKCEAdvertised: p.pkceAdvertised}, nil
 }

@@ -48,34 +48,37 @@ func (s *Service) contentFree(ctx context.Context, ws uuid.UUID) bool {
 
 // PushTargets keeps the users a change of the meeting may be pushed to (CalDAV push enqueue):
 // a user whose calendar should hold the meeting needs its workspace identity policy to let the
-// content out now (mayDeliver); a removal carries no content and is always kept. A dependency
-// error keeps only the removals (best-effort: the next change or delivery decides again).
-func (s *Service) PushTargets(ctx context.Context, eventID uuid.UUID, users []uuid.UUID) ([]uuid.UUID, error) {
+// content out now (mayDeliver); a removal carries no content and is always kept. withheld are
+// the users the policy holds the change back from (their earlier copy is withdrawn and the
+// push catches up later). A dependency error returns no targets (best-effort: the next change
+// or delivery decides again).
+func (s *Service) PushTargets(ctx context.Context, eventID uuid.UUID, users []uuid.UUID) (targets, withheld []uuid.UUID, err error) {
 	ev, err := s.db.Q.GetEvent(ctx, eventID)
 	if db.IsNotFound(err) || err == nil && ev.CancelledAt != nil {
-		return users, nil
+		return users, nil, nil
 	}
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 	b, err := loadOne(ctx, s.db.Q, ev)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
-	out := make([]uuid.UUID, 0, len(users))
+	targets = make([]uuid.UUID, 0, len(users))
 	for _, u := range users {
 		if busyIn(b, u) {
 			ok, err := s.mayDeliver(ctx, u, ev.WorkspaceID)
 			if err != nil {
-				return nil, err
+				return nil, nil, err
 			}
 			if !ok {
+				withheld = append(withheld, u)
 				continue
 			}
 		}
-		out = append(out, u)
+		targets = append(targets, u)
 	}
-	return out, nil
+	return targets, withheld, nil
 }
 
 // changed tells Changed about the members involved in any of the states of one meeting

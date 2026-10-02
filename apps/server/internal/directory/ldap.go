@@ -62,7 +62,7 @@ func ObjectGUID(raw []byte) (uuid.UUID, error) {
 	return id, nil
 }
 
-// Validate rejects unapproved hosts, plain LDAP, filters, referrals and anonymous binds.
+// Validate rejects unapproved hosts, plain LDAP, request filters and anonymous binds.
 func (l *LDAP) Validate(c sqlc.WorkspaceDirectory) error {
 	u, err := url.Parse(c.Url)
 	if l == nil || err != nil || u.Scheme != "ldaps" || u.User != nil || u.Hostname() != c.Host || u.Port() != "636" && u.Port() != "" || u.RawQuery != "" || u.Fragment != "" || u.Path != "" || c.Port != 636 || c.Host != strings.ToLower(c.Host) || strings.HasSuffix(c.Host, ".") || c.BaseDn == "" || c.BindDn == "" {
@@ -144,12 +144,8 @@ func (l *LDAP) connect(ctx context.Context, c sqlc.WorkspaceDirectory) (*ldap.Co
 	if raw == nil || err != nil {
 		return nil, nil, ErrDirectory
 	}
-	roots, err := x509.SystemCertPool()
+	roots, err := trustAnchors(c.CaPem)
 	if err != nil {
-		_ = raw.Close()
-		return nil, nil, ErrDirectory
-	}
-	if c.CaPem != "" && !roots.AppendCertsFromPEM([]byte(c.CaPem)) {
 		_ = raw.Close()
 		return nil, nil, ErrDirectory
 	}
@@ -167,7 +163,30 @@ func (l *LDAP) connect(ctx context.Context, c sqlc.WorkspaceDirectory) (*ldap.Co
 	return conn, func() { stop(); _ = conn.Close() }, nil
 }
 
+// trustAnchors: an operator CA, when configured for the host, is the only trust anchor;
+// the public system pool must not also vouch for an internal directory host.
+func trustAnchors(caPEM string) (*x509.CertPool, error) {
+	if caPEM == "" {
+		return x509.SystemCertPool()
+	}
+	roots := x509.NewCertPool()
+	if !roots.AppendCertsFromPEM([]byte(caPEM)) {
+		return nil, ErrDirectory
+	}
+	return roots, nil
+}
+
+// userFilter selects AD user accounts; matchingRuleInChain is AD's transitive membership
+// rule (LDAP_MATCHING_RULE_IN_CHAIN), evaluated by the domain controller.
+const (
+	userFilter          = "(&(objectCategory=person)(objectClass=user))"
+	matchingRuleInChain = "1.2.840.113556.1.4.1941"
+	maxObjects          = 100000
+)
+
 // Scan returns a bounded complete snapshot; a failed page returns no usable records.
+// With allowed groups, a second paged search asks the domain controller for transitive
+// members (nested groups) of any allowed group; direct memberOf still counts.
 func (l *LDAP) Scan(ctx context.Context, c sqlc.WorkspaceDirectory, password string) ([]Object, error) {
 	ctx, cancel := context.WithTimeout(ctx, 120*time.Second)
 	defer cancel()
@@ -182,45 +201,83 @@ func (l *LDAP) Scan(ctx context.Context, c sqlc.WorkspaceDirectory, password str
 	if err = conn.Bind(c.BindDn, password); err != nil {
 		return nil, ErrDirectory
 	}
-	paging := ldap.NewControlPaging(500)
 	objects := make([]Object, 0)
-	seen := map[uuid.UUID]bool{}
+	index := map[uuid.UUID]int{}
+	err = pagedSearch(ctx, conn, c.BaseDn, userFilter, []string{"objectGUID", "userAccountControl", "memberOf"}, func(entry *ldap.Entry) error {
+		object, err := decode(entry, c.AllowedGroupDns)
+		if _, dup := index[object.GUID]; err != nil || dup || len(objects) >= maxObjects {
+			return ErrDirectory
+		}
+		index[object.GUID] = len(objects)
+		objects = append(objects, object)
+		return nil
+	})
+	if err != nil {
+		return nil, ErrDirectory
+	}
+	if len(c.AllowedGroupDns) == 0 {
+		return objects, nil
+	}
+	var nested strings.Builder
+	nested.WriteString("(&" + userFilter + "(|")
+	for _, dn := range c.AllowedGroupDns {
+		nested.WriteString("(memberOf:" + matchingRuleInChain + ":=" + ldap.EscapeFilter(dn) + ")")
+	}
+	nested.WriteString("))")
+	seen := 0
+	err = pagedSearch(ctx, conn, c.BaseDn, nested.String(), []string{"objectGUID"}, func(entry *ldap.Entry) error {
+		guid, err := ObjectGUID(entry.GetRawAttributeValue("objectGUID"))
+		if seen++; err != nil || seen > maxObjects {
+			return ErrDirectory
+		}
+		// An account created between the two searches is picked up by the next scan.
+		if i, ok := index[guid]; ok {
+			objects[i].Eligible = true
+		}
+		return nil
+	})
+	if err != nil {
+		return nil, ErrDirectory
+	}
+	return objects, nil
+}
+
+// pagedSearch runs one complete paged subtree search. Search continuation references
+// (referrals to other naming contexts, e.g. ForestDnsZones/DomainDnsZones when the base DN
+// is the domain root) are ignored, never followed to other hosts: the snapshot is the
+// approved host's own naming context. A referral result (the base DN itself elsewhere)
+// is still an error.
+func pagedSearch(ctx context.Context, conn *ldap.Conn, base, filter string, attributes []string, each func(*ldap.Entry) error) error {
+	paging := ldap.NewControlPaging(500)
 	cookies := map[string]bool{}
 	for {
 		if ctx.Err() != nil {
-			return nil, ErrDirectory
+			return ErrDirectory
 		}
-		request := ldap.NewSearchRequest(c.BaseDn, ldap.ScopeWholeSubtree, ldap.NeverDerefAliases, 0, 10, false, "(&(objectCategory=person)(objectClass=user))", []string{"objectGUID", "userAccountControl", "memberOf"}, []ldap.Control{paging})
+		request := ldap.NewSearchRequest(base, ldap.ScopeWholeSubtree, ldap.NeverDerefAliases, 0, 10, false, filter, attributes, []ldap.Control{paging})
 		result, err := conn.Search(request)
-		if err != nil || len(result.Referrals) > 0 {
-			return nil, ErrDirectory
+		if err != nil || len(result.Referrals) > 1000 {
+			return ErrDirectory
 		}
 		for _, entry := range result.Entries {
-			object, err := decode(entry, c.AllowedGroupDns)
-			if err != nil || seen[object.GUID] || len(objects) >= 100000 {
-				return nil, ErrDirectory
+			if err := each(entry); err != nil {
+				return err
 			}
-			seen[object.GUID] = true
-			objects = append(objects, object)
 		}
 		control := ldap.FindControl(result.Controls, ldap.ControlTypePaging)
 		next, ok := control.(*ldap.ControlPaging)
 		if !ok {
-			return nil, ErrDirectory
+			return ErrDirectory
 		}
 		if len(next.Cookie) == 0 {
-			break
+			return nil
 		}
-		if len(next.Cookie) > 4096 {
-			return nil, ErrDirectory
-		}
-		if cookies[string(next.Cookie)] {
-			return nil, ErrDirectory
+		if len(next.Cookie) > 4096 || cookies[string(next.Cookie)] {
+			return ErrDirectory
 		}
 		cookies[string(next.Cookie)] = true
 		paging.SetCookie(next.Cookie)
 	}
-	return objects, nil
 }
 func decode(entry *ldap.Entry, groups []string) (Object, error) {
 	if len(entry.DN) > 4096 || len(entry.GetAttributeValues("memberOf")) > 1000 {

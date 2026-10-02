@@ -584,10 +584,13 @@ func (s *Service) EventChanged(ctx context.Context, eventID uuid.UUID, users []u
 	if len(pushers) == 0 {
 		return
 	}
-	pushers, err := s.cal.PushTargets(ctx, eventID, pushers)
+	pushers, withheld, err := s.cal.PushTargets(ctx, eventID, pushers)
 	if err != nil {
 		slog.WarnContext(ctx, "caldav: enqueue push", "event_id", eventID, "err", err)
 		return
+	}
+	for _, u := range withheld {
+		s.withhold(ctx, u, eventID)
 	}
 	if len(pushers) == 0 {
 		return
@@ -660,7 +663,10 @@ func (s *Service) push(ctx context.Context, row sqlc.CaldavPush) bool {
 		return true
 	}
 	if errors.Is(err, calendar.ErrWithheld) {
-		drop() // the workspace identity policy keeps the meeting in Calab for now
+		// The workspace identity policy keeps the meeting in Calab for now: the earlier copy
+		// is withdrawn and the push catches up later (withheld.go).
+		drop()
+		s.withhold(ctx, row.UserID, row.EventID)
 		return false
 	}
 	msg := clipErr("push: " + err.Error())
@@ -738,6 +744,9 @@ func (s *Service) Run(ctx context.Context) {
 		}
 		if _, err := s.ProcessPushes(ctx); err != nil && ctx.Err() == nil {
 			slog.WarnContext(ctx, "caldav: pushes", "err", err)
+		}
+		if _, err := s.ProcessWithheld(ctx); err != nil && ctx.Err() == nil {
+			slog.WarnContext(ctx, "caldav: withheld", "err", err)
 		}
 	}
 }
