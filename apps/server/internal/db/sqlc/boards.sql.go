@@ -137,9 +137,10 @@ func (q *Queries) BoardTaskRoomIDs(ctx context.Context, boardID uuid.UUID) ([]uu
 
 const claimApprovalReminders = `-- name: ClaimApprovalReminders :many
 UPDATE task_approvers a SET reminders = a.reminders + 1, reminded_at = now()
-FROM tasks t JOIN board_statuses st ON st.id = t.status_id
+FROM tasks t JOIN board_statuses st ON st.id = t.status_id JOIN boards b ON b.id = t.board_id
 WHERE a.task_id = $1 AND a.user_id = ANY($2::uuid[])
   AND t.id = a.task_id AND t.archived_at IS NULL AND st.type NOT IN ('completed', 'cancelled')
+  AND b.disabled_features & 512 = 0
   AND a.state = 'pending' AND a.reminders < 3
   AND coalesce(a.reminded_at, a.requested_at) <= now() - interval '24 hours'
   AND NOT EXISTS (SELECT 1 FROM task_approvers r WHERE r.task_id = a.task_id AND r.state = 'rejected')
@@ -246,7 +247,7 @@ VALUES ($1, $2, $3, $4, $5,
         $6, $7,
         (SELECT coalesce(max(position) + 1, 0) FROM boards WHERE workspace_id = $1),
         $8)
-RETURNING id, workspace_id, name, key, emoji, icon_file_id, description, is_private, position, next_number, auto_archive_days, default_view_id, created_by, created_at, archived_at, restricted
+RETURNING id, workspace_id, name, key, emoji, icon_file_id, description, is_private, position, next_number, auto_archive_days, default_view_id, created_by, created_at, archived_at, restricted, category_id, disabled_features, estimate_scale
 `
 
 type CreateBoardParams struct {
@@ -289,6 +290,9 @@ func (q *Queries) CreateBoard(ctx context.Context, arg CreateBoardParams) (Board
 		&i.CreatedAt,
 		&i.ArchivedAt,
 		&i.Restricted,
+		&i.CategoryID,
+		&i.DisabledFeatures,
+		&i.EstimateScale,
 	)
 	return i, err
 }
@@ -642,6 +646,7 @@ const dueApprovalReminders = `-- name: DueApprovalReminders :many
 SELECT a.task_id, a.user_id FROM task_approvers a
 JOIN tasks t ON t.id = a.task_id AND t.archived_at IS NULL
 JOIN boards b ON b.id = t.board_id AND b.archived_at IS NULL
+    AND b.disabled_features & 512 = 0 -- BOARD_FEATURE_APPROVALS (9) off: no reminders (ADR-0058 §3)
 JOIN board_statuses st ON st.id = t.status_id AND st.type NOT IN ('completed', 'cancelled')
 WHERE a.state = 'pending' AND a.reminders < 3
   AND coalesce(a.reminded_at, a.requested_at) <= now() - interval '24 hours'
@@ -758,7 +763,7 @@ func (q *Queries) FilesAttachable(ctx context.Context, arg FilesAttachableParams
 }
 
 const getBoard = `-- name: GetBoard :one
-SELECT id, workspace_id, name, key, emoji, icon_file_id, description, is_private, position, next_number, auto_archive_days, default_view_id, created_by, created_at, archived_at, restricted FROM boards WHERE id = $1
+SELECT id, workspace_id, name, key, emoji, icon_file_id, description, is_private, position, next_number, auto_archive_days, default_view_id, created_by, created_at, archived_at, restricted, category_id, disabled_features, estimate_scale FROM boards WHERE id = $1
 `
 
 func (q *Queries) GetBoard(ctx context.Context, id uuid.UUID) (Board, error) {
@@ -781,6 +786,9 @@ func (q *Queries) GetBoard(ctx context.Context, id uuid.UUID) (Board, error) {
 		&i.CreatedAt,
 		&i.ArchivedAt,
 		&i.Restricted,
+		&i.CategoryID,
+		&i.DisabledFeatures,
+		&i.EstimateScale,
 	)
 	return i, err
 }
@@ -798,7 +806,8 @@ SELECT b.workspace_id,
        coalesce(mr.allows, '{}')::bigint[] AS role_allows,
        coalesce(mr.denies, '{}')::bigint[] AS role_denies,
        uo.allow AS user_allow, uo.deny AS user_deny,
-       (w.suspended_at IS NOT NULL)::boolean AS suspended
+       (w.suspended_at IS NOT NULL)::boolean AS suspended,
+       b.disabled_features
 FROM boards b
 JOIN workspaces w ON w.id = b.workspace_id
 LEFT JOIN workspace_members m ON m.workspace_id = b.workspace_id AND m.user_id = $1
@@ -823,26 +832,28 @@ type GetBoardAccessParams struct {
 }
 
 type GetBoardAccessRow struct {
-	WorkspaceID     uuid.UUID
-	IsPrivate       bool
-	Restricted      bool
-	Archived        bool
-	Role            *string
-	RoleIds         []uuid.UUID
-	RolePositions   []int32
-	RolePermissions []int64
-	RoleAllows      []int64
-	RoleDenies      []int64
-	UserAllow       *int64
-	UserDeny        *int64
-	Suspended       bool
+	WorkspaceID      uuid.UUID
+	IsPrivate        bool
+	Restricted       bool
+	Archived         bool
+	Role             *string
+	RoleIds          []uuid.UUID
+	RolePositions    []int32
+	RolePermissions  []int64
+	RoleAllows       []int64
+	RoleDenies       []int64
+	UserAllow        *int64
+	UserDeny         *int64
+	Suspended        bool
+	DisabledFeatures int64
 }
 
 // Task boards (ADR-0042). Task lists with filters are built dynamically in internal/boards
 // (TaskFilter → SQL); everything else is here.
 // Everything needed to compute a user's board bits, in one round trip: the membership (role
 // NULL = not a member), the member's roles lowest position first with each role's board
-// override (0/0 = none) and the user's own override.
+// override (0/0 = none), the user's own override and the disabled board features (ADR-0058 §3:
+// COMMENTS off makes the task rooms read-only).
 func (q *Queries) GetBoardAccess(ctx context.Context, arg GetBoardAccessParams) (GetBoardAccessRow, error) {
 	row := q.db.QueryRow(ctx, getBoardAccess, arg.UserID, arg.BoardID)
 	var i GetBoardAccessRow
@@ -860,12 +871,13 @@ func (q *Queries) GetBoardAccess(ctx context.Context, arg GetBoardAccessParams) 
 		&i.UserAllow,
 		&i.UserDeny,
 		&i.Suspended,
+		&i.DisabledFeatures,
 	)
 	return i, err
 }
 
 const getBoardForUpdate = `-- name: GetBoardForUpdate :one
-SELECT id, workspace_id, name, key, emoji, icon_file_id, description, is_private, position, next_number, auto_archive_days, default_view_id, created_by, created_at, archived_at, restricted FROM boards WHERE id = $1 FOR UPDATE
+SELECT id, workspace_id, name, key, emoji, icon_file_id, description, is_private, position, next_number, auto_archive_days, default_view_id, created_by, created_at, archived_at, restricted, category_id, disabled_features, estimate_scale FROM boards WHERE id = $1 FOR UPDATE
 `
 
 func (q *Queries) GetBoardForUpdate(ctx context.Context, id uuid.UUID) (Board, error) {
@@ -888,6 +900,9 @@ func (q *Queries) GetBoardForUpdate(ctx context.Context, id uuid.UUID) (Board, e
 		&i.CreatedAt,
 		&i.ArchivedAt,
 		&i.Restricted,
+		&i.CategoryID,
+		&i.DisabledFeatures,
+		&i.EstimateScale,
 	)
 	return i, err
 }
@@ -1575,7 +1590,7 @@ func (q *Queries) ListBoardViews(ctx context.Context, arg ListBoardViewsParams) 
 }
 
 const listBoards = `-- name: ListBoards :many
-SELECT id, workspace_id, name, key, emoji, icon_file_id, description, is_private, position, next_number, auto_archive_days, default_view_id, created_by, created_at, archived_at, restricted FROM boards WHERE workspace_id = $1 AND (archived_at IS NOT NULL) = $2::boolean
+SELECT id, workspace_id, name, key, emoji, icon_file_id, description, is_private, position, next_number, auto_archive_days, default_view_id, created_by, created_at, archived_at, restricted, category_id, disabled_features, estimate_scale FROM boards WHERE workspace_id = $1 AND (archived_at IS NOT NULL) = $2::boolean
 ORDER BY position, id
 `
 
@@ -1610,6 +1625,9 @@ func (q *Queries) ListBoards(ctx context.Context, arg ListBoardsParams) ([]Board
 			&i.CreatedAt,
 			&i.ArchivedAt,
 			&i.Restricted,
+			&i.CategoryID,
+			&i.DisabledFeatures,
+			&i.EstimateScale,
 		); err != nil {
 			return nil, err
 		}
@@ -2187,7 +2205,7 @@ func (q *Queries) SetApproverVote(ctx context.Context, arg SetApproverVoteParams
 const setBoardArchived = `-- name: SetBoardArchived :one
 UPDATE boards SET archived_at = CASE WHEN $1::boolean THEN now() ELSE NULL END
 WHERE id = $2
-RETURNING id, workspace_id, name, key, emoji, icon_file_id, description, is_private, position, next_number, auto_archive_days, default_view_id, created_by, created_at, archived_at, restricted
+RETURNING id, workspace_id, name, key, emoji, icon_file_id, description, is_private, position, next_number, auto_archive_days, default_view_id, created_by, created_at, archived_at, restricted, category_id, disabled_features, estimate_scale
 `
 
 type SetBoardArchivedParams struct {
@@ -2215,6 +2233,51 @@ func (q *Queries) SetBoardArchived(ctx context.Context, arg SetBoardArchivedPara
 		&i.CreatedAt,
 		&i.ArchivedAt,
 		&i.Restricted,
+		&i.CategoryID,
+		&i.DisabledFeatures,
+		&i.EstimateScale,
+	)
+	return i, err
+}
+
+const setBoardFeatures = `-- name: SetBoardFeatures :one
+UPDATE boards SET
+    disabled_features = coalesce($1, disabled_features),
+    estimate_scale    = coalesce($2, estimate_scale)
+WHERE id = $3
+RETURNING id, workspace_id, name, key, emoji, icon_file_id, description, is_private, position, next_number, auto_archive_days, default_view_id, created_by, created_at, archived_at, restricted, category_id, disabled_features, estimate_scale
+`
+
+type SetBoardFeaturesParams struct {
+	DisabledFeatures *int64
+	EstimateScale    *string
+	ID               uuid.UUID
+}
+
+// Board features (ADR-0058 §3): the disabled BoardFeature bit mask and the estimate scale.
+func (q *Queries) SetBoardFeatures(ctx context.Context, arg SetBoardFeaturesParams) (Board, error) {
+	row := q.db.QueryRow(ctx, setBoardFeatures, arg.DisabledFeatures, arg.EstimateScale, arg.ID)
+	var i Board
+	err := row.Scan(
+		&i.ID,
+		&i.WorkspaceID,
+		&i.Name,
+		&i.Key,
+		&i.Emoji,
+		&i.IconFileID,
+		&i.Description,
+		&i.IsPrivate,
+		&i.Position,
+		&i.NextNumber,
+		&i.AutoArchiveDays,
+		&i.DefaultViewID,
+		&i.CreatedBy,
+		&i.CreatedAt,
+		&i.ArchivedAt,
+		&i.Restricted,
+		&i.CategoryID,
+		&i.DisabledFeatures,
+		&i.EstimateScale,
 	)
 	return i, err
 }
@@ -2434,19 +2497,24 @@ SELECT t.id,
     (SELECT count(*) FROM tasks s JOIN board_statuses st ON st.id = s.status_id
         WHERE s.parent_id = t.id AND s.archived_at IS NULL AND st.type IN ('completed', 'cancelled'))::integer AS subtasks_done,
     (SELECT count(*) FROM messages m WHERE m.room_id = t.room_id AND m.deleted_at IS NULL)::integer AS comments,
-    (SELECT count(*) FROM task_attachments a WHERE a.task_id = t.id)::integer AS attachments
+    (SELECT count(*) FROM task_attachments a WHERE a.task_id = t.id)::integer AS attachments,
+    (SELECT count(*) FROM task_checklist_items ci WHERE ci.task_id = t.id)::integer AS checklist_total,
+    (SELECT count(*) FROM task_checklist_items ci WHERE ci.task_id = t.id AND ci.done)::integer AS checklist_done
 FROM tasks t WHERE t.id = ANY($1::uuid[])
 `
 
 type TaskCountsRow struct {
-	ID           uuid.UUID
-	Subtasks     int32
-	SubtasksDone int32
-	Comments     int32
-	Attachments  int32
+	ID             uuid.UUID
+	Subtasks       int32
+	SubtasksDone   int32
+	Comments       int32
+	Attachments    int32
+	ChecklistTotal int32
+	ChecklistDone  int32
 }
 
-// Per task: live subtasks and finished ones, live comments, attachments.
+// Per task: live subtasks and finished ones, live comments, attachments, checklist items and
+// done ones (ADR-0058 §2).
 func (q *Queries) TaskCounts(ctx context.Context, taskIds []uuid.UUID) ([]TaskCountsRow, error) {
 	rows, err := q.db.Query(ctx, taskCounts, taskIds)
 	if err != nil {
@@ -2462,6 +2530,8 @@ func (q *Queries) TaskCounts(ctx context.Context, taskIds []uuid.UUID) ([]TaskCo
 			&i.SubtasksDone,
 			&i.Comments,
 			&i.Attachments,
+			&i.ChecklistTotal,
+			&i.ChecklistDone,
 		); err != nil {
 			return nil, err
 		}
@@ -2537,7 +2607,7 @@ UPDATE boards SET
     default_view_id   = CASE WHEN $9::boolean THEN $10::uuid ELSE default_view_id END,
     restricted        = coalesce($11, restricted)
 WHERE id = $12
-RETURNING id, workspace_id, name, key, emoji, icon_file_id, description, is_private, position, next_number, auto_archive_days, default_view_id, created_by, created_at, archived_at, restricted
+RETURNING id, workspace_id, name, key, emoji, icon_file_id, description, is_private, position, next_number, auto_archive_days, default_view_id, created_by, created_at, archived_at, restricted, category_id, disabled_features, estimate_scale
 `
 
 type UpdateBoardParams struct {
@@ -2588,6 +2658,9 @@ func (q *Queries) UpdateBoard(ctx context.Context, arg UpdateBoardParams) (Board
 		&i.CreatedAt,
 		&i.ArchivedAt,
 		&i.Restricted,
+		&i.CategoryID,
+		&i.DisabledFeatures,
+		&i.EstimateScale,
 	)
 	return i, err
 }

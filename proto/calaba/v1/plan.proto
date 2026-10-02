@@ -34,6 +34,10 @@ message PlanLimits {
   uint32 cameras_per_room = 27;            // webcams at once in one voice room (caps camera_limit of the room / workspace); 0 = no plan limit
   bool caldav_disabled = 23;               // CalDAV sync is not part of the plan (Free); per user it works if any of their workspaces allows it
   bool musician_disabled = 28;             // musician mode (ADR-0052) is not part of the plan (Free): VoiceState.musician refused
+  bool checklists_disabled = 29;           // task checklists (ADR-0058 §5) are Team and above: writes refused, reading stays
+  bool board_webhooks_disabled = 30;       // board webhooks (ADR-0058 §5) are Business only: setup refused, delivery paused
+  // Removed flags (telephony, web apps, approvals per plan): never reuse their numbers.
+  reserved 24, 25, 26;
 }
 
 // The plan of a workspace as members see it (Workspace.plan).

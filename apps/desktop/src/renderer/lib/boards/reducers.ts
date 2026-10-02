@@ -1,4 +1,5 @@
-import type { Board, Task, TaskActivity } from '@calaba/protocol';
+import type { Board, BoardCategory, Task, TaskActivity, TaskChecklist } from '@calaba/protocol';
+import { putChecklist, putChecklists } from './checklists';
 import { byPosition } from './position';
 
 /**
@@ -19,9 +20,24 @@ export interface BoardsData {
   unread: Readonly<Record<string, string>>;
   /** Journal entries that arrived live, per task (the panel merges them with its loaded page). */
   activity: Readonly<Record<string, readonly TaskActivity[]>>;
+  /** Board categories by id (ADR-0058 §1; READY + BOARD_CATEGORY_*). */
+  categories: Readonly<Record<string, BoardCategory>>;
+  /** Task id → its checklists by position: only tasks opened in the panel (GET /tasks/{id}). */
+  checklists: Readonly<Record<string, readonly TaskChecklist[]>>;
+  /**
+   * Task id → checklist counters newer than the task object (TASK_CHECKLIST_* carry them without
+   * a TASK_UPDATE, ADR-0058 §2): the task object stays, so a toggle re-renders only the card's
+   * progress leaf. Dropped once a task with other counters arrives (then the task is newer).
+   */
+  checkCounts: Readonly<Record<string, CheckCounts>>;
 }
 
-export const EMPTY_DATA: BoardsData = { boards: {}, tasks: {}, columns: {}, roomTask: {}, unread: {}, activity: {} };
+export interface CheckCounts {
+  total: number;
+  done: number;
+}
+
+export const EMPTY_DATA: BoardsData = { boards: {}, tasks: {}, columns: {}, roomTask: {}, unread: {}, activity: {}, categories: {}, checklists: {}, checkCounts: {} };
 
 const EMPTY_IDS: readonly string[] = [];
 
@@ -96,12 +112,21 @@ export function setBoardTasks(d: BoardsData, boardId: string, list: readonly Tas
   const roomTask = { ...d.roomTask };
   const cols: Record<string, string[]> = {};
   const sorted = [...list].filter((t) => !t.archivedAt).sort(byPosition);
+  let counts = d.checkCounts;
   for (const t of sorted) {
+    counts = keepCounts(counts, d.tasks[t.id], t);
     tasks[t.id] = keepViewer(d.tasks[t.id], t);
     if (t.roomId) roomTask[t.roomId] = t.id;
     (cols[t.statusId] ??= []).push(t.id);
   }
-  return { tasks, roomTask, columns: { ...d.columns, [boardId]: cols } };
+  return { tasks, roomTask, columns: { ...d.columns, [boardId]: cols }, ...(counts !== d.checkCounts ? { checkCounts: counts } : {}) };
+}
+
+/** A task with other checklist counters than the stored one is newer than the override. */
+function keepCounts(counts: BoardsData['checkCounts'], prev: Task | undefined, next: Task): BoardsData['checkCounts'] {
+  if (!counts[next.id]) return counts;
+  if (prev && prev.checklistTotal === next.checklistTotal && prev.checklistDone === next.checklistDone) return counts;
+  return without(counts, next.id);
 }
 
 /** An unread task counted by the «Мои задачи» badge: open (not completed / cancelled). */
@@ -125,6 +150,8 @@ export function upsertTask(d: BoardsData, task: Task): Partial<BoardsData> {
   const prev = d.tasks[task.id];
   const next = keepViewer(prev, task);
   const out: Partial<BoardsData> = { tasks: { ...d.tasks, [task.id]: next } };
+  const cc = keepCounts(d.checkCounts, prev, next);
+  if (cc !== d.checkCounts) out.checkCounts = cc;
   if (next.roomId && d.roomTask[next.roomId] !== next.id) out.roomTask = { ...d.roomTask, [next.roomId]: next.id };
   // The badge counts what «Мои задачи» lists: open tasks only (a closed one keeps its own mark).
   const counts = countsUnread(next);
@@ -188,4 +215,79 @@ export function appendActivity(d: BoardsData, a: TaskActivity): Partial<BoardsDa
   const list = d.activity[a.taskId] ?? [];
   if (list.some((x) => x.id === a.id)) return {};
   return { activity: { ...d.activity, [a.taskId]: [...list, a] } };
+}
+
+// ------------------------------------------------------------------ board categories (ADR-0058 §1)
+
+/** READY: a workspace's categories replace what was known for it. */
+export function setWorkspaceCategories(d: BoardsData, workspaceId: string, list: readonly BoardCategory[]): Partial<BoardsData> {
+  const categories: Record<string, BoardCategory> = {};
+  for (const [id, c] of Object.entries(d.categories)) if (c.workspaceId !== workspaceId) categories[id] = c;
+  for (const c of list) categories[c.id] = c;
+  return { categories };
+}
+
+export function upsertCategory(d: BoardsData, c: BoardCategory): Partial<BoardsData> {
+  const prev = d.categories[c.id];
+  if (prev && prev.name === c.name && prev.position === c.position) return {};
+  return { categories: { ...d.categories, [c.id]: c } };
+}
+
+/** BOARD_CATEGORY_DELETE: its boards move to «без категории» (their BOARD_UPDATE follows). */
+export function removeCategory(d: BoardsData, categoryId: string): Partial<BoardsData> {
+  if (!d.categories[categoryId]) return {};
+  return { categories: without(d.categories, categoryId) };
+}
+
+// ------------------------------------------------------------------ checklists (ADR-0058 §2)
+
+function setCounts(d: BoardsData, taskId: string, total: number, done: number): Partial<BoardsData> {
+  const cur = d.checkCounts[taskId];
+  const t = d.tasks[taskId];
+  if (cur ? cur.total === total && cur.done === done : t && t.checklistTotal === total && t.checklistDone === done) return {};
+  return { checkCounts: { ...d.checkCounts, [taskId]: { total, done } } };
+}
+
+/** GET /tasks/{id}: the task's checklists (the panel shows them). */
+export function setChecklists(d: BoardsData, taskId: string, list: readonly TaskChecklist[]): Partial<BoardsData> {
+  const next = putChecklists(d.checklists[taskId], list);
+  return next === d.checklists[taskId] ? {} : { checklists: { ...d.checklists, [taskId]: next } };
+}
+
+/**
+ * TASK_CHECKLIST_UPDATE / a checklist answer / an optimistic change: the counters always, the
+ * checklist only for a task whose checklists are loaded (the store does not collect every
+ * checklist of every board).
+ */
+export function upsertChecklist(d: BoardsData, taskId: string, c: TaskChecklist | undefined, total: number, done: number): Partial<BoardsData> {
+  // A task nothing shows (its board not loaded): nothing to keep (as TASK_UPDATE, services/boards.ts).
+  if (!d.tasks[taskId] && !d.checklists[taskId]) return {};
+  const out = setCounts(d, taskId, total, done);
+  const list = d.checklists[taskId];
+  if (c && list) {
+    // An item moved to another checklist leaves its old one (that checklist's event may lag).
+    const ids = new Set(c.items.map((x) => x.id));
+    const others = list.map((x) => (x.id !== c.id && x.items.some((i) => ids.has(i.id)) ? { ...x, items: x.items.filter((i) => !ids.has(i.id)) } : x));
+    const base = others.some((x, i) => x !== list[i]) ? others : list;
+    const next = putChecklist(base, c);
+    if (next !== list) out.checklists = { ...d.checklists, [taskId]: next };
+  }
+  return out;
+}
+
+/** TASK_CHECKLIST_DELETE / DELETE answer. */
+export function removeChecklist(d: BoardsData, taskId: string, checklistId: string, total: number, done: number): Partial<BoardsData> {
+  if (!d.tasks[taskId] && !d.checklists[taskId]) return {};
+  const out = setCounts(d, taskId, total, done);
+  const list = d.checklists[taskId];
+  if (list?.some((c) => c.id === checklistId)) out.checklists = { ...d.checklists, [taskId]: list.filter((c) => c.id !== checklistId) };
+  return out;
+}
+
+/** The checklist counters a card shows: the newer override, else the task's own. */
+export function checkCountsOf(d: Pick<BoardsData, 'tasks' | 'checkCounts'>, taskId: string): CheckCounts {
+  const c = d.checkCounts[taskId];
+  if (c) return c;
+  const t = d.tasks[taskId];
+  return { total: t?.checklistTotal ?? 0, done: t?.checklistDone ?? 0 };
 }

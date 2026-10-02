@@ -1,15 +1,30 @@
+import * as ContextMenu from '@radix-ui/react-context-menu';
 import * as Dropdown from '@radix-ui/react-dropdown-menu';
 import type { Board } from '@calaba/protocol';
-import { Archive, ArchiveRestore, ChevronRight, Ellipsis, Inbox, Link2, Lock, Plus, Settings, Shield, SquareKanban, Trash2 } from 'lucide-react';
+import { Archive, ArchiveRestore, ArrowDown, ArrowUp, ChevronDown, ChevronRight, Ellipsis, FolderInput, FolderPlus, Inbox, Link2, Lock, Pencil, Plus, Settings, Shield, SquareKanban, Trash2 } from 'lucide-react';
 import { memo, useCallback, useEffect, useRef, useState, type PointerEvent as ReactPointerEvent, type ReactNode } from 'react';
 import { useShallow } from 'zustand/react/shallow';
 import { confirmAction } from '../../components/Confirm';
-import { Tip, cx } from '../../components/ui';
+import { Button, Field, Input, Modal, Tip, cx } from '../../components/ui';
 import { t } from '../../i18n';
 import { mayCreateBoards } from '../../lib/permissions';
-import { boardLink, copyText, listArchivedBoards, moveBoard, openBoard, removeBoard, restoreBoard } from '../../services/boards';
+import { boardLayout, layoutTokens } from '../../lib/boards/categories';
+import { categoryDropAt, roomDropAt, type Layout, type RoomTarget, type Section, type Slot } from '../../lib/roomOrder';
+import {
+  boardLink,
+  copyText,
+  createBoardCategory,
+  deleteBoardCategory,
+  listArchivedBoards,
+  moveBoardCategory,
+  moveBoardTo,
+  openBoard,
+  removeBoard,
+  renameBoardCategory,
+  restoreBoard,
+} from '../../services/boards';
 import { DeleteBoardDialog } from './BoardSettings';
-import { unreadCount, useBoards, workspaceBoards } from '../../stores/boards';
+import { unreadCount, useBoards, workspaceBoards, workspaceCategories } from '../../stores/boards';
 import { MY_TASKS, useBoardsUi } from '../../stores/boardsUi';
 import { useSession } from '../../stores/session';
 import { useMemberRoles } from '../../stores/workspaces';
@@ -18,38 +33,58 @@ import { RestrictedMark } from '../workspace/AccessLevel';
 import { hasBit, MANAGE_BOARD } from './model';
 
 /**
- * The room column in boards mode (ADR-0042 §5): «Мои задачи» on top, the workspace's boards
- * (emoji, name, my open tasks) in their order — dragged to reorder with MANAGE_BOARD (accent line,
- * Esc cancels), ⋯ → settings / access / link / archive — and «+ Доска» for CREATE_BOARDS (ADR-0048).
+ * The room column in boards mode (ADR-0042 §5, ADR-0058 §1): «Мои задачи» on top, the
+ * workspace's boards (emoji, name, my open tasks) — first those without a category, then the
+ * board categories (collapsible, collapsed state local). Boards are dragged to a new place or
+ * into another category with MANAGE_BOARD, categories among themselves with CREATE_BOARDS
+ * (accent line, Esc cancels; one request per drop). ⋯ → settings / access / category / link /
+ * archive; «+ Доска» and «Новая категория» for CREATE_BOARDS (ADR-0048). The list subscribes to
+ * one token array (useShallow): a task event re-renders nothing here.
  */
 export function BoardsList({ workspaceId }: { workspaceId: string }): ReactNode {
-  const ids = useBoards(useShallow((s) => workspaceBoards(s.boards, workspaceId).map((b) => b.id)));
   const me = useSession((s) => s.me?.user?.id ?? '');
-  // «+ Доска»: CREATE_BOARDS (ADR-0048).
+  // «+ Доска», categories: CREATE_BOARDS (ADR-0048).
   const creator = mayCreateBoards(useMemberRoles(workspaceId, me));
+  const activeBoard = useBoardsUi((s) => s.boardOf[workspaceId] ?? '');
+  const collapsed = useBoardsUi((s) => s.collapsedCats);
+  const tokens = useBoards(useShallow((s) => layoutTokens(boardLayout(workspaceBoards(s.boards, workspaceId), workspaceCategories(s.categories, workspaceId), creator), collapsed, activeBoard)));
+  const live = useBoards((s) => workspaceBoards(s.boards, workspaceId).length);
   const manageAny = useBoards((s) => workspaceBoards(s.boards, workspaceId).some((b) => hasBit(b.permissions, MANAGE_BOARD)));
   const list = useRef<HTMLDivElement>(null);
   const [drag, setDrag] = useState<string | null>(null);
   const [line, setLine] = useState<number | null>(null);
-  const press = useRef<{ id: string; y: number; started: boolean } | null>(null);
-  const target = useRef<number | null>(null);
+  const [newCat, setNewCat] = useState(false);
+  const press = useRef<{ kind: 'board' | 'cat'; id: string; y: number; started: boolean; layout: Layout } | null>(null);
+  const target = useRef<RoomTarget | { index: number } | null>(null);
   const suppress = useRef(false);
 
-  const measure = useCallback((y: number, id: string): void => {
+  const measure = useCallback((y: number): void => {
     const el = list.current;
-    if (!el) return;
+    const p = press.current;
+    if (!el || !p) return;
     const box = el.getBoundingClientRect();
-    const rows = [...el.querySelectorAll<HTMLElement>('[data-board-row]')];
-    let i = rows.findIndex((r) => {
-      const b = r.getBoundingClientRect();
-      return y < b.top + b.height / 2;
-    });
-    if (i < 0) i = rows.length;
-    const from = rows.findIndex((r) => r.dataset.boardRow === id);
-    target.current = i > from ? i - 1 : i;
-    const ref = rows[i]?.getBoundingClientRect() ?? rows[rows.length - 1]?.getBoundingClientRect();
-    if (!ref) return;
-    setLine((rows[i] ? ref.top : ref.bottom) - box.top);
+    const catOf = new Map<string, string | null>();
+    for (const c of p.layout) for (const id of c.rooms) catOf.set(id, c.categoryId);
+    const slots: Slot[] = [];
+    for (const n of el.querySelectorAll<HTMLElement>('[data-board-row], [data-bcat-header]')) {
+      const r = n.getBoundingClientRect();
+      if (n.dataset.bcatHeader) slots.push({ kind: 'header', id: n.dataset.bcatHeader, top: r.top, bottom: r.bottom });
+      else if (n.dataset.boardRow) slots.push({ kind: 'room', id: n.dataset.boardRow, categoryId: catOf.get(n.dataset.boardRow) ?? null, top: r.top, bottom: r.bottom });
+    }
+    let at: { lineY: number } | null;
+    if (p.kind === 'board') {
+      const d = roomDropAt(p.layout, slots, y, p.id);
+      if (d) target.current = { categoryId: d.categoryId, index: d.index };
+      at = d;
+    } else {
+      // A category section: its header down to the next header (or the last row).
+      const heads = slots.filter((x) => x.kind === 'header');
+      const sections: Section[] = heads.map((h, i) => ({ id: h.id, top: h.top, bottom: heads[i + 1]?.top ?? slots.at(-1)?.bottom ?? h.bottom }));
+      const d = categoryDropAt(sections, y, p.id);
+      if (d) target.current = { index: d.index };
+      at = d;
+    }
+    if (at) setLine(at.lineY - box.top + el.scrollTop);
   }, []);
 
   useEffect(() => {
@@ -61,7 +96,7 @@ export function BoardsList({ workspaceId }: { workspaceId: string }): ReactNode 
         p.started = true;
         setDrag(p.id);
       }
-      measure(e.clientY, p.id);
+      measure(e.clientY);
     };
     const end = (commit: boolean): void => {
       const p = press.current;
@@ -73,7 +108,9 @@ export function BoardsList({ workspaceId }: { workspaceId: string }): ReactNode 
       setDrag(null);
       setLine(null);
       target.current = null;
-      if (commit && to !== null) void moveBoard(workspaceId, p.id, to);
+      if (!commit || !to) return;
+      if (p.kind === 'board' && 'categoryId' in to) void moveBoardTo(workspaceId, p.id, to);
+      else if (p.kind === 'cat') void moveBoardCategory(workspaceId, p.id, to.index);
     };
     const up = (): void => end(true);
     const key = (e: KeyboardEvent): void => {
@@ -92,12 +129,27 @@ export function BoardsList({ workspaceId }: { workspaceId: string }): ReactNode 
     };
   }, [measure, workspaceId]);
 
-  const onPointerDown = useCallback((e: ReactPointerEvent, id: string) => {
-    if (e.button !== 0 || (e.target as HTMLElement).closest('[data-row-menu]')) return;
-    const b = useBoards.getState().boards[id];
-    if (!hasBit(b?.permissions, MANAGE_BOARD)) return;
-    press.current = { id, y: e.clientY, started: false };
-  }, []);
+  const layoutNow = useCallback((): Layout => {
+    const s = useBoards.getState();
+    return boardLayout(workspaceBoards(s.boards, workspaceId), workspaceCategories(s.categories, workspaceId), true);
+  }, [workspaceId]);
+
+  const onPointerDown = useCallback(
+    (e: ReactPointerEvent, id: string) => {
+      if (e.button !== 0 || (e.target as HTMLElement).closest('[data-row-menu]')) return;
+      const b = useBoards.getState().boards[id];
+      if (!hasBit(b?.permissions, MANAGE_BOARD)) return;
+      press.current = { kind: 'board', id, y: e.clientY, started: false, layout: layoutNow() };
+    },
+    [layoutNow],
+  );
+  const onCategoryPointerDown = useCallback(
+    (e: ReactPointerEvent, id: string) => {
+      if (e.button !== 0 || !creator || (e.target as HTMLElement).closest('input, [data-row-menu]')) return;
+      press.current = { kind: 'cat', id, y: e.clientY, started: false, layout: layoutNow() };
+    },
+    [creator, layoutNow],
+  );
 
   return (
     <div
@@ -116,19 +168,31 @@ export function BoardsList({ workspaceId }: { workspaceId: string }): ReactNode 
       <div className="flex h-7 items-center pl-2 pr-1 pt-2">
         <h2 className="min-w-0 flex-1 truncate text-micro font-semibold uppercase tracking-[0.04em] text-muted">{t('boards.boards')}</h2>
         {creator ? (
-          <Tip label={t('boards.newBoard')}>
-            <button type="button" aria-label={t('boards.newBoard')} onClick={() => useBoardsUi.getState().openSettings({ boardId: '', workspaceId })} className="grid size-6 place-items-center rounded-[var(--radius-icon)] text-muted hover:bg-hover hover:text-fg" data-testid="board-new">
-              <Plus className="size-4" aria-hidden />
-            </button>
-          </Tip>
+          <>
+            <Tip label={t('boards.cat.new')}>
+              <button type="button" aria-label={t('boards.cat.new')} onClick={() => setNewCat(true)} className="grid size-6 place-items-center rounded-[var(--radius-icon)] text-muted hover:bg-hover hover:text-fg" data-testid="board-category-new">
+                <FolderPlus className="size-4" aria-hidden />
+              </button>
+            </Tip>
+            <Tip label={t('boards.newBoard')}>
+              <button type="button" aria-label={t('boards.newBoard')} onClick={() => useBoardsUi.getState().openSettings({ boardId: '', workspaceId })} className="grid size-6 place-items-center rounded-[var(--radius-icon)] text-muted hover:bg-hover hover:text-fg" data-testid="board-new">
+                <Plus className="size-4" aria-hidden />
+              </button>
+            </Tip>
+          </>
         ) : null}
       </div>
       <div className="flex flex-col gap-px pt-0.5">
-        {ids.map((id) => (
-          <BoardRow key={id} id={id} workspaceId={workspaceId} dragging={drag === id} onPointerDown={onPointerDown} />
-        ))}
+        {tokens.map((tok) => {
+          const id = tok.slice(2);
+          return tok.startsWith('h:') ? (
+            <CategoryHeader key={tok} id={id} workspaceId={workspaceId} creator={creator} dragging={drag === id} onPointerDown={onCategoryPointerDown} />
+          ) : (
+            <BoardRow key={tok} id={id} workspaceId={workspaceId} dragging={drag === id} onPointerDown={onPointerDown} />
+          );
+        })}
       </div>
-      {ids.length === 0 ? (
+      {live === 0 ? (
         creator ? (
           <button
             type="button"
@@ -145,9 +209,165 @@ export function BoardsList({ workspaceId }: { workspaceId: string }): ReactNode 
           </p>
         )
       ) : null}
-      {creator || manageAny ? <ArchivedBoards workspaceId={workspaceId} live={ids.length} /> : null}
+      {creator || manageAny ? <ArchivedBoards workspaceId={workspaceId} live={live} /> : null}
       {line !== null ? <div aria-hidden className="pointer-events-none absolute inset-x-3 z-10 h-0.5 rounded-full bg-accent" style={{ top: Math.max(0, line - 1) }} /> : null}
+      {newCat ? <NewCategoryDialog workspaceId={workspaceId} onClose={() => setNewCat(false)} /> : null}
     </div>
+  );
+}
+
+/**
+ * A board category header (ADR-0058 §1): chevron + name, a click collapses it; with CREATE_BOARDS
+ * a double click renames in place, the context menu renames / moves / deletes, a drag reorders.
+ */
+const CategoryHeader = memo(function CategoryHeader({
+  id,
+  workspaceId,
+  creator,
+  dragging,
+  onPointerDown,
+}: {
+  id: string;
+  workspaceId: string;
+  creator: boolean;
+  dragging: boolean;
+  onPointerDown: (e: ReactPointerEvent, id: string) => void;
+}): ReactNode {
+  const name = useBoards((s) => s.categories[id]?.name ?? '');
+  const collapsed = useBoardsUi((s) => !!s.collapsedCats[id]);
+  const [editing, setEditing] = useState(false);
+  const order = (): string[] => workspaceCategories(useBoards.getState().categories, workspaceId).map((c) => c.id);
+  const step = (dir: -1 | 1): void => {
+    const at = order().indexOf(id);
+    if (at >= 0) void moveBoardCategory(workspaceId, id, at + dir);
+  };
+  const remove = async (): Promise<void> => {
+    if (await confirmAction(t('boards.cat.deleteTitle', { name }), t('boards.cat.deleteText'), t('common.delete'))) void deleteBoardCategory(id);
+  };
+  const header = (
+    <div data-bcat-header={id} onPointerDown={(e) => onPointerDown(e, id)} className={cx('group/bcat flex h-7 items-center pr-1 pt-1', dragging && 'opacity-40')} data-testid="board-category">
+      {editing ? (
+        <CategoryNameInput name={name} onDone={(v) => {
+          setEditing(false);
+          if (v !== null) void renameBoardCategory(id, v);
+        }} />
+      ) : (
+        <button
+          type="button"
+          onClick={() => useBoardsUi.getState().toggleCategory(id)}
+          onDoubleClick={creator ? () => setEditing(true) : undefined}
+          aria-expanded={!collapsed}
+          aria-label={collapsed ? t('shell.categoryExpand', { name }) : t('shell.categoryCollapse', { name })}
+          title={name}
+          className="flex h-6 min-w-0 flex-1 items-center gap-0.5 rounded-[4px] pl-0.5 text-left text-micro font-semibold uppercase tracking-[0.04em] text-muted transition-colors duration-[var(--motion-fast)] hover:text-fg"
+          data-testid="board-category-toggle"
+        >
+          <ChevronDown className={cx('size-3 shrink-0 transition-transform duration-[var(--motion-fast)]', collapsed && '-rotate-90')} strokeWidth={2.25} aria-hidden />
+          <span className="truncate">{name}</span>
+        </button>
+      )}
+    </div>
+  );
+  if (!creator) return header;
+  return (
+    <ContextMenu.Root modal={false}>
+      <ContextMenu.Trigger asChild>{header}</ContextMenu.Trigger>
+      <ContextMenu.Portal>
+        {/* No focus return to the header: it would blur (and end) the inline rename right away. */}
+        <ContextMenu.Content className={menuBox} onCloseAutoFocus={(e) => e.preventDefault()} data-testid="board-category-menu">
+          <ContextMenu.Item className={menuItem} onSelect={() => setEditing(true)}>
+            <Pencil className="size-4" aria-hidden /> {t('shell.categoryRename')}
+          </ContextMenu.Item>
+          <ContextMenu.Separator className={menuSeparator} />
+          <ContextMenu.Item className={menuItem} onSelect={() => step(-1)}>
+            <ArrowUp className="size-4" aria-hidden /> {t('shell.moveUp')}
+          </ContextMenu.Item>
+          <ContextMenu.Item className={menuItem} onSelect={() => step(1)}>
+            <ArrowDown className="size-4" aria-hidden /> {t('shell.moveDown')}
+          </ContextMenu.Item>
+          <ContextMenu.Separator className={menuSeparator} />
+          <ContextMenu.Item className={cx(menuItem, 'text-danger-text')} onSelect={() => void remove()}>
+            <Trash2 className="size-4" aria-hidden /> {t('shell.categoryDelete')}
+          </ContextMenu.Item>
+        </ContextMenu.Content>
+      </ContextMenu.Portal>
+    </ContextMenu.Root>
+  );
+});
+
+/** Inline rename: Enter or leaving the field saves (`onDone(name)`), Esc cancels (`onDone(null)`). */
+function CategoryNameInput({ name, onDone }: { name: string; onDone: (v: string | null) => void }): ReactNode {
+  const [value, setValue] = useState(name);
+  const finished = useRef(false);
+  const finish = (v: string | null): void => {
+    if (finished.current) return;
+    finished.current = true;
+    onDone(v === null ? null : v.trim() || null);
+  };
+  return (
+    <input
+      autoFocus
+      aria-label={t('shell.categoryName')}
+      value={value}
+      maxLength={100}
+      onChange={(e) => setValue(e.target.value)}
+      onFocus={(e) => e.currentTarget.select()}
+      onBlur={() => finish(value)}
+      onKeyDown={(e) => {
+        e.stopPropagation();
+        if (e.key === 'Enter') {
+          e.preventDefault();
+          finish(value);
+        } else if (e.key === 'Escape') {
+          e.preventDefault();
+          finish(null);
+        }
+      }}
+      className="h-6 min-w-0 flex-1 rounded-[4px] bg-[var(--color-fill)] px-1.5 text-micro font-semibold uppercase tracking-[0.04em] text-fg outline-none ring-1 ring-accent"
+      data-testid="board-category-name"
+    />
+  );
+}
+
+/** «Новая категория» (CREATE_BOARDS): goes on top of the categories. */
+function NewCategoryDialog({ workspaceId, onClose }: { workspaceId: string; onClose: () => void }): ReactNode {
+  const [name, setName] = useState('');
+  const [busy, setBusy] = useState(false);
+  const submit = async (): Promise<void> => {
+    const v = name.trim();
+    if (!v) return;
+    setBusy(true);
+    const c = await createBoardCategory(workspaceId, v);
+    setBusy(false);
+    if (c) onClose();
+  };
+  return (
+    <Modal
+      open
+      onClose={onClose}
+      title={t('boards.cat.new')}
+      footer={
+        <>
+          <Button variant="secondary" onClick={onClose}>
+            {t('common.cancel')}
+          </Button>
+          <Button busy={busy} disabled={!name.trim()} onClick={() => void submit()} data-testid="board-category-create">
+            {t('common.create')}
+          </Button>
+        </>
+      }
+    >
+      <form
+        onSubmit={(e) => {
+          e.preventDefault();
+          void submit();
+        }}
+      >
+        <Field label={t('shell.categoryName')}>
+          <Input autoFocus value={name} maxLength={100} onChange={(e) => setName(e.target.value)} data-testid="board-category-input" />
+        </Field>
+      </form>
+    </Modal>
   );
 }
 
@@ -219,6 +439,7 @@ const BoardRow = memo(function BoardRow({ id, workspaceId, dragging, onPointerDo
                 </Dropdown.Item>
               </>
             ) : null}
+            {manage ? <MoveToCategory id={id} workspaceId={workspaceId} /> : null}
             <Dropdown.Item className={menuItem} onSelect={() => copyText(boardLink(id), t('boards.linkCopied'))}>
               <Link2 className="size-4" aria-hidden /> {t('boards.copyLink')}
             </Dropdown.Item>
@@ -236,6 +457,38 @@ const BoardRow = memo(function BoardRow({ id, workspaceId, dragging, onPointerDo
     </div>
   );
 });
+
+/** «В категорию ›» of a board's menu (MANAGE_BOARD): the end of the chosen container. */
+function MoveToCategory({ id, workspaceId }: { id: string; workspaceId: string }): ReactNode {
+  const current = useBoards((s) => s.boards[id]?.categoryId ?? '');
+  const cats = useBoards(useShallow((s) => workspaceCategories(s.categories, workspaceId).map((c) => `${c.id}\u0000${c.name}`)));
+  if (!cats.length) return null;
+  const move = (categoryId: string): void => {
+    const s = useBoards.getState();
+    const n = workspaceBoards(s.boards, workspaceId).filter((b) => b.id !== id && (categoryId ? b.categoryId === categoryId : !b.categoryId || !s.categories[b.categoryId])).length;
+    void moveBoardTo(workspaceId, id, { categoryId: categoryId || null, index: n });
+  };
+  const options = [`\u0000${t('boards.cat.none')}`, ...cats];
+  return (
+    <Dropdown.Sub>
+      <Dropdown.SubTrigger className={cx(menuItem, 'data-[state=open]:not-data-[highlighted]:bg-hover')} data-testid="board-move-category">
+        <FolderInput className="size-4" aria-hidden /> <span className="flex-1">{t('boards.cat.moveTo')}</span> <ChevronRight className="size-4" aria-hidden />
+      </Dropdown.SubTrigger>
+      <Dropdown.Portal>
+        <Dropdown.SubContent className={cx(menuBox, 'w-56')} sideOffset={4} collisionPadding={16}>
+          {options.map((x) => {
+            const [cid = '', label = ''] = x.split('\u0000');
+            return (
+              <Dropdown.Item key={cid || 'none'} className={menuItem} disabled={cid === current} onSelect={() => move(cid)}>
+                {label}
+              </Dropdown.Item>
+            );
+          })}
+        </Dropdown.SubContent>
+      </Dropdown.Portal>
+    </Dropdown.Sub>
+  );
+}
 
 /**
  * «Архив» under the boards (ADR-0042 §3, MANAGE_BOARD): the archived boards the viewer manages

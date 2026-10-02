@@ -28,6 +28,21 @@ import { timestampFromMs, timestampMs, type Timestamp } from '@bufbuild/protobuf
 import {
   BoardPermissionsResponseSchema,
   BoardResponseSchema,
+  BoardCategoryResponseSchema,
+  BoardWebhookPingResponseSchema,
+  BoardWebhookResponseSchema,
+  ConvertChecklistItemResponseSchema,
+  CreateBoardCategoryRequestSchema,
+  CreateTaskChecklistItemRequestSchema,
+  CreateTaskChecklistRequestSchema,
+  ListBoardCategoriesResponseSchema,
+  SetBoardOrderRequestSchema,
+  SetBoardOrderResponseSchema,
+  SetBoardWebhookRequestSchema,
+  TaskChecklistResponseSchema,
+  UpdateBoardCategoryRequestSchema,
+  UpdateTaskChecklistItemRequestSchema,
+  UpdateTaskChecklistRequestSchema,
   BoardViewResponseSchema,
   CreateBoardLabelRequestSchema,
   CreateBoardMilestoneRequestSchema,
@@ -1551,7 +1566,7 @@ class MockImpl {
       .filter((r) => r.workspaceId === wsId && r.type !== RoomType.TASK && this.canView(r, userId))
       .sort((a, b) => a.position - b.position || a.id.localeCompare(b.id));
     const members = this.membersOf(wsId);
-    const boards = m && m.role !== WorkspaceRole.GUEST ? this.boards.snapshot(wsId, userId) : { boards: [], unreadTaskIds: [] };
+    const boards = m && m.role !== WorkspaceRole.GUEST ? this.boards.snapshot(wsId, userId) : { boards: [], unreadTaskIds: [], boardCategories: [] };
     return create(WorkspaceSnapshotSchema, {
       ...(ws ? { workspace: ws } : {}),
       role: m?.role ?? WorkspaceRole.UNSPECIFIED,
@@ -1575,6 +1590,7 @@ class MockImpl {
       activeEvents: m ? this.activeEvents(wsId, userId) : [],
       boards: boards.boards,
       unreadTaskIds: boards.unreadTaskIds,
+      boardCategories: boards.boardCategories,
     });
   }
 
@@ -6879,8 +6895,57 @@ class MockImpl {
     this.boardRoute('POST', '/api/boards/:id/restore', (c, me) => sendMsg(c.res, 200, BoardResponseSchema, { board: b().restoreBoard(c.params[0] ?? '', me) }));
     this.boardRoute('PUT', '/api/boards/:id/position', (c, me) => {
       const r = parseBody(c, SetBoardPositionRequestSchema);
-      sendMsg(c.res, 200, BoardResponseSchema, { board: b().moveBoard(c.params[0] ?? '', me, r.position) });
+      sendMsg(c.res, 200, BoardResponseSchema, { board: b().moveBoard(c.params[0] ?? '', me, r.position, r.categoryId) });
     });
+    // ADR-0058 §1: board categories and one-drop ordering.
+    this.boardRoute('GET', '/api/workspaces/:id/board-categories', (c, me) => sendMsg(c.res, 200, ListBoardCategoriesResponseSchema, { categories: b().listCategories(c.params[0] ?? '', me) }));
+    this.boardRoute('POST', '/api/workspaces/:id/board-categories', (c, me) => {
+      const r = parseBody(c, CreateBoardCategoryRequestSchema);
+      sendMsg(c.res, 201, BoardCategoryResponseSchema, { category: b().createCategory(c.params[0] ?? '', me, r) });
+    });
+    this.boardRoute('PATCH', '/api/board-categories/:id', (c, me) => {
+      const r = parseBody(c, UpdateBoardCategoryRequestSchema);
+      sendMsg(c.res, 200, BoardCategoryResponseSchema, { category: b().updateCategory(c.params[0] ?? '', me, r) });
+    });
+    this.boardRoute('DELETE', '/api/board-categories/:id', (c, me) => {
+      b().deleteCategory(c.params[0] ?? '', me);
+      noContent(c.res);
+    });
+    this.boardRoute('PUT', '/api/workspaces/:id/boards/order', (c, me) => {
+      const r = parseBody(c, SetBoardOrderRequestSchema);
+      sendMsg(c.res, 200, SetBoardOrderResponseSchema, b().setOrder(c.params[0] ?? '', me, r));
+    });
+    // ADR-0058 §4: the board webhook (people only — the mock has no bot tokens on these routes).
+    this.boardRoute('GET', '/api/boards/:id/webhook', (c, me) => sendMsg(c.res, 200, BoardWebhookResponseSchema, b().getWebhook(c.params[0] ?? '', me)));
+    this.boardRoute('PUT', '/api/boards/:id/webhook', (c, me) => {
+      const r = parseBody(c, SetBoardWebhookRequestSchema);
+      sendMsg(c.res, 200, BoardWebhookResponseSchema, b().setWebhook(c.params[0] ?? '', me, r));
+    });
+    this.boardRoute('DELETE', '/api/boards/:id/webhook', (c, me) => {
+      b().deleteWebhook(c.params[0] ?? '', me);
+      noContent(c.res);
+    });
+    this.boardRoute('POST', '/api/boards/:id/webhook/ping', (c, me) => sendMsg(c.res, 200, BoardWebhookPingResponseSchema, b().pingWebhook(c.params[0] ?? '', me)));
+    // ADR-0058 §2: checklists (TASK_CHECKLIST_* events, no TASK_UPDATE).
+    this.boardRoute('POST', '/api/tasks/:id/checklists', (c, me) => {
+      const r = parseBody(c, CreateTaskChecklistRequestSchema);
+      sendMsg(c.res, 201, TaskChecklistResponseSchema, b().createChecklist(c.params[0] ?? '', me, r));
+    });
+    this.boardRoute('PATCH', '/api/checklists/:id', (c, me) => {
+      const r = parseBody(c, UpdateTaskChecklistRequestSchema);
+      sendMsg(c.res, 200, TaskChecklistResponseSchema, b().updateChecklist(c.params[0] ?? '', me, r));
+    });
+    this.boardRoute('DELETE', '/api/checklists/:id', (c, me) => sendMsg(c.res, 200, TaskChecklistResponseSchema, b().deleteChecklist(c.params[0] ?? '', me)));
+    this.boardRoute('POST', '/api/checklists/:id/items', (c, me) => {
+      const r = parseBody(c, CreateTaskChecklistItemRequestSchema);
+      sendMsg(c.res, 201, TaskChecklistResponseSchema, b().addChecklistItem(c.params[0] ?? '', me, r));
+    });
+    this.boardRoute('PATCH', '/api/checklist-items/:id', (c, me) => {
+      const r = parseBody(c, UpdateTaskChecklistItemRequestSchema);
+      sendMsg(c.res, 200, TaskChecklistResponseSchema, b().updateChecklistItem(c.params[0] ?? '', me, r));
+    });
+    this.boardRoute('DELETE', '/api/checklist-items/:id', (c, me) => sendMsg(c.res, 200, TaskChecklistResponseSchema, b().deleteChecklistItem(c.params[0] ?? '', me)));
+    this.boardRoute('POST', '/api/checklist-items/:id/convert', (c, me) => sendMsg(c.res, 201, ConvertChecklistItemResponseSchema, b().convertChecklistItem(c.params[0] ?? '', me)));
     this.boardRoute('GET', '/api/boards/:id/permissions', (c, me) => {
       const board = b().getBoard(c.params[0] ?? '', me);
       if (!(board.permissions & MANAGE_BOARD)) throw forbidden('MANAGE_BOARD required');

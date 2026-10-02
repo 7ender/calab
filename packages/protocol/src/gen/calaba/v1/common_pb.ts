@@ -47,7 +47,10 @@ export type ApiError = Message<"calaba.v1.ApiError"> & {
    * by the organizer, "ADMISSION_QUEUE_FULL" = RATE_LIMITED when 50 guests already wait for
    * the room (ADR-0040); "NOTES_LIMIT" = CONFLICT on creating a 21st notes shelf and
    * "PERSONAL_QUOTA" = FILE_QUOTA_EXCEEDED of the uploader's personal quota in a shelf
-   * (ADR-0039). Absent otherwise.
+   * (ADR-0039); "FEATURE_DISABLED" = CONFLICT on setting a field of a board feature that is
+   * switched off on the board, with `field` (ADR-0058 §3); "BOARD_CATEGORY_LIMIT",
+   * "CHECKLIST_LIMIT", "CHECKLIST_ITEM_LIMIT" = CONFLICT on the 51st board category, the 11th
+   * checklist of a task, the 101st item of a checklist (ADR-0058). Absent otherwise.
    *
    * @generated from field: optional string reason = 4;
    */

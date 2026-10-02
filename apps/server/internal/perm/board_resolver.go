@@ -24,6 +24,9 @@ type BoardAccess struct {
 	Restricted  bool // boards.restricted (ADR-0048)
 	Archived    bool
 	Suspended   bool
+	// DisabledFeatures: boards.disabled_features, the BoardFeature bit mask switched off
+	// (ADR-0058 §3; bit = the enum value).
+	DisabledFeatures int64
 }
 
 // Board returns the user's access to a board, or ErrNoBoard when the board does not exist or
@@ -51,6 +54,7 @@ func (r *Resolver) Board(ctx context.Context, boardID, userID uuid.UUID) (BoardA
 				WorkspaceID: row.WorkspaceID, Role: m.Role, Member: m,
 				Bits:    ComputeBoard(m.Raw(), BoardScopeOf(m, row.IsPrivate, row.Restricted), ovs, override(row.UserAllow, row.UserDeny)),
 				Private: row.IsPrivate, Restricted: row.Restricted, Archived: row.Archived, Suspended: row.Suspended,
+				DisabledFeatures: row.DisabledFeatures,
 			}
 		}
 		r.mu.Lock()
@@ -86,7 +90,7 @@ func (r *Resolver) taskRoom(ctx context.Context, roomID, userID uuid.UUID) (Room
 	if err != nil {
 		return RoomAccess{}, err
 	}
-	bits := TaskRoom(b.Bits, ref.TaskArchived)
+	bits := TaskRoom(b.Bits, ref.TaskArchived, CommentsOff(b.DisabledFeatures))
 	if b.Archived || bits == 0 {
 		// A member who cannot see the board: the room exists but shows nothing (404 upstream).
 		return RoomAccess{WorkspaceID: b.WorkspaceID, Role: b.Role, Member: b.Member, Task: true, TaskID: ref.TaskID, BoardID: ref.BoardID}, nil

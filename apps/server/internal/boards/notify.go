@@ -195,4 +195,5 @@ func (s *Service) TaskHook(ctx context.Context, acc perm.RoomAccess, msg sqlc.Me
 		return
 	}
 	s.publishTask(ctx, acc.TaskID, c.notices)
+	s.TaskCommentHook(ctx, acc, "created", msg, msg.AuthorID)
 }

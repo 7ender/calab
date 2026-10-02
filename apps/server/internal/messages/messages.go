@@ -47,6 +47,9 @@ type Handlers struct {
 	// TaskHook runs after a message is posted (or forwarded) into a task's comment room
 	// (ADR-0042): subscriptions, notifications, TASK_UPDATE; nil = none.
 	TaskHook func(ctx context.Context, acc perm.RoomAccess, msg sqlc.Message)
+	// TaskCommentHook runs after a comment of a task room is edited or deleted (kind "updated" /
+	// "deleted"; actor = who did it): the board webhook (ADR-0058 §4); nil = none.
+	TaskCommentHook func(ctx context.Context, acc perm.RoomAccess, kind string, msg sqlc.Message, actor uuid.UUID)
 }
 
 // NewHandlers creates the message handlers.
@@ -624,6 +627,7 @@ func (h *Handlers) update(w http.ResponseWriter, r *http.Request) error {
 		return httpx.Validation("content", "content must be at most 4000 characters")
 	}
 	var out []*v1.Message
+	var edited sqlc.Message
 	err = h.db.Tx(r.Context(), func(q *sqlc.Queries) error {
 		upd, err := q.UpdateMessageContent(r.Context(), sqlc.UpdateMessageContentParams{ID: m.ID, Content: content, SetKeyboard: req.InlineKeyboard != nil, InlineKeyboard: keyboard})
 		if db.IsNotFound(err) {
@@ -632,6 +636,7 @@ func (h *Handlers) update(w http.ResponseWriter, r *http.Request) error {
 		if err != nil {
 			return err
 		}
+		edited = upd
 		if out, err = withAttachments(r.Context(), q, []sqlc.Message{upd}); err != nil {
 			return err
 		}
@@ -651,6 +656,9 @@ func (h *Handlers) update(w http.ResponseWriter, r *http.Request) error {
 	rooms.Publish(r.Context(), h.events, acc, &v1.DispatchEvent{Event: &v1.DispatchEvent_MessageUpdate{
 		MessageUpdate: &v1.MessageUpdate{WorkspaceId: rooms.WorkspaceIDString(acc), Message: forEvent(out[0])},
 	}})
+	if acc.Task && h.TaskCommentHook != nil {
+		h.TaskCommentHook(r.Context(), acc, "updated", edited, uid(r))
+	}
 	httpx.Write(w, http.StatusOK, &v1.UpdateMessageResponse{Message: out[0]})
 	return nil
 }
@@ -683,6 +691,9 @@ func (h *Handlers) delete(w http.ResponseWriter, r *http.Request) error {
 	rooms.Publish(r.Context(), h.events, acc, &v1.DispatchEvent{Event: &v1.DispatchEvent_MessageDelete{
 		MessageDelete: &v1.MessageDelete{WorkspaceId: rooms.WorkspaceIDString(acc), RoomId: m.RoomID.String(), MessageId: m.ID.String()},
 	}})
+	if acc.Task && h.TaskCommentHook != nil {
+		h.TaskCommentHook(r.Context(), acc, "deleted", m, uid(r))
+	}
 	httpx.NoContent(w)
 	return nil
 }

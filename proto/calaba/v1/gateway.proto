@@ -264,6 +264,13 @@ message DispatchEvent {
     WorkspaceAppDelete workspace_app_delete = 85;
     // Session-specific identity status; never broadcast connection configuration.
     WorkspaceIdentityAccessUpdate workspace_identity_access_update = 86;
+    // Board categories (ADR-0058 §1): to every member except guests.
+    BoardCategoryCreate board_category_create = 87;
+    BoardCategoryUpdate board_category_update = 88;
+    BoardCategoryDelete board_category_delete = 89;
+    // Task checklists (ADR-0058 §2): to the board's viewers; no TASK_UPDATE for them.
+    TaskChecklistUpdate task_checklist_update = 90;
+    TaskChecklistDelete task_checklist_delete = 91;
   }
 }
 
@@ -375,6 +382,9 @@ message WorkspaceSnapshot {
   // Web apps of the workspace (ADR-0050), by position; empty for guests and bots. Changes come
   // as WORKSPACE_APP_UPSERT / WORKSPACE_APP_DELETE.
   repeated WorkspaceApp apps = 19;
+  // Board categories of the workspace (ADR-0058 §1), by position; empty for guests. Changes
+  // come as BOARD_CATEGORY_CREATE / UPDATE / DELETE.
+  repeated BoardCategory board_categories = 20;
 }
 
 message Ready {

@@ -163,6 +163,7 @@ func boardProto(b sqlc.Board, p boardParts, bits perm.Bits) *v1.Board {
 		OpenTasks: uint32(max(p.open[b.ID], 0)), MyOpenTasks: uint32(max(p.mine[b.ID], 0)), //nolint:gosec // counts
 		CreatedBy: idp(b.CreatedBy), CreatedAt: timestamppb.New(b.CreatedAt), ArchivedAt: tsp(b.ArchivedAt),
 		KeyLocked: b.NextNumber > 1, DefaultViewId: idp(b.DefaultViewID),
+		CategoryId: idp(b.CategoryID), DisabledFeatures: FeaturesProto(b.DisabledFeatures), EstimateScale: EstimateScaleFromDB(b.EstimateScale),
 	}
 	for _, s := range p.statuses[b.ID] {
 		out.Statuses = append(out.Statuses, status(s))
@@ -178,6 +179,20 @@ func boardProto(b sqlc.Board, p boardParts, bits perm.Bits) *v1.Board {
 	}
 	for _, o := range p.overrides[b.ID] {
 		out.PermissionOverrides = append(out.PermissionOverrides, BoardOverride(o))
+	}
+	return out
+}
+
+// Category converts a board category.
+func Category(c sqlc.BoardCategory) *v1.BoardCategory {
+	return &v1.BoardCategory{Id: c.ID.String(), WorkspaceId: c.WorkspaceID.String(), Name: c.Name, Position: c.Position}
+}
+
+// Categories converts board categories.
+func Categories(cs []sqlc.BoardCategory) []*v1.BoardCategory {
+	out := make([]*v1.BoardCategory, len(cs))
+	for i, c := range cs {
+		out[i] = Category(c)
 	}
 	return out
 }
@@ -409,8 +424,9 @@ func tasksProto(ctx context.Context, q *sqlc.Queries, ts []taskRow, viewer uuid.
 	}
 	for _, c := range cs {
 		t := out[idx[c.ID]]
-		t.SubtaskCount, t.SubtaskDone = uint32(max(c.Subtasks, 0)), uint32(max(c.SubtasksDone, 0))    //nolint:gosec // counts
-		t.CommentCount, t.AttachmentCount = uint32(max(c.Comments, 0)), uint32(max(c.Attachments, 0)) //nolint:gosec // counts
+		t.SubtaskCount, t.SubtaskDone = uint32(max(c.Subtasks, 0)), uint32(max(c.SubtasksDone, 0))            //nolint:gosec // counts
+		t.CommentCount, t.AttachmentCount = uint32(max(c.Comments, 0)), uint32(max(c.Attachments, 0))         //nolint:gosec // counts
+		t.ChecklistTotal, t.ChecklistDone = uint32(max(c.ChecklistTotal, 0)), uint32(max(c.ChecklistDone, 0)) //nolint:gosec // counts
 	}
 	if viewer != uuid.Nil {
 		subs, err := q.ListViewerSubscriptions(ctx, sqlc.ListViewerSubscriptionsParams{UserID: viewer, TaskIds: ids})

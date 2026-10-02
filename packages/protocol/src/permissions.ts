@@ -333,12 +333,13 @@ export function computeMemberBoardPermissions(
 
 /**
  * Bits in a task's comment room (Go: perm.TaskRoom): VIEW_BOARD → VIEW_ROOM | SEND_MESSAGES |
- * ATTACH_FILES (read-only for an archived task), EDIT_TASKS adds MANAGE_MESSAGES.
+ * ATTACH_FILES, EDIT_TASKS adds MANAGE_MESSAGES. Read-only for an archived task and on a board
+ * with the feature COMMENTS switched off (`commentsOff`, ADR-0058 §3: Board.disabledFeatures).
  */
-export function taskRoomPermissions(board: PermissionBits, archived = false): PermissionBits {
+export function taskRoomPermissions(board: PermissionBits, archived = false, commentsOff = false): PermissionBits {
   if (!(board & VIEW_BOARD)) return 0n;
   let p = VIEW_ROOM;
-  if (!archived) p |= SEND_MESSAGES | ATTACH_FILES;
+  if (!archived && !commentsOff) p |= SEND_MESSAGES | ATTACH_FILES;
   if (board & PERMISSION_BITS.EDIT_TASKS) p |= PERMISSION_BITS.MANAGE_MESSAGES;
   return p;
 }

@@ -1,6 +1,6 @@
 import { randomUUID } from 'node:crypto';
 import WebSocket from 'ws';
-import { create, toJson, type MessageInitShape } from '@bufbuild/protobuf';
+import { create, toJson, type DescMessage, type MessageInitShape } from '@bufbuild/protobuf';
 import {
   CalendarEventResponseSchema,
   CreateBadgeRequestSchema,
@@ -35,7 +35,24 @@ import {
   type Invite,
   type RoomRecording,
   type Slot,
+  BoardCategoryResponseSchema,
   BoardResponseSchema,
+  type BoardCategory,
+  type BoardFeature,
+  type EstimateScale,
+  type TaskChecklist,
+  ConvertChecklistItemResponseSchema,
+  CreateBoardCategoryRequestSchema,
+  CreateTaskChecklistItemRequestSchema,
+  CreateTaskChecklistRequestSchema,
+  ListBoardCategoriesResponseSchema,
+  SetBoardOrderRequestSchema,
+  SetBoardOrderResponseSchema,
+  TaskChecklistResponseSchema,
+  UpdateBoardCategoryRequestSchema,
+  UpdateBoardRequestSchema,
+  UpdateTaskChecklistItemRequestSchema,
+  UpdateTaskChecklistRequestSchema,
   BotWebhookResponseSchema,
   InlineKeyboardSchema,
   type BotCallback,
@@ -596,6 +613,49 @@ export class Bot extends Emitter<BotEvents> {
       (await this.rest.call(ListBoardsResponseSchema, 'GET', `/api/workspaces/${enc(workspaceId)}/boards`)).boards,
     get: async (boardId: string): Promise<Board> =>
       (await this.rest.call(BoardResponseSchema, 'GET', `/api/boards/${enc(boardId)}`)).board ?? fail('board'),
+    /**
+     * Switches board features and the estimate scale (MANAGE_BOARD, ADR-0058 §3). `disabledFeatures` is the whole
+     * list of switched-off features (an empty list enables everything); omit it to leave the set unchanged.
+     */
+    setFeatures: async (boardId: string, f: { disabledFeatures?: BoardFeature[]; estimateScale?: EstimateScale }): Promise<Board> =>
+      (
+        await this.rest.call(BoardResponseSchema, 'PATCH', `/api/boards/${enc(boardId)}`, {
+          json: Rest.body(UpdateBoardRequestSchema, {
+            setDisabledFeatures: f.disabledFeatures !== undefined,
+            disabledFeatures: f.disabledFeatures ?? [],
+            estimateScale: f.estimateScale,
+          }),
+        })
+      ).board ?? fail('board'),
+    /** One drag in one transaction: boards get a category ('' = none) and position, categories a position. */
+    setOrder: (
+      workspaceId: string,
+      o: { boards?: { boardId: string; categoryId?: string; position: number }[]; categories?: { categoryId: string; position: number }[] },
+    ): Promise<{ boards: Board[]; categories: BoardCategory[] }> =>
+      this.rest.call(SetBoardOrderResponseSchema, 'PUT', `/api/workspaces/${enc(workspaceId)}/boards/order`, {
+        json: Rest.body(SetBoardOrderRequestSchema, { boards: o.boards ?? [], categories: o.categories ?? [] }),
+      }),
+    /** Board categories (ADR-0058 §1; separate from room categories). Writes need CREATE_BOARDS. */
+    categories: {
+      list: async (workspaceId: string): Promise<BoardCategory[]> =>
+        (await this.rest.call(ListBoardCategoriesResponseSchema, 'GET', `/api/workspaces/${enc(workspaceId)}/board-categories`)).categories,
+      create: async (workspaceId: string, name: string, position?: number): Promise<BoardCategory> =>
+        (
+          await this.rest.call(BoardCategoryResponseSchema, 'POST', `/api/workspaces/${enc(workspaceId)}/board-categories`, {
+            json: Rest.body(CreateBoardCategoryRequestSchema, { name, position }),
+          })
+        ).category ?? fail('category'),
+      update: async (categoryId: string, p: { name?: string; position?: number }): Promise<BoardCategory> =>
+        (
+          await this.rest.call(BoardCategoryResponseSchema, 'PATCH', `/api/board-categories/${enc(categoryId)}`, {
+            json: Rest.body(UpdateBoardCategoryRequestSchema, p),
+          })
+        ).category ?? fail('category'),
+      /** Its boards move to «no category». */
+      delete: async (categoryId: string): Promise<void> => {
+        await this.rest.request('DELETE', `/api/board-categories/${enc(categoryId)}`);
+      },
+    },
   };
 
   readonly tasks = {
@@ -632,12 +692,45 @@ export class Bot extends Emitter<BotEvents> {
           json: Rest.body(SetAssigneesRequestSchema, { assignees }),
         })
       ).task ?? fail('task'),
+    /**
+     * Checklists of a task (ADR-0058 §2; ≤ 10 per task, ≤ 100 items each; Team plan and up). Rights as for task fields;
+     * every call returns the changed checklist and the task's counters.
+     */
+    checklists: {
+      create: (taskId: string, title: string, position?: number): Promise<ChecklistResult> =>
+        this.checklistCall('POST', `/api/tasks/${enc(taskId)}/checklists`, CreateTaskChecklistRequestSchema, { title, position }),
+      update: (checklistId: string, p: { title?: string; position?: number }): Promise<ChecklistResult> =>
+        this.checklistCall('PATCH', `/api/checklists/${enc(checklistId)}`, UpdateTaskChecklistRequestSchema, p),
+      /** The result has no checklist, only the new counters. */
+      delete: (checklistId: string): Promise<ChecklistResult> => this.checklistCall('DELETE', `/api/checklists/${enc(checklistId)}`),
+      addItem: (checklistId: string, text: string, position?: number): Promise<ChecklistResult> =>
+        this.checklistCall('POST', `/api/checklists/${enc(checklistId)}/items`, CreateTaskChecklistItemRequestSchema, { text, position }),
+      /** `done` ticks / unticks; `checklistId` moves the item to another checklist of the same task. */
+      updateItem: (itemId: string, p: { text?: string; done?: boolean; position?: number; checklistId?: string }): Promise<ChecklistResult> =>
+        this.checklistCall('PATCH', `/api/checklist-items/${enc(itemId)}`, UpdateTaskChecklistItemRequestSchema, p),
+      deleteItem: (itemId: string): Promise<ChecklistResult> => this.checklistCall('DELETE', `/api/checklist-items/${enc(itemId)}`),
+      /** Turns the item into a subtask titled with its text (needs the SUBTASKS feature; the task must not be a subtask). */
+      convertItem: async (itemId: string): Promise<{ task: Task; checklist?: TaskChecklist | undefined; checklistTotal: number; checklistDone: number }> => {
+        const r = await this.rest.call(ConvertChecklistItemResponseSchema, 'POST', `/api/checklist-items/${enc(itemId)}/convert`);
+        return { task: r.task ?? fail('task'), checklist: r.checklist, checklistTotal: r.checklistTotal, checklistDone: r.checklistDone };
+      },
+    },
     /** A comment: a message of the task's hidden room (reactions, files, replies as in a chat). */
     comment: async (task: Task | string, content: SendContent): Promise<Message> => {
       const roomId = typeof task === 'string' ? ((await this.tasks.get(task)).task?.roomId ?? fail('task')) : task.roomId;
       return this.send(roomId, content);
     },
   };
+
+  private async checklistCall<S extends DescMessage>(
+    method: string,
+    path: string,
+    schema?: S,
+    body?: MessageInitShape<S>,
+  ): Promise<ChecklistResult> {
+    const r = await this.rest.call(TaskChecklistResponseSchema, method, path, schema && body ? { json: Rest.body(schema, body) } : {});
+    return { checklist: r.checklist, checklistTotal: r.checklistTotal, checklistDone: r.checklistDone };
+  }
 
   // ---- calendar (ADR-0038, ADR-0051): the bot organizes meetings but never attends them ----
 
@@ -899,4 +992,11 @@ function toBlob(data: FileInput['data'], type?: string): Blob {
   if (data instanceof Blob) return data;
   const bytes = data instanceof Uint8Array ? data : new Uint8Array(data);
   return new Blob([bytes as Uint8Array<ArrayBuffer>], type ? { type } : {});
+}
+
+/** The changed checklist (unset after a delete) and the task's checklist counters. */
+export interface ChecklistResult {
+  checklist?: TaskChecklist | undefined;
+  checklistTotal: number;
+  checklistDone: number;
 }

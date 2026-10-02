@@ -365,7 +365,7 @@ func (a *Admin) log(w http.ResponseWriter, r *http.Request) error {
 	}
 	out := make([]*v1.PlanLogEntry, 0, len(rows))
 	for _, row := range rows {
-		l, err := ParseLimits(string(row.Limits), Limits{})
+		l, err := ParseLimits(string(row.Limits), CustomBase)
 		if err != nil {
 			slog.WarnContext(r.Context(), "invalid plan log limits", "id", row.ID, "err", err)
 		}

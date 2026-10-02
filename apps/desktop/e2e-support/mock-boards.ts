@@ -14,6 +14,13 @@ import { clone, create, type MessageInitShape } from '@bufbuild/protobuf';
 import { timestampFromMs, timestampMs, type Timestamp } from '@bufbuild/protobuf/wkt';
 import {
   ApproverState,
+  BoardCategorySchema,
+  BoardFeature,
+  BoardWebhookPauseReason,
+  BoardWebhookSchema,
+  EstimateScale,
+  TaskChecklistItemSchema,
+  TaskChecklistSchema,
   BoardSchema,
   BoardStatusSchema,
   BoardStatusType,
@@ -43,7 +50,10 @@ import {
   TaskSchema,
   WorkspaceRole,
   type Board,
+  type BoardCategory,
   type BoardView,
+  type BoardWebhook,
+  type TaskChecklist,
   type Message,
   type Role,
   type RoomPermissionOverride,
@@ -64,6 +74,7 @@ export const BOARD_BITS = VIEW_BOARD | CREATE_TASKS | EDIT_TASKS | MANAGE_BOARD;
 const ADMINISTRATOR = BigInt(Permission.ADMINISTRATOR);
 // ADR-0048: creating boards is its own bit.
 const CREATE_BOARDS = BigInt(Permission.CREATE_BOARDS);
+const MANAGE_INTEGRATIONS = BigInt(Permission.MANAGE_INTEGRATIONS);
 const VIEW_ROOM = BigInt(Permission.VIEW_ROOM);
 const SEND_MESSAGES = BigInt(Permission.SEND_MESSAGES);
 const ATTACH_FILES = BigInt(Permission.ATTACH_FILES);
@@ -340,6 +351,12 @@ export class BoardsMock {
   readonly activity: TaskActivity[] = [];
   /** Task room id → task id. */
   readonly roomTask = new Map<string, string>();
+  /** Board categories (ADR-0058 §1), by id. */
+  readonly categories = new Map<string, BoardCategory>();
+  /** Task id → its checklists (ADR-0058 §2). */
+  readonly checklists = new Map<string, TaskChecklist[]>();
+  /** Board id → its webhook and secret (ADR-0058 §4). */
+  readonly webhooks = new Map<string, { hook: BoardWebhook; secret: string }>();
   private seq = 0;
 
   constructor(private readonly host: BoardsHost) {}
@@ -348,9 +365,9 @@ export class BoardsMock {
    * Own id ranges (`80bN`), so boards never shift the fixture counters (rooms, messages) that
    * other tests rely on; the task room ids are `80b8`.
    */
-  private id(kind: 'board' | 'task' | 'status' | 'label' | 'milestone' | 'view' | 'activity' | 'room'): string {
+  private id(kind: 'board' | 'task' | 'status' | 'label' | 'milestone' | 'view' | 'activity' | 'room' | 'category' | 'checklist' | 'item'): string {
     this.seq += 1;
-    const code = { board: 0xb1, task: 0xb2, status: 0xb3, label: 0xb4, milestone: 0xb5, view: 0xb6, activity: 0xb7, room: 0xb8 }[kind];
+    const code = { board: 0xb1, task: 0xb2, status: 0xb3, label: 0xb4, milestone: 0xb5, view: 0xb6, activity: 0xb7, room: 0xb8, category: 0xb9, checklist: 0xba, item: 0xbb }[kind];
     return `00000000-0000-7000-80${code.toString(16)}-${this.seq.toString(16).padStart(12, '0')}`;
   }
 
@@ -424,8 +441,10 @@ export class BoardsMock {
     if (!t || !b) return 0n;
     const p = this.perms(b.board, userId);
     if (!(p & VIEW_BOARD)) return 0n;
-    if (t.task.archivedAt) return VIEW_ROOM;
-    return VIEW_ROOM | SEND_MESSAGES | ATTACH_FILES | (p & EDIT_TASKS ? MANAGE_MESSAGES : 0n);
+    // ADR-0058 §3: COMMENTS off — the room is read-only like an archived task's; moderation stays.
+    const manage = p & EDIT_TASKS ? MANAGE_MESSAGES : 0n;
+    if (t.task.archivedAt || b.board.disabledFeatures.includes(BoardFeature.COMMENTS)) return VIEW_ROOM | manage;
+    return VIEW_ROOM | SEND_MESSAGES | ATTACH_FILES | manage;
   }
 
   // ---------------------------------------------------------------- serialisation
@@ -453,6 +472,7 @@ export class BoardsMock {
     out.openTasks = c.open;
     out.myOpenTasks = o.event ? 0 : c.mine;
     out.keyLocked = rec.nextNumber > 1;
+    if (!out.estimateScale) out.estimateScale = EstimateScale.FIBONACCI;
     if (!(p & MANAGE_BOARD)) out.permissionOverrides = [];
     if (o.personal) out.views = [...out.views, ...(rec.personal.get(userId) ?? [])];
     return out;
@@ -473,14 +493,14 @@ export class BoardsMock {
   }
 
   /** READY: the boards a user sees and their unread tasks. */
-  snapshot(wsId: string, userId: string): { boards: Board[]; unreadTaskIds: string[] } {
+  snapshot(wsId: string, userId: string): { boards: Board[]; unreadTaskIds: string[]; boardCategories: BoardCategory[] } {
     const boards = [...this.boards.values()]
       .filter((r) => r.board.workspaceId === wsId && !r.board.archivedAt && this.perms(r.board, userId))
       .sort((a, b) => a.board.position - b.board.position)
       .map((r) => this.boardOut(r, userId));
     const visible = new Set(boards.map((b) => b.id));
     const unreadTaskIds = [...this.tasks.values()].filter((t) => visible.has(t.task.boardId) && t.unread.has(userId) && !t.task.archivedAt).map((t) => t.task.id);
-    return { boards, unreadTaskIds };
+    return { boards, unreadTaskIds, boardCategories: this.categoriesOf(wsId) };
   }
 
   // ---------------------------------------------------------------- events
@@ -618,6 +638,9 @@ export class BoardsMock {
       defaultViewId?: string | undefined;
       iconFileId?: string | undefined;
       restricted?: boolean | undefined;
+      setDisabledFeatures?: boolean;
+      disabledFeatures?: readonly BoardFeature[];
+      estimateScale?: EstimateScale | undefined;
     },
   ): Board {
     const rec = this.boardFor(id, userId);
@@ -641,6 +664,16 @@ export class BoardsMock {
     if (req.description !== undefined) b.description = req.description.slice(0, 2000);
     if (req.autoArchiveDays !== undefined) b.autoArchiveDays = Math.min(3650, req.autoArchiveDays);
     if (req.defaultViewId !== undefined) b.defaultViewId = req.defaultViewId;
+    // ADR-0058 §3: the disabled features (ascending, unique) and the estimate scale.
+    if (req.setDisabledFeatures) {
+      const list = [...new Set(req.disabledFeatures ?? [])].sort((x, y) => x - y);
+      if (list.some((f) => f < BoardFeature.ESTIMATE || f > BoardFeature.TIMELINE)) throw invalid('disabledFeatures', 'unknown feature');
+      b.disabledFeatures = list;
+    }
+    if (req.estimateScale !== undefined) {
+      if (req.estimateScale < EstimateScale.FIBONACCI || req.estimateScale > EstimateScale.TSHIRT) throw invalid('estimateScale', 'unknown scale');
+      b.estimateScale = req.estimateScale;
+    }
     // ADR-0048: a restricted board stays private until `restricted` is lifted (422 isPrivate).
     if (req.isPrivate === false && b.restricted && req.restricted !== false) throw invalid('isPrivate', 'lift restricted first');
     if (req.restricted === false) b.restricted = false;
@@ -694,10 +727,18 @@ export class BoardsMock {
     return this.boardOut(rec, userId, { personal: true });
   }
 
-  moveBoard(id: string, userId: string, index: number): Board {
+  moveBoard(id: string, userId: string, index: number, categoryId?: string): Board {
     const rec = this.boardFor(id, userId);
     this.need(rec, userId, MANAGE_BOARD);
-    const list = [...this.boards.values()].filter((r) => r.board.workspaceId === rec.board.workspaceId && !r.board.archivedAt).sort((a, b) => a.board.position - b.board.position);
+    // ADR-0058 §1: a category given moves the board there; the index counts that container.
+    if (categoryId !== undefined) {
+      const c = categoryId ? this.categories.get(categoryId) : undefined;
+      if (categoryId && c?.workspaceId !== rec.board.workspaceId) throw invalid('categoryId', 'unknown category');
+      rec.board.categoryId = categoryId;
+    }
+    const list = [...this.boards.values()]
+      .filter((r) => r.board.workspaceId === rec.board.workspaceId && !r.board.archivedAt && r.board.categoryId === rec.board.categoryId)
+      .sort((a, b) => a.board.position - b.board.position);
     const from = list.indexOf(rec);
     list.splice(from, 1);
     list.splice(Math.max(0, Math.min(index, list.length)), 0, rec);
@@ -995,6 +1036,7 @@ export class BoardsMock {
     const rec = this.boardFor(boardId, userId);
     this.need(rec, userId, CREATE_TASKS);
     const approverIds = [...(req.approverIds ?? [])];
+    this.requireTaskFeatures(rec.board, undefined, { ...req, approverIds });
     this.checkApprovers(rec, approverIds, req.approvalRequired ?? 0, 'approverIds', 'approvalRequired');
     const title = req.title.trim();
     if (!title || chars(title) > 200) throw invalid('title', 'title must be 1..200 characters');
@@ -1092,6 +1134,8 @@ export class BoardsMock {
     const room = this.host.state.rooms.get(t.task.roomId);
     const out = this.taskOut(t, userId, true);
     out.attachments = [...t.task.attachments];
+    // ADR-0058 §2: the checklists only here.
+    out.checklists = this.checklistList(id).map((c) => clone(TaskChecklistSchema, c));
     return {
       task: out,
       subtasks: subtasks.map((x) => this.taskOut(x, userId, false)),
@@ -1139,6 +1183,7 @@ export class BoardsMock {
     const log: Array<[string, JsonObject, JsonObject]> = [];
     let notice: { kind: TaskNoticeKind; to: Set<string> } | undefined;
     if (req.boardId !== undefined && req.boardId !== task.boardId) return this.moveToBoard(t, b, userId, req.boardId);
+    this.requireTaskFeatures(b.board, task, { ...req, ...(req.setLabels ? {} : { labelIds: undefined }) });
     if (req.title !== undefined) {
       const title = req.title.trim();
       if (!title || chars(title) > 200) throw invalid('title', 'title must be 1..200 characters');
@@ -1559,6 +1604,16 @@ export class BoardsMock {
       // Unread: CAL-3 for Анна (Борис commented), nothing else.
       review.unread.clear();
       t3.unread.add(anna);
+      // ADR-0058 (last, so the ids above stay): a checklist on CAL-3 (1 of 3 done — «1/3» on the
+      // card) and the board category «Продвижение» with «Маркетинг» in it.
+      const qa = this.createChecklist(t3.task.id, anna, { title: 'Проверка' }).checklist?.id ?? '';
+      this.addChecklistItem(qa, anna, { text: 'Windows 11 + колонки' });
+      this.addChecklistItem(qa, anna, { text: 'macOS, встроенные динамики' });
+      this.addChecklistItem(qa, anna, { text: 'Гарнитура Bluetooth' });
+      const first = this.checklists.get(t3.task.id)?.[0]?.items[0]?.id ?? '';
+      this.updateChecklistItem(first, boris, { done: true });
+      const promo = this.createCategory(ws, anna, { name: 'Продвижение' });
+      this.setOrder(ws, anna, { boards: [{ boardId: mk.board.id, categoryId: promo.id, position: 0 }], categories: [] });
     } finally {
       host.fanout = quiet;
       host.tick = clock;
@@ -1573,6 +1628,373 @@ export class BoardsMock {
   /** Test helper: an update as `actor` (e.g. another user renames a task during a call). */
   updateAs(actor: string, taskId: string, patch: Parameters<BoardsMock['updateTask']>[2]): Task {
     return this.taskOut(this.updateTask(taskId, actor, patch), actor, false);
+  }
+
+  // ---------------------------------------------------------------- ADR-0058: board categories
+
+  categoriesOf(wsId: string): BoardCategory[] {
+    return [...this.categories.values()].filter((c) => c.workspaceId === wsId).sort((a, b) => a.position - b.position || a.id.localeCompare(b.id));
+  }
+
+  /** BOARD_CATEGORY_* go to every member of the workspace except guests. */
+  private emitCategory(wsId: string, ev: EventInit['event']): void {
+    const members = new Set(this.host.state.members.filter((m) => m.workspaceId === wsId && m.role !== WorkspaceRole.GUEST).map((m) => m.userId));
+    this.host.fanout((u) => (members.has(u) ? ({ event: ev } as EventInit) : null));
+  }
+
+  listCategories(wsId: string, userId: string): BoardCategory[] {
+    const m = this.host.member(wsId, userId);
+    if (!m) throw notFound('workspace not found');
+    if (m.role === WorkspaceRole.GUEST) throw forbidden('boards are not available for guests');
+    return this.categoriesOf(wsId);
+  }
+
+  private categoryFor(id: string, userId: string): BoardCategory {
+    const c = this.categories.get(id);
+    if (!c || !this.host.member(c.workspaceId, userId)) throw notFound('category not found');
+    if (!this.mayCreateBoards(c.workspaceId, userId)) throw forbidden('CREATE_BOARDS required');
+    return c;
+  }
+
+  private renumberCategories(wsId: string, moved: BoardCategory, index: number): void {
+    const list = this.categoriesOf(wsId).filter((c) => c.id !== moved.id);
+    list.splice(Math.max(0, Math.min(index, list.length)), 0, moved);
+    list.forEach((c, i) => {
+      if (c.position === i && c !== moved) return;
+      c.position = i;
+      this.emitCategory(wsId, { case: 'boardCategoryUpdate', value: { category: c } });
+    });
+  }
+
+  createCategory(wsId: string, userId: string, req: { name: string; position?: number | undefined }): BoardCategory {
+    if (!this.host.member(wsId, userId)) throw notFound('workspace not found');
+    if (!this.mayCreateBoards(wsId, userId)) throw forbidden('CREATE_BOARDS required');
+    const name = req.name.trim();
+    if (!name || chars(name) > 100) throw invalid('name', 'name must be 1..100 characters');
+    const list = this.categoriesOf(wsId);
+    if (list.length >= 50) throw conflict('too many board categories', '', 'BOARD_CATEGORY_LIMIT');
+    const c = create(BoardCategorySchema, { id: this.id('category'), workspaceId: wsId, name, position: list.length });
+    this.categories.set(c.id, c);
+    this.emitCategory(wsId, { case: 'boardCategoryCreate', value: { category: c } });
+    if (req.position !== undefined && req.position < list.length) this.renumberCategories(wsId, c, req.position);
+    return c;
+  }
+
+  updateCategory(id: string, userId: string, req: { name?: string | undefined; position?: number | undefined }): BoardCategory {
+    const c = this.categoryFor(id, userId);
+    if (req.name !== undefined) {
+      const name = req.name.trim();
+      if (!name || chars(name) > 100) throw invalid('name', 'name must be 1..100 characters');
+      c.name = name;
+      this.emitCategory(c.workspaceId, { case: 'boardCategoryUpdate', value: { category: c } });
+    }
+    if (req.position !== undefined) this.renumberCategories(c.workspaceId, c, req.position);
+    return c;
+  }
+
+  /** Its boards go to «без категории» at the end (BOARD_UPDATE each). */
+  deleteCategory(id: string, userId: string): void {
+    const c = this.categoryFor(id, userId);
+    let end = [...this.boards.values()].filter((r) => r.board.workspaceId === c.workspaceId && !r.board.categoryId && !r.board.archivedAt).length;
+    for (const r of this.boards.values()) {
+      if (r.board.categoryId !== id) continue;
+      r.board.categoryId = '';
+      r.board.position = end++;
+      this.emitBoard(r, 'boardUpdate');
+    }
+    this.categories.delete(id);
+    this.emitCategory(c.workspaceId, { case: 'boardCategoryDelete', value: { workspaceId: c.workspaceId, categoryId: id } });
+  }
+
+  /** PUT /workspaces/{id}/boards/order: one drag & drop (MANAGE_BOARD per board, CREATE_BOARDS for categories). */
+  setOrder(wsId: string, userId: string, req: { boards: ReadonlyArray<{ boardId: string; categoryId: string; position: number }>; categories: ReadonlyArray<{ categoryId: string; position: number }> }): { boards: Board[]; categories: BoardCategory[] } {
+    if (!this.host.member(wsId, userId)) throw notFound('workspace not found');
+    if (req.categories.length && !this.mayCreateBoards(wsId, userId)) throw forbidden('CREATE_BOARDS required to order board categories');
+    const recs = req.boards.map((p, i) => {
+      const r = this.boards.get(p.boardId);
+      if (!r || r.board.workspaceId !== wsId || r.board.archivedAt || !this.perms(r.board, userId)) throw invalid(`boards[${i}].boardId`, 'board not found in this workspace');
+      if (!(this.perms(r.board, userId) & MANAGE_BOARD)) throw forbidden('MANAGE_BOARD required on every board placed');
+      if (p.categoryId && this.categories.get(p.categoryId)?.workspaceId !== wsId) throw invalid(`boards[${i}].categoryId`, 'unknown category');
+      return r;
+    });
+    req.categories.forEach((p, i) => {
+      if (this.categories.get(p.categoryId)?.workspaceId !== wsId) throw invalid(`categories[${i}].categoryId`, 'unknown category');
+    });
+    recs.forEach((r, i) => {
+      const p = req.boards[i];
+      if (!p || (r.board.categoryId === p.categoryId && r.board.position === p.position)) return;
+      r.board.categoryId = p.categoryId;
+      r.board.position = p.position;
+      this.emitBoard(r, 'boardUpdate');
+    });
+    for (const p of req.categories) {
+      const c = this.categories.get(p.categoryId);
+      if (!c || c.position === p.position) continue;
+      c.position = p.position;
+      this.emitCategory(wsId, { case: 'boardCategoryUpdate', value: { category: c } });
+    }
+    return { boards: this.snapshot(wsId, userId).boards, categories: this.categoriesOf(wsId) };
+  }
+
+  // ---------------------------------------------------------------- ADR-0058: features and plan flags
+
+  /** 409 FEATURE_DISABLED with the JSON field name, when `sets` and the feature is off. */
+  private requireFeature(b: Board, f: BoardFeature, field: string, sets: boolean): void {
+    if (sets && b.disabledFeatures.includes(f)) throw conflict(`the board feature ${BoardFeature[f]} is switched off`, field, 'FEATURE_DISABLED');
+  }
+
+  /** Every field a task write sets to a non-empty value, checked against the board's features. */
+  private requireTaskFeatures(b: Board, prev: Task | undefined, req: { priority?: TaskPriority | undefined; estimate?: number | undefined; startOn?: string | undefined; dueOn?: string | undefined; labelIds?: readonly string[] | undefined; milestoneId?: string | undefined; parentId?: string | undefined; approverIds?: readonly string[] | undefined }): void {
+    const sets = <T>(v: T | undefined, empty: (x: T) => boolean, same: (x: T) => boolean): boolean => v !== undefined && !empty(v) && !same(v);
+    this.requireFeature(b, BoardFeature.PRIORITY, 'priority', sets(req.priority, (x) => x === TaskPriority.NONE, (x) => prev?.priority === x));
+    this.requireFeature(b, BoardFeature.ESTIMATE, 'estimate', sets(req.estimate, (x) => x === 0, (x) => prev?.estimate === x));
+    this.requireFeature(b, BoardFeature.START_DATE, 'startOn', sets(req.startOn, (x) => x === '', (x) => prev?.startOn === x));
+    this.requireFeature(b, BoardFeature.DUE_DATE, 'dueOn', sets(req.dueOn, (x) => x === '', (x) => prev?.dueOn === x));
+    this.requireFeature(b, BoardFeature.LABELS, 'labelIds', sets(req.labelIds, (x) => x.length === 0, (x) => !!prev && x.join() === prev.labelIds.join()));
+    this.requireFeature(b, BoardFeature.MILESTONES, 'milestoneId', sets(req.milestoneId, (x) => x === '', (x) => prev?.milestoneId === x));
+    this.requireFeature(b, BoardFeature.SUBTASKS, 'parentId', sets(req.parentId, (x) => x === '', (x) => prev?.parentId === x));
+    this.requireFeature(b, BoardFeature.APPROVALS, 'approverIds', sets(req.approverIds, (x) => x.length === 0, () => false));
+    // The estimate scale (ADR-0058 §3): a new value outside it is 422.
+    if (req.estimate && req.estimate !== prev?.estimate) {
+      const scale = b.estimateScale === EstimateScale.LINEAR ? [1, 2, 3, 4, 5, 6, 7, 8, 9, 10] : b.estimateScale === EstimateScale.TSHIRT ? [1, 2, 3, 5, 8] : [1, 2, 3, 5, 8, 13, 21];
+      if (!scale.includes(req.estimate)) throw invalid('estimate', 'estimate outside the board scale');
+    }
+  }
+
+  private planFlags(wsId: string): { checklists: boolean; webhooks: boolean } {
+    const l = this.host.state.workspaces.get(wsId)?.plan?.limits;
+    return { checklists: !l?.checklistsDisabled, webhooks: !l?.boardWebhooksDisabled };
+  }
+
+  // ---------------------------------------------------------------- ADR-0058: checklists
+
+  private checklistList(taskId: string): TaskChecklist[] {
+    return [...(this.checklists.get(taskId) ?? [])].sort((a, b) => a.position - b.position);
+  }
+
+  /** A write to a task's checklists: the task's edit right, the plan (PLAN_LIMIT), the feature (unless deleting). */
+  private checklistWrite(taskId: string, userId: string, deleting = false): { t: TaskRec; b: BoardRec } {
+    const { t, b, p } = this.taskFor(taskId, userId);
+    if (t.task.archivedAt) throw conflict('the task is archived');
+    if (!this.canEdit(t.task, userId, p)) throw forbidden('cannot edit this task');
+    if (!this.planFlags(t.task.workspaceId).checklists) throw new BoardError(409, ErrorCode.CONFLICT, 'checklists is not included in the plan', '', 'PLAN_LIMIT', { used: 0, limit: 0 });
+    if (!deleting) this.requireFeature(b.board, BoardFeature.CHECKLISTS, 'checklists', true);
+    return { t, b };
+  }
+
+  private findChecklist(id: string): { taskId: string; c: TaskChecklist } {
+    for (const [taskId, list] of this.checklists) {
+      const c = list.find((x) => x.id === id);
+      if (c) return { taskId, c };
+    }
+    throw notFound('checklist not found');
+  }
+
+  private findItem(id: string): { taskId: string; c: TaskChecklist; index: number } {
+    for (const [taskId, list] of this.checklists) {
+      for (const c of list) {
+        const index = c.items.findIndex((x) => x.id === id);
+        if (index >= 0) return { taskId, c, index };
+      }
+    }
+    throw notFound('checklist item not found');
+  }
+
+  /** Recounts the task, journals, sends TASK_CHECKLIST_UPDATE / _DELETE (never TASK_UPDATE). */
+  private afterChecklist(t: TaskRec, b: BoardRec, actor: string, c: TaskChecklist | null, deletedId: string, after: JsonObject): { checklist?: TaskChecklist; checklistTotal: number; checklistDone: number } {
+    const all = this.checklistList(t.task.id);
+    t.task.checklistTotal = all.reduce((n, x) => n + x.items.length, 0);
+    t.task.checklistDone = all.reduce((n, x) => n + x.items.filter((i) => i.done).length, 0);
+    t.task.updatedAt = this.host.tick();
+    this.journal(t, actor, 'checklist', {}, after);
+    const sees = this.viewers(b);
+    const counts = { checklistTotal: t.task.checklistTotal, checklistDone: t.task.checklistDone };
+    const base = { workspaceId: t.task.workspaceId, boardId: t.task.boardId, taskId: t.task.id, ...counts };
+    if (c) {
+      c.items.sort((x, y) => x.position - y.position);
+      const out = clone(TaskChecklistSchema, c);
+      this.host.fanout((u) => (sees(u) ? { event: { case: 'taskChecklistUpdate', value: { ...base, checklist: out } } } : null));
+      return { checklist: out, ...counts };
+    }
+    this.host.fanout((u) => (sees(u) ? { event: { case: 'taskChecklistDelete', value: { ...base, checklistId: deletedId } } } : null));
+    return counts;
+  }
+
+  createChecklist(taskId: string, userId: string, req: { title: string; position?: number | undefined }): ReturnType<BoardsMock['afterChecklist']> {
+    const { t, b } = this.checklistWrite(taskId, userId);
+    const title = req.title.trim();
+    if (!title || chars(title) > 100) throw invalid('title', 'title must be 1..100 characters');
+    const list = this.checklistList(taskId);
+    if (list.length >= 10) throw conflict('too many checklists', '', 'CHECKLIST_LIMIT');
+    const c = create(TaskChecklistSchema, { id: this.id('checklist'), taskId, title, position: list.length, createdBy: userId, createdAt: this.host.tick() });
+    this.checklists.set(taskId, [...list, c]);
+    return this.afterChecklist(t, b, userId, c, '', { checklist_id: c.id, title, action: 'created' });
+  }
+
+  updateChecklist(id: string, userId: string, req: { title?: string | undefined; position?: number | undefined }): ReturnType<BoardsMock['afterChecklist']> {
+    const { taskId, c } = this.findChecklist(id);
+    const { t, b } = this.checklistWrite(taskId, userId);
+    if (req.title !== undefined) {
+      const title = req.title.trim();
+      if (!title || chars(title) > 100) throw invalid('title', 'title must be 1..100 characters');
+      c.title = title;
+    }
+    if (req.position !== undefined) {
+      const list = this.checklistList(taskId).filter((x) => x.id !== id);
+      list.splice(Math.max(0, Math.min(req.position, list.length)), 0, c);
+      list.forEach((x, i) => (x.position = i));
+    }
+    return this.afterChecklist(t, b, userId, c, '', { checklist_id: id, title: c.title, action: 'renamed' });
+  }
+
+  deleteChecklist(id: string, userId: string): ReturnType<BoardsMock['afterChecklist']> {
+    const { taskId, c } = this.findChecklist(id);
+    const { t, b } = this.checklistWrite(taskId, userId, true);
+    this.checklists.set(taskId, this.checklistList(taskId).filter((x) => x.id !== id));
+    return this.afterChecklist(t, b, userId, null, id, { checklist_id: id, title: c.title, action: 'deleted' });
+  }
+
+  addChecklistItem(id: string, userId: string, req: { text: string; position?: number | undefined }): ReturnType<BoardsMock['afterChecklist']> {
+    const { taskId, c } = this.findChecklist(id);
+    const { t, b } = this.checklistWrite(taskId, userId);
+    const text = req.text.trim();
+    if (!text || chars(text) > 500) throw invalid('text', 'text must be 1..500 characters');
+    if (c.items.length >= 100) throw conflict('too many items', '', 'CHECKLIST_ITEM_LIMIT');
+    const position = req.position ?? (c.items.at(-1)?.position ?? 0) + 1024;
+    const item = create(TaskChecklistItemSchema, { id: this.id('item'), checklistId: id, taskId, text, position, createdBy: userId, createdAt: this.host.tick() });
+    c.items.push(item);
+    return this.afterChecklist(t, b, userId, c, '', { checklist_id: id, title: c.title, item_id: item.id, text, action: 'item_added' });
+  }
+
+  updateChecklistItem(id: string, userId: string, req: { text?: string | undefined; done?: boolean | undefined; position?: number | undefined; checklistId?: string | undefined }): ReturnType<BoardsMock['afterChecklist']> {
+    const { taskId, c, index } = this.findItem(id);
+    const { t, b } = this.checklistWrite(taskId, userId);
+    const item = c.items[index];
+    if (!item) throw notFound('checklist item not found');
+    let action = 'item_edited';
+    let target = c;
+    if (req.checklistId !== undefined && req.checklistId !== c.id) {
+      const to = this.checklistList(taskId).find((x) => x.id === req.checklistId);
+      if (!to) throw invalid('checklistId', 'not a checklist of this task');
+      if (to.items.length >= 100) throw conflict('too many items', '', 'CHECKLIST_ITEM_LIMIT');
+      c.items.splice(index, 1);
+      item.checklistId = to.id;
+      to.items.push(item);
+      target = to;
+      action = 'item_moved';
+    }
+    if (req.text !== undefined) {
+      const text = req.text.trim();
+      if (!text || chars(text) > 500) throw invalid('text', 'text must be 1..500 characters');
+      item.text = text;
+    }
+    if (req.position !== undefined) {
+      item.position = req.position;
+      if (action === 'item_edited') action = 'item_moved';
+    }
+    if (req.done !== undefined && req.done !== item.done) {
+      item.done = req.done;
+      item.doneBy = req.done ? userId : '';
+      if (req.done) item.doneAt = this.host.tick();
+      else delete item.doneAt;
+      action = req.done ? 'item_done' : 'item_undone';
+    }
+    if (target !== c) {
+      // The source checklist changed too: its own event first.
+      const sees = this.viewers(b);
+      const out = clone(TaskChecklistSchema, c);
+      this.host.fanout((u) => (sees(u) ? { event: { case: 'taskChecklistUpdate', value: { workspaceId: t.task.workspaceId, boardId: t.task.boardId, taskId, checklist: out, checklistTotal: t.task.checklistTotal, checklistDone: t.task.checklistDone } } } : null));
+    }
+    return this.afterChecklist(t, b, userId, target, '', { checklist_id: target.id, title: target.title, item_id: id, text: item.text, action });
+  }
+
+  deleteChecklistItem(id: string, userId: string): ReturnType<BoardsMock['afterChecklist']> {
+    const { taskId, c, index } = this.findItem(id);
+    const { t, b } = this.checklistWrite(taskId, userId);
+    const [item] = c.items.splice(index, 1);
+    return this.afterChecklist(t, b, userId, c, '', { checklist_id: c.id, title: c.title, item_id: id, text: item?.text ?? '', action: 'item_removed' });
+  }
+
+  /** POST /checklist-items/{id}/convert: a subtask with the item's text; the item goes (SUBTASKS, not a subtask). */
+  convertChecklistItem(id: string, userId: string): { task: Task; checklist: TaskChecklist; checklistTotal: number; checklistDone: number } {
+    const { taskId, c, index } = this.findItem(id);
+    const { t, b } = this.checklistWrite(taskId, userId);
+    this.requireFeature(b.board, BoardFeature.SUBTASKS, 'parentId', true);
+    if (t.task.parentId) throw invalid('parentId', 'a subtask cannot have subtasks');
+    const item = c.items[index];
+    if (!item) throw notFound('checklist item not found');
+    const sub = this.createTask(t.task.boardId, userId, { title: item.text.slice(0, 200), description: '', statusId: '', priority: TaskPriority.NONE, assignees: [], labelIds: [], startOn: '', dueOn: '', estimate: 0, parentId: taskId, milestoneId: '', afterTaskId: '' });
+    c.items.splice(index, 1);
+    const r = this.afterChecklist(t, b, userId, c, '', { checklist_id: c.id, title: c.title, item_id: id, text: item.text, action: 'converted' });
+    return { task: this.taskOut(sub, userId, true), checklist: r.checklist ?? clone(TaskChecklistSchema, c), checklistTotal: r.checklistTotal, checklistDone: r.checklistDone };
+  }
+
+  // ---------------------------------------------------------------- ADR-0058: board webhook
+
+  /** MANAGE_BOARD on the board and MANAGE_INTEGRATIONS of the workspace (owner / ADMINISTRATOR: all). */
+  private hookFor(boardId: string, userId: string): BoardRec {
+    const rec = this.boardFor(boardId, userId);
+    this.need(rec, userId, MANAGE_BOARD);
+    const wsId = rec.board.workspaceId;
+    const m = this.host.member(wsId, userId);
+    const perms = m ? this.host.rolesOf(m).reduce((a, r) => a | r.permissions, 0n) : 0n;
+    if (this.host.ownerOf(wsId) !== userId && !(perms & (ADMINISTRATOR | MANAGE_INTEGRATIONS))) throw forbidden('MANAGE_INTEGRATIONS required');
+    return rec;
+  }
+
+  private hookOut(rec: BoardRec): BoardWebhook | undefined {
+    const h = this.webhooks.get(rec.board.id);
+    if (!h) return undefined;
+    const out = clone(BoardWebhookSchema, h.hook);
+    out.pausedReason = this.planFlags(rec.board.workspaceId).webhooks ? BoardWebhookPauseReason.UNSPECIFIED : BoardWebhookPauseReason.PLAN;
+    return out;
+  }
+
+  private hookPlan(rec: BoardRec): void {
+    if (!this.planFlags(rec.board.workspaceId).webhooks) throw new BoardError(409, ErrorCode.CONFLICT, 'board_webhooks is not included in the plan', '', 'PLAN_LIMIT', { used: 0, limit: 0 });
+  }
+
+  getWebhook(boardId: string, userId: string): { webhook?: BoardWebhook } {
+    const w = this.hookOut(this.hookFor(boardId, userId));
+    return w ? { webhook: w } : {};
+  }
+
+  setWebhook(boardId: string, userId: string, req: { url: string; secret: string }): { webhook?: BoardWebhook; secret: string } {
+    const rec = this.hookFor(boardId, userId);
+    this.hookPlan(rec);
+    const url = req.url.trim();
+    if (!/^https:\/\/[^\s/]+\.[^\s]+$/i.test(url) || /^https:\/\/(localhost|127\.|10\.|192\.168\.)/i.test(url) || url.length > 2048) throw invalid('url', 'https and a public address only');
+    const secret = req.secret || `whsec_${'0123456789abcdef'.repeat(3)}`.slice(0, 43);
+    if (chars(secret) < 16 || chars(secret) > 256) throw invalid('secret', 'secret must be 16..256 characters');
+    const now = this.host.tick();
+    const prev = this.webhooks.get(boardId)?.hook;
+    const hook = create(BoardWebhookSchema, { boardId, url, hasSecret: true, enabled: true, createdBy: prev?.createdBy ?? userId, createdAt: prev?.createdAt ?? now, updatedAt: now, ...(prev?.lastOkAt ? { lastOkAt: prev.lastOkAt } : {}) });
+    this.webhooks.set(boardId, { hook, secret });
+    const w = this.hookOut(rec);
+    return { ...(w ? { webhook: w } : {}), secret };
+  }
+
+  deleteWebhook(boardId: string, userId: string): void {
+    const rec = this.hookFor(boardId, userId);
+    if (!this.webhooks.delete(rec.board.id)) throw notFound('webhook not found');
+  }
+
+  /** A deterministic «ping»: the receiver answers 200 (a URL with «fail» — 500). */
+  pingWebhook(boardId: string, userId: string): { ok: boolean; status: number; error: string } {
+    const rec = this.hookFor(boardId, userId);
+    this.hookPlan(rec);
+    const h = this.webhooks.get(boardId);
+    if (!h) throw notFound('webhook not found');
+    const fail = /fail/i.test(h.hook.url);
+    if (fail) {
+      h.hook.failingSince ??= this.host.tick();
+      h.hook.lastError = 'HTTP 500';
+      return { ok: false, status: 500, error: 'HTTP 500' };
+    }
+    h.hook.lastOkAt = this.host.tick();
+    delete h.hook.failingSince;
+    h.hook.lastError = '';
+    return { ok: true, status: 200, error: '' };
   }
 
   /** Fixture timestamp helper for comments seeded by the server mock. */

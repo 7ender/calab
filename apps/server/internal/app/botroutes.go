@@ -353,8 +353,26 @@ var botRoutes = map[string]botAccess{
 	"PUT /api/tasks/{id}/read":                 botAllow,
 	"GET /api/tasks/{id}/activity":             botAllow,
 	"GET /api/t/{key}":                         botAllow,
-	"GET /api/me/tasks":                        botAllow,
-	"GET /api/workspaces/{id}/tasks/search":    botAllow,
+	// Boards 2.0 (ADR-0058): categories, checklists and features by the same bits as people;
+	// the board webhook carries a secret and exports data — people only.
+	"GET /api/workspaces/{id}/board-categories":  botAllow,
+	"POST /api/workspaces/{id}/board-categories": botAllow,
+	"PATCH /api/board-categories/{id}":           botAllow,
+	"DELETE /api/board-categories/{id}":          botAllow,
+	"PUT /api/workspaces/{id}/boards/order":      botAllow,
+	"POST /api/tasks/{id}/checklists":            botAllow,
+	"PATCH /api/checklists/{id}":                 botAllow,
+	"DELETE /api/checklists/{id}":                botAllow,
+	"POST /api/checklists/{id}/items":            botAllow,
+	"PATCH /api/checklist-items/{id}":            botAllow,
+	"DELETE /api/checklist-items/{id}":           botAllow,
+	"POST /api/checklist-items/{id}/convert":     botAllow,
+	"GET /api/boards/{id}/webhook":               botDeny,
+	"PUT /api/boards/{id}/webhook":               botDeny,
+	"DELETE /api/boards/{id}/webhook":            botDeny,
+	"POST /api/boards/{id}/webhook/ping":         botDeny,
+	"GET /api/me/tasks":                          botAllow,
+	"GET /api/workspaces/{id}/tasks/search":      botAllow,
 	// telephony (ADR-0046): settings, the connection test (MANAGE_INTEGRATIONS) and the journal
 	// (VIEW_JOURNALS, ADR-0048) are for people; bots
 	// with PLACE_CALLS place and end calls from a room whose call they are in

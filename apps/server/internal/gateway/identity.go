@@ -255,6 +255,10 @@ var eventScope = map[protoreflect.Name]bool{
 	"board_create": true, "board_update": true, "board_delete": true,
 	"task_create": true, "task_update": true, "task_delete": true, "task_activity": true,
 	"sip_call_update": true, "workspace_app_upsert": true, "workspace_app_delete": true,
+	// Boards 2.0 (ADR-0058): workspace channel; routed by routeBoards (members without guests /
+	// the board's viewers).
+	"board_category_create": true, "board_category_update": true, "board_category_delete": true,
+	"task_checklist_update": true, "task_checklist_delete": true,
 }
 
 // knownScopedEvent: the variant is explicitly classified as workspace-scoped; an absent

@@ -44,11 +44,19 @@ export const PLAN_LABEL: Record<Plan, MessageKey> = {
   [Plan.ENTERPRISE]: 'plan.name.enterprise',
 };
 
-/** Plan features that are not part of every plan (CalDAV, musician mode — ADR-0052: Team and above). */
-export type PlanFeature = 'caldav' | 'musician';
+/**
+ * Plan features that are not part of every plan: CalDAV, musician mode (ADR-0052), task
+ * checklists — Team and above; board webhooks — Business only (ADR-0058 §5).
+ */
+export type PlanFeature = 'caldav' | 'musician' | 'checklists' | 'boardWebhooks';
 
 /** The «disabled» flag of PlanLimits behind each feature. */
-const DISABLED_FLAG = { caldav: 'caldavDisabled', musician: 'musicianDisabled' } as const satisfies Record<PlanFeature, keyof PlanLimits>;
+const DISABLED_FLAG = {
+  caldav: 'caldavDisabled',
+  musician: 'musicianDisabled',
+  checklists: 'checklistsDisabled',
+  boardWebhooks: 'boardWebhooksDisabled',
+} as const satisfies Record<PlanFeature, keyof PlanLimits>;
 
 /**
  * Is the feature part of the plan? PlanLimits carries «disabled» flags, so an absent plan (an older
@@ -184,6 +192,9 @@ export function planErrorNotice(err: unknown, plan: Plan): PlanNotice | null {
     if (/\bvoice\b/i.test(msg)) return { text: t('plan.paidOnly'), contact: true };
     // CalDAV is a feature, not a count (ADR-0024, 30.09): used = limit = 0.
     if (/caldav/i.test(msg)) return { text: t('plan.caldavLocked'), contact: true };
+    // Board webhooks — Business only, checklists — Team and above (ADR-0058 §5): features too.
+    if (/webhook/i.test(msg)) return { text: t('plan.boardWebhooksLocked'), contact: true };
+    if (/checklist/i.test(msg)) return { text: t('plan.checklistsLocked'), contact: true };
     if (/\bmembers?\b/i.test(msg)) return { text: t('plan.membersFull', { plan: t(PLAN_LABEL[plan]), n }), contact: true };
     if (/\bboards?\b/i.test(msg)) return { text: t('plan.boardsFull', { plan: t(PLAN_LABEL[plan]), n }), contact: true };
     const key: PluralKey = /\bbots?\b/i.test(msg) ? 'bots.planLimit' : /pack/i.test(msg) ? 'stk.planPacks' : 'stk.planStickers';
@@ -217,6 +228,9 @@ export interface LimitsForm {
   stickerPacks: string;
   /** A tier (8 | 16 | 32 | 64) or 0 = no cap. */
   audioTierMaxKbps: number;
+  /** Feature flags of the plan (ADR-0058 §5): checklists off, board webhooks off. */
+  checklistsDisabled: boolean;
+  boardWebhooksDisabled: boolean;
 }
 
 /**
@@ -237,8 +251,14 @@ export function limitsFormFrom(plan: Plan, limits: PlanLimits | undefined): Limi
     bots: String(src ? src.bots : FREE_LIMITS.bots),
     stickerPacks: String(src ? src.stickerPacks : FREE_LIMITS.stickerPacks),
     audioTierMaxKbps: src ? src.audioTierMaxKbps : FREE_LIMITS.audioTierMaxKbps,
+    // ADR-0058 §5: a new CUSTOM plan has checklists and no board webhooks (the stored flags else).
+    checklistsDisabled: src ? src.checklistsDisabled : CUSTOM_DEFAULT_FLAGS.checklistsDisabled,
+    boardWebhooksDisabled: src ? src.boardWebhooksDisabled : CUSTOM_DEFAULT_FLAGS.boardWebhooksDisabled,
   };
 }
+
+/** The feature flags a CUSTOM plan starts with (ADR-0058 §5): checklists on, board webhooks off. */
+export const CUSTOM_DEFAULT_FLAGS = { checklistsDisabled: false, boardWebhooksDisabled: true } as const;
 
 /** Upper bounds of the numeric fields (sanity, the server validates too). */
 const MAX: Record<'roomMembers' | 'streamMaxFps' | 'cameraMaxFps' | 'streamsPerRoom' | 'storageMb' | 'members' | 'bots' | 'stickerPacks', number> = {
@@ -266,6 +286,8 @@ export interface PlanLimitsInit {
   bots: number;
   stickerPacks: number;
   audioTierMaxKbps: number;
+  checklistsDisabled: boolean;
+  boardWebhooksDisabled: boolean;
 }
 
 /**
@@ -293,6 +315,8 @@ export function limitsFromForm(f: LimitsForm): { limits: PlanLimitsInit } | { er
       bots: out.bots ?? 0,
       stickerPacks: out.stickerPacks ?? 0,
       audioTierMaxKbps: f.audioTierMaxKbps,
+      checklistsDisabled: f.checklistsDisabled,
+      boardWebhooksDisabled: f.boardWebhooksDisabled,
     },
   };
 }

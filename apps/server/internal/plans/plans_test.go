@@ -29,14 +29,14 @@ func TestParseLimitsEnv(t *testing.T) {
 		t.Fatalf("defaults: %+v %+v %+v %v", free, team, biz, err)
 	}
 	if team != (Limits{RoomMembers: 15, Members: 100, Bots: 5, Boards: 30, StorageMB: 300 * 1024,
-		StreamsPerRoom: 2, CamerasPerRoom: 10}) ||
+		StreamsPerRoom: 2, CamerasPerRoom: 10, BoardWebhooksDisabled: true}) ||
 		biz != (Limits{RoomMembers: 50, Members: 500, Bots: 20, Boards: 50, StorageMB: 1 << 20, StreamsPerRoom: 5, CamerasPerRoom: 25}) {
 		t.Fatalf("team / business defaults: %+v %+v", team, biz)
 	}
 
 	if free.RoomMembers != 5 || free.StreamMaxPreset != h720 || free.StreamMaxFPS != 15 || free.CameraMaxFPS != 15 ||
 		free.StreamsPerRoom != 1 || free.StorageMB != 5120 || team.StorageMB != 300<<10 || free.Members != 50 || free.AudioMaxKbps != 16 ||
-		free.Bots != 1 || free.StickerPacks != 1 {
+		free.Bots != 1 || free.StickerPacks != 1 || !free.ChecklistsDisabled || !free.BoardWebhooksDisabled {
 		t.Fatalf("free defaults: %+v", free)
 	}
 	// Keys override one by one; 0 / "" = no limit; presets are case-insensitive.
@@ -73,7 +73,8 @@ func TestParseLimitsEnv(t *testing.T) {
 
 func TestLimitsJSONRoundTrip(t *testing.T) {
 	l := Limits{RoomMembers: 7, StreamMaxPreset: orig, StreamMaxFPS: 30, CameraMaxPreset: h1080, CameraMaxFPS: 24,
-		StreamsPerRoom: 2, StorageMB: 5000, Members: 40, StickerPacks: 3, Stickers: 90, Bots: 3, AudioMaxKbps: 32, Boards: 2}
+		StreamsPerRoom: 2, StorageMB: 5000, Members: 40, StickerPacks: 3, Stickers: 90, Bots: 3, AudioMaxKbps: 32, Boards: 2,
+		ChecklistsDisabled: true, BoardWebhooksDisabled: true}
 	b, err := json.Marshal(l)
 	if err != nil {
 		t.Fatal(err)
@@ -87,7 +88,7 @@ func TestLimitsJSONRoundTrip(t *testing.T) {
 	}
 	// Unlimited limits serialize every key (a stored custom plan is complete).
 	b, _ = json.Marshal(Limits{})
-	if string(b) != `{"room_members":0,"stream_max_preset":"","stream_max_fps":0,"camera_max_preset":"","camera_max_fps":0,"streams_per_room":0,"cameras_per_room":0,"storage_mb":0,"members":0,"sticker_packs":0,"stickers":0,"bots":0,"audio_tier_max_kbps":0,"boards":0,"caldav_disabled":false,"musician_disabled":false}` {
+	if string(b) != `{"room_members":0,"stream_max_preset":"","stream_max_fps":0,"camera_max_preset":"","camera_max_fps":0,"streams_per_room":0,"cameras_per_room":0,"storage_mb":0,"members":0,"sticker_packs":0,"stickers":0,"bots":0,"audio_tier_max_kbps":0,"boards":0,"caldav_disabled":false,"musician_disabled":false,"checklists_disabled":false,"board_webhooks_disabled":false}` {
 		t.Fatalf("zero limits: %s", b)
 	}
 }
@@ -362,5 +363,29 @@ func TestAllowsMusician(t *testing.T) {
 	l, err := ParseLimits(`{"musician_disabled":false}`, DefaultFree)
 	if err != nil || l.MusicianDisabled {
 		t.Fatalf("override: %+v %v", l, err)
+	}
+}
+
+// ADR-0058 §5: a Custom row stored before the flags existed has webhooks off and checklists
+// on; a row that stores the flags gets them as stored.
+func TestCustomBoardFlagsDefault(t *testing.T) {
+	ctx := context.Background()
+	now := time.Date(2026, 10, 2, 12, 0, 0, 0, time.UTC)
+	f := &fakeRows{rows: map[uuid.UUID]*sqlc.WorkspacePlan{}}
+	s := testService(f, &now)
+	legacy, on, off := uuid.New(), uuid.New(), uuid.New()
+	f.rows[legacy] = &sqlc.WorkspacePlan{WorkspaceID: legacy, Plan: "custom", Limits: []byte(`{"room_members":12}`)}
+	f.rows[on] = &sqlc.WorkspacePlan{WorkspaceID: on, Plan: "custom",
+		Limits: []byte(`{"checklists_disabled":false,"board_webhooks_disabled":false}`)}
+	f.rows[off] = &sqlc.WorkspacePlan{WorkspaceID: off, Plan: "custom",
+		Limits: []byte(`{"checklists_disabled":true,"board_webhooks_disabled":true}`)}
+	for ws, want := range map[uuid.UUID][2]bool{legacy: {false, true}, on: {false, false}, off: {true, true}} {
+		l, err := s.Effective(ctx, ws)
+		if err != nil || l.ChecklistsDisabled != want[0] || l.BoardWebhooksDisabled != want[1] {
+			t.Fatalf("%v: checklists_disabled %v board_webhooks_disabled %v (%v), want %v", ws, l.ChecklistsDisabled, l.BoardWebhooksDisabled, err, want)
+		}
+	}
+	if l, _ := s.Effective(ctx, legacy); l.RoomMembers != 12 || l.Members != 0 {
+		t.Fatalf("legacy custom: %+v", l)
 	}
 }

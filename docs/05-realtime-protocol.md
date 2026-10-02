@@ -124,6 +124,10 @@ BOARD_DELETE                  { workspace_id, board_id, purged } — в архи
 TASK_CREATE / TASK_UPDATE     { task } — полная задача без ленты; TASK_UPDATE в user:<id> — с viewer_state (subscribed, muted, unread) и notice
 TASK_DELETE                   { workspace_id, board_id, task_id, purged } — архив задачи (или переезд на другую доску)
 TASK_ACTIVITY                 { workspace_id, activity } — одна запись журнала задачи
+BOARD_CATEGORY_CREATE / UPDATE { category } — категория досок (ADR-0058; 87/88), всем участникам пространства, кроме гостей; в READY — `WorkspaceSnapshot.board_categories`; перенос — UPDATE каждой сдвинутой
+BOARD_CATEGORY_DELETE         { workspace_id, category_id } — (89) её доски уходят в «без категории» хвостом, каждой — `BOARD_UPDATE`
+TASK_CHECKLIST_UPDATE         { workspace_id, board_id, task_id, checklist, checklist_total, checklist_done } — (90) чек-лист создан/изменён, целиком (≤ 100 пунктов), зрителям доски. **`TASK_UPDATE` на операции чек-листа не шлётся**: клиент патчит два счётчика задачи; рядом — обычный `TASK_ACTIVITY` (`kind = checklist`)
+TASK_CHECKLIST_DELETE         { workspace_id, board_id, task_id, checklist_id, checklist_total, checklist_done } — (91) чек-лист удалён, новые счётчики
 SIP_CALL_UPDATE               { call: SipCall } — телефонный звонок комнаты начат или сменил статус (ADR-0046); в READY — WorkspaceSnapshot.sip_calls (живые)
 WORKSPACE_APP_UPSERT          { app: WorkspaceApp } — веб-приложение пространства добавлено / изменено / перенесено (ADR-0050; перенумерация — по событию на каждое); в READY — WorkspaceSnapshot.apps
 WORKSPACE_APP_DELETE          { workspace_id, app_id } — приложение удалено: клиент убирает иконку, десктоп закрывает вид и чистит данные сайта
@@ -138,7 +142,7 @@ WORKSPACE_APP_DELETE          { workspace_id, app_id } — приложение 
 - `WORKSPACE_APP_*` (ADR-0050) — всем участникам пространства, кроме гостей и ботов; `WorkspaceSnapshot.apps` гостям и ботам пуст. Гость, ставший участником, получает список `GET …/apps` сам (клиент по `WORKSPACE_MEMBER_UPDATE` своей роли).
 - `VOICE_STATE_UPDATE` для невидимой получателю комнаты приходит с пустым `room_id` (пользователь выглядит не в голосе).
 - `EVENT_*` (ADR-0038) — организатору, участникам встречи и тем, кто видит её комнату; гостям — никогда. Адреса внешних участников: полностью — вовлечённым и тем, кто может менять встречу (`MANAGE_ROOM` в комнате / `MANAGE_WORKSPACE` без комнаты), остальным — маской `a***@домен`, ботам — пусто. `ROOM_EVENT_*` — видящим комнату, кроме гостей.
-- `BOARD_*`, `TASK_*` (ADR-0042) — тем, у кого `VIEW_BOARD` на доске (gateway держит доски с переопределениями и комнаты задач); `BOARD_CREATE/UPDATE` — с битами получателя, доступ к доске появился / пропал (переопределения доски, роли) → `BOARD_CREATE` / `BOARD_DELETE`. Комментарии — обычные `MESSAGE_*` / `MESSAGE_REACTION_*` / `TYPING_START` / `READ_RECEIPT` комнаты задачи, по `VIEW_BOARD`; гостям — никогда. Личное (`TASK_UPDATE` с `notice`: ASSIGNED / MENTIONED / COMMENT / STATUS / APPROVAL_REQUESTED / APPROVED / REJECTED, и `unread`) — в `user:<id>`. Согласование (ADR-0049) отдельных событий не имеет: `approvers` / `approval_required` / `approval_state` приходят в задаче `TASK_UPDATE`.
+- `BOARD_*`, `TASK_*` (ADR-0042) — тем, у кого `VIEW_BOARD` на доске (gateway держит доски с переопределениями и комнаты задач); `BOARD_CREATE/UPDATE` — с битами получателя, доступ к доске появился / пропал (переопределения доски, роли) → `BOARD_CREATE` / `BOARD_DELETE`. Комментарии — обычные `MESSAGE_*` / `MESSAGE_REACTION_*` / `TYPING_START` / `READ_RECEIPT` комнаты задачи, по `VIEW_BOARD`; гостям — никогда. Личное (`TASK_UPDATE` с `notice`: ASSIGNED / MENTIONED / COMMENT / STATUS / APPROVAL_REQUESTED / APPROVED / REJECTED, и `unread`) — в `user:<id>`. `BOARD_CATEGORY_*` (ADR-0058) — всем участникам, кроме гостей; `TASK_CHECKLIST_*` — зрителям доски (маршрутизация `gateway/boards.go: routeBoards`, классификация — `identity.go: eventScope`). Согласование (ADR-0049) отдельных событий не имеет: `approvers` / `approval_required` / `approval_state` приходят в задаче `TASK_UPDATE`.
 - Вступление в workspace → `WORKSPACE_CREATE { snapshot }` на все устройства пользователя; выход/исключение/удаление → `WORKSPACE_DELETE`.
 - `VOICE_STREAM_STOP.reason`: `ENDED` | `LIMIT_REACHED` (превышен `max_streams`, трек заглушён сервером) | `MODERATOR`.
 - События DM-комнат (`MESSAGE_*`, `MESSAGE_REACTION_*`, `TYPING_START`) идут не в `ws:<id>`, а в `user:<id>` обоим участникам, с пустым `workspace_id`; `TYPING_START` DM — только сессиям получателя с `SUBSCRIBE` на комнату. Так же — голос звонка DM (`VOICE_STATE_UPDATE`, `VOICE_STREAM_*`, `VOICE_CAMERA_STOP` с `room_id` = DM, ADR-0034) и `CALL_RING`/`CALL_STATE`: в пространства они не попадают.
@@ -264,6 +268,12 @@ POST   /api/event-rsvp { token }               публично: сохрани�
 GET    /api/workspaces/{id}/boards[?archived=1]     видимые доски (архив — с MANAGE_BOARD) → ListBoardsResponse; гость — 403
 POST   /api/workspaces/{id}/boards                  CreateBoardRequest {name, key?, emoji, is_private, description, template, icon_file_id} → 201 BoardResponse (MANAGE_WORKSPACE; 409 PLAN_LIMIT / BOARD_LIMIT / ключ занят)
 GET · PATCH /api/boards/{id}                         BoardResponse; PATCH — UpdateBoardRequest (MANAGE_BOARD; key — до первой задачи, иначе 409)
+                                                     PATCH (ADR-0058): + set_disabled_features / disabled_features[] (выключенные фичи доски), estimate_scale (FIBONACCI | LINEAR | TSHIRT); запись выключенной фичи — 409 FEATURE_DISABLED
+GET · POST /api/workspaces/{id}/board-categories     категории досок (ADR-0058): ListBoardCategoriesResponse / 201 BoardCategoryResponse (CREATE_BOARDS; ≤ 50 — 409 BOARD_CATEGORY_LIMIT)
+PATCH · DELETE /api/board-categories/{id}            UpdateBoardCategoryRequest {name?, position?}; DELETE → 204, доски в «без категории» (CREATE_BOARDS)
+PUT    /api/workspaces/{id}/boards/order             SetBoardOrderRequest {boards[{board_id, category_id, position}], categories[{category_id, position}]} → SetBoardOrderResponse; один drag = одна транзакция (MANAGE_BOARD на каждой доске, categories — CREATE_BOARDS; невидимая доска — 422)
+GET · PUT · DELETE /api/boards/{id}/webhook          вебхук доски (ADR-0058): BoardWebhookResponse; PUT {url, secret?} — секрет в ответе один раз; MANAGE_BOARD + MANAGE_INTEGRATIONS, Business (иначе 409 PLAN_LIMIT), боты — нет
+POST   /api/boards/{id}/webhook/ping                 синхронная доставка `ping` → BoardWebhookPingResponse {ok, status, error}; ≤ 1 раз в 10 с (429)
 DELETE /api/boards/{id}[?purge=1]                    204: в архив; purge — навсегда с задачами, комментариями и журналом (только люди)
 POST   /api/boards/{id}/restore                      из архива → 201 BoardResponse
 PUT    /api/boards/{id}/position {position}          новый индекс в списке (MANAGE_BOARD)
@@ -281,6 +291,11 @@ PATCH  /api/tasks/{id}                               UpdateTaskRequest (EDIT_TAS
 POST   /api/tasks/{id}/archive | restore             EDIT_TASKS или автор
 PUT    /api/tasks/{id}/assignees {assignees[]}       полный список, ровно один is_lead (не отмечен — первый)
 PUT    /api/tasks/{id}/relations {related_id, kind} · DELETE ?related_id&kind
+POST   /api/tasks/{id}/checklists {title, position?} чек-листы (ADR-0058): 201 TaskChecklistResponse {checklist, checklist_total, checklist_done}; ≤ 10 на задачу (409 CHECKLIST_LIMIT); права как у полей задачи
+PATCH · DELETE /api/checklists/{id}                  {title?, position?}; DELETE → ответ без checklist (счётчики)
+POST   /api/checklists/{id}/items {text, position?}  201; ≤ 100 на чек-лист (409 CHECKLIST_ITEM_LIMIT)
+PATCH · DELETE /api/checklist-items/{id}             {text?, done?, position?, checklist_id?} (перенос внутри задачи); → TaskChecklistResponse
+POST   /api/checklist-items/{id}/convert             → 201 ConvertChecklistItemResponse {task, checklist, счётчики}: подзадача с текстом пункта, пункт удалён (фича SUBTASKS; задача сама не подзадача)
 PUT    /api/tasks/{id}/subscription {muted}          · PUT /api/tasks/{id}/read — снять «непрочитано»
 GET    /api/tasks/{id}/activity?before&limit         лента: сообщения комнаты задачи и журнал вперемешку, новые первыми (id — uuidv7)
 GET    /api/t/{KEY-N}[?workspace_id=]                задача по ключу среди пространств вызывающего (TaskResponse + board)
@@ -292,6 +307,7 @@ GET    /api/workspaces/{id}/tasks/search?q&limit     ⌘K: ключ и слов�
 - `TaskFilter` → SQL — одна функция `boards.Translate` (поля и операции — `boards.proto`; `"me"` — вызывающий; даты `today|week_start|week_end|month_end|±Nd`, «сегодня» — в поясе профиля).
 - `READY` / `WORKSPACE_CREATE`: `WorkspaceSnapshot.boards` (видимые, с битами и общими видами) и `unread_task_ids` (≤ 999).
 - Unfurl своих ссылок: `GET /api/unfurl?url=https://<хост приложения>/t/<KEY-N>` или `/b/<id>` отвечает из БД по правам смотрящего (`UnfurlResponse.task` / `board`, без кэша и HTTP), невидимое — 404.
+- **Фичи доски (ADR-0058 §3).** `Board.disabled_features` (хранится выключенное) и `estimate_scale` едут в `BOARD_UPDATE`. Любой путь записи (REST = Bot API, «задача из сообщения») на запрос, меняющий поле выключенной фичи на непустое, отвечает `409 CONFLICT`, `reason FEATURE_DISABLED`, `field` = JSON-имя поля; сброс в пусто и повтор текущего значения проходят. Данные не удаляются и отдаются как раньше. `COMMENTS` выкл. — комната задачи без `SEND_MESSAGES | ATTACH_FILES` (состояние шлюза `taskRoomBits`).
 - Метёлка автоархива: раз в час (Redis-лок `boards:sweep`), задачи в `completed|cancelled` старше `auto_archive_days` доски → архив, запись журнала `archived {auto: true}` без актора, `TASK_DELETE` + `TASK_ACTIVITY`.
 
 ## Боты (ADR-0031)

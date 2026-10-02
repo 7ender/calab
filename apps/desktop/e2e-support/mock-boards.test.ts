@@ -279,3 +279,63 @@ describe('boards mock (ADR-0042)', () => {
     expect(cleared.task.approvalState).toBe('TASK_APPROVAL_STATE_NONE');
   });
 });
+
+describe('boards 2.0 mock (ADR-0058)', () => {
+  it('READY board categories; create / order / delete a category', async () => {
+    const token = await login();
+    const gw = await gateway(token);
+    try {
+      const ws = gw.ready.workspaces.find((w) => w.workspace?.id === IDS.workspaces.main);
+      expect(ws?.boardCategories.map((c) => c.name)).toEqual(['Продвижение']);
+      const mkt = ws?.boards.find((b) => b.key === 'MKT');
+      expect(mkt?.categoryId).toBe(ws?.boardCategories[0]?.id);
+      const made = await json<{ category: { id: string } }>(api(token, `/api/workspaces/${IDS.workspaces.main}/board-categories`, { method: 'POST', body: { name: 'Новая' } }));
+      const cal = ws?.boards.find((b) => b.key === 'CAL');
+      const order = await api(token, `/api/workspaces/${IDS.workspaces.main}/boards/order`, { method: 'PUT', body: { boards: [{ boardId: cal?.id, categoryId: made.category.id, position: 0 }], categories: [{ categoryId: made.category.id, position: 0 }] } });
+      expect(order.status).toBe(200);
+      await wait(50);
+      expect(gw.events.some((e) => e.event.case === 'boardCategoryCreate')).toBe(true);
+      expect(gw.events.some((e) => e.event.case === 'boardUpdate' && e.event.value.board?.categoryId === made.category.id)).toBe(true);
+      expect((await api(token, `/api/board-categories/${made.category.id}`, { method: 'DELETE' })).status).toBe(204);
+      await wait(50);
+      expect(gw.events.some((e) => e.event.case === 'boardCategoryDelete')).toBe(true);
+    } finally {
+      gw.close();
+    }
+  });
+
+  it('a checklist tick sends TASK_CHECKLIST_UPDATE with the counters and no TASK_UPDATE', async () => {
+    const token = await login();
+    const t3 = await json<{ task: { id: string; checklistTotal: number; checklistDone: number; checklists: { id: string; items: { id: string; done?: boolean }[] }[] } }>(api(token, '/api/t/CAL-3'));
+    expect(t3.task.checklistTotal).toBe(3);
+    expect(t3.task.checklistDone).toBe(1);
+    const second = t3.task.checklists[0]?.items[1]?.id ?? '';
+    const gw = await gateway(token);
+    try {
+      const r = await json<{ checklistDone: number }>(api(token, `/api/checklist-items/${second}`, { method: 'PATCH', body: { done: true } }));
+      expect(r.checklistDone).toBe(2);
+      await wait(50);
+      expect(gw.events.filter((e) => e.event.case === 'taskChecklistUpdate')).toHaveLength(1);
+      expect(gw.events.some((e) => e.event.case === 'taskUpdate')).toBe(false);
+    } finally {
+      gw.close();
+    }
+  });
+
+  it('features: a disabled one refuses writes (409 FEATURE_DISABLED with the field); webhook on Team is 409 PLAN_LIMIT', async () => {
+    const token = await login();
+    const boards = await json<{ boards: { id: string; key: string }[] }>(api(token, `/api/workspaces/${IDS.workspaces.main}/boards`));
+    const cal = boards.boards.find((b) => b.key === 'CAL')?.id ?? '';
+    const patched = await json<{ board: { disabledFeatures: string[]; estimateScale: string } }>(api(token, `/api/boards/${cal}`, { method: 'PATCH', body: { setDisabledFeatures: true, disabledFeatures: ['BOARD_FEATURE_ESTIMATE'], estimateScale: 'ESTIMATE_SCALE_TSHIRT' } }));
+    expect(patched.board.disabledFeatures).toEqual(['BOARD_FEATURE_ESTIMATE']);
+    expect(patched.board.estimateScale).toBe('ESTIMATE_SCALE_TSHIRT');
+    const t3 = await json<{ task: { id: string } }>(api(token, '/api/t/CAL-3'));
+    const refused = await api(token, `/api/tasks/${t3.task.id}`, { method: 'PATCH', body: { estimate: 5 } });
+    expect(refused.status).toBe(409);
+    expect(await refused.json()).toMatchObject({ field: 'estimate', reason: 'FEATURE_DISABLED' });
+    await api(token, `/api/boards/${cal}`, { method: 'PATCH', body: { setDisabledFeatures: true, disabledFeatures: [], estimateScale: 'ESTIMATE_SCALE_FIBONACCI' } });
+    const hook = await api(token, `/api/boards/${cal}/webhook`, { method: 'PUT', body: { url: 'https://hooks.example.com/calab', secret: '' } });
+    expect(hook.status).toBe(409);
+    expect((await json<{ webhook?: unknown }>(api(token, `/api/boards/${cal}/webhook`))).webhook).toBeUndefined();
+  });
+});

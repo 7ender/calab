@@ -1,5 +1,5 @@
 import { create, type MessageInitShape } from '@bufbuild/protobuf';
-import { ApproverState, BoardSchema, BoardStatusSchema, BoardStatusType, BoardViewSchema, DispatchEventSchema, TaskActivitySchema, TaskApprovalState, TaskApproverSchema, TaskSchema, type Task } from '@calaba/protocol';
+import { ApproverState, BoardCategorySchema, BoardSchema, TaskChecklistItemSchema, TaskChecklistSchema, BoardStatusSchema, BoardStatusType, BoardViewSchema, DispatchEventSchema, TaskActivitySchema, TaskApprovalState, TaskApproverSchema, TaskSchema, WorkspaceSnapshotSchema, type Task } from '@calaba/protocol';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 // services/boards.ts on the gateway events (ADR-0042 §4), with the stores it writes.
@@ -16,7 +16,7 @@ vi.mock('../stores/toasts', () => ({ toast: { info: vi.fn(), error: vi.fn(), suc
 const update = vi.fn<(...a: unknown[]) => Promise<unknown>>();
 vi.mock('./boardsApi', () => ({ boardsApi: { tasks: { update: (...a: unknown[]) => update(...a) } } }));
 
-const { applyBoardEvent, moveTask, updateTask, gateText } = await import('./boards');
+const { applyBoardEvent, moveTask, updateTask, gateText, applySnapshotBoards } = await import('./boards');
 const { useBoards } = await import('../stores/boards');
 const { toast } = await import('../stores/toasts');
 const { ApiError } = await import('../lib/api/client');
@@ -120,5 +120,44 @@ describe('approvals (ADR-0049) in the store and the move gate', () => {
     const vetoed = pending({ approvers: [create(TaskApproverSchema, { userId: 'u9', state: ApproverState.REJECTED, comment: 'нет' })] });
     expect(gateText(vetoed)).not.toBe(gateText(pending()));
     expect(gateText(pending())).toMatch(/1.*2/);
+  });
+});
+
+describe('ADR-0058: events 87–91, READY categories, FEATURE_DISABLED', () => {
+  beforeEach(() => {
+    useBoards.getState().reset();
+    vi.mocked(toast.error).mockClear();
+  });
+  const ev = (e: Parameters<typeof create<typeof DispatchEventSchema>>[1]): ReturnType<typeof create<typeof DispatchEventSchema>>['event'] => create(DispatchEventSchema, e).event;
+
+  it('BOARD_CATEGORY_CREATE / UPDATE / DELETE and READY board_categories', () => {
+    applySnapshotBoards(create(WorkspaceSnapshotSchema, { workspace: { id: 'w1' }, boardCategories: [create(BoardCategorySchema, { id: 'k0', workspaceId: 'w1', name: 'Old' })] }));
+    expect(Object.keys(useBoards.getState().categories)).toEqual(['k0']);
+    expect(applyBoardEvent(ev({ event: { case: 'boardCategoryCreate', value: { category: create(BoardCategorySchema, { id: 'k1', workspaceId: 'w1', name: 'Продукт' }) } } }))).toBe(true);
+    applyBoardEvent(ev({ event: { case: 'boardCategoryUpdate', value: { category: create(BoardCategorySchema, { id: 'k1', workspaceId: 'w1', name: 'Product', position: 2 }) } } }));
+    expect(useBoards.getState().categories['k1']?.name).toBe('Product');
+    applyBoardEvent(ev({ event: { case: 'boardCategoryDelete', value: { workspaceId: 'w1', categoryId: 'k1' } } }));
+    expect(useBoards.getState().categories['k1']).toBeUndefined();
+  });
+
+  it('TASK_CHECKLIST_UPDATE / DELETE patch the counters, not the task object', () => {
+    useBoards.getState().setBoardTasks('b1', [task('a', 's1', 1024)]);
+    const t = useBoards.getState().tasks['a'];
+    useBoards.getState().setChecklists('a', []);
+    const checklist = create(TaskChecklistSchema, { id: 'c1', taskId: 'a', title: 'QA', items: [create(TaskChecklistItemSchema, { id: 'i1', checklistId: 'c1', done: true })] });
+    expect(applyBoardEvent(ev({ event: { case: 'taskChecklistUpdate', value: { workspaceId: 'w1', boardId: 'b1', taskId: 'a', checklist, checklistTotal: 1, checklistDone: 1 } } }))).toBe(true);
+    expect(useBoards.getState().tasks['a']).toBe(t);
+    expect(useBoards.getState().checkCounts['a']).toEqual({ total: 1, done: 1 });
+    expect(useBoards.getState().checklists['a']?.map((c) => c.id)).toEqual(['c1']);
+    applyBoardEvent(ev({ event: { case: 'taskChecklistDelete', value: { workspaceId: 'w1', boardId: 'b1', taskId: 'a', checklistId: 'c1', checklistTotal: 0, checklistDone: 0 } } }));
+    expect(useBoards.getState().checklists['a']).toEqual([]);
+  });
+
+  it('409 FEATURE_DISABLED rolls back with a toast naming the field', async () => {
+    useBoards.getState().upsertTask(task('a', 's1', 1024));
+    update.mockRejectedValue(new ApiError('CONFLICT', 'the board feature ESTIMATE is switched off', 409, 'estimate', { reason: 'FEATURE_DISABLED' }));
+    await updateTask('a', { estimate: 5 });
+    expect(useBoards.getState().tasks['a']?.estimate).toBe(0);
+    expect(toast.error).toHaveBeenCalledWith(expect.stringContaining('Оценка'));
   });
 });
