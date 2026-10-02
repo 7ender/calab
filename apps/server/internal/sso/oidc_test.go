@@ -47,7 +47,7 @@ func newIDP(t *testing.T) (*fakeIDP, *OIDC, sqlc.WorkspaceIdentityConnection) {
 	parsed, _ := url.Parse(f.server.URL)
 	roots := x509.NewCertPool()
 	roots.AddCert(f.server.Certificate())
-	protocol := &OIDC{Origin: "https://calaba.test", Policy: func(raw string) (identitynet.Endpoint, error) {
+	protocol := &OIDC{Origin: "https://calaba.test", Policy: func(_ uuid.UUID, raw string) (identitynet.Endpoint, error) {
 		u, e := url.Parse(raw)
 		if e != nil || u.Host != parsed.Host {
 			return identitynet.Endpoint{}, ErrInvalid

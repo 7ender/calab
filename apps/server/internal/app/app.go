@@ -442,6 +442,9 @@ func New(d Deps) *App {
 		redisx.NewRateLimiter(d.Redis, "rl:event-write:", 30, 2), // 30 at once, 120 per hour
 		redisx.NewRateLimiter(d.Redis, "rl:event-rsvp:", 30, 30)) // signed answer links: 30 per minute per IP
 	calSvc.Presence = hub.Statuses
+	// CalDAV push and meeting mails leave Calab without a request: the workspace identity
+	// policy decides per user (ADR-0054).
+	calSvc.Identity = &identitypolicy.Delivery{Loader: identitypolicy.NewSQLLoader(d.DB.Q, d.Config.IdentityEntitlements())}
 	recSvc.OnStarted = calSvc.RecordingStarted
 	calSvc.FreeBusyLimit = redisx.NewRateLimiter(d.Redis, "rl:freebusy:", 60, 60) // ADR-0041 §5: 60 per minute
 	calSvc.SuggestLimit = redisx.NewRateLimiter(d.Redis, "rl:suggest:", 30, 30)   // 30 per minute

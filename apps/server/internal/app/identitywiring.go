@@ -141,8 +141,9 @@ func wireIdentity(d Deps, mux *routeRecorder, a *auth.Service) (*sso.Service, *d
 		}
 		policy := d.IdentityEndpointPolicy
 		if policy == nil {
-			policy = func(raw string) (identitynet.Endpoint, error) {
-				if ep, ok := settings.Endpoints[raw]; ok {
+			policy = func(ws uuid.UUID, raw string) (identitynet.Endpoint, error) {
+				// An override bound to other workspaces does not apply: the URL is public-only.
+				if ep, ok := settings.EndpointFor(ws, raw); ok {
 					return identitynet.Endpoint{URL: raw, ApprovedCIDRs: ep.ApprovedCIDRs, PrivateCIDRs: ep.PrivateCIDRs, RootCAs: ep.RootCAs}, nil
 				}
 				return identitynet.Endpoint{URL: raw}, nil // public endpoints still undergo DNS/dial/TLS validation
@@ -152,7 +153,7 @@ func wireIdentity(d Deps, mux *routeRecorder, a *auth.Service) (*sso.Service, *d
 		hosts := map[string]directory.HostPolicy{}
 		cas := map[string]string{}
 		for host, policy := range settings.DirectoryHosts {
-			hosts[host] = directory.HostPolicy{Networks: policy.Networks}
+			hosts[host] = directory.HostPolicy{Networks: policy.Networks, Workspaces: policy.Workspaces}
 			cas[host] = policy.CAPEM
 		}
 		scanner := d.IdentityDirectoryScanner

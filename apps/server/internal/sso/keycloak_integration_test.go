@@ -102,7 +102,7 @@ func newKeycloakFixture(t *testing.T) *keycloakFixture {
 	if err != nil {
 		t.Fatal(err)
 	}
-	protocol := &OIDC{Origin: "https://calaba.test", Policy: func(raw string) (identitynet.Endpoint, error) {
+	protocol := &OIDC{Origin: "https://calaba.test", Policy: func(_ uuid.UUID, raw string) (identitynet.Endpoint, error) {
 		endpoint, e := url.Parse(raw)
 		allowed := map[string]bool{u.Path + "/.well-known/openid-configuration": true, u.Path + "/protocol/openid-connect/auth": true, u.Path + "/protocol/openid-connect/token": true, u.Path + "/protocol/openid-connect/certs": true}
 		if e != nil || endpoint.Scheme != "https" || endpoint.Host != u.Host || !allowed[endpoint.Path] || endpoint.RawQuery != "" || endpoint.Fragment != "" || endpoint.User != nil {
@@ -668,11 +668,11 @@ func TestKeycloakLiveRP(t *testing.T) {
 		code, verifier, nonce = liveCode()
 		noJWKS := *f.s.Protocol
 		policy := noJWKS.Policy
-		noJWKS.Policy = func(raw string) (identitynet.Endpoint, error) {
+		noJWKS.Policy = func(ws uuid.UUID, raw string) (identitynet.Endpoint, error) {
 			if strings.HasSuffix(raw, "/certs") {
 				return identitynet.Endpoint{}, ErrInvalid
 			}
-			return policy(raw)
+			return policy(ws, raw)
 		}
 		if _, err = noJWKS.Exchange(t.Context(), c, f.secret, code, verifier, identitycrypto.Hash(nonce)); !errors.Is(err, ErrInvalidProof) {
 			t.Fatal("unapproved JWKS accepted")

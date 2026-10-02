@@ -168,7 +168,7 @@ func TestIdentityBrowserRealAppKeycloak(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	policy := func(raw string) (identitynet.Endpoint, error) {
+	policy := func(_ uuid.UUID, raw string) (identitynet.Endpoint, error) {
 		u, e := url.Parse(raw)
 		allowed := map[string]bool{upstream.Path + "/.well-known/openid-configuration": true, upstream.Path + "/protocol/openid-connect/auth": true, upstream.Path + "/protocol/openid-connect/token": true, upstream.Path + "/protocol/openid-connect/certs": true}
 		if e != nil || u.Scheme != "https" || u.Host != upstream.Host || !allowed[u.Path] || u.RawQuery != "" || u.Fragment != "" || u.User != nil {

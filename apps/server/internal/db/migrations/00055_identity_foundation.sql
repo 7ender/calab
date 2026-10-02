@@ -1,17 +1,26 @@
 -- Identity trust is workspace-scoped; legacy sessions acquire no proof or entitlement.
 -- +goose Up
-ALTER TABLE sessions ADD COLUMN authority_kind text NOT NULL DEFAULT 'local_account'
-    CHECK (authority_kind IN ('local_account', 'workspace_sso', 'recovery')),
-    ADD COLUMN authority_workspace_id uuid REFERENCES workspaces(id) ON DELETE CASCADE,
+-- Rollout safety (several replicas, live traffic): never queue behind a long transaction while
+-- holding/awaiting ACCESS EXCLUSIVE on sessions — that blocks every login and refresh. A busy
+-- table fails the migration after 10 s instead; the advisory-locked migrate is simply retried.
+SET LOCAL lock_timeout = '10s';
+-- New columns with constant defaults are a catalog-only change. Their checks are added
+-- NOT VALID: every existing row holds the defaults (local_account, NULL scope, version 1), which
+-- satisfy them, so no full scan runs under ACCESS EXCLUSIVE; new and updated rows are checked.
+ALTER TABLE sessions ADD COLUMN authority_kind text NOT NULL DEFAULT 'local_account',
+    ADD COLUMN authority_workspace_id uuid,
     ADD COLUMN authority_connection_id uuid,
     ADD COLUMN local_authenticated_at timestamptz,
     ADD COLUMN recovery_authenticated_at timestamptz,
-    ADD COLUMN authority_version bigint NOT NULL DEFAULT 1 CHECK (authority_version > 0),
+    ADD COLUMN authority_version bigint NOT NULL DEFAULT 1,
+    ADD CONSTRAINT sessions_authority_kind_check CHECK (authority_kind IN ('local_account', 'workspace_sso', 'recovery')) NOT VALID,
+    ADD CONSTRAINT sessions_authority_version_check CHECK (authority_version > 0) NOT VALID,
+    ADD CONSTRAINT sessions_authority_workspace_id_fkey FOREIGN KEY (authority_workspace_id) REFERENCES workspaces(id) ON DELETE CASCADE NOT VALID,
     ADD CONSTRAINT sessions_id_user_key UNIQUE (id, user_id),
     ADD CONSTRAINT sessions_authority_scope CHECK (
         (authority_kind = 'local_account' AND authority_workspace_id IS NULL AND authority_connection_id IS NULL AND recovery_authenticated_at IS NULL) OR
         (authority_kind = 'workspace_sso' AND authority_workspace_id IS NOT NULL AND authority_connection_id IS NOT NULL AND local_authenticated_at IS NULL AND recovery_authenticated_at IS NULL) OR
-        (authority_kind = 'recovery' AND authority_workspace_id IS NOT NULL AND authority_connection_id IS NULL AND local_authenticated_at IS NULL AND recovery_authenticated_at IS NOT NULL AND expires_at <= recovery_authenticated_at + interval '10 minutes'));
+        (authority_kind = 'recovery' AND authority_workspace_id IS NOT NULL AND authority_connection_id IS NULL AND local_authenticated_at IS NULL AND recovery_authenticated_at IS NOT NULL AND expires_at <= recovery_authenticated_at + interval '10 minutes')) NOT VALID;
 
 -- +goose StatementBegin
 CREATE FUNCTION identity_session_origin_guard() RETURNS trigger LANGUAGE plpgsql AS $$
@@ -82,9 +91,10 @@ CREATE TABLE workspace_identity_connections (
     UNIQUE (workspace_id, issuer, client_id)
 );
 CREATE UNIQUE INDEX workspace_identity_connections_active_idx ON workspace_identity_connections(workspace_id) WHERE status = 'active';
+-- NOT VALID: every existing session has a NULL connection (no scan under ACCESS EXCLUSIVE).
 ALTER TABLE sessions ADD CONSTRAINT sessions_authority_connection_fkey
     FOREIGN KEY (authority_workspace_id, authority_connection_id)
-    REFERENCES workspace_identity_connections(workspace_id, id) ON DELETE CASCADE;
+    REFERENCES workspace_identity_connections(workspace_id, id) ON DELETE CASCADE NOT VALID;
 CREATE INDEX sessions_authority_workspace_idx ON sessions(authority_workspace_id) WHERE authority_workspace_id IS NOT NULL;
 
 -- Tombstones deliberately survive membership deletion; email is never a linking key.
@@ -217,6 +227,7 @@ CREATE TABLE product_admin_grants (
 );
 
 -- +goose Down
+SET LOCAL lock_timeout = '10s';
 -- An old binary cannot safely enforce scoped authority or sticky workspace policy.
 -- +goose StatementBegin
 DO $$ BEGIN
@@ -237,5 +248,7 @@ DROP TABLE workspace_identity_policies, workspace_identity_grants;
 DROP TRIGGER identity_session_origin_guard_trigger ON sessions;
 DROP FUNCTION identity_session_origin_guard();
 ALTER TABLE sessions DROP CONSTRAINT sessions_authority_scope, DROP CONSTRAINT sessions_id_user_key,
+    DROP CONSTRAINT sessions_authority_kind_check, DROP CONSTRAINT sessions_authority_version_check,
+    DROP CONSTRAINT sessions_authority_workspace_id_fkey,
     DROP COLUMN authority_kind, DROP COLUMN authority_workspace_id, DROP COLUMN authority_connection_id,
     DROP COLUMN local_authenticated_at, DROP COLUMN recovery_authenticated_at, DROP COLUMN authority_version;

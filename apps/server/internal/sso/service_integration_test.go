@@ -5,14 +5,13 @@ package sso
 import (
 	"context"
 	"errors"
-	"os"
 	"sync"
 	"sync/atomic"
 	"testing"
 	"time"
 
 	pb "github.com/calaba/calaba/server/gen/calaba/v1"
-	"github.com/calaba/calaba/server/internal/db"
+	"github.com/calaba/calaba/server/internal/db/dbtest"
 	"github.com/calaba/calaba/server/internal/db/sqlc"
 	"github.com/calaba/calaba/server/internal/identitycrypto"
 	"github.com/calaba/calaba/server/internal/identitypolicy"
@@ -36,17 +35,8 @@ type serviceFixture struct {
 func newServiceFixture(t *testing.T) *serviceFixture {
 	t.Helper()
 	ctx := context.Background()
-	dsn := os.Getenv("TEST_PG_URL")
-	if dsn == "" {
-		t.Fatal("TEST_PG_URL required")
-	}
-	d, err := db.Connect(ctx, dsn)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if err = d.Migrate(ctx); err != nil {
-		t.Fatal(err)
-	}
+	d := dbtest.Connect(t)
+	var err error
 	keys, err := identitycrypto.New("fixture", map[string][]byte{"fixture": make([]byte, 32)})
 	if err != nil {
 		t.Fatal(err)

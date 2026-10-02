@@ -56,16 +56,36 @@ type IdentitySettings struct {
 }
 
 // IdentityDirectoryHost pins a trusted LDAP host to networks and an optional CA.
+// Workspaces binds the entry to exact workspaces; empty = every workspace (on-prem only).
 type IdentityDirectoryHost struct {
-	Networks []netip.Prefix
-	CAPEM    string
+	Networks   []netip.Prefix
+	CAPEM      string
+	Workspaces map[uuid.UUID]bool
 }
 
 // IdentityEndpoint overrides one exact upstream URL using operator network policy.
+// Workspaces binds the override to exact workspaces; empty = every workspace (an entry with
+// private networks is refused then outside the on-prem enterprise edition).
 type IdentityEndpoint struct {
 	URL                         string
 	ApprovedCIDRs, PrivateCIDRs []netip.Prefix
 	RootCAs                     *x509.CertPool
+	Workspaces                  map[uuid.UUID]bool
+}
+
+// Allows tells whether the operator entry applies to workspace ws.
+func (ep IdentityEndpoint) Allows(ws uuid.UUID) bool {
+	return len(ep.Workspaces) == 0 || ep.Workspaces[ws]
+}
+
+// EndpointFor returns the operator override of upstream URL raw that applies to workspace ws;
+// false = none applies and the URL is reached as a public endpoint only.
+func (s *IdentitySettings) EndpointFor(ws uuid.UUID, raw string) (IdentityEndpoint, bool) {
+	ep, ok := s.Endpoints[raw]
+	if !ok || !ep.Allows(ws) {
+		return IdentityEndpoint{}, false
+	}
+	return ep, true
 }
 
 func validateIdentityEndpoint(ep IdentityEndpoint) (bool, error) {
@@ -86,11 +106,31 @@ type identityEndpointJSON struct {
 	ApprovedCIDRs []netip.Prefix `json:"approved_cidrs"`
 	PrivateCIDRs  []netip.Prefix `json:"private_cidrs"`
 	CAPEM         string         `json:"ca_pem"`
+	WorkspaceIDs  []string       `json:"workspace_ids"`
 }
 type identityDirectoryJSON struct {
-	Host     string         `json:"host"`
-	Networks []netip.Prefix `json:"networks"`
-	CAPEM    string         `json:"ca_pem"`
+	Host         string         `json:"host"`
+	Networks     []netip.Prefix `json:"networks"`
+	CAPEM        string         `json:"ca_pem"`
+	WorkspaceIDs []string       `json:"workspace_ids"`
+}
+
+// identityWorkspaces parses an entry's workspace binding: exact nonzero UUIDs, no duplicates.
+// An unbound entry reaches private networks for every workspace of the installation: that is
+// an on-prem decision only (IDENTITY_EDITION=enterprise); a cloud installation must bind it.
+func identityWorkspaces(field, entry string, raw []string, unboundAllowed bool) (map[uuid.UUID]bool, error) {
+	out := map[uuid.UUID]bool{}
+	for _, v := range raw {
+		id, err := uuid.Parse(v)
+		if err != nil || id == uuid.Nil || id.String() != v || out[id] {
+			return nil, fmt.Errorf("invalid identity operator configuration: %s %s: workspace_ids requires exact distinct nonzero UUIDs", field, entry)
+		}
+		out[id] = true
+	}
+	if len(out) == 0 && !unboundAllowed {
+		return nil, fmt.Errorf("invalid identity operator configuration: %s %s: private network access needs workspace_ids unless IDENTITY_EDITION=enterprise (on-prem)", field, entry)
+	}
+	return out, nil
 }
 
 func (*IdentitySettings) String() string { return "identity settings(redacted)" }
@@ -136,6 +176,7 @@ func (c *Config) IdentitySettings() (*IdentitySettings, error) {
 		return invalid("OAUTH_SIGNING_KEYS")
 	}
 	out := &IdentitySettings{Origin: c.IdentityPublicOrigin, Encryption: ring, SigningKeys: signingKeys, SigningActiveKID: c.OAuthSigningActiveKID, Endpoints: map[string]IdentityEndpoint{}, DirectoryHosts: map[string]IdentityDirectoryHost{}}
+	onPrem := c.IdentityEdition == "enterprise"
 	var endpoints []identityEndpointJSON
 	if c.IdentityEndpoints != "" && json.Unmarshal([]byte(c.IdentityEndpoints), &endpoints) != nil {
 		return invalid("IDENTITY_ENDPOINTS")
@@ -153,6 +194,9 @@ func (c *Config) IdentitySettings() (*IdentitySettings, error) {
 		}
 		if _, err := validateIdentityEndpoint(entry); err != nil {
 			return invalid("IDENTITY_ENDPOINTS")
+		}
+		if entry.Workspaces, err = identityWorkspaces("IDENTITY_ENDPOINTS", ep.URL, ep.WorkspaceIDs, onPrem || len(ep.PrivateCIDRs) == 0); err != nil {
+			return nil, err
 		}
 		out.Endpoints[ep.URL] = entry
 	}
@@ -178,7 +222,11 @@ func (c *Config) IdentitySettings() (*IdentitySettings, error) {
 				return invalid("IDENTITY_DIRECTORY_HOSTS")
 			}
 		}
-		out.DirectoryHosts[host.Host] = IdentityDirectoryHost{Networks: host.Networks, CAPEM: host.CAPEM}
+		workspaces, err := identityWorkspaces("IDENTITY_DIRECTORY_HOSTS", host.Host, host.WorkspaceIDs, onPrem)
+		if err != nil {
+			return nil, err
+		}
+		out.DirectoryHosts[host.Host] = IdentityDirectoryHost{Networks: host.Networks, CAPEM: host.CAPEM, Workspaces: workspaces}
 	}
 	return out, nil
 }

@@ -342,6 +342,8 @@ func owner(t *testing.T) *user {
 	// its upload bucket (30 at once, 120/h) so the order and number of tests never turn a valid
 	// upload into a 429 (2026-09-29: TestVoiceMessages after the guest-admission tests).
 	_ = testRedis.Do(context.Background(), testRedis.B().Del().Key(redisx.Key("rl:upload:"+bootstrapUser.id)).Build()).Error()
+	// Same for its meeting writes (30 at once, 120/h): calendar and identity tests share it.
+	_ = testRedis.Do(context.Background(), testRedis.B().Del().Key(redisx.Key("rl:event-write:"+bootstrapUser.id)).Build()).Error()
 	return bootstrapUser
 }
 
