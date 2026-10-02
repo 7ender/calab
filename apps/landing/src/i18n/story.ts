@@ -4,11 +4,8 @@ const stories = {
   "ru": {
     "previewTitle": "Вот где всё происходит",
     "kicker": "Пространство для вашей команды",
-    "title": [
-      "Вся команда.",
-      "Рядом."
-    ],
-    "lead": "Разговоры, встречи и задачи — в одном пространстве. В облаке или на вашем сервере.",
+    "title": ["Голос, чат, встречи", "и задачи — в одном окне.", "На вашем сервере."],
+    "lead": "Лёгкий, как Discord, удобный, как Telegram.",
     "tabs": [
       "Обсуждайте",
       "Общайтесь",
@@ -31,11 +28,8 @@ const stories = {
   "en": {
     "previewTitle": "Where it all happens",
     "kicker": "A space for your team",
-    "title": [
-      "Your team.",
-      "Together."
-    ],
-    "lead": "Conversations, meetings and tasks in one place. In the cloud or on your own server.",
+    "title": ["Voice, chat, meetings", "and tasks — in one window.", "On your own server."],
+    "lead": "Light like Discord, easy like Telegram.",
     "tabs": [
       "Discuss",
       "Connect",
@@ -58,11 +52,8 @@ const stories = {
   "es": {
     "previewTitle": "Aquí es donde todo sucede",
     "kicker": "Un espacio para tu equipo",
-    "title": [
-      "Tu equipo.",
-      "Cerca."
-    ],
-    "lead": "Conversaciones, reuniones y tareas en un solo lugar. En la nube o en tu servidor.",
+    "title": ["Voz, chat, reuniones", "y tareas, en una ventana.", "En tu propio servidor."],
+    "lead": "Ligero como Discord, cómodo como Telegram.",
     "tabs": [
       "Hablar",
       "Conectar",
@@ -85,11 +76,8 @@ const stories = {
   "zh": {
     "previewTitle": "一切协作，在这里发生",
     "kicker": "属于团队的空间",
-    "title": [
-      "整个团队。",
-      "近在身边。"
-    ],
-    "lead": "交流、会议和任务，尽在同一空间。使用云端或部署在自己的服务器上。",
+    "title": ["语音、聊天、会议", "与任务，同在一个窗口。", "部署在你自己的服务器上。"],
+    "lead": "像 Discord 一样轻，像 Telegram 一样好用。",
     "tabs": [
       "讨论",
       "交流",
