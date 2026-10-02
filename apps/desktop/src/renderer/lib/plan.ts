@@ -363,3 +363,13 @@ export function planUsage(
   const peak = (m: Map<string, number>): number => Math.max(0, ...m.values());
   return { roomPeak: peak(people), streamPeak: peak(streams), members: members.filter((m) => !m.guest).length, bots: members.filter((m) => m.bot).length };
 }
+
+/** min(value, cap); cap 0 = no plan limit. */
+export function clampToCap(value: number, cap: number): number {
+  return cap > 0 ? Math.min(value, cap) : value;
+}
+
+/** Highest selectable value of a count select under the plan cap (0 = no plan limit). */
+export function capMax(max: number, cap: number): number {
+  return cap > 0 ? Math.min(max, cap) : max;
+}

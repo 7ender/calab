@@ -253,6 +253,7 @@ export const en: Dict = {
   'media.maxPreset': 'Max screen share quality',
   'media.maxStreams': 'Simultaneous screen shares',
   'media.maxStreamsHint': 'How many people can share their screen at once (0 — not allowed)',
+  'media.planClamp': 'Applied as min(value, plan limit): {limit}',
   'media.default': 'Workspace default ({v})',
   'audioTier.8': 'Low',
   'audioTier.16': 'Normal',

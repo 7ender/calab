@@ -17,6 +17,8 @@ import {
   limitsFormFrom,
   limitsFromForm,
   planErrorNotice,
+  capMax,
+  clampToCap,
   planHas,
   planUsage,
   setPlanBody,
@@ -215,5 +217,18 @@ describe('planUsage', () => {
     ];
     expect(planUsage(voice, [{ guest: false }, { guest: true }, { guest: false, bot: true }])).toEqual({ roomPeak: 3, streamPeak: 2, members: 2, bots: 1 });
     expect(planUsage([], [])).toEqual({ roomPeak: 0, streamPeak: 0, members: 0, bots: 0 });
+  });
+});
+
+describe('plan caps for workspace voice defaults (#42)', () => {
+  it('clampToCap = min(value, cap); 0 means no plan limit', () => {
+    expect(clampToCap(3, 1)).toBe(1);
+    expect(clampToCap(1, 3)).toBe(1);
+    expect(clampToCap(6, 0)).toBe(6);
+  });
+  it('capMax limits the selectable range', () => {
+    expect(capMax(10, 1)).toBe(1);
+    expect(capMax(10, 0)).toBe(10);
+    expect(capMax(10, 99)).toBe(10);
   });
 });
