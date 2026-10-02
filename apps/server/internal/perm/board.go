@@ -92,13 +92,15 @@ func ComputeBoardRoles(roles []RoleBits, sc BoardScope, roleOvs map[string]Overr
 
 // TaskRoom maps board bits to the bits in a task's comment room (ADR-0042 §1): VIEW_BOARD →
 // VIEW_ROOM | SEND_MESSAGES | ATTACH_FILES, EDIT_TASKS adds MANAGE_MESSAGES. The room of an
-// archived task is read-only. Room overrides do not apply.
-func TaskRoom(board Bits, archived bool) Bits {
+// archived task is read-only, and so is every task room of a board with the feature COMMENTS
+// switched off (ADR-0058 §3: old comments stay visible and moderated). Room overrides do not
+// apply. Mirror of taskRoomPermissions in packages/protocol.
+func TaskRoom(board Bits, archived, commentsOff bool) Bits {
 	if !board.Has(ViewBoard) {
 		return 0
 	}
 	p := ViewRoom
-	if !archived {
+	if !archived && !commentsOff {
 		p |= SendMessages | AttachFiles
 	}
 	if board.Has(EditTasks) {
@@ -106,3 +108,10 @@ func TaskRoom(board Bits, archived bool) Bits {
 	}
 	return p
 }
+
+// featureComments is the bit of BOARD_FEATURE_COMMENTS (12) in boards.disabled_features (bit =
+// the enum value, ADR-0058 §3).
+const featureComments = 1 << 12
+
+// CommentsOff reports whether a board's disabled feature mask switches comments off.
+func CommentsOff(disabledFeatures int64) bool { return disabledFeatures&featureComments != 0 }

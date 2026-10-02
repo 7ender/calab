@@ -137,9 +137,10 @@ func (q *Queries) BoardTaskRoomIDs(ctx context.Context, boardID uuid.UUID) ([]uu
 
 const claimApprovalReminders = `-- name: ClaimApprovalReminders :many
 UPDATE task_approvers a SET reminders = a.reminders + 1, reminded_at = now()
-FROM tasks t JOIN board_statuses st ON st.id = t.status_id
+FROM tasks t JOIN board_statuses st ON st.id = t.status_id JOIN boards b ON b.id = t.board_id
 WHERE a.task_id = $1 AND a.user_id = ANY($2::uuid[])
   AND t.id = a.task_id AND t.archived_at IS NULL AND st.type NOT IN ('completed', 'cancelled')
+  AND b.disabled_features & 512 = 0
   AND a.state = 'pending' AND a.reminders < 3
   AND coalesce(a.reminded_at, a.requested_at) <= now() - interval '24 hours'
   AND NOT EXISTS (SELECT 1 FROM task_approvers r WHERE r.task_id = a.task_id AND r.state = 'rejected')
@@ -645,6 +646,7 @@ const dueApprovalReminders = `-- name: DueApprovalReminders :many
 SELECT a.task_id, a.user_id FROM task_approvers a
 JOIN tasks t ON t.id = a.task_id AND t.archived_at IS NULL
 JOIN boards b ON b.id = t.board_id AND b.archived_at IS NULL
+    AND b.disabled_features & 512 = 0 -- BOARD_FEATURE_APPROVALS (9) off: no reminders (ADR-0058 §3)
 JOIN board_statuses st ON st.id = t.status_id AND st.type NOT IN ('completed', 'cancelled')
 WHERE a.state = 'pending' AND a.reminders < 3
   AND coalesce(a.reminded_at, a.requested_at) <= now() - interval '24 hours'
@@ -804,7 +806,8 @@ SELECT b.workspace_id,
        coalesce(mr.allows, '{}')::bigint[] AS role_allows,
        coalesce(mr.denies, '{}')::bigint[] AS role_denies,
        uo.allow AS user_allow, uo.deny AS user_deny,
-       (w.suspended_at IS NOT NULL)::boolean AS suspended
+       (w.suspended_at IS NOT NULL)::boolean AS suspended,
+       b.disabled_features
 FROM boards b
 JOIN workspaces w ON w.id = b.workspace_id
 LEFT JOIN workspace_members m ON m.workspace_id = b.workspace_id AND m.user_id = $1
@@ -829,26 +832,28 @@ type GetBoardAccessParams struct {
 }
 
 type GetBoardAccessRow struct {
-	WorkspaceID     uuid.UUID
-	IsPrivate       bool
-	Restricted      bool
-	Archived        bool
-	Role            *string
-	RoleIds         []uuid.UUID
-	RolePositions   []int32
-	RolePermissions []int64
-	RoleAllows      []int64
-	RoleDenies      []int64
-	UserAllow       *int64
-	UserDeny        *int64
-	Suspended       bool
+	WorkspaceID      uuid.UUID
+	IsPrivate        bool
+	Restricted       bool
+	Archived         bool
+	Role             *string
+	RoleIds          []uuid.UUID
+	RolePositions    []int32
+	RolePermissions  []int64
+	RoleAllows       []int64
+	RoleDenies       []int64
+	UserAllow        *int64
+	UserDeny         *int64
+	Suspended        bool
+	DisabledFeatures int64
 }
 
 // Task boards (ADR-0042). Task lists with filters are built dynamically in internal/boards
 // (TaskFilter → SQL); everything else is here.
 // Everything needed to compute a user's board bits, in one round trip: the membership (role
 // NULL = not a member), the member's roles lowest position first with each role's board
-// override (0/0 = none) and the user's own override.
+// override (0/0 = none), the user's own override and the disabled board features (ADR-0058 §3:
+// COMMENTS off makes the task rooms read-only).
 func (q *Queries) GetBoardAccess(ctx context.Context, arg GetBoardAccessParams) (GetBoardAccessRow, error) {
 	row := q.db.QueryRow(ctx, getBoardAccess, arg.UserID, arg.BoardID)
 	var i GetBoardAccessRow
@@ -866,6 +871,7 @@ func (q *Queries) GetBoardAccess(ctx context.Context, arg GetBoardAccessParams) 
 		&i.UserAllow,
 		&i.UserDeny,
 		&i.Suspended,
+		&i.DisabledFeatures,
 	)
 	return i, err
 }

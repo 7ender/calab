@@ -657,6 +657,9 @@ func (s *Service) createTask(w http.ResponseWriter, r *http.Request) error {
 		if n >= MaxTasks {
 			return httpx.Conflict("at most 5000 live tasks per board; archive finished ones").WithDetails(ReasonBoardTaskLimit, uint64(max(n, 0)), MaxTasks)
 		}
+		if err := createFeatures(b, &req, est); err != nil {
+			return err
+		}
 		it, err := items(r.Context(), q, boardID)
 		if err != nil {
 			return err
@@ -772,6 +775,88 @@ func (s *Service) createTask(w http.ResponseWriter, r *http.Request) error {
 	}
 	s.publish(r.Context(), taskID, &c, true)
 	return s.respondTask(w, r, taskID, http.StatusCreated, false)
+}
+
+// createFeatures checks a new task against the board's features (ADR-0058 §3): every field
+// that is set must belong to a feature that is on; the estimate must be on the board's scale.
+func createFeatures(b sqlc.Board, req *v1.CreateTaskRequest, est *int16) error {
+	d := b.DisabledFeatures
+	for _, c := range []struct {
+		f     v1.BoardFeature
+		field string
+		sets  bool
+	}{
+		{v1.BoardFeature_BOARD_FEATURE_ESTIMATE, "estimate", est != nil},
+		{v1.BoardFeature_BOARD_FEATURE_START_DATE, "startOn", strings.TrimSpace(req.GetStartOn()) != ""},
+		{v1.BoardFeature_BOARD_FEATURE_DUE_DATE, "dueOn", strings.TrimSpace(req.GetDueOn()) != ""},
+		{v1.BoardFeature_BOARD_FEATURE_PRIORITY, "priority", req.GetPriority() != v1.TaskPriority_TASK_PRIORITY_NONE},
+		{v1.BoardFeature_BOARD_FEATURE_LABELS, "labelIds", len(req.GetLabelIds()) > 0},
+		{v1.BoardFeature_BOARD_FEATURE_MILESTONES, "milestoneId", req.GetMilestoneId() != ""},
+		{v1.BoardFeature_BOARD_FEATURE_SUBTASKS, "parentId", req.GetParentId() != ""},
+		{v1.BoardFeature_BOARD_FEATURE_ATTACHMENTS, "attachmentIds", len(req.GetAttachmentIds()) > 0},
+		{v1.BoardFeature_BOARD_FEATURE_APPROVALS, "approverIds", len(req.GetApproverIds()) > 0},
+	} {
+		if err := requireFeature(d, c.f, c.field, c.sets); err != nil {
+			return err
+		}
+	}
+	return checkScale(b.EstimateScale, est)
+}
+
+// checkScale: an estimate (nil = none) must be a value of the board's scale (422 estimate).
+func checkScale(scale string, est *int16) error {
+	if est != nil && !InScale(scale, *est) {
+		return httpx.Validation("estimate", "the estimate is not on the board's "+scale+" scale")
+	}
+	return nil
+}
+
+// updateFeatures checks the changed fields of a task against its board's features (ADR-0058
+// §3): a field may be cleared or set to its current value, never set to a new value of a
+// feature that is off. Labels and attachments are checked where they are written (additions).
+func updateFeatures(ctx context.Context, q *sqlc.Queries, acc perm.BoardAccess, old, t taskRow) error {
+	est := func(e *int16) any {
+		if e == nil {
+			return nil
+		}
+		return int(*e)
+	}
+	d := acc.DisabledFeatures
+	estimateSet := t.Estimate != nil && est(old.Estimate) != est(t.Estimate)
+	for _, c := range []struct {
+		f     v1.BoardFeature
+		field string
+		sets  bool
+	}{
+		{v1.BoardFeature_BOARD_FEATURE_ESTIMATE, "estimate", estimateSet},
+		{v1.BoardFeature_BOARD_FEATURE_START_DATE, "startOn", t.StartOn.Valid && dateAny(old.StartOn) != dateAny(t.StartOn)},
+		{v1.BoardFeature_BOARD_FEATURE_DUE_DATE, "dueOn", t.DueOn.Valid && dateAny(old.DueOn) != dateAny(t.DueOn)},
+		{v1.BoardFeature_BOARD_FEATURE_PRIORITY, "priority", t.Priority != 0 && t.Priority != old.Priority},
+		{v1.BoardFeature_BOARD_FEATURE_MILESTONES, "milestoneId", t.MilestoneID != nil && !eqID(old.MilestoneID, t.MilestoneID)},
+		{v1.BoardFeature_BOARD_FEATURE_SUBTASKS, "parentId", t.ParentID != nil && !eqID(old.ParentID, t.ParentID)},
+	} {
+		if err := requireFeature(d, c.f, c.field, c.sets); err != nil {
+			return err
+		}
+	}
+	if !estimateSet {
+		return nil // an unchanged value off the scale stays until it is edited
+	}
+	b, err := q.GetBoard(ctx, t.BoardID)
+	if err != nil {
+		return err
+	}
+	return checkScale(b.EstimateScale, t.Estimate)
+}
+
+// adds reports whether next has an id that was not in was.
+func adds(was, next []uuid.UUID) bool {
+	for _, id := range next {
+		if !slices.Contains(was, id) {
+			return true
+		}
+	}
+	return false
 }
 
 // checkParent: a live task of the same board without a parent itself (one level), not the task
@@ -1080,6 +1165,9 @@ func (s *Service) updateTask(w http.ResponseWriter, r *http.Request) error {
 				}
 			}
 		}
+		if err := updateFeatures(r.Context(), q, acc, old, t); err != nil {
+			return err
+		}
 		var attIDs, attWas []uuid.UUID
 		attChanged := false
 		if req.GetSetAttachments() {
@@ -1090,7 +1178,11 @@ func (s *Service) updateTask(w http.ResponseWriter, r *http.Request) error {
 				return err
 			}
 			attChanged = !slices.Equal(attWas, attIDs)
+			if err := requireFeature(acc.DisabledFeatures, v1.BoardFeature_BOARD_FEATURE_ATTACHMENTS, "attachmentIds", adds(attWas, attIDs)); err != nil {
+				return err
+			}
 		}
+		approvalsOff := Disabled(acc.DisabledFeatures, v1.BoardFeature_BOARD_FEATURE_APPROVALS)
 		// A new title, description or description attachments reset the votes (ADR-0049 §3).
 		resets := t.Title != old.Title || t.Description != old.Description || attChanged
 		from := it.statuses[t.StatusID]
@@ -1106,7 +1198,8 @@ func (s *Service) updateTask(w http.ResponseWriter, r *http.Request) error {
 			}
 			to, t.StatusID = x, sid
 		}
-		if t.StatusID != old.StatusID {
+		// APPROVALS off (ADR-0058 §3): the gate does not apply; the votes are kept.
+		if t.StatusID != old.StatusID && !approvalsOff {
 			tl, err := taskTally(r.Context(), q, old)
 			if err != nil {
 				return err
@@ -1153,6 +1246,9 @@ func (s *Service) updateTask(w http.ResponseWriter, r *http.Request) error {
 			for _, l := range cur {
 				was = append(was, l.LabelID)
 			}
+			if err := requireFeature(acc.DisabledFeatures, v1.BoardFeature_BOARD_FEATURE_LABELS, "labelIds", adds(was, labels)); err != nil {
+				return err
+			}
 			if !sameSet(was, labels) {
 				if err := q.DeleteTaskLabels(r.Context(), t.ID); err != nil {
 					return err
@@ -1175,7 +1271,7 @@ func (s *Service) updateTask(w http.ResponseWriter, r *http.Request) error {
 				return err
 			}
 		}
-		if resets {
+		if resets && !approvalsOff {
 			if err := s.resetApprovals(r.Context(), q, t, me, &c); err != nil {
 				return err
 			}
@@ -1335,13 +1431,17 @@ func (s *Service) moveBoard(r *http.Request, q *sqlc.Queries, tx pgx.Tx, t *task
 	if to == nil {
 		return httpx.Conflict("the target board has no status")
 	}
-	// Approvers and votes move along; a task not approved may not land in COMPLETED (ADR-0049 §2).
-	tl, err := taskTally(r.Context(), q, *t)
-	if err != nil {
-		return err
-	}
-	if err := checkApprovalGate(tl, from, *to); err != nil {
-		return err
+	// Approvers and votes move along; a task not approved may not land in COMPLETED (ADR-0049 §2)
+	// unless the target board has APPROVALS off (ADR-0058 §3). Other features may differ: the
+	// fields stay and are just hidden there.
+	if !Disabled(dst.DisabledFeatures, v1.BoardFeature_BOARD_FEATURE_APPROVALS) {
+		tl, err := taskTally(r.Context(), q, *t)
+		if err != nil {
+			return err
+		}
+		if err := checkApprovalGate(tl, from, *to); err != nil {
+			return err
+		}
 	}
 	cur, err := q.ListTaskLabelIDs(r.Context(), []uuid.UUID{t.ID})
 	if err != nil {
@@ -1585,7 +1685,11 @@ func (s *Service) relation(w http.ResponseWriter, r *http.Request, other uuid.UU
 			return err
 		}
 		if n == 0 {
-			return nil
+			return nil // a repeat (or nothing to remove)
+		}
+		// RELATIONS off (ADR-0058 §3): a new relation is refused, removing stays allowed.
+		if err := requireFeature(acc.DisabledFeatures, v1.BoardFeature_BOARD_FEATURE_RELATIONS, "relatedId", add); err != nil {
+			return err
 		}
 		c.tasks = append(c.tasks, other)
 		rel := map[string]any{"related_id": other.String(), "kind": kind}
