@@ -27,6 +27,9 @@ var ErrDirectory = errors.New("directory dependency unavailable")
 type HostPolicy struct {
 	Networks     []netip.Prefix
 	TestLoopback bool
+	// Workspaces binds the host to exact workspaces (IDENTITY_DIRECTORY_HOSTS workspace_ids);
+	// empty = every workspace, which config allows only for the on-prem enterprise edition.
+	Workspaces map[uuid.UUID]bool
 }
 
 // LDAP scans only exact operator-approved hosts, with checked literal TCP peers.
@@ -66,7 +69,7 @@ func (l *LDAP) Validate(c sqlc.WorkspaceDirectory) error {
 		return ErrDirectory
 	}
 	policy, ok := l.Hosts[c.Host]
-	if !ok || len(policy.Networks) == 0 {
+	if !ok || len(policy.Networks) == 0 || len(policy.Workspaces) > 0 && !policy.Workspaces[c.WorkspaceID] {
 		return ErrDirectory
 	}
 	if _, err = ldap.ParseDN(c.BaseDn); err != nil {

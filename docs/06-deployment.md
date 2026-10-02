@@ -346,8 +346,8 @@ ADR-0054, не дополнительное подтверждение влад�
 | `IDENTITY_ENCRYPTION_ACTIVE_KID` | Идентификатор ключа для новых ciphertext; остальные нужные decrypt keys сохраняются. |
 | `OAUTH_SIGNING_KEYS` | JSON object `kid` → RSA PEM (2048–8192 bits, JSON-escaped newlines); private для подписи, public для prepublish/overlap. |
 | `OAUTH_SIGNING_ACTIVE_KID` | Выбирает private RSA key; JWKS содержит только публичные части. |
-| `IDENTITY_ENDPOINTS` | При необходимости JSON array `{url, approved_cidrs, private_cidrs, ca_pem}`: исключение для точного полного HTTPS URL; обычные публичные IdP проходят защищённый transport без предварительного каталога всех URL. |
-| `IDENTITY_DIRECTORY_HOSTS` | Для LDAPS обязательный JSON array `{host, networks, ca_pem}`: exact lowercase hostname и непустой CIDR allowlist, доверенная CA при необходимости. |
+| `IDENTITY_ENDPOINTS` | При необходимости JSON array `{url, approved_cidrs, private_cidrs, ca_pem, workspace_ids}`: исключение для точного полного HTTPS URL; обычные публичные IdP проходят защищённый transport без предварительного каталога всех URL. `workspace_ids` — точные UUID пространств, к connection которых исключение применяется (для остальных URL остаётся public-only). Запись с `private_cidrs` без `workspace_ids` допустима только при `IDENTITY_EDITION=enterprise` (on-prem); в cloud — отказ при старте. |
+| `IDENTITY_DIRECTORY_HOSTS` | Для LDAPS обязательный JSON array `{host, networks, ca_pem, workspace_ids}`: exact lowercase hostname и непустой CIDR allowlist, доверенная CA при необходимости. `workspace_ids` — точные UUID пространств, которым разрешён этот хост (настройка и sync других отклоняются). Без `workspace_ids` хост открыт всем пространствам установки — только при `IDENTITY_EDITION=enterprise` (on-prem); в cloud — отказ при старте. Пример: `[{"host":"dc1.corp.example","networks":["10.20.0.0/16"],"workspace_ids":["<workspace uuid>"]}]`. |
 
 Ключи предоставляет оператор, отдельно от `JWT_SECRET`; здесь нет secret values.
 Никаких insecure TLS, proxy-env обходов, loopback/metadata целей в production или

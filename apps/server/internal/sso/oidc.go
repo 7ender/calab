@@ -23,7 +23,8 @@ import (
 var ErrInvalidProof = errors.New("SSO proof rejected")
 
 // EndpointPolicy is trusted operator configuration, never a workspace setting.
-type EndpointPolicy func(string) (identitynet.Endpoint, error)
+// It receives the connection's workspace: an operator override may be bound to workspaces.
+type EndpointPolicy func(ws uuid.UUID, raw string) (identitynet.Endpoint, error)
 
 // OIDC uses maintained protocol libraries over an exact-endpoint guarded transport.
 type OIDC struct {
@@ -76,7 +77,7 @@ func (o *OIDC) load(ctx context.Context, c sqlc.WorkspaceIdentityConnection, sec
 		return nil, ErrInvalidProof
 	}
 	discovery := strings.TrimSuffix(c.Issuer, "/") + "/.well-known/openid-configuration"
-	ep, err := o.Policy(discovery)
+	ep, err := o.Policy(c.WorkspaceID, discovery)
 	if err != nil {
 		return nil, ErrInvalidProof
 	}
@@ -104,7 +105,7 @@ func (o *OIDC) load(ctx context.Context, c sqlc.WorkspaceIdentityConnection, sec
 	}
 	var endpoints []identitynet.Endpoint
 	for _, raw := range []string{discovery, m.Authorization, m.Token, m.JWKS} {
-		e, err := o.Policy(raw)
+		e, err := o.Policy(c.WorkspaceID, raw)
 		if err != nil {
 			return nil, ErrInvalidProof
 		}
