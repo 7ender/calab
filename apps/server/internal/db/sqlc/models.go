@@ -520,6 +520,7 @@ type OauthConsent struct {
 	Scopes         []string
 	Version        int64
 	RefreshAllowed bool
+	ClientName     string
 	GrantedAt      time.Time
 	RevokedAt      *time.Time
 }

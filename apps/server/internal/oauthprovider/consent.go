@@ -17,15 +17,68 @@ import (
 	"google.golang.org/protobuf/types/known/timestamppb"
 )
 
-func cookieName(handle string) string {
-	return "__Host-calab_oauth_" + base64.RawURLEncoding.EncodeToString(hash(handle)[:12])
+// Pending authorization requests share one browser-binding cookie holding the
+// most recent requestCookieMax entries "<handle key>:<browser token>", newest
+// first. A per-request cookie would let an authorize navigation loop fill the
+// browser's per-site cookie jar and evict Calab session cookies.
+const (
+	requestCookieName = "__Host-calab_oauth"
+	requestCookieMax  = 4
+)
+
+type requestBinding struct{ key, browser string }
+
+func requestKey(handle string) string {
+	return base64.RawURLEncoding.EncodeToString(hash(handle)[:12])
+}
+func requestBindings(r *http.Request) []requestBinding {
+	c, err := r.Cookie(requestCookieName)
+	if err != nil {
+		return nil
+	}
+	var out []requestBinding
+	for _, entry := range strings.Split(c.Value, ".") {
+		key, browser, ok := strings.Cut(entry, ":")
+		if !ok || len(key) != 16 || !tokenShape(browser, "calab_ob_") || len(out) == requestCookieMax {
+			continue
+		}
+		out = append(out, requestBinding{key: key, browser: browser})
+	}
+	return out
 }
 func requestCookie(r *http.Request, handle string) string {
-	c, err := r.Cookie(cookieName(handle))
-	if err != nil || !tokenShape(c.Value, "calab_ob_") {
-		return ""
+	key := requestKey(handle)
+	for _, b := range requestBindings(r) {
+		if b.key == key {
+			return b.browser
+		}
 	}
-	return c.Value
+	return ""
+}
+func setRequestBindings(w http.ResponseWriter, bindings []requestBinding) {
+	if len(bindings) == 0 {
+		http.SetCookie(w, &http.Cookie{Name: requestCookieName, Value: "", Path: "/", Secure: true, HttpOnly: true, SameSite: http.SameSiteLaxMode, MaxAge: -1})
+		return
+	}
+	entries := make([]string, 0, len(bindings))
+	for _, b := range bindings {
+		entries = append(entries, b.key+":"+b.browser)
+	}
+	http.SetCookie(w, &http.Cookie{Name: requestCookieName, Value: strings.Join(entries, "."), Path: "/", Secure: true, HttpOnly: true, SameSite: http.SameSiteLaxMode, MaxAge: 600})
+}
+func addRequestBinding(w http.ResponseWriter, r *http.Request, handle, browser string) {
+	bindings := append([]requestBinding{{key: requestKey(handle), browser: browser}}, requestBindings(r)...)
+	setRequestBindings(w, bindings[:min(len(bindings), requestCookieMax)])
+}
+func removeRequestBinding(w http.ResponseWriter, r *http.Request, handle string) {
+	key := requestKey(handle)
+	var kept []requestBinding
+	for _, b := range requestBindings(r) {
+		if b.key != key {
+			kept = append(kept, b)
+		}
+	}
+	setRequestBindings(w, kept)
 }
 func redirectURL(raw, state, issuer, code, errCode string) string {
 	u, _ := url.Parse(raw)
@@ -225,7 +278,8 @@ func (s *Service) authorize(w http.ResponseWriter, r *http.Request) {
 				return oauthError("login_required")
 			}
 			consent, err := q.FindOAuthConsent(r.Context(), sqlc.FindOAuthConsentParams{WorkspaceID: ws, UserID: p.UserID, ClientID: c.ID})
-			if err != nil || consent.RevokedAt != nil || !subset(request.Scopes, consent.Scopes) {
+			// A renamed client is shown to the user again before silent issuance.
+			if err != nil || consent.RevokedAt != nil || !subset(request.Scopes, consent.Scopes) || consent.ClientName != locked.Name {
 				return oauthError("consent_required")
 			}
 			code, err = s.createCode(r.Context(), q, request, st, d, consent)
@@ -242,28 +296,15 @@ func (s *Service) authorize(w http.ResponseWriter, r *http.Request) {
 	request.HandleHash = hash(handle)
 	request.BrowserHash = hash(browser)
 	request.ExpiresAt = s.c.Now().Add(10 * time.Minute)
-	err = s.c.DB.Tx(r.Context(), func(q *sqlc.Queries) error {
-		if err := s.lockWorkspace(r.Context(), q, ws); err != nil {
-			return err
-		}
-		locked, err := q.GetOAuthClientForUpdate(r.Context(), sqlc.GetOAuthClientForUpdateParams{WorkspaceID: ws, ID: c.ID})
-		if err != nil {
-			return err
-		}
-		if locked.DisabledAt != nil || locked.Version != c.Version {
-			return oauthError("invalid_request")
-		}
-		if err = s.entitlement(r.Context(), q, ws); err != nil {
-			return err
-		}
-		_, err = q.CreateOAuthRequest(r.Context(), request)
-		return err
-	})
-	if err != nil {
+	// Anonymous: no transaction and no workspace/client lock. The row pins the
+	// client version it was validated against; bind and decide re-check client
+	// version, entitlement and policy under locks, so a concurrent disable or
+	// security edit cannot be bypassed through a pending request.
+	if _, err = s.c.DB.Q.CreateOAuthRequest(r.Context(), request); err != nil {
 		redirectError(err)
 		return
 	}
-	http.SetCookie(w, &http.Cookie{Name: cookieName(handle), Value: browser, Path: "/", Secure: true, HttpOnly: true, SameSite: http.SameSiteLaxMode, MaxAge: 600})
+	addRequestBinding(w, r, handle, browser)
 	http.Redirect(w, r, s.c.PublicOrigin+"/oauth/consent?request="+url.QueryEscape(handle), http.StatusSeeOther)
 }
 
@@ -399,7 +440,7 @@ func (s *Service) decide(w http.ResponseWriter, r *http.Request) {
 		if input.AllowRefresh && !c.RefreshEnabled {
 			return oauthError("invalid_request")
 		}
-		consent, err := q.UpsertOAuthConsent(r.Context(), sqlc.UpsertOAuthConsentParams{WorkspaceID: req.WorkspaceID, UserID: p.UserID, ClientID: c.ID, Scopes: req.Scopes, RefreshAllowed: input.AllowRefresh})
+		consent, err := q.UpsertOAuthConsent(r.Context(), sqlc.UpsertOAuthConsentParams{WorkspaceID: req.WorkspaceID, UserID: p.UserID, ClientID: c.ID, Scopes: req.Scopes, RefreshAllowed: input.AllowRefresh, ClientName: c.Name})
 		if err != nil {
 			return err
 		}
@@ -420,7 +461,7 @@ func (s *Service) decide(w http.ResponseWriter, r *http.Request) {
 		writeAPIError(w, err)
 		return
 	}
-	http.SetCookie(w, &http.Cookie{Name: cookieName(r.PathValue("request")), Value: "", Path: "/", Secure: true, HttpOnly: true, SameSite: http.SameSiteLaxMode, MaxAge: -1})
+	removeRequestBinding(w, r, r.PathValue("request"))
 	protoResponse(w, http.StatusOK, &v1.OAuthDecisionResponse{RedirectUrl: redirect})
 }
 

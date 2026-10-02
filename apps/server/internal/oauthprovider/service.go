@@ -36,6 +36,13 @@ type Config struct {
 	ResolveSession     SessionResolver
 	SignerForWorkspace func(uuid.UUID) (*signing.Keyring, error)
 	Now                func() time.Time
+	// Quota charges a per-(client,user) bucket after the provider authenticated the
+	// client and found a live code/refresh/access token, so an anonymous caller
+	// knowing a public client_id cannot exhaust it. Endpoint is "token" or
+	// "userinfo". An *httpx.Error with status 429 becomes temporarily_unavailable;
+	// nil disables (unit fixtures). Pre-authentication limits are keyed by IP and
+	// applied by the integrator before the handler.
+	Quota func(ctx context.Context, endpoint string, ws, client, user uuid.UUID) error
 }
 
 // Service exposes protocol routes and Calaba consent/management routes.
@@ -134,15 +141,25 @@ func (s *Service) policyNow(ctx context.Context, q *sqlc.Queries) (time.Time, er
 	return now, nil
 }
 
-// All provider transactions acquire workspace, then policy, then client, grant,
-// session/member locks. This serializes security updates with issuance without
-// holding locks across external calls or relying on an in-process mutex.
+// All provider transactions acquire workspace, then client, grant, session/member
+// locks. This serializes security updates with issuance without holding locks
+// across external calls or relying on an in-process mutex. Callers take it only
+// after an unlocked credential check succeeded, so anonymous traffic never queues
+// on the workspace row. The policy row is read (the state loader defaults a
+// missing row); it is created lazily by admin writes, never on this path.
 func (s *Service) lockWorkspace(ctx context.Context, q *sqlc.Queries, ws uuid.UUID) error {
-	if _, err := q.LockOAuthWorkspace(ctx, ws); err != nil {
-		return err
+	_, err := q.LockOAuthWorkspace(ctx, ws)
+	if errors.Is(err, dbNoRows()) {
+		return &protocolError{code: "invalid_request", status: http.StatusNotFound}
 	}
-	_, err := q.EnsureIdentityPolicy(ctx, ws)
 	return err
+}
+
+func (s *Service) quota(ctx context.Context, endpoint string, ws, client, user uuid.UUID) error {
+	if s.c.Quota == nil {
+		return nil
+	}
+	return s.c.Quota(ctx, endpoint, ws, client, user)
 }
 
 func (s *Service) audit(ctx context.Context, q *sqlc.Queries, ws, user, target uuid.UUID, action string) error {

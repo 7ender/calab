@@ -158,9 +158,18 @@ Provider revoke/deactivation проверяются из БД при issue/refre
 RTC participant удаляется; отзыв обязан затронуть уже подключённых участников.
 Сроки конфигурируются оператором только через валидируемые env в сторону ужесточения
 этих максимумов; расширение — изменение контракта. Rate limits: begin 10/min/IP и
-10/min/workspace; exchange 30/min/IP; management 30/min/user; provider token 60/min/client
-+120/min/IP, UserInfo 120/min/client, LDAP manual sync не чаще одного в минуту.
-Квоты берутся атомарно в Valkey; при отказе зависимости выдачи закрыты, 429 с Retry-After.
+10/min/workspace; exchange 30/min/IP; management 30/min/user; LDAP manual sync не чаще
+одного в минуту. Provider: до аутентификации — только IP-квоты без обращения к БД:
+token 120/min/IP + 60/min/(client_id,IP) для public clients, authorize 60/min/IP,
+UserInfo 600/min/IP, revoke 120/min/IP, discovery/JWKS/preflight 120/min/IP. После
+проверки client credentials и живого code/refresh/access token — per-(client,user):
+token 30/min, UserInfo 60/min (бюджет клиента растёт с числом его пользователей; аноним,
+знающий public client_id, его не тратит). Квоты берутся атомарно в Valkey; при отказе
+зависимости выдачи закрыты, 429 с Retry-After.
+Retention provider (одна метёлка на кластер, Valkey-лок, раз в 10 минут): истёкшие
+authorization requests; codes — через 24 ч после expires_at (окно replay-детекта);
+access tokens — через 1 ч после истечения; grants (с их codes/refresh tokens) — через
+24 ч после истечения или отзыва (включая замену при повторном согласии).
 
 ## 5. SSO flow и API
 

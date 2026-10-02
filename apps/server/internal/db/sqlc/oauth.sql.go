@@ -351,7 +351,7 @@ func (q *Queries) CreateOAuthCode(ctx context.Context, arg CreateOAuthCodeParams
 const createOAuthConsent = `-- name: CreateOAuthConsent :one
 INSERT INTO oauth_consents (workspace_id, user_id, client_id, scopes, refresh_allowed)
 VALUES ($1, $2, $3, $4, $5)
-RETURNING id, workspace_id, user_id, client_id, scopes, version, refresh_allowed, granted_at, revoked_at
+RETURNING id, workspace_id, user_id, client_id, scopes, version, refresh_allowed, client_name, granted_at, revoked_at
 `
 
 type CreateOAuthConsentParams struct {
@@ -379,6 +379,7 @@ func (q *Queries) CreateOAuthConsent(ctx context.Context, arg CreateOAuthConsent
 		&i.Scopes,
 		&i.Version,
 		&i.RefreshAllowed,
+		&i.ClientName,
 		&i.GrantedAt,
 		&i.RevokedAt,
 	)
@@ -598,6 +599,81 @@ func (q *Queries) CreateOAuthToken(ctx context.Context, arg CreateOAuthTokenPara
 	return i, err
 }
 
+const deleteExpiredOAuthAccessTokens = `-- name: DeleteExpiredOAuthAccessTokens :execrows
+DELETE FROM oauth_tokens WHERE id IN (
+    SELECT id FROM oauth_tokens WHERE token_type='access' AND expires_at < clock_timestamp() - make_interval(secs => $1::int) LIMIT $2::int)
+`
+
+type DeleteExpiredOAuthAccessTokensParams struct {
+	WindowSeconds int32
+	Batch         int32
+}
+
+// Access tokens are never parents; refresh tokens leave with their grant (parent FK cascades).
+func (q *Queries) DeleteExpiredOAuthAccessTokens(ctx context.Context, arg DeleteExpiredOAuthAccessTokensParams) (int64, error) {
+	result, err := q.db.Exec(ctx, deleteExpiredOAuthAccessTokens, arg.WindowSeconds, arg.Batch)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
+}
+
+const deleteExpiredOAuthCodes = `-- name: DeleteExpiredOAuthCodes :execrows
+DELETE FROM oauth_authorization_codes WHERE id IN (
+    SELECT id FROM oauth_authorization_codes WHERE expires_at < clock_timestamp() - make_interval(secs => $1::int) LIMIT $2::int)
+`
+
+type DeleteExpiredOAuthCodesParams struct {
+	WindowSeconds int32
+	Batch         int32
+}
+
+func (q *Queries) DeleteExpiredOAuthCodes(ctx context.Context, arg DeleteExpiredOAuthCodesParams) (int64, error) {
+	result, err := q.db.Exec(ctx, deleteExpiredOAuthCodes, arg.WindowSeconds, arg.Batch)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
+}
+
+const deleteExpiredOAuthRequests = `-- name: DeleteExpiredOAuthRequests :execrows
+
+DELETE FROM oauth_authorization_requests WHERE id IN (
+    SELECT id FROM oauth_authorization_requests WHERE expires_at < clock_timestamp() LIMIT $1::int)
+`
+
+// Retention (one sweeper per cluster). Each statement deletes at most a batch.
+func (q *Queries) DeleteExpiredOAuthRequests(ctx context.Context, batch int32) (int64, error) {
+	result, err := q.db.Exec(ctx, deleteExpiredOAuthRequests, batch)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
+}
+
+const deleteFinishedOAuthGrants = `-- name: DeleteFinishedOAuthGrants :execrows
+DELETE FROM oauth_grants WHERE id IN (
+    SELECT id FROM oauth_grants WHERE expires_at < clock_timestamp() - make_interval(secs => $2::int)
+    UNION
+    SELECT id FROM oauth_grants WHERE revoked_at < clock_timestamp() - make_interval(secs => $2::int)
+    LIMIT $1::int)
+`
+
+type DeleteFinishedOAuthGrantsParams struct {
+	Batch         int32
+	WindowSeconds int32
+}
+
+// Expired or revoked (incl. superseded by re-consent) grants after the replay window;
+// codes and tokens of the family cascade.
+func (q *Queries) DeleteFinishedOAuthGrants(ctx context.Context, arg DeleteFinishedOAuthGrantsParams) (int64, error) {
+	result, err := q.db.Exec(ctx, deleteFinishedOAuthGrants, arg.Batch, arg.WindowSeconds)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
+}
+
 const deleteOAuthClientRedirects = `-- name: DeleteOAuthClientRedirects :execrows
 DELETE FROM oauth_client_redirects WHERE workspace_id=$1 AND client_id=$2
 `
@@ -693,8 +769,48 @@ func (q *Queries) FindOAuthClient(ctx context.Context, arg FindOAuthClientParams
 	return i, err
 }
 
+const findOAuthCodeForClient = `-- name: FindOAuthCodeForClient :one
+SELECT id, workspace_id, grant_id, user_id, client_id, code_hash, redirect_uri, pkce_challenge, nonce, created_at, expires_at, consumed_at FROM oauth_authorization_codes
+WHERE workspace_id=$1 AND client_id=$2 AND code_hash=$3 AND redirect_uri=$4 AND pkce_challenge=$5
+`
+
+type FindOAuthCodeForClientParams struct {
+	WorkspaceID   uuid.UUID
+	ClientID      uuid.UUID
+	CodeHash      []byte
+	RedirectUri   string
+	PkceChallenge string
+}
+
+// Unlocked pre-authentication lookup; the issuing transaction re-reads under lock.
+func (q *Queries) FindOAuthCodeForClient(ctx context.Context, arg FindOAuthCodeForClientParams) (OauthAuthorizationCode, error) {
+	row := q.db.QueryRow(ctx, findOAuthCodeForClient,
+		arg.WorkspaceID,
+		arg.ClientID,
+		arg.CodeHash,
+		arg.RedirectUri,
+		arg.PkceChallenge,
+	)
+	var i OauthAuthorizationCode
+	err := row.Scan(
+		&i.ID,
+		&i.WorkspaceID,
+		&i.GrantID,
+		&i.UserID,
+		&i.ClientID,
+		&i.CodeHash,
+		&i.RedirectUri,
+		&i.PkceChallenge,
+		&i.Nonce,
+		&i.CreatedAt,
+		&i.ExpiresAt,
+		&i.ConsumedAt,
+	)
+	return i, err
+}
+
 const findOAuthConsent = `-- name: FindOAuthConsent :one
-SELECT id, workspace_id, user_id, client_id, scopes, version, refresh_allowed, granted_at, revoked_at FROM oauth_consents WHERE workspace_id=$1 AND user_id=$2 AND client_id=$3
+SELECT id, workspace_id, user_id, client_id, scopes, version, refresh_allowed, client_name, granted_at, revoked_at FROM oauth_consents WHERE workspace_id=$1 AND user_id=$2 AND client_id=$3
 `
 
 type FindOAuthConsentParams struct {
@@ -714,6 +830,7 @@ func (q *Queries) FindOAuthConsent(ctx context.Context, arg FindOAuthConsentPara
 		&i.Scopes,
 		&i.Version,
 		&i.RefreshAllowed,
+		&i.ClientName,
 		&i.GrantedAt,
 		&i.RevokedAt,
 	)
@@ -959,7 +1076,7 @@ func (q *Queries) GetOAuthCode(ctx context.Context, arg GetOAuthCodeParams) (Oau
 }
 
 const getOAuthConsent = `-- name: GetOAuthConsent :one
-SELECT id, workspace_id, user_id, client_id, scopes, version, refresh_allowed, granted_at, revoked_at FROM oauth_consents WHERE workspace_id = $1 AND id = $2
+SELECT id, workspace_id, user_id, client_id, scopes, version, refresh_allowed, client_name, granted_at, revoked_at FROM oauth_consents WHERE workspace_id = $1 AND id = $2
 `
 
 type GetOAuthConsentParams struct {
@@ -978,6 +1095,7 @@ func (q *Queries) GetOAuthConsent(ctx context.Context, arg GetOAuthConsentParams
 		&i.Scopes,
 		&i.Version,
 		&i.RefreshAllowed,
+		&i.ClientName,
 		&i.GrantedAt,
 		&i.RevokedAt,
 	)
@@ -1125,6 +1243,44 @@ type GetOAuthTokenParams struct {
 
 func (q *Queries) GetOAuthToken(ctx context.Context, arg GetOAuthTokenParams) (OauthToken, error) {
 	row := q.db.QueryRow(ctx, getOAuthToken, arg.WorkspaceID, arg.ID)
+	var i OauthToken
+	err := row.Scan(
+		&i.ID,
+		&i.WorkspaceID,
+		&i.GrantID,
+		&i.UserID,
+		&i.ClientID,
+		&i.TokenHash,
+		&i.TokenType,
+		&i.Generation,
+		&i.ParentTokenID,
+		&i.CreatedAt,
+		&i.ExpiresAt,
+		&i.UsedAt,
+		&i.RevokedAt,
+	)
+	return i, err
+}
+
+const getOAuthTokenForClient = `-- name: GetOAuthTokenForClient :one
+SELECT id, workspace_id, grant_id, user_id, client_id, token_hash, token_type, generation, parent_token_id, created_at, expires_at, used_at, revoked_at FROM oauth_tokens WHERE workspace_id=$1 AND client_id=$2 AND token_hash=$3 AND token_type=$4
+`
+
+type GetOAuthTokenForClientParams struct {
+	WorkspaceID uuid.UUID
+	ClientID    uuid.UUID
+	TokenHash   []byte
+	TokenType   string
+}
+
+// Unlocked pre-authentication lookup for revocation.
+func (q *Queries) GetOAuthTokenForClient(ctx context.Context, arg GetOAuthTokenForClientParams) (OauthToken, error) {
+	row := q.db.QueryRow(ctx, getOAuthTokenForClient,
+		arg.WorkspaceID,
+		arg.ClientID,
+		arg.TokenHash,
+		arg.TokenType,
+	)
 	var i OauthToken
 	err := row.Scan(
 		&i.ID,
@@ -1336,10 +1492,62 @@ func (q *Queries) ListUserOAuthGrants(ctx context.Context, arg ListUserOAuthGran
 	return items, nil
 }
 
-const lockOAuthWorkspace = `-- name: LockOAuthWorkspace :one
-SELECT id, slug, name, icon_file_id, visibility, owner_id, created_at, default_audio_bitrate_kbps, default_max_stream_preset, default_max_streams, storage_quota_bytes, storage_used_bytes, allow_self_nickname, default_camera_limit, suspended_at, suspended_reason, suspended_by, time_format, sip_enabled FROM workspaces WHERE id=$1 FOR UPDATE
+const listUserOAuthGrantsWithClient = `-- name: ListUserOAuthGrantsWithClient :many
+SELECT g.id, g.workspace_id, c.name AS client_name, g.scopes, g.created_at, g.expires_at, g.revoked_at
+FROM oauth_grants g JOIN oauth_clients c ON c.workspace_id=g.workspace_id AND c.id=g.client_id
+WHERE g.user_id=$1 AND ($2::uuid IS NULL OR g.workspace_id=$2)
+ORDER BY g.created_at DESC
 `
 
+type ListUserOAuthGrantsWithClientParams struct {
+	UserID      uuid.UUID
+	WorkspaceID *uuid.UUID
+}
+
+type ListUserOAuthGrantsWithClientRow struct {
+	ID          uuid.UUID
+	WorkspaceID uuid.UUID
+	ClientName  string
+	Scopes      []string
+	CreatedAt   time.Time
+	ExpiresAt   time.Time
+	RevokedAt   *time.Time
+}
+
+func (q *Queries) ListUserOAuthGrantsWithClient(ctx context.Context, arg ListUserOAuthGrantsWithClientParams) ([]ListUserOAuthGrantsWithClientRow, error) {
+	rows, err := q.db.Query(ctx, listUserOAuthGrantsWithClient, arg.UserID, arg.WorkspaceID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []ListUserOAuthGrantsWithClientRow{}
+	for rows.Next() {
+		var i ListUserOAuthGrantsWithClientRow
+		if err := rows.Scan(
+			&i.ID,
+			&i.WorkspaceID,
+			&i.ClientName,
+			&i.Scopes,
+			&i.CreatedAt,
+			&i.ExpiresAt,
+			&i.RevokedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const lockOAuthWorkspace = `-- name: LockOAuthWorkspace :one
+SELECT id, slug, name, icon_file_id, visibility, owner_id, created_at, default_audio_bitrate_kbps, default_max_stream_preset, default_max_streams, storage_quota_bytes, storage_used_bytes, allow_self_nickname, default_camera_limit, suspended_at, suspended_reason, suspended_by, time_format, sip_enabled FROM workspaces WHERE id=$1 FOR NO KEY UPDATE
+`
+
+// NO KEY UPDATE serializes identity writers and provider issuance without blocking
+// workspace-wide FK key-share inserts (messages, members, files) behind it.
 func (q *Queries) LockOAuthWorkspace(ctx context.Context, id uuid.UUID) (Workspace, error) {
 	row := q.db.QueryRow(ctx, lockOAuthWorkspace, id)
 	var i Workspace
@@ -1434,7 +1642,7 @@ func (q *Queries) RevokeOAuthClientSecrets(ctx context.Context, arg RevokeOAuthC
 }
 
 const revokeOAuthConsent = `-- name: RevokeOAuthConsent :one
-UPDATE oauth_consents SET revoked_at=clock_timestamp(),version=version+1 WHERE workspace_id=$1 AND user_id=$2 AND client_id=$3 RETURNING id, workspace_id, user_id, client_id, scopes, version, refresh_allowed, granted_at, revoked_at
+UPDATE oauth_consents SET revoked_at=clock_timestamp(),version=version+1 WHERE workspace_id=$1 AND user_id=$2 AND client_id=$3 RETURNING id, workspace_id, user_id, client_id, scopes, version, refresh_allowed, client_name, granted_at, revoked_at
 `
 
 type RevokeOAuthConsentParams struct {
@@ -1454,6 +1662,7 @@ func (q *Queries) RevokeOAuthConsent(ctx context.Context, arg RevokeOAuthConsent
 		&i.Scopes,
 		&i.Version,
 		&i.RefreshAllowed,
+		&i.ClientName,
 		&i.GrantedAt,
 		&i.RevokedAt,
 	)
@@ -1704,9 +1913,9 @@ func (q *Queries) UpdateOAuthClientName(ctx context.Context, arg UpdateOAuthClie
 }
 
 const upsertOAuthConsent = `-- name: UpsertOAuthConsent :one
-INSERT INTO oauth_consents(workspace_id,user_id,client_id,scopes,refresh_allowed) VALUES($1,$2,$3,$4,$5)
+INSERT INTO oauth_consents(workspace_id,user_id,client_id,scopes,refresh_allowed,client_name) VALUES($1,$2,$3,$4,$5,$6)
 ON CONFLICT(workspace_id,user_id,client_id) DO UPDATE SET scopes=EXCLUDED.scopes,refresh_allowed=EXCLUDED.refresh_allowed,
-version=oauth_consents.version+1,granted_at=clock_timestamp(),revoked_at=NULL RETURNING id, workspace_id, user_id, client_id, scopes, version, refresh_allowed, granted_at, revoked_at
+client_name=EXCLUDED.client_name,version=oauth_consents.version+1,granted_at=clock_timestamp(),revoked_at=NULL RETURNING id, workspace_id, user_id, client_id, scopes, version, refresh_allowed, client_name, granted_at, revoked_at
 `
 
 type UpsertOAuthConsentParams struct {
@@ -1715,6 +1924,7 @@ type UpsertOAuthConsentParams struct {
 	ClientID       uuid.UUID
 	Scopes         []string
 	RefreshAllowed bool
+	ClientName     string
 }
 
 func (q *Queries) UpsertOAuthConsent(ctx context.Context, arg UpsertOAuthConsentParams) (OauthConsent, error) {
@@ -1724,6 +1934,7 @@ func (q *Queries) UpsertOAuthConsent(ctx context.Context, arg UpsertOAuthConsent
 		arg.ClientID,
 		arg.Scopes,
 		arg.RefreshAllowed,
+		arg.ClientName,
 	)
 	var i OauthConsent
 	err := row.Scan(
@@ -1734,6 +1945,7 @@ func (q *Queries) UpsertOAuthConsent(ctx context.Context, arg UpsertOAuthConsent
 		&i.Scopes,
 		&i.Version,
 		&i.RefreshAllowed,
+		&i.ClientName,
 		&i.GrantedAt,
 		&i.RevokedAt,
 	)

@@ -181,7 +181,7 @@ func wireIdentity(d Deps, mux *routeRecorder, a *auth.Service) (*sso.Service, *d
 			signers[ws] = ring
 			return ring, nil
 		}
-		op, err = oauthprovider.New(oauthprovider.Config{DB: d.DB, PublicOrigin: settings.Origin, Entitlements: d.Config.IdentityEntitlements(), SignerForWorkspace: signer, ResolveSession: providerSessionResolver(a)})
+		op, err = oauthprovider.New(oauthprovider.Config{DB: d.DB, PublicOrigin: settings.Origin, Entitlements: d.Config.IdentityEntitlements(), SignerForWorkspace: signer, ResolveSession: providerSessionResolver(a), Quota: providerClientQuota(d)})
 		if err != nil {
 			panic(err)
 		}

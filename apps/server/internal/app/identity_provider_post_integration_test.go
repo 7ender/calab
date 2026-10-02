@@ -67,6 +67,10 @@ func TestIdentityProviderAuthorizationPOSTBrowserResolverAndRouteCensus(t *testi
 	if _, err := testDB.Q.CreateOAuthConsent(context.Background(), sqlc.CreateOAuthConsentParams{WorkspaceID: uuid.MustParse(f.a.Id), UserID: uuid.MustParse(f.local.id), ClientID: uuid.MustParse(c.Client.Id), Scopes: []string{"openid"}}); err != nil {
 		t.Fatal(err)
 	}
+	// The consent records the client name the user saw (prompt=none re-checks it).
+	if _, err := testDB.Pool.Exec(context.Background(), "UPDATE oauth_consents SET client_name=$1 WHERE client_id=$2", c.Client.Name, uuid.MustParse(c.Client.Id)); err != nil {
+		t.Fatal(err)
+	}
 	challenge := sha256.Sum256([]byte(strings.Repeat("v", 43)))
 	args := url.Values{"client_id": {c.Client.ClientId}, "redirect_uri": {c.Client.RedirectUris[0]}, "response_type": {"code"}, "scope": {"openid"}, "state": {"post-cookie-state"}, "nonce": {"post-cookie-nonce"}, "code_challenge_method": {"S256"}, "code_challenge": {base64.RawURLEncoding.EncodeToString(challenge[:])}, "prompt": {"none"}}
 	path := "/oidc/workspaces/" + f.a.Id + "/authorize"

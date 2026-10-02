@@ -15,19 +15,14 @@ func (s *Service) listGrants(w http.ResponseWriter, r *http.Request) {
 		writeAPIError(w, err)
 		return
 	}
-	grants, err := s.c.DB.Q.ListUserOAuthGrants(r.Context(), sqlc.ListUserOAuthGrantsParams{UserID: p.UserID, WorkspaceID: authorityScope(p)})
+	grants, err := s.c.DB.Q.ListUserOAuthGrantsWithClient(r.Context(), sqlc.ListUserOAuthGrantsWithClientParams{UserID: p.UserID, WorkspaceID: authorityScope(p)})
 	if err != nil {
 		writeAPIError(w, err)
 		return
 	}
 	out := &v1.ListOAuthGrantsResponse{}
 	for _, g := range grants {
-		c, err := s.c.DB.Q.GetOAuthClient(r.Context(), sqlc.GetOAuthClientParams{WorkspaceID: g.WorkspaceID, ID: g.ClientID})
-		if err != nil {
-			writeAPIError(w, err)
-			return
-		}
-		dto := &v1.OAuthGrant{Id: g.ID.String(), WorkspaceId: g.WorkspaceID.String(), ClientName: c.Name, Scopes: g.Scopes, CreatedAt: timestamppb.New(g.CreatedAt), ExpiresAt: timestamppb.New(g.ExpiresAt)}
+		dto := &v1.OAuthGrant{Id: g.ID.String(), WorkspaceId: g.WorkspaceID.String(), ClientName: g.ClientName, Scopes: g.Scopes, CreatedAt: timestamppb.New(g.CreatedAt), ExpiresAt: timestamppb.New(g.ExpiresAt)}
 		if g.RevokedAt != nil {
 			dto.RevokedAt = timestamppb.New(*g.RevokedAt)
 		}

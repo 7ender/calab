@@ -11,11 +11,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/calaba/calaba/server/internal/db/sqlc"
 	"github.com/calaba/calaba/server/internal/httpx"
 	"github.com/google/uuid"
-	"github.com/jackc/pgx/v5"
-	"github.com/jackc/pgx/v5/pgconn"
 )
 
 func TestIdentityProtocolWrapperErrors(t *testing.T) {
@@ -51,44 +48,29 @@ func TestIdentityProtocolWrapperErrors(t *testing.T) {
 	}
 }
 
-type quotaNoRows struct{ calls int }
-
-func (q *quotaNoRows) Exec(context.Context, string, ...any) (pgconn.CommandTag, error) {
-	return pgconn.CommandTag{}, pgx.ErrNoRows
-}
-func (q *quotaNoRows) Query(context.Context, string, ...any) (pgx.Rows, error) {
-	return nil, pgx.ErrNoRows
-}
-func (q *quotaNoRows) QueryRow(context.Context, string, ...any) pgx.Row {
-	q.calls++
-	return quotaMissingRow{}
-}
-
-type quotaMissingRow struct{}
-
-func (quotaMissingRow) Scan(...any) error { return pgx.ErrNoRows }
-
 func TestQuotaParsingPreservesExactAcceptedBody(t *testing.T) {
 	for _, body := range []string{"client_id=public&grant_type=authorization_code&code=a%2Bb", "grant_type=refresh_token&client_id=public&refresh_token=opaque%25secret"} {
 		request := httptest.NewRequestWithContext(context.Background(), "POST", "/oidc/workspaces/"+uuid.NewString()+"/token", bytes.NewBufferString(body))
 		request.Header.Set("Content-Type", "application/x-www-form-urlencoded")
-		dbtx := &quotaNoRows{}
-		_, found, err := quotaTokenClient(request, sqlc.New(dbtx), uuid.New())
-		if found || err != nil || dbtx.calls != 1 {
-			t.Fatalf("unregistered client quota: %v %v", found, err)
+		id, err := quotaFormClientID(request)
+		if id != "public" || err != nil {
+			t.Fatalf("public client bucket: %q %v", id, err)
 		}
 		restored, err := io.ReadAll(request.Body)
 		if err != nil || string(restored) != body || request.PostForm != nil || request.Form != nil {
 			t.Fatal("quota parsing modified the provider input")
 		}
 	}
-	for _, body := range []string{"client_id=a&client_id=b", "client_id=a&client_secret=never-trusted", strings.Repeat("x", (16<<10)+1)} {
+	for _, body := range []string{"client_id=a&client_id=b", strings.Repeat("x", (16<<10)+1)} {
 		request := httptest.NewRequestWithContext(context.Background(), "POST", "/oidc/workspaces/"+uuid.NewString()+"/token", strings.NewReader(body))
 		request.Header.Set("Content-Type", "application/x-www-form-urlencoded")
-		dbtx := &quotaNoRows{}
-		_, found, _ := quotaTokenClient(request, sqlc.New(dbtx), uuid.New())
-		if found || dbtx.calls != 0 {
-			t.Fatal("untrusted or ambiguous credentials selected a client bucket")
+		if id, err := quotaFormClientID(request); id != "" || httpx.AsError(err).Status != 400 {
+			t.Fatal("ambiguous or oversized form selected a client bucket")
 		}
+	}
+	request := httptest.NewRequestWithContext(context.Background(), "POST", "/oidc/workspaces/"+uuid.NewString()+"/token", strings.NewReader("client_id=a&client_secret=never-trusted"))
+	request.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	if id, err := quotaFormClientID(request); id != "" || err != nil {
+		t.Fatal("untrusted credentials selected a client bucket")
 	}
 }
