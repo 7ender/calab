@@ -544,6 +544,8 @@ export interface MockServer {
   /** Creates a message from another user and fans out MESSAGE_CREATE (e.g. to produce a mention badge). */
   /** `attachments`: fixture file ids uploaded by the author (e.g. IDS.files.audio by Вера). */
   injectMessage(args: { roomId: string; authorId: string; content: string; replyToId?: string; attachments?: string[]; stickerId?: string; forward?: MockForward }): Message;
+  /** ADR-0057: registers the global built-in «Calab Stikers» pack (workspace-less, `builtin`, usable everywhere); pictures come from the client bundle. */
+  addBuiltinStickerPack(manifest: { id: string; name: string; stickers: { id: string; name: string; emoji: string }[] }): StickerPack;
   /**
    * `userId` read `roomId` up to `messageId` (docs/09 #92): READ_STATE_UPDATE to the reader,
    * READ_RECEIPT to the others (e.g. the DM peer reads Анна's message → ✓✓). False = not moved.
@@ -776,6 +778,7 @@ export async function startMockServer(opts: MockServerOptions = {}): Promise<Moc
     addTempRoom: (a) => impl.addTempRoom(a),
     expireTempRooms: (ms) => impl.expireTempRooms(ms),
     seedBots: () => impl.seedBots(),
+    addBuiltinStickerPack: (m) => impl.addBuiltinStickerPack(m),
     seedLaughStickers: () => impl.seedLaughStickers(),
     setBotAvatar: (id, colors) => impl.setBotAvatar(id, colors),
     holdFiles: () => impl.holdFiles(),
@@ -2547,6 +2550,7 @@ class MockImpl {
 
   /** Non-guest members of the pack's workspace may use it: its rooms, and DMs of two such members. */
   private stickerUsable(pack: StickerPack, room: Room, userId: string): boolean {
+    if (pack.builtin) return true; // ADR-0057: global, every plan, guests too
     const full = (u: string): boolean => {
       const m = this.member(pack.workspaceId, u);
       return !!m && m.role !== WorkspaceRole.GUEST;
@@ -2557,12 +2561,24 @@ class MockImpl {
   }
 
   private myPacks(userId: string): MessageInitShape<typeof MyStickerPacksResponseSchema> {
-    const mine = (this.state.userStickerPacks.get(userId) ?? []).map((id) => this.state.stickerPacks.get(id)).filter((p): p is StickerPack => !!p);
+    const mine = (this.state.userStickerPacks.get(userId) ?? []).map((id) => this.state.stickerPacks.get(id)).filter((p): p is StickerPack => !!p && !p.builtin);
+    const builtin = [...this.state.stickerPacks.values()].filter((p) => p.builtin);
     const ws = new Set(this.state.members.filter((m) => m.userId === userId && m.role !== WorkspaceRole.GUEST).map((m) => m.workspaceId));
-    const installed = mine.filter((p) => ws.has(p.workspaceId));
+    const installed = [...builtin, ...mine.filter((p) => ws.has(p.workspaceId))];
     const ids = new Set(installed.map((p) => p.id));
-    const available = [...this.state.stickerPacks.values()].filter((p) => ws.has(p.workspaceId) && !ids.has(p.id));
+    const available = [...this.state.stickerPacks.values()].filter((p) => !p.builtin && ws.has(p.workspaceId) && !ids.has(p.id));
     return { installed, available };
+  }
+
+  /** ADR-0057: the global built-in pack (workspace-less, `builtin`); its pictures are bundled with the client, the URL is a placeholder. */
+  addBuiltinStickerPack(manifest: { id: string; name: string; stickers: { id: string; name: string; emoji: string }[] }): StickerPack {
+    const at = ts('2026-01-01T00:00:00Z');
+    const stickers = manifest.stickers.map((x) =>
+      create(StickerSchema, { id: x.id, packId: manifest.id, emoji: x.emoji, url: `/api/stickers/builtin/${x.id}.webp`, width: 512, height: 512, animated: false, size: 20_000 }),
+    );
+    const pack = create(StickerPackSchema, { id: manifest.id, workspaceId: '', name: manifest.name, shortName: 'calab_stikers', stickers, createdBy: '', createdAt: at, updatedAt: at, builtin: true });
+    this.state.stickerPacks.set(pack.id, pack);
+    return pack;
   }
 
   private packEvent(p: StickerPack, created = false): void {

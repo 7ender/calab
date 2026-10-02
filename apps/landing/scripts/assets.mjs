@@ -52,6 +52,24 @@ export const CROPS = {
   siplog: { left: 250, top: 120, width: 940, height: 660 },
   // a workspace web app (the test dashboard) open in the window, the call island kept
   webapps: { left: 0, top: 30, width: 1440, height: 870 },
+  // Calab 2.0 (e2e-marketing/landing-v2.spec.ts)
+  // boards with categories in the list and checklist progress «3/7» on the cards
+  boards2: { left: 0, top: 30, width: 1440, height: 640 },
+  // the task panel with two named checklists
+  checklists: { left: 960, top: 30, width: 480, height: 870 },
+  // board settings windows: «Фичи», «Вебхук» (Business)
+  boardfeatures: { left: 250, top: 120, width: 940, height: 660 },
+  boardhook: { left: 250, top: 120, width: 940, height: 660 },
+  // workspace settings → SSO: the connection, the sign-in policy
+  sso: { left: 250, top: 120, width: 940, height: 660 },
+  ssopolicy: { left: 250, top: 120, width: 940, height: 660 },
+  // «Разрешить вход в приложение?» (OAuth consent)
+  consent: { left: 440, top: 215, width: 560, height: 480 },
+  // built-in «Calab Stikers»: chat and the picker
+  stickerchat: { left: 330, top: 30, width: 1110, height: 870 },
+  stickerpicker: { left: 330, top: 30, width: 1110, height: 870 },
+  // the room list: people in a voice room and «Войти»
+  voicelist: { left: 0, top: 30, width: 340, height: 440 },
 };
 
 // `--only=sipdial,siproom` regenerates just those images (raw captures of the other scenes are not needed,
