@@ -1,6 +1,6 @@
 # ADR-0058: Доски — категории, чек-листы, фичи доски, вебхук (2026-10-02)
 
-**Статус: принято для 2.0.0, реализация не начата.** Уточняет ADR-0042 (доски), ADR-0049 (согласования),
+**Статус: принято и реализовано в 2.0.0 (этапы 0–5; правки по итогам реализации — в тексте ниже).** Уточняет ADR-0042 (доски), ADR-0049 (согласования),
 ADR-0031 §4 (очередь вебхуков ботов), ADR-0048 (права v2). Номера 0054–0056 заняты Identity 2.0, 0057 — встроенные стикеры (PR #57);
 миграции 00055–00057 — там же, 00058 — стикеры, наша — **00059**. Ветки — от текущего `main` (доски входят в 2.0.0).
 Номера сверены с кодом при фиксации контракта (этап 0, 02.10).
@@ -131,21 +131,22 @@ ADR-0031 §4 (очередь вебхуков ботов), ADR-0048 (права 
   (row-lock сериализует писателей доски — приемлемо). Комментарии: сообщение коммитится в `internal/messages`,
   `TaskHook` работает после коммита — строка пишется в транзакции хука сразу после; для правки/удаления
   добавляется `TaskCommentHook(kind)`. Окно потери — падение процесса между коммитом и хуком; принято,
-  фиксируется в docs (хук внутри tx сообщений — бэклог).
+  описано в docs/19 «Вебхук доски → Известный пробел» (хук внутри tx сообщений — бэклог).
 - Типы: `task.created | task.updated` (любой kind журнала: поля, статус, исполнители, связи, вложения,
   согласования, чек-листы) `| task.archived | task.restored` (свипер — `actor: null`) `| task.moved_out`
   (исходная доска) `| task.moved_in` (целевая, задача уже с новым ключом) `| task.comment.created | .updated |
   .deleted | ping`.
-- **Payload** — proto `BoardWebhookEvent` (boards.proto), protojson с `EmitDefaultValues` как у ботов:
+- **Payload** — proto `BoardWebhookEvent` (boards.proto), protojson с `UseProtoNames` (имена полей — snake_case, как в proto, не lowerCamelCase REST) и `EmitUnpopulated` (все поля присутствуют, неустановленные сообщения — `null`, например `"actor": null` у изменений сервера; `uint64`, как `size` вложения, — строкой):
   ```json
   {"id": "<uuid доставки — ключ идемпотентности>", "version": 1, "type": "task.updated", "sequence": 42,
    "occurred_at": "…", "workspace_id": "…", "board": {"id": "…", "key": "FNG", "name": "…"},
    "actor": {"id": "…", "name": "…", "is_bot": false},
-   "task": { …Task без viewer-полей, attachments и checklists (счётчики остаются)… },
+   "task": { …Task: viewer-поля (subscribed, muted, unread, viewer_state) в значениях по умолчанию, attachments и checklists пусты (счётчики остаются)… },
    "task_url": "https://…/t/FNG-12",
    "changes": [{"field": "status", "before": {…}, "after": {…}}],
    "comment": {"id", "author_id", "text", "attachments": [{"name", "size", "mime"}], "created_at", "edited_at"}}
   ```
+  `task.moved_out` несёт только `id`, прежний `key` и `board_id` доски-источника и одну запись `changes` `moved_board` с `before` (полная задача — в `moved_in` целевой доски); у `ping` `sequence = 0`, `task` не задан.
   Ссылка — отдельное поле `task_url` (в `Task` поля `url` нет, контракт `Task` не засоряем); `sequence` —
   `uint32` (число в JSON; `uint64` protojson отдал бы строкой), в БД `bigint`.
   `changes` = записи `task_activity` транзакции (`field` = kind, before/after = их jsonb) — журнал и вебхук не

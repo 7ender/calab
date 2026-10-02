@@ -3,6 +3,7 @@ export { Bot } from './bot.js';
 export type {
   BotEvents,
   BotOptions,
+  ChecklistResult,
   CommandEvent,
   FileInput,
   EditOptions,
@@ -14,10 +15,25 @@ export type {
 export { ApiError, GatewayFatalError, type GatewayFatal } from './errors.js';
 export { Gateway, gatewayUrl, type GatewayOptions, type GatewayStatus, type SocketLike } from './gateway.js';
 export { Rest, parseRetryAfter, type RestOptions } from './rest.js';
-export { DELIVERY_HEADER, SIGNATURE_HEADER, parseWebhookUpdate, signWebhook, verifyWebhookSignature } from './webhook.js';
+export {
+  BOARD_WEBHOOK_TOLERANCE_SECONDS,
+  DELIVERY_HEADER,
+  SIGNATURE_HEADER,
+  parseBoardWebhookEvent,
+  parseWebhookUpdate,
+  signBoardWebhook,
+  signWebhook,
+  verifyBoardWebhook,
+  verifyWebhookSignature,
+} from './webhook.js';
 // Contract types the events and methods use (generated from proto/calaba/v1).
 export type {
   Badge,
+  Board,
+  BoardCategory,
+  BoardWebhookEvent,
+  TaskChecklist,
+  TaskChecklistItem,
   Bot as BotProfile,
   BotCommand,
   CalendarEvent,
@@ -51,4 +67,4 @@ export type {
   Workspace,
   WorkspaceMember,
 } from '@calaba/protocol';
-export { RoomType } from '@calaba/protocol';
+export { BoardFeature, EstimateScale, RoomType } from '@calaba/protocol';

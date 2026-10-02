@@ -15,6 +15,7 @@ its rights are only what its roles and room overrides give it, exactly as for pe
 - [Gateway: realtime events](#gateway-realtime-events)
 - [Commands](#commands)
 - [Webhook](#webhook)
+- [Board webhook](#board-webhook)
 - [Voice through LiveKit](#voice-through-livekit)
 - [Stickers over the API](#stickers-over-the-api)
 - [Limits and errors](#limits-and-errors)
@@ -151,6 +152,7 @@ with the decision for bots is `apps/server/internal/app/botroutes.go`.
 | `GET /api/workspaces/{id}/freebusy?users=&from=&to=` · `POST …/freebusy/suggest` | free/busy and finding a time (ADR-0041): a bot gets the busy time only (no titles or attendees of external events). SDK `bot.calendar.freebusy/suggest` | not a guest |
 | `PUT /api/events/{id}/rsvp`, `GET /api/me/events/today`, CalDAV (`/api/me/caldav…`, `/api/me/external-events`) | 403 `BOT_NOT_ALLOWED`: a bot attends no meetings and has no external calendar | — |
 | task boards (ADR-0042): `GET /api/workspaces/{id}/boards`, `GET /api/boards/{id}`, `GET/POST /api/boards/{id}/tasks`, `GET/PATCH /api/tasks/{id}`, `PUT /api/tasks/{id}/assignees`, `GET /api/workspaces/{id}/tasks/search?q=`, `GET /api/t/{KEY-N}`, `GET /api/me/tasks`, statuses/labels/milestones/views, task archive | the bot works like a person, within the board bits of its roles and overrides (it can be an assignee and be let into a private board personally); a comment is a message in `task.roomId`. Board access (`PUT …/permissions`) and the final delete (`DELETE …?purge=1`) — 403 `BOT_NOT_ALLOWED`. SDK: `bot.boards.list/get`, `bot.tasks.list/search/get/create/update/setAssignees/comment` | `VIEW_BOARD` / `CREATE_TASKS` / `EDIT_TASKS` / `MANAGE_BOARD` |
+| boards 2.0 (ADR-0058): `GET/POST /api/workspaces/{id}/board-categories`, `PATCH/DELETE /api/board-categories/{id}`, `PUT /api/workspaces/{id}/boards/order`, `PATCH /api/boards/{id} {setDisabledFeatures, disabledFeatures, estimateScale}`, checklists: `POST /api/tasks/{id}/checklists`, `PATCH/DELETE /api/checklists/{id}`, `POST /api/checklists/{id}/items`, `PATCH/DELETE /api/checklist-items/{id}`, `POST /api/checklist-items/{id}/convert` | categories — `CREATE_BOARDS`, placing a board and features — `MANAGE_BOARD`, checklists — like task fields (`EDIT_TASKS`; `CREATE_TASKS` — its own and assigned); checklists need the Team plan (`409 PLAN_LIMIT`). A board feature is off → a request that **changes** its field to a non-empty value is `409 CONFLICT`, `reason FEATURE_DISABLED`, `field` = the field name (`estimate`, `dueOn`, `approverIds`…); clearing it and repeating the current value pass. The board webhook (`/api/boards/{id}/webhook*`) is for people only, a bot gets `403 BOT_NOT_ALLOWED`. SDK: `bot.boards.categories.*`, `bot.boards.setFeatures`, `bot.tasks.checklists.*` | see left |
 | `GET /api/workspaces/{id}/sounds` · `POST /api/rooms/{id}/sounds/play {soundId}` | soundboard (ADR-0036): the workspace's sounds; play one to everyone in the call (`builtin:<name>` or a sound id; 1 per 2 s per bot, 5 per 10 s per room) | the bot is in the room's call |
 | `POST /api/workspaces/{id}/sounds` · `PATCH · DELETE …/sounds/{soundId}` | the sound library (ADR-0051): the clip is the bot's own upload to this workspace | `MANAGE_STICKERS` |
 | stickers: `GET/POST /api/workspaces/{id}/sticker-packs`, `/api/sticker-packs/{id}…`, `/api/stickers/{id}`, `/api/me/sticker-packs…` | see [Stickers](#stickers-over-the-api) | member / `MANAGE_STICKERS` |
@@ -392,6 +394,183 @@ def ok(secret: bytes, raw_body: bytes, header: str) -> bool:
 In the SDK: `new Bot(token, { server, webhookSecret })` and `bot.handleWebhook(rawBody, headers)` — it verifies the
 signature, drops repeats and emits the same `message` / `command` / `reaction` events as the gateway.
 
+## Board webhook
+
+(ADR-0058.) A board POSTs JSON to your HTTPS address whenever something changes in its tasks. It is separate from the
+[bot webhook](#webhook): one webhook per board, every task change, no event filter.
+
+- **Who configures it.** People only (a bot gets `403 BOT_NOT_ALLOWED`: it holds a secret and exports data): `MANAGE_BOARD`
+  on the board **and** `MANAGE_INTEGRATIONS` of the workspace, **Business** plan (below it: `409 CONFLICT`, `reason PLAN_LIMIT`).
+  The webhook belongs to the board, not its creator: anyone with `MANAGE_BOARD` sees and changes it.
+- **Routes.** `PUT /api/boards/{id}/webhook {url, secret?}` — create, replace, or re-enable a disabled one; `url` is
+  `https://` to a public address only, `secret` 16..256 characters; empty — the server generates 32 random bytes (base64url)
+  and returns `secret` **once** in the response. `GET` — the state (`url`, `hasSecret`, `enabled`, `disabledAt`,
+  `failingSince`, `lastOkAt`, `lastError`, `pending`, `pausedReason`); the secret is never returned. `DELETE` → 204 (the
+  queue is marked `failed`). `POST …/webhook/ping` — synchronously sends a `ping` event the same way →
+  `{ok, status, error}`, at most once per 10 s (`429`).
+- **Events** (`type`): `task.created`, `task.updated` (any change: fields, status, assignees, relations, attachments,
+  approvals, checklists), `task.archived`, `task.restored` (auto-archive — `actor: null`), `task.moved_in` (the target
+  board; the task already has its new key), `task.moved_out` (the source board), `task.comment.created`,
+  `task.comment.updated`, `task.comment.deleted`, `ping`. The changes of one transaction make one event; `changes` are the
+  task's journal entries (`field` = the journal `kind`: `status`, `assignees`, `checklist` …; `before` / `after` — their data).
+- **Request.** `POST <url>`, `Content-Type: application/json`, `User-Agent: Calab-Webhook/1.0`, headers:
+
+  | Header | Value |
+  |---|---|
+  | `X-Calab-Webhook-Version` | `1` (the contract only grows by adding fields) |
+  | `X-Calab-Event` | the event `type` |
+  | `X-Calab-Delivery` | the delivery id (= `id` in the body) |
+  | `X-Calab-Timestamp` | unix seconds of sending |
+  | `X-Calab-Signature` | `v1=<hex HMAC-SHA256(secret, timestamp + "." + body)>` |
+
+- **Signature.** The HMAC is computed over `timestamp + "." + the raw body bytes`. Reject the request when
+  `|now − timestamp| > 5 minutes` (replay protection) and compare signatures in constant time. Bots stay on `sha256=…`
+  without a timestamp.
+- **Delivery.** At-least-once: repeats are possible and the order of arrival is not guaranteed. **Idempotency** — by `id`
+  (remember the ones you saw); **ordering** — by `sequence` (monotonic per board, from 1; `ping` has 0). Success is any
+  `2xx` within 10 s, redirects are errors. Retries: 1 min, 2, 4 … up to 1 h, a delivery lives a day; a webhook failing for
+  a day in a row is **disabled** (`enabled: false`, the queue is dropped; `PUT` re-enables it). Accept bodies up to 256 KB.
+- **Pauses.** When the plan drops below Business the webhook is kept but paused (`pausedReason = PLAN`): new events are not
+  queued, after an upgrade delivery continues with new events. An archived board is read-only and produces no events; the
+  queue already accumulated is still delivered.
+- **Known gap.** Comment events are queued **after** the message commits: if the process dies exactly between the two the
+  event is lost (a rare window; task-change events are written in the same transaction and are not lost).
+
+### Body format
+
+`BoardWebhookEvent` in protojson, but with the **proto field names (snake_case)**, not the lowerCamelCase of REST. Every
+field is present: unset ones are `null` (`actor: null` for server-made changes, `edited_at: null`), empty strings and lists
+as they are; `uint64` (e.g. an attachment `size`) is a **string**, `sequence` is a number. `task` is the task without any
+viewer data (`subscribed`, `muted`, `unread`, `viewer_state` are always at their defaults), `attachments` and `checklists`
+are always empty (the `attachment_count`, `checklist_total/done` counters stay); `comment` only for `task.comment.*`. The task link is `task_url`. A real example (the
+golden fixture `apps/server/internal/boards/testdata/webhook_event.json`, fields in alphabetical order; to show both
+`changes` and `comment` it is assembled together — in a real `task.updated`, `comment` is `null`):
+
+```json
+{
+  "actor": {
+    "id": "0192a000-0000-7000-8000-0000000000cc",
+    "is_bot": false,
+    "name": "Анна"
+  },
+  "board": {
+    "id": "0192a000-0000-7000-8000-0000000000bb",
+    "key": "FNG",
+    "name": "Финансы"
+  },
+  "changes": [
+    {
+      "after": {
+        "status_id": "s2",
+        "status_type": "started"
+      },
+      "before": {
+        "status_id": "s1",
+        "status_type": "unstarted"
+      },
+      "field": "status"
+    }
+  ],
+  "comment": {
+    "attachments": [
+      {
+        "mime": "application/pdf",
+        "name": "a.pdf",
+        "size": "1024"
+      }
+    ],
+    "author_id": "u1",
+    "created_at": "2026-10-02T12:00:00Z",
+    "edited_at": null,
+    "id": "m1",
+    "text": "готово"
+  },
+  "id": "0192a000-0000-7000-8000-000000000001",
+  "occurred_at": "2026-10-02T12:00:00Z",
+  "sequence": 42,
+  "task": {
+    "approval_required": 0,
+    "approval_state": "TASK_APPROVAL_STATE_UNSPECIFIED",
+    "approvers": [],
+    "archived_at": null,
+    "assignees": [],
+    "attachment_count": 0,
+    "attachments": [],
+    "board_id": "0192a000-0000-7000-8000-0000000000bb",
+    "checklist_done": 3,
+    "checklist_total": 7,
+    "checklists": [],
+    "comment_count": 0,
+    "completed_at": null,
+    "completed_by": "",
+    "created_at": "2026-10-02T12:00:00Z",
+    "created_by": "",
+    "description": "",
+    "due_on": "",
+    "estimate": 3,
+    "id": "0192a000-0000-7000-8000-0000000000dd",
+    "key": "FNG-12",
+    "label_ids": [],
+    "milestone_id": "",
+    "muted": false,
+    "number": 12,
+    "parent_id": "",
+    "position": 0,
+    "priority": "TASK_PRIORITY_HIGH",
+    "relations": [],
+    "room_id": "",
+    "start_on": "",
+    "started_at": null,
+    "status_id": "s2",
+    "subscribed": false,
+    "subtask_count": 0,
+    "subtask_done": 0,
+    "title": "Отчёт",
+    "unread": false,
+    "updated_at": "2026-10-02T12:00:00Z",
+    "viewer_state": false,
+    "workspace_id": ""
+  },
+  "task_url": "https://app.example.com/t/FNG-12",
+  "type": "task.updated",
+  "version": 1,
+  "workspace_id": "0192a000-0000-7000-8000-0000000000aa"
+}
+```
+
+`task.moved_out` carries only what the source board knew: `task` holds just `id`, the old `key` and the source `board_id`,
+`changes` is a single `moved_board` entry with `before`; the whole task (new key, the target's statuses and labels) arrives
+in the target board's `task.moved_in`.
+
+### Verifying the signature
+
+```js
+import { createHmac, timingSafeEqual } from 'node:crypto';
+
+// rawBody — the raw body bytes (a Buffer), not re-serialized JSON; headers — request headers, lower-case
+export function verifyBoardWebhook(secret, rawBody, headers, now = Date.now() / 1000) {
+  const ts = headers['x-calab-timestamp'];
+  if (!ts || Math.abs(now - Number(ts)) > 300) return false; // replay: ±5 minute window
+  const want = Buffer.from('v1=' + createHmac('sha256', secret).update(`${ts}.`).update(rawBody).digest('hex'));
+  const got = Buffer.from(headers['x-calab-signature'] ?? '');
+  return want.length === got.length && timingSafeEqual(want, got);
+}
+```
+
+```python
+import hashlib, hmac, time
+
+def verify_board_webhook(secret: bytes, raw_body: bytes, headers: dict, now: float | None = None) -> bool:
+    ts = headers.get("X-Calab-Timestamp", "")
+    if not ts.isdigit() or abs((now or time.time()) - int(ts)) > 300:  # replay: ±5 minute window
+        return False
+    mac = hmac.new(secret, ts.encode() + b"." + raw_body, hashlib.sha256).hexdigest()
+    return hmac.compare_digest("v1=" + mac, headers.get("X-Calab-Signature", ""))
+```
+
+In the SDK: `verifyBoardWebhook(secret, timestamp, body, signature)` from `@calaba/bot-sdk` (checks the signature and the
+±5 minute window; `parseBoardWebhookEvent(body)` parses the body).
+
 ## Voice through LiveKit
 
 Media flows directly through LiveKit (the SFU) — our REST API does not proxy it. A bot in a call is an ordinary
@@ -503,6 +682,8 @@ Every error is an `ApiError`. `code` comes from `ErrorCode` (`ERROR_CODE_…`):
 | 404 | `NOT_FOUND` | no such object, or it is hidden from the bot |
 | 409 | `CONFLICT`, `reason: "PLAN_LIMIT"` (`used`/`limit`) | a plan limit (bots, packs, stickers) |
 | 409 | `CONFLICT`, `reason: "REACTION_LIMIT"` | at most 3 different reactions per message |
+| 409 | `CONFLICT`, `reason: "FEATURE_DISABLED"` (`field`) | the board feature is switched off and the request sets its field to a non-empty value |
+| 409 | `CONFLICT`, `reason: "CHECKLIST_LIMIT"` / `"CHECKLIST_ITEM_LIMIT"` / `"BOARD_CATEGORY_LIMIT"` (`used`/`limit`) | ≤ 10 checklists per task, ≤ 100 items per checklist, ≤ 50 board categories per workspace |
 | 409 | `ROOM_FULL` | the voice room is full |
 | 413 | `FILE_TOO_LARGE`, `FILE_QUOTA_EXCEEDED`, `PAYLOAD_TOO_LARGE` | size / quota |
 | 422 | `VALIDATION` (`field`) | an invalid field value |
