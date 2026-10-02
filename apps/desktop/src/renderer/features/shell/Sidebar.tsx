@@ -73,7 +73,7 @@ import { useUi } from '../../stores/ui';
 import { useVoice } from '../../stores/voice';
 import { memberName, rolesOf, useMemberRoles, useWorkspaces } from '../../stores/workspaces';
 import { useConnectingRing, useVoiceStates } from '../../stores/voicePending';
-import { joinOutcome } from '../../lib/voiceEntry';
+import { joinButton, joinOutcome } from '../../lib/voiceEntry';
 import { formatDuration, pad2, useNow } from './voiceFormat';
 import { menuBox, menuItem, menuLabel, menuSeparator } from './menu';
 import { useBoards, workspaceBoards } from '../../stores/boards';
@@ -1123,7 +1123,7 @@ function CardActions({ room }: { room: Room }): ReactNode {
 
 /**
  * «Войти» (owner, 02.10): the voice room row's way into the call (the row itself opens the chat).
- * Shown on hover / focus-within, always when people are inside or on touch; when hidden it is
+ * Shown on hover / focus-within (always on touch, never in a full room without MOVE_MEMBERS); when hidden it is
  * `sr-only`, so Tab still reaches it (and focus reveals it).
  */
 const JoinButton = memo(function JoinButton({ name, onJoin, always }: { name: string; onJoin: () => void; always: boolean }): ReactNode {
@@ -1298,7 +1298,7 @@ function VoiceRoomRow({
       if (mobile) useUi.getState().setNavDrawer(false);
     }
   };
-  const showJoin = !inRoom && canConnect;
+  const joinUi = joinButton({ inRoom, canConnect, canMove, people: people.length, limit, touch: mobile });
 
   return (
     <div
@@ -1385,7 +1385,7 @@ function VoiceRoomRow({
                 </span>
                 {/* The «…» action whether the room is active (card) or not, on hover
                     (owner, Discord reference): no separate action set for either. */}
-                {showJoin ? <JoinButton name={room.name} onJoin={join} always={people.length > 0 || mobile} /> : null}
+                {joinUi.shown ? <JoinButton name={room.name} onJoin={join} always={joinUi.always} /> : null}
                 <CardActions room={room} />
               </span>
             </div>

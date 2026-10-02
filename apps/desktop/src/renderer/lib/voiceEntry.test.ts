@@ -2,7 +2,7 @@ import { RoomType } from '@calaba/protocol';
 import { describe, expect, it } from 'vitest';
 import { useUi } from '../stores/ui';
 import { setVoice, useVoice } from '../stores/voice';
-import { isVoicePreview, joinOutcome } from './voiceEntry';
+import { isVoicePreview, joinButton, joinOutcome } from './voiceEntry';
 
 const base = { inRoom: false, canConnect: true, canMove: false, people: 0, limit: 0 };
 
@@ -37,5 +37,22 @@ describe('voice room chat without voice (docs/09 #14)', () => {
     expect(useUi.getState().lastRoom['w']).toBe('v2');
     expect(useVoice.getState().roomId).toBe('v1');
     expect(isVoicePreview(voiceRoom, useVoice.getState().roomId)).toBe(true);
+  });
+});
+
+describe('row «Войти» visibility', () => {
+  const base = { inRoom: false, canConnect: true, canMove: false, people: 2, limit: 4, touch: false };
+  it('is hover-only on desktop even with people, always on touch', () => {
+    expect(joinButton(base)).toEqual({ shown: true, always: false });
+    expect(joinButton({ ...base, touch: true })).toEqual({ shown: true, always: true });
+  });
+  it('is hidden in a full room, unless I may move members', () => {
+    expect(joinButton({ ...base, people: 4 }).shown).toBe(false);
+    expect(joinButton({ ...base, people: 4, canMove: true }).shown).toBe(true);
+    expect(joinButton({ ...base, people: 9, limit: 0 }).shown).toBe(true);
+  });
+  it('is hidden when already in the room or without CONNECT', () => {
+    expect(joinButton({ ...base, inRoom: true }).shown).toBe(false);
+    expect(joinButton({ ...base, canConnect: false }).shown).toBe(false);
   });
 });
