@@ -147,6 +147,10 @@ func (s *Service) enqueueWebhook(ctx context.Context, q *sqlc.Queries, tx sqlc.D
 	if err != nil {
 		return false, err
 	}
+	if typ == evTaskMovedOut {
+		movedOut(ev, board, taskID, as)
+		return s.insertWebhook(ctx, q, board, seq, typ, ev)
+	}
 	t, ok, err := taskByID(ctx, tx, taskID, false)
 	if err != nil || !ok {
 		return false, err
@@ -163,6 +167,11 @@ func (s *Service) enqueueWebhook(ctx context.Context, q *sqlc.Queries, tx sqlc.D
 		ev.Changes = append(ev.Changes, &v1.BoardWebhookEvent_Change{Field: a.Kind, Before: jsonStruct(a.Before), After: jsonStruct(a.After)})
 	}
 	ev.Comment = comment
+	return s.insertWebhook(ctx, q, board, seq, typ, ev)
+}
+
+// insertWebhook gives the event its delivery id and writes the delivery row.
+func (s *Service) insertWebhook(ctx context.Context, q *sqlc.Queries, board uuid.UUID, seq int64, typ string, ev *v1.BoardWebhookEvent) (bool, error) {
 	id, err := uuid.NewV7()
 	if err != nil {
 		return false, err
@@ -174,6 +183,26 @@ func (s *Service) enqueueWebhook(ctx context.Context, q *sqlc.Queries, tx sqlc.D
 	}
 	err = q.EnqueueBoardWebhookDelivery(ctx, sqlc.EnqueueBoardWebhookDeliveryParams{ID: id, BoardID: board, Seq: seq, EventType: typ, Payload: body})
 	return err == nil, err
+}
+
+// movedOut fills task.moved_out for the source board: only what that board knew — the task id,
+// its old key and the source board — and the move itself without its destination. The task as
+// it is now (new key, the destination's statuses, labels, maybe a private board) and the other
+// changes of the transaction belong to the destination's task.moved_in.
+func movedOut(ev *v1.BoardWebhookEvent, src, taskID uuid.UUID, as []sqlc.TaskActivity) {
+	ev.Task = &v1.Task{Id: taskID.String(), BoardId: src.String()}
+	for _, a := range as {
+		if a.Kind != "moved_board" {
+			continue
+		}
+		var before struct {
+			Key string `json:"key"`
+		}
+		if json.Unmarshal(a.Before, &before) == nil {
+			ev.Task.Key = before.Key
+		}
+		ev.Changes = []*v1.BoardWebhookEvent_Change{{Field: a.Kind, Before: jsonStruct(a.Before)}}
+	}
 }
 
 // webhookEvent: the common part of an event (no id, task or changes yet).

@@ -346,3 +346,33 @@ func TestBoardWebhookChecklist(t *testing.T) {
 		t.Fatalf("convert, parent: %v", ev)
 	}
 }
+
+// A move between boards: the source board gets task.moved_out with only what it knew (id, old
+// key, the move without its destination); the destination gets task.moved_in with the task.
+func TestBoardWebhookMove(t *testing.T) {
+	o, _, ws, _ := setupTeam(t)
+	wid := ws.GetId()
+	setPlan(t, wid, &v1.AdminSetPlanRequest{Plan: v1.Plan_PLAN_ENTERPRISE})
+	src := createBoard(t, o, wid, &v1.CreateBoardRequest{Name: "Source", Key: "WMS"}, 201)
+	dst := createBoard(t, o, wid, &v1.CreateBoardRequest{Name: "Secret", Key: "WMD", IsPrivate: true}, 201)
+	task := createTask(t, o, src.GetId(), &v1.CreateTaskRequest{Title: "Переезд"}, 201)
+	recvSrc, recvDst := newBoardHookRecv(t), newBoardHookRecv(t)
+	recvSrc.secret, recvDst.secret = "source-secret-0123456", "dest-secret-0123456789"
+	o.must(200, "PUT", "/api/boards/"+src.GetId()+"/webhook", &v1.SetBoardWebhookRequest{Url: recvSrc.srv.URL, Secret: recvSrc.secret}, nil)
+	o.must(200, "PUT", "/api/boards/"+dst.GetId()+"/webhook", &v1.SetBoardWebhookRequest{Url: recvDst.srv.URL, Secret: recvDst.secret}, nil)
+
+	dstID := dst.GetId()
+	patchTask(t, o, task.GetId(), &v1.UpdateTaskRequest{BoardId: &dstID}, 200)
+	out := recvSrc.wait("moved_out", func(g []*v1.BoardWebhookEvent) bool { return len(g) == 1 })[0]
+	if out.GetType() != "task.moved_out" || out.GetBoard().GetId() != src.GetId() || out.GetTask().GetId() != task.GetId() ||
+		out.GetTask().GetKey() != task.GetKey() || out.GetTask().GetBoardId() != src.GetId() || out.GetTask().GetTitle() != "" ||
+		out.GetTaskUrl() != "" || len(out.GetChanges()) != 1 || out.GetChanges()[0].GetField() != "moved_board" ||
+		out.GetChanges()[0].GetAfter() != nil {
+		t.Fatalf("moved_out leaks the destination: %v", out)
+	}
+	in := recvDst.wait("moved_in", func(g []*v1.BoardWebhookEvent) bool { return len(g) == 1 })[0]
+	if in.GetType() != "task.moved_in" || in.GetTask().GetBoardId() != dstID || in.GetTask().GetTitle() != "Переезд" ||
+		!strings.HasPrefix(in.GetTask().GetKey(), "WMD-") {
+		t.Fatalf("moved_in: %v", in)
+	}
+}

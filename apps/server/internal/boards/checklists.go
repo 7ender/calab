@@ -14,6 +14,7 @@ import (
 	v1 "github.com/calaba/calaba/server/gen/calaba/v1"
 	"github.com/calaba/calaba/server/internal/db/sqlc"
 	"github.com/calaba/calaba/server/internal/httpx"
+	"github.com/calaba/calaba/server/internal/perm"
 	"github.com/calaba/calaba/server/internal/plans"
 )
 
@@ -113,8 +114,10 @@ type clOut struct {
 	subtask uuid.UUID // convert: the new task
 	t       taskRow
 	c       change
-	// disabled: the board's switched-off features (BoardAccess.DisabledFeatures).
+	// disabled: the board's switched-off features (BoardAccess.DisabledFeatures); bits: the
+	// caller's rights on the board.
 	disabled int64
+	bits     perm.Bits
 }
 
 // write runs a checklist mutation: resolve finds the task of the path object, then the task row
@@ -143,7 +146,7 @@ func (s *Service) write(w http.ResponseWriter, r *http.Request, deleting bool,
 		if err := s.checklistGate(r.Context(), t, acc.DisabledFeatures, deleting); err != nil {
 			return err
 		}
-		o.t, o.disabled = t, acc.DisabledFeatures
+		o.t, o.disabled, o.bits = t, acc.DisabledFeatures, acc.Bits
 		if err := fn(q, tx, t, &o); err != nil {
 			return err
 		}
@@ -574,15 +577,22 @@ func (s *Service) deleteChecklistItem(w http.ResponseWriter, r *http.Request) er
 
 // convertChecklistItem turns an item into a subtask of the task (title = the item's text, default
 // status, no other fields) and removes the item. Needs the board feature SUBTASKS and a task that
-// is not a subtask itself.
+// is not a subtask itself. It creates a task: CREATE_TASKS and the task-creation budget, as
+// createTask.
 func (s *Service) convertChecklistItem(w http.ResponseWriter, r *http.Request) error {
 	id, resolve, err := itemResolver(r)
 	if err != nil {
 		return err
 	}
+	if err := take(r, s.CreateLimit); err != nil {
+		return err
+	}
 	me, now := uid(r), s.Now()
 	return s.write(w, r, false, resolve, func(q *sqlc.Queries, tx pgx.Tx, t taskRow, o *clOut) error {
 		ctx := r.Context()
+		if !o.bits.Has(perm.CreateTasks) {
+			return httpx.Forbidden("CREATE_TASKS required")
+		}
 		old, err := q.GetChecklistItemForUpdate(ctx, id)
 		if err != nil {
 			return notFoundOr(err, "checklist item")

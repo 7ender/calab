@@ -204,6 +204,13 @@ func TestChecklistsPermissions(t *testing.T) {
 	newItem(t, bt, bc.GetId(), "пункт", 201)
 	giveBot(t, o, wid, bt, "edit", perm.EditTasks)
 	newChecklist(t, bt, bobTask.GetId(), "бот с EDIT_TASKS", 201)
+
+	// Convert creates a task: EDIT_TASKS without CREATE_TASKS may not.
+	setBoardPerms(o, b.GetId(), 200, userOv(carol.id, perm.EditTasks, perm.CreateTasks))
+	carol.must(403, "POST", "/api/checklist-items/"+oi.GetId()+"/convert", nil, nil)
+	if len(getTask(t, o, ownerTask.GetId()).GetTask().GetChecklists()[0].GetItems()) != 1 {
+		t.Fatal("the item was converted")
+	}
 }
 
 func TestChecklistsPlanAndFeature(t *testing.T) {
