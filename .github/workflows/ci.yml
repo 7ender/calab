@@ -134,7 +134,10 @@ jobs:
       APP_1: '^Test[A-E]'
       APP_2: '^Test[F-P]'
       APP_3: '^Test[^A-P]'
+      # Admin URL of the service database: every package creates its own database from it.
+      # TEST_PG_URL is the same URL for tests that read only that name (internal/oauthprovider).
       TEST_DATABASE_URL: postgres://calaba:calaba@localhost:5432/calaba
+      TEST_PG_URL: postgres://calaba:calaba@localhost:5432/calaba
       TEST_REDIS_URL: redis://localhost:6379/15
     services:
       postgres:

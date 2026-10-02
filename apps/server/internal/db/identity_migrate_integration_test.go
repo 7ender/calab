@@ -6,6 +6,7 @@ import (
 	"context"
 	"errors"
 	"net/url"
+	"os"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -23,7 +24,10 @@ import (
 func identityTestDB(t *testing.T) *DB {
 	t.Helper()
 	ctx := context.Background()
-	adminURL := envOr("TEST_DATABASE_URL", "postgres://identity_test:fixture-only-password@127.0.0.1:57418/identity_foundation")
+	adminURL := envOr("TEST_DATABASE_URL", os.Getenv("TEST_PG_URL"))
+	if adminURL == "" {
+		t.Fatal("TEST_DATABASE_URL (or TEST_PG_URL) required")
+	}
 	admin, err := pgx.Connect(ctx, adminURL)
 	if err != nil {
 		t.Fatal(err)

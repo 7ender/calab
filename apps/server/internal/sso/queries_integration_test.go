@@ -4,29 +4,19 @@ package sso
 
 import (
 	"context"
-	"os"
 	"testing"
 	"time"
 
 	"github.com/calaba/calaba/server/internal/db"
+	"github.com/calaba/calaba/server/internal/db/dbtest"
 	"github.com/calaba/calaba/server/internal/db/sqlc"
 	"github.com/google/uuid"
 )
 
 func TestSharedIdentityQueries(t *testing.T) {
 	ctx := context.Background()
-	dsn := os.Getenv("TEST_PG_URL")
-	if dsn == "" {
-		t.Fatal("TEST_PG_URL required: use isolated rp database")
-	}
-	d, err := db.Connect(ctx, dsn)
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer d.Close()
-	if err = d.Migrate(ctx); err != nil {
-		t.Fatal(err)
-	}
+	d := dbtest.Connect(t)
+	var err error
 	tx, err := d.Pool.Begin(ctx)
 	if err != nil {
 		t.Fatal(err)
