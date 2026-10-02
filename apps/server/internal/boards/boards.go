@@ -107,6 +107,13 @@ func (s *Service) Routes(mux httpx.Router, wrap func(http.Handler) http.Handler)
 	h("PATCH /api/board-categories/{id}", s.updateCategory)
 	h("DELETE /api/board-categories/{id}", s.deleteCategory)
 	h("PUT /api/workspaces/{id}/boards/order", s.setOrder)
+	h("POST /api/tasks/{id}/checklists", s.createChecklist)
+	h("PATCH /api/checklists/{id}", s.updateChecklist)
+	h("DELETE /api/checklists/{id}", s.deleteChecklist)
+	h("POST /api/checklists/{id}/items", s.createChecklistItem)
+	h("PATCH /api/checklist-items/{id}", s.updateChecklistItem)
+	h("DELETE /api/checklist-items/{id}", s.deleteChecklistItem)
+	h("POST /api/checklist-items/{id}/convert", s.convertChecklistItem)
 	for _, p := range contractStubRoutes {
 		h(p, notImplemented)
 	}

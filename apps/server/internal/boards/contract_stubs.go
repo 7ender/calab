@@ -11,14 +11,6 @@ import (
 // (identity census, bot routes) are complete from the start. Each stage replaces its lines
 // with the real handler; the file goes away with the last one.
 var contractStubRoutes = []string{
-	// §2 checklists (stage 2)
-	"POST /api/tasks/{id}/checklists",
-	"PATCH /api/checklists/{id}",
-	"DELETE /api/checklists/{id}",
-	"POST /api/checklists/{id}/items",
-	"PATCH /api/checklist-items/{id}",
-	"DELETE /api/checklist-items/{id}",
-	"POST /api/checklist-items/{id}/convert",
 	// §4 board webhook (stage 3)
 	"GET /api/boards/{id}/webhook",
 	"PUT /api/boards/{id}/webhook",

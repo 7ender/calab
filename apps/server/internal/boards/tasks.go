@@ -978,6 +978,9 @@ func (s *Service) taskResponse(r *http.Request, id uuid.UUID, full bool) (*v1.Ta
 		return nil, err
 	}
 	out.Task.Attachments = files(fs)
+	if out.Task.Checklists, err = taskChecklists(ctx, s.db.Q, t.ID); err != nil {
+		return nil, err
+	}
 	subs, err := queryTasks(ctx, s.db.Pool, "WHERE t.parent_id = $1 AND t.archived_at IS NULL ORDER BY t.position, t.number", t.ID)
 	if err != nil {
 		return nil, err

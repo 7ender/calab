@@ -424,8 +424,9 @@ func tasksProto(ctx context.Context, q *sqlc.Queries, ts []taskRow, viewer uuid.
 	}
 	for _, c := range cs {
 		t := out[idx[c.ID]]
-		t.SubtaskCount, t.SubtaskDone = uint32(max(c.Subtasks, 0)), uint32(max(c.SubtasksDone, 0))    //nolint:gosec // counts
-		t.CommentCount, t.AttachmentCount = uint32(max(c.Comments, 0)), uint32(max(c.Attachments, 0)) //nolint:gosec // counts
+		t.SubtaskCount, t.SubtaskDone = uint32(max(c.Subtasks, 0)), uint32(max(c.SubtasksDone, 0))            //nolint:gosec // counts
+		t.CommentCount, t.AttachmentCount = uint32(max(c.Comments, 0)), uint32(max(c.Attachments, 0))         //nolint:gosec // counts
+		t.ChecklistTotal, t.ChecklistDone = uint32(max(c.ChecklistTotal, 0)), uint32(max(c.ChecklistDone, 0)) //nolint:gosec // counts
 	}
 	if viewer != uuid.Nil {
 		subs, err := q.ListViewerSubscriptions(ctx, sqlc.ListViewerSubscriptionsParams{UserID: viewer, TaskIds: ids})
