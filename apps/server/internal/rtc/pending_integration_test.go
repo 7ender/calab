@@ -54,20 +54,20 @@ func TestPendingJoin(t *testing.T) {
 	room := wsRoom{Room: sqlc.Room{ID: rid, UserLimit: 1}, WorkspaceID: wid}
 	ann, annS := uuid.New(), uuid.New()
 
-	pending, joined, err := s.recordPending(ctx, room, ann, annS, admissionFor(room, false))
+	pending, joined, err := recordFixturePending(ctx, t, s, room, ann, annS, admissionFor(room, false))
 	if err != nil || !pending || joined == 0 {
 		t.Fatalf("first join: pending=%v joined=%d err=%v", pending, joined, err)
 	}
 	if st := stateOf(t, s, wid, annS); st == nil || st.RoomID != rid || !st.Pending {
 		t.Fatalf("state after /join: %+v", st)
 	}
-	again, joined2, err := s.recordPending(ctx, room, ann, annS, admissionFor(room, false))
+	again, joined2, err := recordFixturePending(ctx, t, s, room, ann, annS, admissionFor(room, false))
 	if err != nil || !again || joined2 != joined {
 		t.Fatalf("repeated join not idempotent: pending=%v joined=%d/%d err=%v", again, joined2, joined, err)
 	}
 
 	// The pending user fills the limit of 1: somebody else is refused.
-	if _, _, err := s.recordPending(ctx, room, uuid.New(), uuid.New(), admissionFor(room, false)); !errors.Is(err, errRoomFull) {
+	if _, _, err := recordFixturePending(ctx, t, s, room, uuid.New(), uuid.New(), admissionFor(room, false)); !errors.Is(err, errRoomFull) {
 		t.Fatalf("pending user not counted in user_limit: %v", err)
 	}
 
@@ -79,7 +79,7 @@ func TestPendingJoin(t *testing.T) {
 
 	// Connected without participant_joined: pending cleared, state kept.
 	bob, bobS := uuid.New(), uuid.New()
-	_, bj, err := s.recordPending(ctx, room, bob, bobS, admission{})
+	_, bj, err := recordFixturePending(ctx, t, s, room, bob, bobS, admission{})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -91,10 +91,10 @@ func TestPendingJoin(t *testing.T) {
 
 	// Left and joined again (another room, then back): the old timer does not touch the new wait.
 	carl, carlS := uuid.New(), uuid.New()
-	_, cj, _ := s.recordPending(ctx, room, carl, carlS, admission{})
-	_, _, _ = s.recordPending(ctx, wsRoom{Room: sqlc.Room{ID: other}, WorkspaceID: wid}, carl, carlS, admission{})
+	_, cj, _ := recordFixturePending(ctx, t, s, room, carl, carlS, admission{})
+	_, _, _ = recordFixturePending(ctx, t, s, wsRoom{Room: sqlc.Room{ID: other}, WorkspaceID: wid}, carl, carlS, admission{})
 	time.Sleep(2 * time.Millisecond)
-	_, cj2, _ := s.recordPending(ctx, room, carl, carlS, admission{})
+	_, cj2, _ := recordFixturePending(ctx, t, s, room, carl, carlS, admission{})
 	if cj2 == cj {
 		t.Fatal("rejoin kept the old joined_at")
 	}

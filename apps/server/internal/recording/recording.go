@@ -261,9 +261,11 @@ func (s *Service) pairIntegration(w http.ResponseWriter, r *http.Request) error 
 		slog.WarnContext(r.Context(), "gptunnel: read the previous device token", "workspace", wsID, "err", err)
 	}
 	me := uid(r)
-	row, err := s.db.Q.PutIntegration(r.Context(), sqlc.PutIntegrationParams{
-		WorkspaceID: wsID, Kind: kindGPTunnel, TokenEnc: sealed, DeviceID: clip(sess.Device.ID, 200),
-		DeviceName: clip(sess.Device.Name, 200), Account: clip(sess.User.Label(), 320), WebUrl: clip(sess.WebURL, 2000), PairedBy: &me,
+	row, err := db.GuardValue(r.Context(), s.db, func(guarded *sqlc.Queries) (sqlc.WorkspaceIntegration, error) {
+		return guarded.PutIntegration(r.Context(), sqlc.PutIntegrationParams{
+			WorkspaceID: wsID, Kind: kindGPTunnel, TokenEnc: sealed, DeviceID: clip(sess.Device.ID, 200),
+			DeviceName: clip(sess.Device.Name, 200), Account: clip(sess.User.Label(), 320), WebUrl: clip(sess.WebURL, 2000), PairedBy: &me,
+		})
 	})
 	if err != nil {
 		return err
@@ -318,7 +320,9 @@ func (s *Service) unpairIntegration(w http.ResponseWriter, r *http.Request) erro
 	if err != nil {
 		slog.WarnContext(r.Context(), "gptunnel: read the device token to revoke", "workspace", wsID, "err", err)
 	}
-	if _, err := s.db.Q.RevokeIntegration(r.Context(), sqlc.RevokeIntegrationParams{WorkspaceID: wsID, Kind: kindGPTunnel}); err != nil {
+	if _, err := db.GuardValue(r.Context(), s.db, func(guarded *sqlc.Queries) (int64, error) {
+		return guarded.RevokeIntegration(r.Context(), sqlc.RevokeIntegrationParams{WorkspaceID: wsID, Kind: kindGPTunnel})
+	}); err != nil {
 		return err
 	}
 	if token != "" {
@@ -444,7 +448,9 @@ func (s *Service) start(w http.ResponseWriter, r *http.Request) error {
 		return err
 	}
 	fail := func(cause error) error {
-		if _, err := s.db.Q.MarkRecordingFailed(context.WithoutCancel(ctx), sqlc.MarkRecordingFailedParams{ID: rec.ID, Error: "recorder_failed", StopReason: "egress"}); err != nil {
+		if _, err := db.GuardValue(context.WithoutCancel(ctx), s.db, func(guarded *sqlc.Queries) (sqlc.RoomRecording, error) {
+			return guarded.MarkRecordingFailed(context.WithoutCancel(ctx), sqlc.MarkRecordingFailedParams{ID: rec.ID, Error: "recorder_failed", StopReason: "egress"})
+		}); err != nil {
 			slog.WarnContext(ctx, "recording: mark failed", "recording", rec.ID, "err", err)
 		}
 		return httpx.Unavailable(cause)
@@ -458,7 +464,9 @@ func (s *Service) start(w http.ResponseWriter, r *http.Request) error {
 		slog.WarnContext(ctx, "recording: start egress", "room", room.ID, "err", err)
 		return fail(err)
 	}
-	upd, err := s.db.Q.MarkRecordingStarted(context.WithoutCancel(ctx), sqlc.MarkRecordingStartedParams{ID: rec.ID, EgressID: &info.EgressID})
+	upd, err := db.GuardValue(context.WithoutCancel(ctx), s.db, func(guarded *sqlc.Queries) (sqlc.RoomRecording, error) {
+		return guarded.MarkRecordingStarted(context.WithoutCancel(ctx), sqlc.MarkRecordingStartedParams{ID: rec.ID, EgressID: &info.EgressID})
+	})
 	if err != nil {
 		// The egress runs but the row is lost: stop it (reconcile would do it too).
 		s.stopEgress(context.WithoutCancel(ctx), info.EgressID, "start_not_stored", "start", "recording", rec.ID, "err", err)
@@ -503,7 +511,9 @@ func (s *Service) stop(w http.ResponseWriter, r *http.Request) error {
 // stays 'recording' until the egress reports its file (webhook / reconcile). An egress that
 // cannot be reached now is stopped again by the worker.
 func (s *Service) requestStop(ctx context.Context, rec sqlc.RoomRecording, reason string, by *uuid.UUID) (sqlc.RoomRecording, error) {
-	upd, err := s.db.Q.MarkRecordingStopRequested(ctx, sqlc.MarkRecordingStopRequestedParams{ID: rec.ID, StopReason: reason, StoppedBy: by})
+	upd, err := db.GuardValue(ctx, s.db, func(guarded *sqlc.Queries) (sqlc.RoomRecording, error) {
+		return guarded.MarkRecordingStopRequested(ctx, sqlc.MarkRecordingStopRequestedParams{ID: rec.ID, StopReason: reason, StoppedBy: by})
+	})
 	if db.IsNotFound(err) {
 		return rec, httpx.NotFound("recording of this room")
 	}

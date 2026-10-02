@@ -25,10 +25,12 @@ const (
 )
 
 type outMsg struct {
-	typ   websocket.MessageType
-	data  []byte
-	close websocket.StatusCode // non-zero: close the socket after previous messages
-	why   string
+	typ     websocket.MessageType
+	data    []byte
+	close   websocket.StatusCode // non-zero: close the socket after previous messages
+	why     string
+	session *Session
+	event   *encEvent
 }
 
 // conn is one WebSocket. All writes go through a single writer goroutine and a bounded
@@ -164,6 +166,10 @@ func (c *conn) setReplay(ms []outMsg) {
 }
 
 func (c *conn) write(m outMsg) bool {
+	if m.session != nil && m.session.identityEnabled() && !m.session.allowsEvent(m.event) {
+		_ = c.ws.Close(4000, "identity resync required")
+		return false
+	}
 	if m.close != 0 {
 		_ = c.ws.Close(m.close, m.why)
 		return false
@@ -178,14 +184,16 @@ func (c *conn) write(m outMsg) bool {
 }
 
 // send enqueues without blocking; a full queue closes the socket with 4008.
-func (c *conn) send(typ websocket.MessageType, b []byte) {
+func (c *conn) send(typ websocket.MessageType, b []byte) { c.sendEvent(typ, b, nil, nil) }
+
+func (c *conn) sendEvent(typ websocket.MessageType, b []byte, session *Session, event *encEvent) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	if c.closed {
 		return
 	}
 	select {
-	case c.out <- outMsg{typ: typ, data: b}:
+	case c.out <- outMsg{typ: typ, data: b, session: session, event: event}:
 	default:
 		c.closeLocked(websocket.StatusCode(v1.GatewayCloseCode_GATEWAY_CLOSE_CODE_RATE_LIMITED), "send queue overflow", false)
 	}

@@ -27,7 +27,7 @@ func publishDemoCamera(t *testing.T, room, identity string) string {
 		t.Skip("lk CLI not installed (brew install livekit-cli): needed to publish a real camera track")
 	}
 	ctx, cancel := context.WithCancel(context.Background())
-	cmd := exec.CommandContext(ctx, lk, "room", "join", //nolint:gosec // G204: test helper, lk from PATH, fixed args "--url", testCfg.LiveKitInternalURL,
+	cmd := exec.CommandContext(ctx, lk, "room", "join", "--url", testCfg.LiveKitInternalURL, //nolint:gosec // G204: test helper, lk from PATH, fixed args
 		"--api-key", testCfg.LiveKitAPIKey, "--api-secret", testCfg.LiveKitAPISecret,
 		"--identity", identity, "--publish-demo", room)
 	if err := cmd.Start(); err != nil {

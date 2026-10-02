@@ -11,6 +11,8 @@ export * from './gen/calaba/v1/event_pb.js';
 export * from './gen/calaba/v1/file_pb.js';
 export * from './gen/calaba/v1/gateway_pb.js';
 export * from './gen/calaba/v1/invite_pb.js';
+export * from './gen/calaba/v1/identity_pb.js';
+export * from './gen/calaba/v1/oauth_client_pb.js';
 export * from './gen/calaba/v1/media_pb.js';
 export * from './gen/calaba/v1/message_pb.js';
 export * from './gen/calaba/v1/notes_pb.js';

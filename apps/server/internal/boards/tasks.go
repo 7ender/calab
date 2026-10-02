@@ -1613,7 +1613,9 @@ func (s *Service) setSubscription(w http.ResponseWriter, r *http.Request) error 
 	if err := httpx.Decode(w, r, &req); err != nil {
 		return err
 	}
-	if _, err := s.db.Q.SetSubscription(r.Context(), sqlc.SetSubscriptionParams{TaskID: t.ID, UserID: uid(r), Muted: req.GetMuted()}); err != nil {
+	if _, err := db.GuardValue(r.Context(), s.db, func(guarded *sqlc.Queries) (sqlc.TaskSubscriber, error) {
+		return guarded.SetSubscription(r.Context(), sqlc.SetSubscriptionParams{TaskID: t.ID, UserID: uid(r), Muted: req.GetMuted()})
+	}); err != nil {
 		return err
 	}
 	out, err := s.taskResponse(r, t.ID, false)
@@ -1633,7 +1635,9 @@ func (s *Service) markRead(w http.ResponseWriter, r *http.Request) error {
 	if err != nil {
 		return err
 	}
-	was, err := s.db.Q.MarkTaskSeen(r.Context(), sqlc.MarkTaskSeenParams{TaskID: t.ID, UserID: uid(r)})
+	was, err := db.GuardValue(r.Context(), s.db, func(guarded *sqlc.Queries) (bool, error) {
+		return guarded.MarkTaskSeen(r.Context(), sqlc.MarkTaskSeenParams{TaskID: t.ID, UserID: uid(r)})
+	})
 	if err != nil {
 		return err
 	}

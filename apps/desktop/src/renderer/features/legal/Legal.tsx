@@ -89,10 +89,10 @@ export function LicenseCard(): ReactNode {
 }
 
 /** Login screen footer (web and desktop): attribution + licence line + third-party notices. */
-export function AuthLegalFooter(): ReactNode {
+export function AuthLegalFooter({ className }: { className?: string } = {}): ReactNode {
   const [doc, setDoc] = useState<Doc | null>(null);
   return (
-    <footer className="flex flex-col items-center gap-0.5 text-center">
+    <footer className={cx("flex flex-col items-center gap-0.5 text-center", className)}>
       <Attribution />
       <p className="text-caption text-muted">
         <button type="button" onClick={() => setDoc('license')} className="hover:text-fg hover:underline">

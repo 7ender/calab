@@ -1,4 +1,14 @@
-import { VoiceStreamStopReason, WorkspaceRole, type Birthday, type DispatchEvent, type Message, type WorkspaceSnapshot } from '@calaba/protocol';
+import { applyIdentityAccess, identityRoomLocked } from './identity';
+import { useIdentity } from '../stores/identity';
+import { accessLocked } from '../features/identity/model';
+import {
+  VoiceStreamStopReason,
+  WorkspaceRole,
+  type Birthday,
+  type DispatchEvent,
+  type Message,
+  type WorkspaceSnapshot,
+} from '@calaba/protocol';
 import { timestampMs } from '@bufbuild/protobuf/wkt';
 import { syncTimeZone } from './timezone';
 import { log } from '../lib/log';
@@ -110,7 +120,17 @@ onRoomArchived((roomId) => {
 
 export function applyDispatch(ev: DispatchEvent): void {
   const e = ev.event;
+  if (e.value && e.case !== 'ready' && e.case !== 'workspaceIdentityAccessUpdate') {
+    const value = e.value;
+    if ('workspaceId' in value && typeof value.workspaceId === 'string' && accessLocked(useIdentity.getState().access[value.workspaceId]))
+      return;
+    if ('roomId' in value && typeof value.roomId === 'string' && identityRoomLocked(value.roomId)) return;
+  }
   switch (e.case) {
+    case 'workspaceIdentityAccessUpdate': {
+      if (e.value.sessionId === useSession.getState().sessionId && e.value.access) applyIdentityAccess(e.value.access);
+      break;
+    }
     case 'ready': {
       const r = e.value;
       const ws = useWorkspaces.getState();
@@ -122,6 +142,7 @@ export function applyDispatch(ev: DispatchEvent): void {
       // clearing the chat.
       const prevUnread = rooms.unread;
       const prevMentions = rooms.mentions;
+      for (const access of r.identityAccess) applyIdentityAccess(access);
       ws.reset();
       rooms.reset();
       useSounds.getState().reset();
@@ -586,6 +607,11 @@ function applySnapshotExtras(snap: WorkspaceSnapshot): void {
 export function ensureActiveWorkspace(): void {
   const ui = useUi.getState();
   const { byId, order } = useWorkspaces.getState();
-  if (ui.activeWorkspaceId === HOME || (ui.activeWorkspaceId && byId[ui.activeWorkspaceId])) return;
+  if (
+    (ui.activeWorkspaceId && useIdentity.getState().access[ui.activeWorkspaceId]) ||
+    ui.activeWorkspaceId === HOME ||
+    (ui.activeWorkspaceId && byId[ui.activeWorkspaceId])
+  )
+    return;
   ui.setWorkspace(order[0] ?? null);
 }

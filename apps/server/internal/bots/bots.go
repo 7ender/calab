@@ -476,7 +476,9 @@ func (s *Service) clearAvatar(w http.ResponseWriter, r *http.Request) error {
 	if err != nil {
 		return err
 	}
-	u, err := s.db.Q.UpdateUser(r.Context(), sqlc.UpdateUserParams{ID: b.UserID, SetAvatar: true})
+	u, err := db.GuardValue(r.Context(), s.db, func(guarded *sqlc.Queries) (sqlc.User, error) {
+		return guarded.UpdateUser(r.Context(), sqlc.UpdateUserParams{ID: b.UserID, SetAvatar: true})
+	})
 	if err != nil {
 		return err
 	}
@@ -877,7 +879,9 @@ func (s *Service) block(w http.ResponseWriter, r *http.Request) error {
 	if err != nil {
 		return err
 	}
-	if err := s.db.Q.BlockBot(r.Context(), sqlc.BlockBotParams{UserID: identity(r).UserID, BotUserID: id}); err != nil {
+	if err := db.GuardExec(r.Context(), s.db, func(guarded *sqlc.Queries) error {
+		return guarded.BlockBot(r.Context(), sqlc.BlockBotParams{UserID: identity(r).UserID, BotUserID: id})
+	}); err != nil {
 		return err
 	}
 	httpx.NoContent(w)
@@ -889,7 +893,9 @@ func (s *Service) unblock(w http.ResponseWriter, r *http.Request) error {
 	if err != nil {
 		return err
 	}
-	if err := s.db.Q.UnblockBot(r.Context(), sqlc.UnblockBotParams{UserID: identity(r).UserID, BotUserID: id}); err != nil {
+	if err := db.GuardExec(r.Context(), s.db, func(guarded *sqlc.Queries) error {
+		return guarded.UnblockBot(r.Context(), sqlc.UnblockBotParams{UserID: identity(r).UserID, BotUserID: id})
+	}); err != nil {
 		return err
 	}
 	httpx.NoContent(w)

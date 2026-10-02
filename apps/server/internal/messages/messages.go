@@ -529,7 +529,9 @@ func (h *Handlers) create(w http.ResponseWriter, r *http.Request) error {
 		pb.Sticker = pbconv.Sticker(sticker.Sticker, sticker.FileSize)
 	}
 	if acc.DM && !acc.Notes { // docs/09 item 51: an incoming message takes the DM out of the recipient's archive
-		states, err := h.db.Q.UnarchiveDMForRecipients(r.Context(), sqlc.UnarchiveDMForRecipientsParams{RoomID: roomID, AuthorID: uid(r)})
+		states, err := db.GuardValue(r.Context(), h.db, func(guarded *sqlc.Queries) ([]sqlc.DmState, error) {
+			return guarded.UnarchiveDMForRecipients(r.Context(), sqlc.UnarchiveDMForRecipientsParams{RoomID: roomID, AuthorID: uid(r)})
+		})
 		if err != nil {
 			return err
 		}
@@ -706,7 +708,9 @@ func (h *Handlers) read(w http.ResponseWriter, r *http.Request) error {
 	if err != nil {
 		return err
 	}
-	rs, err := h.db.Q.AdvanceReadState(r.Context(), sqlc.AdvanceReadStateParams{UserID: uid(r), RoomID: roomID, MessageID: mid})
+	rs, err := db.GuardValue(r.Context(), h.db, func(guarded *sqlc.Queries) (sqlc.AdvanceReadStateRow, error) {
+		return guarded.AdvanceReadState(r.Context(), sqlc.AdvanceReadStateParams{UserID: uid(r), RoomID: roomID, MessageID: mid})
+	})
 	if err != nil {
 		return err
 	}
@@ -735,7 +739,9 @@ func (h *Handlers) setEmbedsHidden(w http.ResponseWriter, r *http.Request) error
 	if err := httpx.Decode(w, r, &req); err != nil {
 		return err
 	}
-	upd, err := h.db.Q.SetEmbedsHidden(r.Context(), sqlc.SetEmbedsHiddenParams{ID: m.ID, EmbedsHidden: req.GetHidden()})
+	upd, err := db.GuardValue(r.Context(), h.db, func(guarded *sqlc.Queries) (sqlc.Message, error) {
+		return guarded.SetEmbedsHidden(r.Context(), sqlc.SetEmbedsHiddenParams{ID: m.ID, EmbedsHidden: req.GetHidden()})
+	})
 	if db.IsNotFound(err) {
 		return httpx.NotFound("message")
 	}

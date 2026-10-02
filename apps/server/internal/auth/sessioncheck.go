@@ -9,6 +9,8 @@ import (
 	"github.com/google/uuid"
 
 	"github.com/calaba/calaba/server/internal/db"
+	"github.com/calaba/calaba/server/internal/db/sqlc"
+	"github.com/calaba/calaba/server/internal/identitypolicy"
 )
 
 // Revocation of a person's session reaches its access tokens in two ways (docs/04 «Auth»):
@@ -23,18 +25,19 @@ import (
 // within sessionRecheck. It also keeps REST working while Valkey reads fail: the DB answers
 // instead. A session the DB cannot confirm (Postgres error, cache entry expired) fails
 // closed (503).
-const sessionRecheck = time.Minute
+const sessionRecheck = 30 * time.Second
 
 // liveSessions remembers sessions the DB confirmed as not revoked, until the recheck time.
 // Session ids are globally unique, so one cache serves every Service of the process.
-var liveSessions = &liveCache{until: map[uuid.UUID]time.Time{}}
+var liveSessions = &liveCache{until: map[uuid.UUID]time.Time{}, principals: map[uuid.UUID]identitypolicy.Principal{}}
 
 // liveCacheMax bounds the cache; past it, expired entries are pruned on insert.
 const liveCacheMax = 50_000
 
 type liveCache struct {
-	mu    sync.Mutex
-	until map[uuid.UUID]time.Time
+	mu         sync.Mutex
+	until      map[uuid.UUID]time.Time
+	principals map[uuid.UUID]identitypolicy.Principal
 }
 
 func (c *liveCache) fresh(sid uuid.UUID, now time.Time) bool {
@@ -44,25 +47,37 @@ func (c *liveCache) fresh(sid uuid.UUID, now time.Time) bool {
 	return ok && now.Before(u)
 }
 
-func (c *liveCache) put(sid uuid.UUID, now time.Time) {
+func (c *liveCache) put(sess sqlc.Session, now time.Time) {
+	sid := sess.ID
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	if len(c.until) >= liveCacheMax {
 		for k, u := range c.until {
 			if !now.Before(u) {
 				delete(c.until, k)
+				delete(c.principals, k)
 			}
 		}
 		if len(c.until) >= liveCacheMax {
 			clear(c.until)
+			clear(c.principals)
 		}
 	}
-	c.until[sid] = now.Add(sessionRecheck)
+	until := now.Add(sessionRecheck)
+	if sess.ExpiresAt.Before(until) {
+		until = sess.ExpiresAt
+	}
+	c.until[sid] = until
+	if c.principals == nil {
+		c.principals = map[uuid.UUID]identitypolicy.Principal{}
+	}
+	c.principals[sid] = SessionPrincipal(sess)
 }
 
 func (c *liveCache) drop(sid uuid.UUID) {
 	c.mu.Lock()
 	delete(c.until, sid)
+	delete(c.principals, sid)
 	c.mu.Unlock()
 }
 
@@ -78,6 +93,7 @@ func (s *Service) CheckSession(ctx context.Context, sid uuid.UUID) error {
 func ForgetSessionChecks() {
 	liveSessions.mu.Lock()
 	clear(liveSessions.until)
+	clear(liveSessions.principals)
 	liveSessions.mu.Unlock()
 }
 
@@ -113,13 +129,16 @@ func (s *Service) checkSession(ctx context.Context, sid uuid.UUID) error {
 		liveSessions.drop(sid)
 		return &RevokedError{Reason: deref(sess.RevokedReason)}
 	}
+	if !identitypolicy.CheckSession(now, SessionPrincipal(sess)).Allowed {
+		return ErrSessionRevoked
+	}
 	if rerr != nil {
 		slog.WarnContext(ctx, "revocation marker unreadable, checked the session in the DB", "session_id", sid, "err", rerr)
 	}
-	liveSessions.put(sid, now)
+	liveSessions.put(sess, now)
 	if now.Sub(sess.LastSeenAt) > touchEvery {
 		// «Настройки → Сеансы» shows the last activity; refreshes alone are a day apart now.
-		if err := s.db.Q.TouchSession(ctx, sid); err != nil {
+		if err := db.GuardExec(ctx, s.db, func(guarded *sqlc.Queries) error { return guarded.TouchSession(ctx, sid) }); err != nil {
 			slog.WarnContext(ctx, "session touch failed", "session_id", sid, "err", err)
 		}
 	}

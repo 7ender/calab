@@ -1,3 +1,4 @@
+import { CorporateLogin } from '../identity/SignIn';
 import { useEffect, useState, type ReactNode } from 'react';
 import { TriangleAlert } from 'lucide-react';
 import { SIMILAR_ACCOUNT_CODE, type ApiErrorJson } from '../../../shared/ipc';
@@ -77,6 +78,7 @@ function LoginScreen(): ReactNode {
   // The server saw the same login at a sibling domain (kv@x.ai vs kv@x.ru): ask before creating.
   const [similar, setSimilar] = useState(false);
   // Web: the API is the page's own origin — nothing to configure.
+  const [showCorporate, setShowCorporate] = useState(false);
   const [showServer, setShowServer] = useState(platform.kind === 'electron' && !settings?.serverUrl);
   // The link's workspace (public preview, ADR-0023): a card on top instead of a code field. An
   // invitation sent by email works only with its address: prefilled and locked.
@@ -158,10 +160,9 @@ function LoginScreen(): ReactNode {
     };
     return (
       <div className="auth-backdrop drag flex h-full flex-col items-center overflow-y-auto px-4 py-10 mobile:pb-[calc(var(--safe-bottom)+40px)] mobile:pt-[calc(var(--safe-top)+40px)]">
-        <div className="no-drag my-auto flex w-full max-w-[380px] flex-col items-stretch">
+        <div className="no-drag my-auto flex w-full max-w-[380px] shrink-0 flex-col items-stretch">
           <div className="mb-6 flex flex-col items-center text-center">
             <Logo size={72} className="mb-3" />
-            <h1 className="text-large font-semibold">Calab</h1>
           </div>
           <ForgotPassword
             initialEmail={email}
@@ -185,20 +186,19 @@ function LoginScreen(): ReactNode {
             }}
           />
         </div>
-        <AuthLegalFooter />
+        <AuthLegalFooter className="no-drag mt-6 w-full max-w-[380px] shrink-0 gap-2" />
       </div>
     );
   }
 
   return (
     <div className="auth-backdrop drag flex h-full flex-col items-center overflow-y-auto px-4 py-10 mobile:pb-[calc(var(--safe-bottom)+40px)] mobile:pt-[calc(var(--safe-top)+40px)]">
-      <form onSubmit={(e) => void submit(e)} className="no-drag my-auto flex w-full max-w-[380px] flex-col items-stretch">
+      <form onSubmit={(e) => void submit(e)} className="no-drag my-auto flex w-full max-w-[380px] shrink-0 flex-col items-stretch">
         <div className="mb-6 flex flex-col items-center text-center">
           <Logo size={72} className="mb-3" />
-          <h1 className="text-large font-semibold">Calab</h1>
-          <p className="mt-1 text-body text-muted">{mode === 'login' ? t('auth.welcomeSub') : t('auth.createSub')}</p>
+          <h1 className="text-body text-muted">{mode === 'login' ? t('auth.welcomeSub') : t('auth.createSub')}</h1>
         </div>
-        <div className="mat-popover flex flex-col gap-4 rounded-[var(--radius-panel)] p-6">
+        <div className="mat-popover flex flex-col gap-5 rounded-[var(--radius-panel)] p-6">
           {codeFromLink ? (
             <div className="flex items-center gap-3 rounded-[var(--radius-card)] bg-[var(--color-card)] px-3 py-2.5" data-testid="auth-invite-card">
               <span className="grid size-9 shrink-0 place-items-center rounded-[var(--radius-card)] bg-accent-strong text-caption font-semibold text-accent-fg" aria-hidden>
@@ -235,7 +235,7 @@ function LoginScreen(): ReactNode {
               <Input required value={name} maxLength={100} onChange={(e) => setName(e.target.value)} className="h-8" />
             </Field>
           ) : null}
-          <div className="flex flex-col gap-1.5">
+          <div className="flex flex-col gap-3">
             <Field label={t('auth.password')} error={fieldErr('password')} hint={mode === 'register' ? t('auth.passwordHint') : undefined}>
               <PasswordInput
                 required
@@ -307,9 +307,21 @@ function LoginScreen(): ReactNode {
               {mode === 'login' ? t('auth.login') : t('auth.register')}
             </Button>
           )}
+          {mode === 'login' ? (
+            <Button
+              type="button"
+              variant="secondary"
+              className="h-9 w-full"
+              aria-expanded={showCorporate}
+              aria-controls={showCorporate ? 'corporate-login' : undefined}
+              onClick={() => setShowCorporate(!showCorporate)}
+            >
+              {t('identity.signIn')}
+            </Button>
+          ) : null}
         </div>
-        <div className="mt-4 flex flex-col items-center gap-2 text-body text-muted">
-          <p>
+        <div className="mt-5 flex flex-col items-center gap-3 text-body text-muted">
+          <p className="flex flex-wrap items-center justify-center gap-x-1 gap-y-2 text-center">
             {mode === 'login' ? t('auth.noAccount') : t('auth.haveAccount')}{' '}
             <button
               type="button"
@@ -330,23 +342,14 @@ function LoginScreen(): ReactNode {
             </button>
           ) : null}
         </div>
-        {desktop ? (
-          // The server is set up once: a barely visible text link under the card, not a control
-          // everybody has to read. Stays a <button> for keyboard users (global focus-visible ring).
-          <div className="mt-3 flex justify-center">
-            <button
-              type="button"
-              aria-expanded={showServer}
-              className="rounded-[var(--radius-control)] px-1 text-caption text-muted opacity-70 hover:text-fg hover:underline hover:opacity-100 focus-visible:opacity-100"
-              onClick={() => setShowServer(!showServer)}
-            >
-              {showServer ? t('auth.hideServer') : t('auth.otherServer')}
-            </button>
+        {showCorporate && mode === 'login' ? (
+          <div id="corporate-login" className="mt-6">
+            <CorporateLogin serverUrl={serverUrl} />
           </div>
         ) : null}
       </form>
       {/* NOTICE: the «Powered by GPTunneL» attribution is required in the UI (BUSL-1.1 grant). */}
-      <AuthLegalFooter />
+      <AuthLegalFooter className="no-drag mt-6 w-full max-w-[380px] shrink-0 gap-2" />
     </div>
   );
 }

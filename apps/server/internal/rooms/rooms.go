@@ -646,7 +646,7 @@ func (h *Handlers) delete(w http.ResponseWriter, r *http.Request) error {
 		return nil
 	}
 	// A permanent room: archived and hidden for good (unchanged).
-	n, err := h.db.Q.ArchiveRoom(r.Context(), roomID)
+	n, err := db.GuardValue(r.Context(), h.db, func(guarded *sqlc.Queries) (int64, error) { return guarded.ArchiveRoom(r.Context(), roomID) })
 	if err != nil {
 		return err
 	}

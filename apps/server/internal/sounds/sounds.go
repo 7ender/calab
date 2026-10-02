@@ -389,7 +389,9 @@ func (h *Handlers) delete(w http.ResponseWriter, r *http.Request) error {
 	if err != nil {
 		return err
 	}
-	n, err := h.db.Q.DeleteWorkspaceSound(r.Context(), sqlc.DeleteWorkspaceSoundParams{ID: cur.ID, WorkspaceID: wsID})
+	n, err := db.GuardValue(r.Context(), h.db, func(guarded *sqlc.Queries) (int64, error) {
+		return guarded.DeleteWorkspaceSound(r.Context(), sqlc.DeleteWorkspaceSoundParams{ID: cur.ID, WorkspaceID: wsID})
+	})
 	if err != nil {
 		return err
 	}

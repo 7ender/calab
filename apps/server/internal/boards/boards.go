@@ -118,7 +118,7 @@ func take(r *http.Request, l Limiter) error {
 
 // tx runs fn in a transaction with both the sqlc queries and the raw transaction (dynamic SQL).
 func (s *Service) tx(ctx context.Context, fn func(q *sqlc.Queries, tx pgx.Tx) error) error {
-	return pgx.BeginFunc(ctx, s.db.Pool, func(tx pgx.Tx) error { return fn(s.db.Q.WithTx(tx), tx) })
+	return s.db.TxRaw(ctx, fn)
 }
 
 // ---- access ----

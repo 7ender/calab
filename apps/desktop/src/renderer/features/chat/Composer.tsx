@@ -39,9 +39,7 @@ import { IMAGE_ACCEPT } from '../../lib/image';
 import { namedHeif } from '../../lib/image/decode';
 import { voiceSupported, type VoiceResult } from '../../services/voiceRecorder';
 
-const drafts = new Map<string, string>();
-/** Per-draft mentions picked in the popover: shown name → user id (the wire format is `@<id>`). */
-const draftMentions = new Map<string, Map<string, string>>();
+import { drafts, draftMentions } from './drafts';
 const NO_MENTIONS: ReadonlyMap<string, string> = new Map();
 /** Field grows up to 6 lines (15 px text on a 20 px line — integer line boxes keep layout pixel-exact). */
 const MAX_FIELD_H = 6 * 20 + 16;

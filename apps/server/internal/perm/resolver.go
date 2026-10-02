@@ -100,6 +100,9 @@ func RoleList(ids []uuid.UUID, positions []int32, perms []int64) []RoleBits {
 
 // Member returns the user's roles in the workspace, or ErrNotMember.
 func (r *Resolver) Member(ctx context.Context, workspaceID, userID uuid.UUID) (Member, error) {
+	if err := CheckAccess(ctx, workspaceID, userID); err != nil {
+		return Member{}, err
+	}
 	k := key{workspaceID, userID}
 	r.mu.Lock()
 	m, ok := r.members[k]
@@ -206,6 +209,9 @@ func (r *Resolver) ReadRoom(ctx context.Context, roomID, userID uuid.UUID) (Room
 	}
 	if !acc.ok() {
 		return RoomAccess{}, ErrNoRoom
+	}
+	if err := CheckAccess(ctx, acc.WorkspaceID, userID); err != nil {
+		return RoomAccess{}, err
 	}
 	return acc, nil
 }

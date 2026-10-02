@@ -88,6 +88,14 @@ enum ErrorCode {
   // 502: LiveKit refused the SIP settings (PUT …/sip); the message is LiveKit's text, also
   // stored as SipSettings.last_error.
   ERROR_CODE_SIP_PROVIDER_ERROR = 59;
+  ERROR_CODE_SSO_REQUIRED = 60;
+  ERROR_CODE_IDENTITY_SCOPE_DENIED = 61;
+  ERROR_CODE_DIRECTORY_ACCESS_DENIED = 62;
+  ERROR_CODE_RECOVERY_ONLY = 63;
+  ERROR_CODE_IDENTITY_CONFIG_CHANGED = 64;
+  ERROR_CODE_IDENTITY_NOT_LINKED = 65;
+  ERROR_CODE_IDENTITY_DEPENDENCY_UNAVAILABLE = 66;
+  ERROR_CODE_RECENT_AUTH_REQUIRED = 67;
 }
 
 // Error body of every non-2xx REST response.

@@ -107,6 +107,12 @@ func (h *Handlers) listMentions(w http.ResponseWriter, r *http.Request) error {
 		if only != nil && ws.ID != *only {
 			continue
 		}
+		if err := perm.CheckAccess(r.Context(), ws.ID, me); err != nil {
+			if httpx.AsError(err).Status >= 500 {
+				return err
+			}
+			continue
+		}
 		m, err := perm.FromContext(r.Context()).Member(r.Context(), ws.ID, me)
 		if err != nil {
 			return err

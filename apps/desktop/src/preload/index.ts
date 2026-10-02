@@ -14,6 +14,11 @@ function on<T>(channel: string, cb: (v: T) => void): () => void {
 // Narrow, typed bridge. No raw ipcRenderer is exposed to the renderer.
 const api: CalabaApi = {
   auth: {
+    clearProtectedCache: () => ipcRenderer.invoke(IPC.authIdentityClearCache),
+    recover: (workspaceId, code) => ipcRenderer.invoke(IPC.authIdentityRecover, { workspaceId, code }),
+    ssoBegin: (args) => ipcRenderer.invoke(IPC.authSsoBegin, args),
+    ssoCancel: (id) => ipcRenderer.invoke(IPC.authSsoCancel, id),
+    onSsoResult: (cb) => on(IPC.authSsoResult, cb),
     restore: () => ipcRenderer.invoke(IPC.authRestore),
     login: (a) => ipcRenderer.invoke(IPC.authLogin, a),
     register: (a) => ipcRenderer.invoke(IPC.authRegister, a),

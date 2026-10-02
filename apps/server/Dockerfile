@@ -1,5 +1,5 @@
 # Build context: repo root (see infra/docker/compose.yml).
-FROM golang:1.26-alpine@sha256:8ac98ca534ac3f51e1f420a1dd2c15e74c75cfa0f23f3ad27eb5d7236c349a0c AS build
+FROM golang:1.26.8-alpine@sha256:8ac98ca534ac3f51e1f420a1dd2c15e74c75cfa0f23f3ad27eb5d7236c349a0c AS build
 WORKDIR /src
 COPY apps/server/go.mod apps/server/go.sum* ./
 RUN go mod download

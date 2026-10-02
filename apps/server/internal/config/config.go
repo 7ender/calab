@@ -26,9 +26,18 @@ const (
 
 // Config is the full server configuration. See apps/server/README.md for the list.
 type Config struct {
-	HTTPAddr        string `env:"HTTP_ADDR" envDefault:"127.0.0.1:3000"`
-	PublicAppURL    string `env:"PUBLIC_APP_URL" envDefault:"http://localhost:3000"`
-	PublicAppURLAlt string `env:"PUBLIC_APP_URL_ALT"` // optional second domain of the web client (compatibility)
+	IdentityPublicOrigin           string   `env:"IDENTITY_PUBLIC_ORIGIN"`
+	IdentityEncryptionKeys         string   `env:"IDENTITY_ENCRYPTION_KEYS"`
+	IdentityEncryptionActiveKID    string   `env:"IDENTITY_ENCRYPTION_ACTIVE_KID"`
+	OAuthSigningKeys               string   `env:"OAUTH_SIGNING_KEYS"`
+	OAuthSigningActiveKID          string   `env:"OAUTH_SIGNING_ACTIVE_KID"`
+	IdentityEndpoints              string   `env:"IDENTITY_ENDPOINTS"`
+	IdentityDirectoryHosts         string   `env:"IDENTITY_DIRECTORY_HOSTS"`
+	IdentityEdition                string   `env:"IDENTITY_EDITION" envDefault:"cloud"`
+	IdentityEnterpriseWorkspaceIDs []string `env:"IDENTITY_ENTERPRISE_WORKSPACE_IDS" envSeparator:","`
+	HTTPAddr                       string   `env:"HTTP_ADDR" envDefault:"127.0.0.1:3000"`
+	PublicAppURL                   string   `env:"PUBLIC_APP_URL" envDefault:"http://localhost:3000"`
+	PublicAppURLAlt                string   `env:"PUBLIC_APP_URL_ALT"` // optional second domain of the web client (compatibility)
 	// All origins the web client is served from, comma-separated (app host, aliases). The
 	// CSRF / gateway Origin checks accept these plus PUBLIC_APP_URL and PUBLIC_APP_URL_ALT;
 	// PUBLIC_APP_URL stays the primary one (links).
@@ -189,6 +198,9 @@ func Load() (*Config, error) {
 
 // Validate checks invariants that env tags cannot express.
 func (c *Config) Validate() error {
+	if err := c.validateIdentity(); err != nil {
+		return err
+	}
 	var errs []error
 	if len(c.JWTSecret) < 32 {
 		errs = append(errs, errors.New("JWT_SECRET must be at least 32 bytes"))

@@ -1,0 +1,208 @@
+syntax = "proto3";
+package calaba.v1;
+import "google/protobuf/timestamp.proto";
+
+// ADR-0054. Unknown values grant no identity authority or entitlement.
+enum SessionAuthorityKind {
+  SESSION_AUTHORITY_KIND_UNSPECIFIED = 0;
+  SESSION_AUTHORITY_KIND_LOCAL_ACCOUNT = 1;
+  SESSION_AUTHORITY_KIND_WORKSPACE_SSO = 2;
+  SESSION_AUTHORITY_KIND_RECOVERY = 3;
+}
+message SessionAuthority {
+  SessionAuthorityKind kind = 1;
+  string workspace_id = 2;
+  string connection_id = 3;
+  google.protobuf.Timestamp local_authenticated_at = 4;
+  uint64 version = 5;
+}
+enum IdentityPolicyMode {
+  IDENTITY_POLICY_MODE_UNSPECIFIED = 0;
+  IDENTITY_POLICY_MODE_OFF = 1;
+  IDENTITY_POLICY_MODE_OPTIONAL = 2;
+  IDENTITY_POLICY_MODE_ENFORCED = 3;
+}
+enum IdentityFeature {
+  IDENTITY_FEATURE_UNSPECIFIED = 0;
+  IDENTITY_FEATURE_CORPORATE_SSO = 1;
+  IDENTITY_FEATURE_DIRECTORY_SYNC = 2;
+  IDENTITY_FEATURE_OAUTH_PROVIDER = 3;
+}
+enum IdentityGrantSource {
+  IDENTITY_GRANT_SOURCE_UNSPECIFIED = 0;
+  IDENTITY_GRANT_SOURCE_CLOUD_BUSINESS = 1;
+  IDENTITY_GRANT_SOURCE_ONPREM_ENTERPRISE = 2;
+}
+message IdentityEntitlement {
+  IdentityFeature feature = 1;
+  bool enabled = 2; // effective, including current plan/edition and expiry
+  IdentityGrantSource source = 3;
+  google.protobuf.Timestamp valid_until = 4; // absent only for perpetual operator grant
+  uint64 version = 5;
+}
+message WorkspaceIdentityEntitlements {
+  repeated IdentityEntitlement grants = 1;
+  uint64 version = 2;
+}
+enum IdentityAccessReason {
+  IDENTITY_ACCESS_REASON_UNSPECIFIED = 0;
+  IDENTITY_ACCESS_REASON_ALLOWED = 1;
+  IDENTITY_ACCESS_REASON_SSO_REQUIRED = 2;
+  IDENTITY_ACCESS_REASON_SCOPE_DENIED = 3;
+  IDENTITY_ACCESS_REASON_ENTITLEMENT_REQUIRED = 4;
+  IDENTITY_ACCESS_REASON_DIRECTORY_DENIED = 5;
+  IDENTITY_ACCESS_REASON_SUSPENDED = 6;
+  IDENTITY_ACCESS_REASON_RECOVERY_ONLY = 7;
+  IDENTITY_ACCESS_REASON_DEPENDENCY_UNAVAILABLE = 8;
+  IDENTITY_ACCESS_REASON_RECENT_AUTH_REQUIRED = 9;
+}
+message WorkspaceAssurance {
+  string workspace_id = 1;
+  google.protobuf.Timestamp authenticated_at = 2;
+  google.protobuf.Timestamp expires_at = 3;
+  uint64 policy_version = 4;
+  uint64 connection_version = 5;
+}
+// Session-specific summary only; never includes secrets or upstream claims.
+message WorkspaceIdentityAccess {
+  string workspace_id = 1;
+  IdentityPolicyMode mode = 2;
+  IdentityAccessReason reason = 3;
+  google.protobuf.Timestamp valid_until = 4;
+  uint64 policy_version = 5;
+  uint64 membership_version = 6;
+  WorkspaceAssurance assurance = 7;
+  WorkspaceIdentityEntitlements entitlements = 8;
+}
+enum IdentityProvider {
+  IDENTITY_PROVIDER_UNSPECIFIED = 0;
+  IDENTITY_PROVIDER_ENTRA = 1;
+  IDENTITY_PROVIDER_ADFS = 2;
+  IDENTITY_PROVIDER_GENERIC = 3;
+}
+enum IdentityConnectionStatus {
+  IDENTITY_CONNECTION_STATUS_UNSPECIFIED = 0;
+  IDENTITY_CONNECTION_STATUS_DRAFT = 1;
+  IDENTITY_CONNECTION_STATUS_TESTED = 2;
+  IDENTITY_CONNECTION_STATUS_ACTIVE = 3;
+  IDENTITY_CONNECTION_STATUS_DISABLED = 4;
+}
+message IdentityConnection {
+  string id = 1;
+  string workspace_id = 2;
+  string name = 3;
+  IdentityProvider provider = 4;
+  string issuer = 5;
+  string tenant_id = 6;
+  string client_id = 7;
+  bool secret_configured = 8;
+  uint64 version = 9;
+  IdentityConnectionStatus status = 10;
+  google.protobuf.Timestamp tested_at = 11;
+}
+message PutIdentityConnectionRequest {
+  uint64 version = 1;
+  string name = 2;
+  IdentityProvider provider = 3;
+  string issuer = 4;
+  string tenant_id = 5;
+  string client_id = 6;
+  optional string client_secret = 7; // write only; absent preserves, empty invalid
+}
+message GetWorkspaceIdentityResponse {
+  WorkspaceIdentityAccess access = 1;
+  IdentityConnection connection = 2; // owner only, redacted
+  IdentityDirectory directory = 3; // owner only, redacted
+}
+message PutIdentityPolicyRequest {
+  uint64 version = 1;
+  IdentityPolicyMode mode = 2;
+}
+message ActivateIdentityConnectionRequest { uint64 version = 1; }
+message PublicSSOWorkspace {
+  string workspace_id = 1;
+  string display_name = 2;
+  bool login_enabled = 3;
+  string login_label = 4;
+}
+enum SSOFlowPurpose {
+  SSO_FLOW_PURPOSE_UNSPECIFIED = 0;
+  SSO_FLOW_PURPOSE_LOGIN = 1;
+  SSO_FLOW_PURPOSE_STEP_UP = 2;
+  SSO_FLOW_PURPOSE_LINK = 3;
+  SSO_FLOW_PURPOSE_TEST = 4;
+}
+enum SSOClientKind {
+  SSO_CLIENT_KIND_UNSPECIFIED = 0;
+  SSO_CLIENT_KIND_WEB = 1;
+  SSO_CLIENT_KIND_DESKTOP = 2;
+}
+message SSOBeginRequest {
+  SSOFlowPurpose purpose = 1;
+  SSOClientKind client_kind = 2;
+  string desktop_challenge = 3;
+}
+message SSOBeginResponse {
+  string flow_id = 1;
+  string browser_start_url = 2;
+  string authorization_url = 3;
+  google.protobuf.Timestamp expires_at = 4;
+}
+message SSOFinishRequest { string flow_id = 1; }
+message SSOExchangeRequest {
+  string flow_id = 1;
+  string ticket = 2;
+  string verifier = 3;
+}
+message LocalReauthRequest { string current_password = 1; }
+message LocalReauthResponse {
+  google.protobuf.Timestamp authenticated_at = 1;
+  google.protobuf.Timestamp valid_until = 2;
+}
+message IdentityRecoveryKitResponse {
+  repeated string codes_once = 1;
+  google.protobuf.Timestamp expires_at = 2;
+}
+message IdentityRecoverRequest { string recovery_code = 1; }
+message IdentityDirectory {
+  string id = 1;
+  string workspace_id = 2;
+  uint64 version = 3;
+  bool enabled = 4;
+  string url = 5;
+  string bind_dn = 6;
+  string base_dn = 7;
+  repeated string allowed_group_dns = 8;
+  bool secret_configured = 9;
+  google.protobuf.Timestamp last_success_at = 10;
+  string last_error = 11; // bounded, redacted server summary
+  uint32 sync_interval_seconds = 12;
+  uint32 max_staleness_seconds = 13;
+}
+message PutIdentityDirectoryRequest {
+  uint64 version = 1;
+  bool enabled = 2;
+  string url = 3;
+  string bind_dn = 4;
+  optional string bind_password = 5;
+  string base_dn = 6;
+  repeated string allowed_group_dns = 7;
+}
+enum DirectoryMemberStatus {
+  DIRECTORY_MEMBER_STATUS_UNSPECIFIED = 0;
+  DIRECTORY_MEMBER_STATUS_ACTIVE = 1;
+  DIRECTORY_MEMBER_STATUS_DISABLED = 2;
+  DIRECTORY_MEMBER_STATUS_DELETED = 3;
+  DIRECTORY_MEMBER_STATUS_UNMAPPED = 4;
+}
+message IdentityDirectoryMember {
+  string user_id = 1;
+  string object_guid = 2;
+  DirectoryMemberStatus status = 3;
+  uint64 version = 4;
+}
+message ListIdentityDirectoryMembersResponse {
+  repeated IdentityDirectoryMember members = 1;
+  string next_cursor = 2;
+}
+message PutIdentityDirectoryMemberRequest { string object_guid = 1; }

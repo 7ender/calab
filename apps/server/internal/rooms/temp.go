@@ -419,7 +419,7 @@ func (h *Handlers) PurgeTempRooms(ctx context.Context, before time.Time) (int, e
 	}
 	n := 0
 	for _, id := range ids {
-		k, err := h.db.Q.DeleteArchivedTempRoom(ctx, id)
+		k, err := db.GuardValue(ctx, h.db, func(guarded *sqlc.Queries) (int64, error) { return guarded.DeleteArchivedTempRoom(ctx, id) })
 		if err != nil {
 			return n, err
 		}

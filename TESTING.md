@@ -1,5 +1,19 @@
 # TESTING — инструкции для тестировщика
 
+## Identity 2.0 final acceptance
+
+1. Лид назначает **точный итоговый SHA** после merge docs/browser evidence; текущие исторические reports не signoff. Команды ниже — план, здесь не выполнены; записать SHA/env/exit/skips и два независимых security/protocol review на нём.
+2. Только отдельная QA DB/Valkey/RTC; env брать из собственного `tools/identity-test-env.sh env 18 qa` либо из выделенного coordinator harness ([правила](docs/plans/identity-v2-validation.md)), не поднимать/сбрасывать чужой. Go 1.26.x как CI, golangci-lint 2.14.0, sqlc 1.31.1; записать реальные версии.
+3. Из корня: `make gen` → `git diff --exit-code -- proto apps/server/gen apps/server/internal/db/sqlc packages/protocol/src/gen`; `make lint`; `pnpm -s typecheck`; `pnpm -r test`. Ожидается без drift/errors.
+4. Unit/race: `(cd apps/server && go test -race -count=1 ./internal/auth ./internal/identitypolicy ./internal/identitycrypto ./internal/identitynet ./internal/oauthprovider/... ./internal/sso ./internal/directory ./internal/gateway ./internal/rtc)`.
+5. Перед полным прогоном подготовить выделенный PG17, Valkey DB15/RTC14, LiveKit и Garage S3 (`GARAGE_NAME`/порт только QA), ffmpeg/ffprobe ≥7.1; TEST_S3_* хранить приватно. Не запускать отдельные targeted integration перед тем же полным набором.
+6. Один назначенный QA runner на точном чистом SHA выполняет `(cd apps/server && go test -race -tags integration -count=1 -json ./...)` один раз на PG17; миграции/identity/legacy входят в этот набор. Записать counts/durations/failures/skips; недоступно/skipped ≠ passed.
+7. Повторять полный набор только после релевантной правки/сбоя; не принимать прежние branch reports за evidence. Отдельно `python3 infra/identity-test/identity-proxy-test.py`; обязательный CI проверяет только PG17 (решение владельца, 2026-10-01).
+8. Реальный generic RP: `GOTOOLCHAIN=go1.26.5 IDENTITY_TEST_HARNESS=<coordinator-assigned-harness> infra/identity-test/calaba-keycloak-test.sh 18`; затем `IDENTITY_BROWSER_EXPECTED_SHA=<exact-SHA> IDENTITY_TEST_HARNESS=<same-harness> infra/identity-test/browser-identity-e2e.sh 18`. Требуется отсутствие required skips, реальный App/Keycloak и независимая RS256 проверка; discovery/JWKS fetch из зарегистрированной RP страницы проверяет browser CORS и metadata flags.
+9. Один ручной QA screenshot pass новых identity экранов; готовые screenshots не повторять без layout changes/failure. Browser: local/SSO step-up → consent bind/decision; native adapter/deeplink/unit, account/server switch/cancel/expiry/arbitrary return URL отдельно от реального OS roundtrip (unverified без него). Токены/refresh/verifier не попадают в URL/renderer; visual suites выключены. Entra/AD FS/Windows AD без живого стенда — unverified.
+10. Сквозные отрицательные сценарии: A enforced/B independent, scopes, invite bootstrap без данных, legacy SUPERADMIN_EMAILS source/revocation, grant expiry, REST mutation race, READY/RESUME/lost pubsub/RTC eviction и DB failure; ожидается отказ без чужих данных/side effects, lease ≤30 секунд.
+11. Production activation — отдельное поручение оператору после [preflight](docs/plans/identity-v2-operator-preflight.md): Vault/config/Caddy/pins, protected backup/identity-aware fallback, synthetic success/error/parser/Referer log sentinels и recovery; затем off → optional → enforced. Реальный Microsoft стенд и незакрытые operator gates записывать как unverified/blocked.
+
 ## Как пользоваться этим файлом
 
 - Каждый раздел самодостаточен: предусловия указаны в нём или ссылкой на раздел выше. Команды — из корня репозитория (`/Users/macbook/Documents/Projects/Calaba`), если не сказано иное.
@@ -2039,3 +2053,15 @@ CALABA_WEB_URL=http://127.0.0.1:39571 npx playwright test --config playwright.we
 7. Инвайт: `curl -X POST $CALAB/api/workspaces/$WS/invites -H "Authorization: Bearer $TOKEN" -H 'Content-Type: application/json' -d '{"maxUses":1}'` → 201 с `code`; ссылка `/join/<code>` пускает нового человека. Снять у роли `INVITE_MEMBERS` → тот же запрос 403 (не `BOT_NOT_ALLOWED`).
 8. `GET …/freebusy?users=$BOB&from=…&to=…` → 200, в `busy` нет `title`; `POST …/invites/lookup` → 403 `BOT_NOT_ALLOWED`.
 9. В логе сервера на шаги 3–5 и 7 — строки `bot action` с `bot_id` и `bot_owner`.
+
+
+### Identity 2.0: совместимость локальных событий и чтения
+
+- Go 1.26.8: gateway race units проверяют собственный receipt без membership, A/B isolation, версии/expiry, final socket/replay и bounded cold preparation с resync при overload.
+- На отдельной PG18 БД/Redis выполнить App race с фильтром `TestIdentityCompatibility.*|TestIdentityFileReferences.*|TestForwardMessages|TestIdentityProfileImagesRequireCurrentScopedMembership`.
+- READY сохраняет все 258 разрешённых memberships; удалённые memberships и истёкшие receipts удаляются из lease state.
+- Operator-off local reauth принимает только local bearer/password и точный непустой trusted Origin, сохраняет limiter; bot/scoped/recovery запрещены, SSO остаётся 503.
+- Архивная временная комната: разрешённая history читается, POST/voice дают ROOM_ARCHIVED; существующий message-edit handler сохраняет 404. Permanent archive, B и recovery не открываются.
+- Invite preview учитывает неизвестные коды и не списывает успешный preview дважды; GET/HEAD file/thumbnail используют каждую разрешённую live reference через WithPolicy/CanRead.
+
+- Suspended workspace: `TestWorkspaceSuspension|TestIdentitySuspensionLocalReadIsolation|TestGatewayFlow` (PG18 race) сохраняют local off/optional history/member/READY; проверяют scoped/recovery/enforced/ACL/directory-denials и запрет TYPING при receive lease (ADR-0056).

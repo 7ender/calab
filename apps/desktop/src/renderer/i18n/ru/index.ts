@@ -1,3 +1,4 @@
+import { ruIdentity } from './identity';
 import { ruApp } from './app';
 import { ruChat } from './chat';
 import { ruDm } from './dm';
@@ -28,6 +29,7 @@ import { ruWebApps } from './webapps';
 
 /** Russian UI strings. Keys are flat, dotted; `{param}` placeholders. Area files are merged in. */
 export const ru = {
+  ...ruIdentity,
   ...ruShell,
   ...ruChat,
   ...ruPeople,
@@ -716,4 +718,3 @@ export const ru = {
   'main.webAppCopyLink': 'Копировать адрес ссылки',
   'main.webAppOpenPage': 'Открыть страницу в браузере',
 } as const;
-

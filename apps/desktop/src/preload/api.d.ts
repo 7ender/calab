@@ -38,6 +38,11 @@ type Unsubscribe = () => void;
 /** API exposed to the renderer as `window.calaba` (see src/preload/index.ts). */
 export interface CalabaApi {
   auth: {
+    clearProtectedCache(): Promise<void>;
+    recover(workspaceId: string, code: string): Promise<IpcResult<{ expiresAt: number }>>;
+    ssoBegin(args: import('../shared/ipc').SsoStart): Promise<IpcResult<{ attemptId: string; expiresAt: number }>>;
+    ssoCancel(attemptId: string): Promise<void>;
+    onSsoResult(cb: (result: import('../shared/ipc').SsoResult) => void): Unsubscribe;
     /** Restores the stored session (refresh token in OS keychain). Rejects with 'offline' when the server is unreachable. */
     restore(): Promise<AuthSession | null>;
     login(args: LoginArgs): Promise<IpcResult<AuthSession>>;

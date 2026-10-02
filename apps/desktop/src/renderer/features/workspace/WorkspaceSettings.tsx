@@ -1,12 +1,11 @@
-import {
-  audioTierKbps,
-  WorkspaceRole,
-  WorkspaceVisibility,
-  type Invite,
-} from '@calaba/protocol';
+import { IdentitySettings } from '../identity/IdentitySettings';
+import { OAuthClients } from '../identity/OAuth';
+import { identityApi } from '../identity/api';
+import { localAuthority } from '../identity/model';
+import { audioTierKbps, IdentityFeature, WorkspaceRole, WorkspaceVisibility, type Invite } from '@calaba/protocol';
 import { timestampDate } from '@bufbuild/protobuf/wkt';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { Award, AudioLines, Ban, Music, Bot as BotIcon, Cake, CircleDot, Copy, Gem, Phone, Search, Settings2, Shield, Sticker, Trash2, TriangleAlert, Upload, UserPlus, Users, Wallpaper } from 'lucide-react';
+import { Award, AudioLines, Ban, Music, Bot as BotIcon, Cake, CircleDot, Copy, Gem, KeyRound, AppWindow, Lock, Phone, Search, Settings2, Shield, Sticker, Trash2, TriangleAlert, Upload, UserPlus, Users, Wallpaper } from 'lucide-react';
 import { useRef, useState, type ReactNode } from 'react';
 import { Avatar } from '../../components/Avatar';
 import { confirmAction } from '../../components/Confirm';
@@ -73,9 +72,13 @@ export function WorkspaceSettingsDialog({
   roomId?: string | undefined;
   onClose: () => void;
 }): ReactNode {
+  const local = useSession((s) => localAuthority(s.authority));
   const entry = useWorkspaces((s) => s.byId[workspaceId]);
   const me = useSession((s) => s.me?.user?.id ?? '');
   const myRoles = useMemberRoles(workspaceId, me);
+  const identityStatus = useQuery({ queryKey: ['identity', workspaceId], queryFn: () => identityApi.status(workspaceId), enabled: !!entry, retry: false, refetchOnWindowFocus: false });
+  const grants = identityStatus.data?.access?.entitlements?.grants;
+  const featureLocked = (feature: IdentityFeature): boolean => !!grants && !grants.some((g) => g.feature === feature && g.enabled && (!g.validUntil || timestampDate(g.validUntil).getTime() > Date.now()));
   if (!entry) return null;
   // Tabs by right, as the server checks (ADR-0048, lib/permissions settingsAccess): «Общие»,
   // «Звук», «Фоны» — MANAGE_WORKSPACE; «Роли» — MANAGE_ROLES; «Стикеры» — MANAGE_STICKERS; «Бейджи»,
@@ -87,6 +90,12 @@ export function WorkspaceSettingsDialog({
   const manageRoles = access.roles;
   const manageStickers = access.stickers;
   const inviter = access.invites;
+  const identityPanel = (feature: IdentityFeature, content: ReactNode): ReactNode => (
+    <div className="flex flex-col gap-4">
+      {featureLocked(feature) ? <p className="flex items-start gap-2 text-body text-muted"><Lock className="mt-0.5 size-4 shrink-0" aria-hidden />{t('identity.plan')}</p> : null}
+      {content}
+    </div>
+  );
   const sections: SettingsSection[] = [
     ...(admin
       ? [
@@ -118,6 +127,16 @@ export function WorkspaceSettingsDialog({
       : []),
     // «Телефония» (ADR-0046): the SIP account, the connection test and the call journal — MANAGE_WORKSPACE.
     ...(admin ? [{ id: 'telephony', label: t('sip.tab'), icon: Phone, content: <TelephonyTab workspaceId={workspaceId} /> }] : []),
+    {
+      id: 'identity',
+      label: t('identity.settingsTitle'),
+      icon: KeyRound,
+      locked: featureLocked(IdentityFeature.CORPORATE_SSO),
+      content: identityPanel(IdentityFeature.CORPORATE_SSO, <IdentitySettings workspaceId={workspaceId} owner={owner && local} />),
+    },
+    ...(local && (owner || entry.role === WorkspaceRole.ADMIN)
+      ? [{ id: 'oauth', label: t('identity.oauth'), icon: AppWindow, locked: featureLocked(IdentityFeature.OAUTH_PROVIDER), content: identityPanel(IdentityFeature.OAUTH_PROVIDER, <OAuthClients workspaceId={workspaceId} />) }]
+      : []),
     ...(inviter ? [{ id: 'invites', label: t('ws.tabInvites'), icon: UserPlus, content: <InvitesTab workspaceId={workspaceId} roomId={roomId} /> }] : []),
     // «Забаненные» (docs/09 #32): the same right as kicking (MANAGE_MEMBERS, ADR-0048).
     ...(access.members ? [{ id: 'bans', label: t('bans.tab'), icon: Ban, content: <BansTab workspaceId={workspaceId} /> }] : []),
@@ -149,7 +168,15 @@ function WorkspaceGlyph({ name, iconFileId, size }: { name: string; iconFileId: 
   );
 }
 
-function GeneralTab({ workspaceId, manageRoles, manageRooms }: { workspaceId: string; manageRoles: boolean; manageRooms: boolean }): ReactNode {
+function GeneralTab({
+  workspaceId,
+  manageRoles,
+  manageRooms,
+}: {
+  workspaceId: string;
+  manageRoles: boolean;
+  manageRooms: boolean;
+}): ReactNode {
   const ws = useWorkspaces((s) => s.byId[workspaceId]?.ws);
   const [uploading, setUploading] = useState(false);
   const input = useRef<HTMLInputElement>(null);
@@ -446,7 +473,12 @@ function InvitesTab({ workspaceId, roomId }: { workspaceId: string; roomId: stri
     <>
       {/* docs/09 #55: from a room, a guest without an account first (the card hides itself without MANAGE_ROOM). */}
       {roomId ? <RoomGuestInviteCard roomId={roomId} /> : null}
-      {cap.full ? <PlanFullNote text={t('plan.membersFull', { plan: t(PLAN_LABEL[planKind(workspacePlan(workspaceId))]), n: cap.limit })} testId="invite-plan-full" /> : null}
+      {cap.full ? (
+        <PlanFullNote
+          text={t('plan.membersFull', { plan: t(PLAN_LABEL[planKind(workspacePlan(workspaceId))]), n: cap.limit })}
+          testId="invite-plan-full"
+        />
+      ) : null}
       {/* ADR-0023: by an exact address first; the links below stay for everyone else. */}
       <EmailInviteCard workspaceId={workspaceId} full={cap.full} />
       <EmailInvitesList workspaceId={workspaceId} />

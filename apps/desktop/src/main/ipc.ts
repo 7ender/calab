@@ -19,8 +19,21 @@ import {
   type LegalTexts,
 } from '../shared/ipc';
 import { serverUrlProblem } from '../shared/serverUrl';
-import { forceRefresh, getAccessToken, guestJoin, login, logout, register, restore, revoked } from './auth';
-import { apiTransportWake } from './apiTransport';
+import {
+  recoverIdentity,
+  beginSso,
+  cancelSso,
+  invalidateSsoServer,
+  forceRefresh,
+  getAccessToken,
+  guestJoin,
+  login,
+  logout,
+  register,
+  restore,
+  revoked,
+} from './auth';
+import { apiSession, apiTransportWake } from './apiTransport';
 import { parseOverlayEvent, parseOverlayTarget } from '../shared/annot';
 import { closeOverlay, closeOverlayWith, openOverlay, refitOverlay, sendOverlay } from './annotOverlay';
 import { armSelection, listSources, requestScreenAccess, screenAccess, systemAudioSupport } from './capture';
@@ -142,6 +155,18 @@ function handle(channel: string, fn: Handler): void {
 
 export function registerIpc(): void {
   // ---- auth ----
+  handle(IPC.authIdentityClearCache, () => apiSession().clearCache());
+  handle(IPC.authIdentityRecover, (_e, a) => {
+    const r = obj(a);
+    return recoverIdentity(str(r['workspaceId'], 128), str(r['code'], 256));
+  });
+  handle(IPC.authSsoBegin, (_e, a) => {
+    const r = obj(a);
+    const purpose = str(r['purpose']);
+    if (purpose !== 'login' && purpose !== 'step_up' && purpose !== 'link' && purpose !== 'test') throw new Error('Invalid SSO purpose');
+    return beginSso({ workspaceId: str(r['workspaceId'], 128), purpose });
+  });
+  handle(IPC.authSsoCancel, (_e, a) => cancelSso(str(a, 128)));
   handle(IPC.authRestore, () => restore());
   // A login to another server changes the renderer CSP (review L3): reload after the reply.
   const afterAuth = <T extends { ok: boolean }>(r: T): T => {
@@ -190,6 +215,7 @@ export function registerIpc(): void {
   });
   handle(IPC.appGetSettings, () => getSettings());
   handle(IPC.appSetSettings, (_e, a) => {
+    if (obj(a)['serverUrl'] !== undefined) invalidateSsoServer();
     const patch = parseSettings(a);
     const next = updateSettings(patch);
     if (patch.autoUpdate !== undefined || patch.autoCheckUpdates !== undefined) updateSettingsChanged();

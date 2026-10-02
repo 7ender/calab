@@ -8,6 +8,7 @@ import (
 	"log/slog"
 	"math"
 	"net/http"
+	"slices"
 	"strings"
 	"time"
 
@@ -396,7 +397,9 @@ func (h *Handlers) deleteEmailInvite(w http.ResponseWriter, r *http.Request) err
 		return err
 	}
 	// Deleting the link cascades to the email invitation.
-	if _, err := h.db.Q.DeleteInvite(r.Context(), sqlc.DeleteInviteParams{ID: e.InviteID, WorkspaceID: wsID}); err != nil {
+	if _, err := db.GuardValue(r.Context(), h.db, func(guarded *sqlc.Queries) (int64, error) {
+		return guarded.DeleteInvite(r.Context(), sqlc.DeleteInviteParams{ID: e.InviteID, WorkspaceID: wsID})
+	}); err != nil {
 		return err
 	}
 	httpx.NoContent(w)
@@ -435,6 +438,10 @@ func boundInvite(ctx context.Context, q *sqlc.Queries, inv sqlc.WorkspaceInvite,
 // verifying it is enough, the link is not needed). Idempotent; errors are logged. Returns
 // the joined workspaces.
 func AcceptEmailInvites(ctx context.Context, d *db.DB, pl *plans.Service, pub events.Publisher, u sqlc.User) []uuid.UUID {
+	// This is a separate, proof-free membership bootstrap after verification; it
+	// acquires sorted workspace locks before user state, never the parent request's
+	// already admitted global-user boundary.
+	ctx = db.WithoutAdmission(ctx)
 	if u.Email == nil || u.EmailVerifiedAt == nil || u.IsGuest {
 		return nil
 	}
@@ -449,6 +456,27 @@ func AcceptEmailInvites(ctx context.Context, d *db.DB, pl *plans.Service, pub ev
 		if err != nil {
 			return err
 		}
+		workspaceIDs := make([]uuid.UUID, 0, len(rows))
+		for _, ei := range rows {
+			workspaceIDs = append(workspaceIDs, ei.WorkspaceID)
+		}
+		slices.SortFunc(workspaceIDs, func(a, b uuid.UUID) int { return slices.Compare(a[:], b[:]) })
+		for _, ws := range slices.Compact(workspaceIDs) {
+			if _, err := q.LockOAuthWorkspace(ctx, ws); err != nil {
+				return err
+			}
+		}
+		if _, err := q.LockIdentityUserShared(ctx, u.ID); err != nil {
+			return err
+		}
+		current, err := q.GetUser(ctx, u.ID)
+		if err != nil {
+			return err
+		}
+		if current.DisabledAt != nil || current.IsGuest || current.IsBot || current.Email == nil || current.EmailVerifiedAt == nil || !strings.EqualFold(*current.Email, *u.Email) {
+			return nil
+		}
+		u = current
 		for _, ei := range rows {
 			// Banned meanwhile (the ban revokes pending invitations, but an account can carry
 			// another address) or suspended: the invitation stays unused.

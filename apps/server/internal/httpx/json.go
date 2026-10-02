@@ -70,8 +70,8 @@ const StatusClientClosed = 499
 func WriteError(w http.ResponseWriter, r *http.Request, err error) {
 	e := AsError(err)
 	if e.Status >= 500 && errors.Is(r.Context().Err(), context.Canceled) {
-		slog.DebugContext(r.Context(), "request canceled by the client", "err", err, "request_id", RequestID(r.Context()),
-			"method", r.Method, "path", r.URL.Path)
+		slog.DebugContext(r.Context(), "request canceled by the client", "err", safeLogError(r, err), "request_id", RequestID(r.Context()),
+			"method", r.Method, "path", safeLogPath(r))
 		w.WriteHeader(StatusClientClosed) // nobody reads the body
 		return
 	}
@@ -79,8 +79,8 @@ func WriteError(w http.ResponseWriter, r *http.Request, err error) {
 		w.Header().Set("Retry-After", strconv.Itoa(int(e.RetryAfter.Seconds())))
 	}
 	if e.Status >= 500 {
-		slog.ErrorContext(r.Context(), "request failed", "err", err, "request_id", RequestID(r.Context()),
-			"method", r.Method, "path", r.URL.Path)
+		slog.ErrorContext(r.Context(), "request failed", "err", safeLogError(r, err), "request_id", RequestID(r.Context()),
+			"method", r.Method, "path", safeLogPath(r))
 	}
 	Write(w, e.Status, e.Proto())
 }

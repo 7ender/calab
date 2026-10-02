@@ -1,3 +1,6 @@
+import { useIdentity } from '../../stores/identity';
+import { localAuthority, accessLocked } from '../identity/model';
+import { LockKeyhole } from 'lucide-react';
 import { Compass, Plus, Volume2 } from 'lucide-react';
 import { Fragment, useMemo, useRef, type ReactNode } from 'react';
 import { Logo } from '../../components/Logo';
@@ -29,6 +32,12 @@ const tile =
  * «Личные» (ADR-0020, Discord Home): the DM list, with the unread DM messages as its badge.
  */
 export function WorkspaceRail(): ReactNode {
+  const local = useSession((s) => localAuthority(s.authority));
+  const lockedIds = useIdentity((s) =>
+    Object.keys(s.access)
+      .filter((id) => accessLocked(s.access[id]))
+      .join('|'),
+  );
   const order = useWorkspaces((s) => s.order);
   const open = useUi((s) => s.openDialog);
 
@@ -42,7 +51,14 @@ export function WorkspaceRail(): ReactNode {
         style={{ paddingBottom: 'calc(var(--island-height, 0px) + 20px)' }}
         aria-label={t('ws.list')}
       >
-        <HomeItem />
+        {local ? <HomeItem /> : null}
+        {lockedIds
+          ? lockedIds.split('|').map((id) => (
+              <RailAction key={id} label={t('identity.locked')} onClick={() => useUi.getState().setWorkspace(id)}>
+                <LockKeyhole className="size-5" />
+              </RailAction>
+            ))
+          : null}
         <div className="my-0.5 h-0.5 w-8 shrink-0 rounded-full bg-line" aria-hidden />
         {order.map((id) => (
           <Fragment key={id}>
@@ -52,12 +68,16 @@ export function WorkspaceRail(): ReactNode {
           </Fragment>
         ))}
         {order.length ? <div className="my-0.5 h-0.5 w-8 shrink-0 rounded-full bg-line" aria-hidden /> : null}
-        <RailAction label={t('ws.create')} onClick={() => open({ kind: 'create-workspace' })}>
-          <Plus className="size-6" strokeWidth={1.75} />
-        </RailAction>
-        <RailAction label={t('shell.explore')} onClick={() => open({ kind: 'join-workspace' })}>
-          <Compass className="size-6" strokeWidth={1.75} />
-        </RailAction>
+        {local ? (
+          <>
+            <RailAction label={t('ws.create')} onClick={() => open({ kind: 'create-workspace' })}>
+              <Plus className="size-6" strokeWidth={1.75} />
+            </RailAction>
+            <RailAction label={t('shell.explore')} onClick={() => open({ kind: 'join-workspace' })}>
+              <Compass className="size-6" strokeWidth={1.75} />
+            </RailAction>
+          </>
+        ) : null}
       </nav>
     </div>
   );
@@ -170,7 +190,17 @@ function HomeItem(): ReactNode {
  * The tile itself; during a message drag it also leads into «Заметки» (features/notes/HomeDrop):
  * a drop saves into the first shelf, holding opens the list of shelves.
  */
-function HomeTile({ isActive, unread, count, onOpen }: { isActive: boolean; unread: boolean; count: number; onOpen: () => void }): ReactNode {
+function HomeTile({
+  isActive,
+  unread,
+  count,
+  onOpen,
+}: {
+  isActive: boolean;
+  unread: boolean;
+  count: number;
+  onOpen: () => void;
+}): ReactNode {
   const ref = useRef<HTMLDivElement>(null);
   const home = useHomeDrop(ref);
   const label = count > 0 ? t('dm.homeUnread', { n: count }) : t('dm.home');
