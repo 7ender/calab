@@ -569,8 +569,31 @@ func (s *Service) EventChanged(ctx context.Context, eventID uuid.UUID, users []u
 	}
 	ctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 3*time.Second)
 	defer cancel()
+	// Only users who push are asked about (identity policy checks are not free), then only
+	// those the meeting's workspace policy lets the content reach (ADR-0054).
+	var pushers []uuid.UUID
+	for _, u := range users {
+		acc, err := s.db.Q.GetCalDavAccount(ctx, u)
+		if err == nil && acc.Push && acc.CalendarHref != nil {
+			pushers = append(pushers, u)
+		} else if err != nil && !db.IsNotFound(err) {
+			slog.WarnContext(ctx, "caldav: enqueue push", "event_id", eventID, "err", err)
+			return
+		}
+	}
+	if len(pushers) == 0 {
+		return
+	}
+	pushers, err := s.cal.PushTargets(ctx, eventID, pushers)
+	if err != nil {
+		slog.WarnContext(ctx, "caldav: enqueue push", "event_id", eventID, "err", err)
+		return
+	}
+	if len(pushers) == 0 {
+		return
+	}
 	n, err := db.GuardValue(ctx, s.db, func(guarded *sqlc.Queries) (int64, error) {
-		return guarded.EnqueueCalDavPushes(ctx, sqlc.EnqueueCalDavPushesParams{EventID: eventID, Ids: users})
+		return guarded.EnqueueCalDavPushes(ctx, sqlc.EnqueueCalDavPushesParams{EventID: eventID, Ids: pushers})
 	})
 	if err != nil {
 		slog.WarnContext(ctx, "caldav: enqueue push", "event_id", eventID, "err", err)
@@ -635,6 +658,10 @@ func (s *Service) push(ctx context.Context, row sqlc.CaldavPush) bool {
 	if err == nil {
 		drop()
 		return true
+	}
+	if errors.Is(err, calendar.ErrWithheld) {
+		drop() // the workspace identity policy keeps the meeting in Calab for now
+		return false
 	}
 	msg := clipErr("push: " + err.Error())
 	slog.InfoContext(ctx, "caldav: push failed", "user_id", row.UserID, "event_id", row.EventID, "attempt", row.Attempts+1, "err", err)
