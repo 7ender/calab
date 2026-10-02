@@ -11,6 +11,7 @@ import (
 
 	v1 "github.com/calaba/calaba/server/gen/calaba/v1"
 	"github.com/calaba/calaba/server/internal/auth"
+	"github.com/calaba/calaba/server/internal/db"
 	"github.com/calaba/calaba/server/internal/identitypolicy"
 	"github.com/calaba/calaba/server/internal/perm"
 	"github.com/calaba/calaba/server/internal/workspaces"
@@ -416,6 +417,11 @@ func (h *Hub) enforceIdentitySession(ctx context.Context, s *Session) {
 				delete(s.leases.workspaces, ws)
 			}
 		}
+		for ws := range s.leases.retry {
+			if !present[ws] {
+				delete(s.leases.retry, ws)
+			}
+		}
 		s.leases.mu.Unlock()
 	}
 	for ws := range old {
@@ -424,34 +430,34 @@ func (h *Hub) enforceIdentitySession(ctx context.Context, s *Session) {
 		}
 	}
 	slices.SortFunc(ids, func(a, b uuid.UUID) int { return bytes.Compare(a[:], b[:]) })
-	s.leases.mu.Lock()
-	cursor := s.leases.cursor
-	s.leases.mu.Unlock()
-	offset := 0
-	for offset < len(ids) && bytes.Compare(ids[offset][:], cursor[:]) <= 0 {
-		offset++
-	}
-	if offset == len(ids) {
-		offset = 0
-	}
-	allowed := map[uuid.UUID]bool{}
-	// At most four workspace checks per session per pass. Rotation persists across
-	// canceled passes, so a slow first workspace cannot repeatedly starve the tail.
-	for i := 0; i < min(len(ids), 4) && ctx.Err() == nil; i++ {
-		ws := ids[(offset+i)%len(ids)]
+	due, budget := s.dueWorkspaceChecks(ids, old)
+	allowed := map[uuid.UUID]identitypolicy.Decision{}
+	// Rotation persists across canceled passes, so a slow first workspace cannot
+	// repeatedly starve the tail; the earliest-expiring leases go first.
+	for i := 0; i < min(len(due), budget) && ctx.Err() == nil; i++ {
+		ws := due[i]
 		gate, cancel := context.WithTimeout(ctx, 500*time.Millisecond)
 		decision, err := s.refreshWorkspaceLease(gate, ws)
 		cancel()
+		ok := err == nil && decision.Allowed && s.workspaceLeaseAllows(ws)
 		s.leases.mu.Lock()
 		s.leases.cursor = ws
+		if ok {
+			delete(s.leases.retry, ws)
+		} else {
+			if s.leases.retry == nil {
+				s.leases.retry = map[uuid.UUID]time.Time{}
+			}
+			s.leases.retry[ws] = time.Now().Add(identityDeniedRetry)
+		}
 		s.leases.mu.Unlock()
-		if err == nil && decision.Allowed && s.workspaceLeaseAllows(ws) {
-			allowed[ws] = true
+		if ok {
+			allowed[ws] = decision
 		} else if old[ws] {
 			h.identityRemoveWorkspace(s, ws, decision, err)
 		}
 	}
-	for ws := range allowed {
+	for ws, decision := range allowed {
 		if old[ws] {
 			continue
 		}
@@ -468,11 +474,77 @@ func (h *Hub) enforceIdentitySession(ctx context.Context, s *Session) {
 		if err != nil {
 			continue
 		}
+		access := identityAccessStatus(ws, decision, nil, s.principal)
+		if policy, e := h.db.Q.GetIdentityPolicy(ctx, ws); e == nil {
+			access.Mode = identityMode(policy.Mode)
+		} else if db.IsNotFound(e) {
+			access.Mode = v1.IdentityPolicyMode_IDENTITY_POLICY_MODE_OFF
+		}
+		snap.Workspace.IdentityAccess = access
 		h.fillLive(ctx, ws, snap)
 		h.joinWorkspace(s, ws)
 		h.ensureState(ctx, ws)
+		// The access status first: the client may hold a stale lock for this workspace
+		// (an earlier denial) that would otherwise drop its events after the snapshot.
+		s.dispatch(uuid.New(), &v1.DispatchEvent{Event: &v1.DispatchEvent_WorkspaceIdentityAccessUpdate{WorkspaceIdentityAccessUpdate: &v1.WorkspaceIdentityAccessUpdate{SessionId: s.asess.String(), Access: access}}})
 		s.dispatchScoped(ws, uuid.New(), &v1.DispatchEvent{Event: &v1.DispatchEvent_WorkspaceCreate{WorkspaceCreate: &v1.WorkspaceCreate{Snapshot: snap}}})
 	}
+}
+
+const (
+	identityPass = 5 * time.Second // runIdentityEnforcement period
+	// identityRefreshAhead: a lease is re-evaluated once it has less than this left, so
+	// each one gets about three passes to be refreshed before it lapses.
+	identityRefreshAhead = identitypolicy.ReadLeaseTTL / 2
+	// identityDeniedRetry spaces re-checks of a workspace the session may not read
+	// (SSO required, suspended, ...): enough to notice a step-up, not a DB query per pass.
+	identityDeniedRetry = 2 * identityPass
+)
+
+// dueWorkspaceChecks lists the session's workspaces whose lease needs re-evaluation, the
+// earliest deadline first (missing/expired leases, then by expiry; ties by rotation from the
+// cursor), and the per-pass budget. Fresh leases are skipped, so DB cost follows lease
+// expiry (≈ one check per workspace per lease) rather than the pass rate; the budget covers
+// all workspaces within the refresh horizon (2·N·pass/horizon ≥ N/3 per pass), and caps bursts.
+func (s *Session) dueWorkspaceChecks(ids []uuid.UUID, subscribed map[uuid.UUID]bool) ([]uuid.UUID, int) {
+	now := time.Now()
+	s.leases.mu.Lock()
+	cursor := s.leases.cursor
+	offset := 0
+	for offset < len(ids) && bytes.Compare(ids[offset][:], cursor[:]) <= 0 {
+		offset++
+	}
+	type candidate struct {
+		ws    uuid.UUID
+		until time.Time
+	}
+	due := make([]candidate, 0, len(ids))
+	for i := range ids {
+		ws := ids[(offset+i)%len(ids)]
+		l := s.leases.workspaces[ws]
+		until := time.Time{}
+		if s.validLease(l, ws) {
+			until = l.until
+		}
+		switch {
+		case !subscribed[ws] && !until.IsZero():
+			// Leased but not delivered (left out of READY): re-add it now.
+			until = time.Time{}
+		case !until.IsZero() && until.Sub(now) > identityRefreshAhead:
+			continue
+		case until.IsZero() && now.Before(s.leases.retry[ws]):
+			continue
+		}
+		due = append(due, candidate{ws, until})
+	}
+	s.leases.mu.Unlock()
+	slices.SortStableFunc(due, func(a, b candidate) int { return a.until.Compare(b.until) })
+	out := make([]uuid.UUID, len(due))
+	for i, c := range due {
+		out[i] = c.ws
+	}
+	budget := max(4, (2*len(ids)*int(identityPass)+int(identityRefreshAhead)-1)/int(identityRefreshAhead))
+	return out, budget
 }
 
 func (h *Hub) identityRemoveWorkspace(s *Session, ws uuid.UUID, d identitypolicy.Decision, err error) {

@@ -29,6 +29,7 @@ type identityLeases struct {
 	session    identityLease
 	workspaces map[uuid.UUID]identityLease
 	receipts   map[uuid.UUID]receiptPolicyState // actual own receipts only; never workspace access
+	retry      map[uuid.UUID]time.Time          // sweep: no re-check of a denied workspace before
 }
 
 func (s *Session) lease(d identitypolicy.Decision, ws uuid.UUID, started, evaluated time.Time, revision uint64) identityLease {
