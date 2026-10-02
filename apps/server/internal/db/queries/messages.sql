@@ -222,6 +222,15 @@ VALUES (sqlc.arg('room_id'), sqlc.arg('author_id'), sqlc.arg('content'), sqlc.na
     sqlc.narg('forwarded_from'), sqlc.narg('forward_author_id'), sqlc.narg('forward_sent_at'))
 RETURNING *;
 
+-- name: GetMessageShared :one
+-- The source of a forward, read under a share lock: what a recording card gets meanwhile (payload,
+-- audio) is either seen here or applied to the copy once it exists (UpdateSystemMessage waits for it).
+SELECT * FROM messages WHERE id = $1 AND deleted_at IS NULL FOR SHARE;
+
+-- name: LockMessage :exec
+-- Waits for the forwards in flight of the message and keeps new ones off until commit.
+SELECT 1 FROM messages WHERE id = $1 FOR NO KEY UPDATE;
+
 -- name: CopyAttachments :exec
 -- The copy shows the same files as the source (no blob copy, no quota: ADR-0033 §3).
 INSERT INTO message_attachments (message_id, file_id, position, forwarded)
