@@ -28,12 +28,26 @@ The generated snapshot returns a new CSRF token. Decision sends generated
 `DecideOAuthRequest` with that token, `allow`, and `allow_refresh` and receives
 `OAuthDecisionResponse.redirect_url`. Proto JSON uses its usual lowerCamelCase
 field names. Client, user, session, scopes, redirect, nonce, and versions come from
-the saved server snapshot; rebinding or account substitution is rejected.
+the saved server snapshot; account substitution is rejected. The same session may
+bind again (page reload): the CSRF token rotates. A client renamed after bind makes
+decide answer 409 `IDENTITY_CONFIG_CHANGED`; the page binds again to show the name.
+Pending requests are capped at 4 per browser (bindings evicted from the cookie are
+deleted) and 100 per trusted client IP (`temporarily_unavailable`). Re-consent
+replaces only this device's grant; narrower scopes or a changed refresh decision bump
+the consent version and close the client's grants on every device.
+
+Integrator profile: `state` and `nonce` are **required** on every authorization
+request (1–512 bytes; otherwise `invalid_request`), although OIDC Core makes `nonce`
+optional in the code flow. PKCE S256 is required for every client type. RPs must
+check `state` and `iss` on the redirect and `nonce` in the ID token.
 
 The integrator must serve that page with `frame-ancestors 'none'`, retain the
 provider's no-referrer/no-store headers, redact protocol query strings and secrets
 from access logs, add the application's endpoint rate limits, proxy both metadata
-paths before SPA fallback, and consume the identity invalidation outbox. No
+paths before SPA fallback, and wrap the routes with `httpx.WithClientIP` (the per-IP
+request cap uses it). OAuth-only changes (grant/token revocation, client disable or
+security edit) write audit rows but no identity invalidation: gateway/RTC never
+accept provider tokens and every provider endpoint re-checks the grant. No
 handler uses cookie credentials at token/revoke/UserInfo or interprets a provider
 token as a Calaba API token. End-to-end Calaba API/WS/RTC rejection is integrator
 acceptance work, not proven by the isolated provider tests.
@@ -60,7 +74,8 @@ Run from `apps/server`, using the existing isolated provider-role fixture:
 go test -race -tags integration -count=1 ./internal/oauthprovider/...
 ```
 
-Set `TEST_PG_URL` to the provider role on PostgreSQL 17 or 18. Each test creates and
+Set `TEST_DATABASE_URL` (or `TEST_PG_URL`; read through `internal/db/dbtest`, no
+built-in default) to an admin URL on PostgreSQL 17 or 18. Each test creates and
 drops its own random database and runs the actual migrations. The independent RP
 uses HTTPS, wire discovery/JWKS, and direct RSA/JWT verification, not signer Verify.
 The suite covers replay/races, CSRF/account binding, exact redirects, scopes, secret

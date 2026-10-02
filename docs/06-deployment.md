@@ -441,6 +441,9 @@ Issuer: `${IDENTITY_PUBLIC_ORIGIN}/oidc/workspaces/{workspace_uuid}`. Client п�
 assurance, одного custom MANAGE_INTEGRATIONS недостаточно. Types из generated
 `OAuthClientType`: confidential web (`client_secret_basic`), public native/SPA (`none`).
 Exact registered redirects, S256, обязательные state/nonce, explicit user consent;
+**nonce обязателен и в code flow** (OIDC Core §3.1.2.1 делает его там необязательным —
+наш профиль строже): authorize без `state` или `nonce` (1–512 байт) отвечает
+`invalid_request`; RP сверяет `nonce` в ID token и `state`/`iss` в redirect;
 scopes только `openid profile email`. Email claim только независимо локально verified;
 `sub` opaque/stable внутри workspace, разные workspace имеют разные subjects.
 Нет API scopes, client_credentials, offline_access, SAML, dynamic registration/SLO.
@@ -465,6 +468,12 @@ OAuth client update использует `version` (не `revision`); optional s
   показывает `OAuthConsentSnapshot`. Его **новый** csrfToken идёт в
   `DecideOAuthRequest {allow, allowRefresh, csrfToken}`; ответ `OAuthDecisionResponse {redirectUrl}`.
   Scopes/client/redirect берутся с сервера; смена account требует нового request.
+  Повторный bind той же session разрешён (перезагрузка страницы): csrfToken ротируется.
+  Если клиента переименовали после bind, decision отвечает 409 `IDENTITY_CONFIG_CHANGED` —
+  страница делает bind заново и показывает новое имя. Незавершённых requests не больше
+  4 на браузер (вытесненные из cookie удаляются) и 100 на IP; сверх — redirect
+  `temporarily_unavailable`. Повторное согласие заменяет grant только этого устройства;
+  сужение scopes или смена решения о refresh закрывает grants клиента на всех устройствах.
   Reauth/step-up возвращает только exact same-origin consent route в той же session;
   arbitrary return URL запрещён, истёкший request (10 минут) требует нового authorize.
 - Recovery kit: `IdentityRecoveryKitResponse {codesOnce, expiresAt}`; не сохранять
