@@ -73,6 +73,61 @@ class RenderTest(unittest.TestCase):
                 self.assertTrue(line.endswith("х" * 300))  # never cut mid-bullet
 
 
+SHORT = """## [2.0.0] — 2026-10-02
+
+Вступление.
+
+### Коротко
+- Вход через корпоративный SSO.
+- Новый сайт calab.ru.
+
+### Добавлено
+- **SSO**: полный текст (#1).
+"""
+
+
+class ShortTest(unittest.TestCase):
+    def setUp(self):
+        os.environ.pop("CALAB_RELEASE_NOTES_URL", None)
+
+    def test_short_only(self):
+        self.assertEqual(ra.render("2.0.0", SHORT), "\n\n".join([
+            "🚀 **Calab 2.0.0** — 2 октября 2026",
+            "• Вход через корпоративный SSO.\n• Новый сайт calab.ru.",
+            "Подробнее: https://github.com/itrcz/calab/releases/tag/v2.0.0",
+            "Обновление придёт само",
+        ]))
+
+    def test_url_override(self):
+        os.environ["CALAB_RELEASE_NOTES_URL"] = "https://x.test/{version}/"
+        try:
+            self.assertIn("Подробнее: https://x.test/2.0.0/\n", ra.render("2.0.0", SHORT))
+        finally:
+            del os.environ["CALAB_RELEASE_NOTES_URL"]
+
+    def test_without_short_is_unchanged(self):
+        # byte-for-byte the pre-«Коротко» output
+        self.assertEqual(ra.render("1.2.3", CHANGELOG).count("Подробнее"), 0)
+        self.assertIn("✨ **Добавлено**", ra.render("1.2.3", CHANGELOG))
+
+    def test_short_not_in_full_render(self):
+        sections = ra.parse_sections(ra.changelog_section(SHORT, "2.0.0")[1])
+        full = [t for t, _ in sections if t not in ra.SKIP]
+        self.assertEqual(full, ["Добавлено"])
+
+    def test_too_long_fails(self):
+        big = "## [2.0.0] — 2026-10-02\n\n### Коротко\n" + "\n".join("- " + "х" * 300 for _ in range(14)) + "\n"
+        with self.assertRaises(ra.AnnounceError):
+            ra.render("2.0.0", big)
+
+    def test_all_mixes_both(self):
+        text = SHORT + "\n" + CHANGELOG.split("# Изменения\n", 1)[1]
+        out = {v: ra.render(v, text) for v in ra.released_versions(text)}
+        self.assertIn("Подробнее:", out["2.0.0"])
+        self.assertNotIn("Подробнее:", out["1.2.3"])
+        self.assertIn("🐞 **Исправлено**", out["1.2.3"])
+
+
 class VersionsTest(unittest.TestCase):
     def test_released_oldest_first(self):
         text = CHANGELOG + "\n## [1.10.0] — 2026-10-02\n\n### Добавлено\n- x\n"
