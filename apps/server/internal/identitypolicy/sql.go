@@ -7,6 +7,7 @@ import (
 
 	"github.com/calaba/calaba/server/internal/db/sqlc"
 	"github.com/google/uuid"
+	"github.com/jackc/pgx/v5"
 )
 
 // SQLLoader reads session, membership, versions, grants, assurance, and directory status
@@ -85,4 +86,31 @@ func (l *SQLLoader) state(row sqlc.GetIdentityGateStateRow) State {
 				Identity: row.AssuranceIdentityVersion, Entitlement: row.AssuranceEntitlementVersion, Session: row.AssuranceSessionVersion}}
 	}
 	return s
+}
+
+// LoadGrant reads one workspace feature grant the way LoadIdentityState does (plan
+// eligibility and the business plan's validity included); a missing grant row is a zero,
+// denying Grant. now decides the plan's validity.
+func (l *SQLLoader) LoadGrant(ctx context.Context, now time.Time, ws uuid.UUID, f Feature) (Grant, error) {
+	if l == nil || l.Q == nil {
+		return Grant{}, errors.New("identity database is unavailable")
+	}
+	row, err := l.Q.GetIdentityGrant(ctx, sqlc.GetIdentityGrantParams{WorkspaceID: ws, Feature: string(f)})
+	if errors.Is(err, pgx.ErrNoRows) {
+		return Grant{}, nil
+	}
+	if err != nil {
+		return Grant{}, err
+	}
+	plan, err := l.Q.GetWorkspacePlan(ctx, ws)
+	if err != nil && !errors.Is(err, pgx.ErrNoRows) {
+		return Grant{}, err
+	}
+	business := err == nil && plan.Plan == "enterprise" && (plan.ValidUntil == nil || now.Before(*plan.ValidUntil))
+	until := timeValue(row.ValidUntil)
+	if row.Source == "cloud_business" && err == nil && plan.ValidUntil != nil {
+		until = minimum(until, *plan.ValidUntil)
+	}
+	return Grant{WorkspaceID: ws, Feature: f, Source: row.Source, Enabled: row.Enabled, Revoked: row.RevokedAt != nil,
+		Version: row.Version, ValidUntil: until, PlanEligible: l.Config.Eligible(ws, row.Source, business)}, nil
 }
