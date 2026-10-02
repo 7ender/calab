@@ -3,6 +3,7 @@ import { timestampDate } from '@bufbuild/protobuf/wkt';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Mail, Trash2 } from 'lucide-react';
 import { useEffect, useState, type ReactNode } from 'react';
+import { confirmAction } from '../../components/Confirm';
 import { Avatar } from '../../components/Avatar';
 import { Badge, Button, Card, IconButton, Input, Select, Spinner } from '../../components/ui';
 import { plural, t } from '../../i18n';
@@ -42,6 +43,7 @@ export function EmailInviteCard({ workspaceId, full = false }: { workspaceId: st
   const [value, setValue] = useState('');
   const [role, setRole] = useState(WorkspaceRole.MEMBER);
   const [state, setState] = useState<LookupState>({ kind: 'idle' });
+  const [blurred, setBlurred] = useState(false);
   const [lookup] = useState(() => new EmailLookup({ lookup: (email, signal) => api.workspaces.lookupInvitee(workspaceId, email, signal), onChange: setState }));
   useEffect(() => () => lookup.dispose(), [lookup]);
 
@@ -78,6 +80,7 @@ export function EmailInviteCard({ workspaceId, full = false }: { workspaceId: st
             autoComplete="off"
             spellCheck={false}
             value={value}
+            onBlur={() => setBlurred(true)}
             onChange={(e) => {
               setValue(e.target.value);
               add.reset();
@@ -126,6 +129,11 @@ export function EmailInviteCard({ workspaceId, full = false }: { workspaceId: st
               </Button>
             </div>
           ) : null}
+          {state.kind === 'typing' && (blurred || value.includes('@')) ? (
+            <p className="text-caption text-danger-text" role="alert" data-testid="invite-email-bad">
+              {t('mail.invite.bad')}
+            </p>
+          ) : null}
           {state.kind === 'error' ? (
             <p className="text-caption text-danger-text" role="alert">
               {state.text}
@@ -167,7 +175,10 @@ export function EmailInvitesList({ workspaceId }: { workspaceId: string }): Reac
             {i.role === WorkspaceRole.ADMIN ? t('role.admin') : t('role.member')}
             {i.expiresAt ? ` · ${t('mail.invite.until', { date: fmt.shortDate(timestampDate(i.expiresAt)) })}` : ''}
           </span>
-          <IconButton label={`${t('mail.invite.revoke')}: ${i.email}`} className="text-muted hover:text-danger" onClick={() => revoke.mutate(i.id)}>
+          <IconButton label={`${t('mail.invite.revoke')}: ${i.email}`} className="text-muted hover:text-danger" onClick={() =>
+              void confirmAction(t('mail.invite.revokeTitle'), t('mail.invite.revokeText', { email: i.email }), t('mail.invite.revoke')).then((ok) => ok && revoke.mutate(i.id))
+            }
+          >
             <Trash2 className="size-4" />
           </IconButton>
         </div>
