@@ -251,6 +251,7 @@ export const ru = {
   'media.maxPreset': 'Максимальное качество стрима',
   'media.maxStreams': 'Стримов одновременно',
   'media.maxStreamsHint': 'Сколько человек могут показывать экран одновременно (0 — запрещено)',
+  'media.planClamp': 'Применяется min(значение, лимит тарифа): {limit}',
   'media.default': 'Как в пространстве ({v})',
   'audioTier.8': 'Низкое',
   'audioTier.16': 'Нормальное',

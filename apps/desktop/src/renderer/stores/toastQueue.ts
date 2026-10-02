@@ -51,3 +51,34 @@ export function pushToast(items: Toast[], next: Toast): Toast[] {
   }
   return out;
 }
+
+/** Pointer/keyboard interaction with the toast stack; while either is set the auto-hide is paused. */
+export interface StackInteraction {
+  hover: boolean;
+  focus: boolean;
+}
+
+export type StackInteractionEvent =
+  | { type: 'enter' }
+  | { type: 'leave' }
+  | { type: 'focus' }
+  | { type: 'blur' }
+  /** The toast list changed: the toast under the pointer/focus may be gone (no leave/blur arrives). */
+  | { type: 'items'; focusInside: boolean };
+
+export function stackInteraction(s: StackInteraction, e: StackInteractionEvent): StackInteraction {
+  switch (e.type) {
+    case 'enter':
+      return s.hover ? s : { ...s, hover: true };
+    case 'leave':
+      return s.hover ? { ...s, hover: false } : s;
+    case 'focus':
+      return s.focus ? s : { ...s, focus: true };
+    case 'blur':
+      return s.focus ? { ...s, focus: false } : s;
+    // Hover is dropped (an unmounted element emits no pointerleave); a pointer still over the
+    // stack re-arms it on its next move (onPointerMove). Focus is re-read from the live DOM.
+    case 'items':
+      return !s.hover && s.focus === e.focusInside ? s : { hover: false, focus: e.focusInside };
+  }
+}

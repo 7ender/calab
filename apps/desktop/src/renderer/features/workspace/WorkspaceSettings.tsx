@@ -2,7 +2,7 @@ import { IdentitySettings } from '../identity/IdentitySettings';
 import { OAuthClients } from '../identity/OAuth';
 import { identityApi } from '../identity/api';
 import { localAuthority } from '../identity/model';
-import { audioTierKbps, IdentityFeature, WorkspaceRole, WorkspaceVisibility, type Invite } from '@calaba/protocol';
+import { audioTierKbps, type ConcreteScreenSharePreset, IdentityFeature, WorkspaceRole, WorkspaceVisibility, type Invite } from '@calaba/protocol';
 import { timestampDate } from '@bufbuild/protobuf/wkt';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Award, AudioLines, Ban, Music, Bot as BotIcon, Cake, CircleDot, Copy, Gem, KeyRound, AppWindow, Lock, Phone, Search, Settings2, Shield, Sticker, Trash2, TriangleAlert, Upload, UserPlus, Users, Wallpaper } from 'lucide-react';
@@ -36,7 +36,7 @@ import { PlanFullNote, PlanTab, useMembersCap } from './PlanTab';
 import { AudioTierHint, AudioTierOptions } from './AudioTierOptions';
 import { GptunnelTab } from './GptunnelTab';
 import { TelephonyTab } from './TelephonyTab';
-import { PLAN_LABEL, planKind } from '../../lib/plan';
+import { PLAN_LABEL, capMax, clampToCap, planKind } from '../../lib/plan';
 import { reportPlanError, workspacePlan } from '../../services/plan';
 import { fromTimeFormatPref, toTimeFormatPref } from '../../services/timeFormat';
 import { RoomGuestInviteCard } from '../people/RoomGuestInviteCard';
@@ -255,9 +255,28 @@ function GeneralTab({
   );
 }
 
+function ClampHint({ base, show, limit }: { base: string; show: boolean; limit: string }): ReactNode {
+  return show ? (
+    <>
+      {base}
+      <br />
+      {t('media.planClamp', { limit })}
+    </>
+  ) : (
+    base
+  );
+}
+
 function MediaTab({ workspaceId }: { workspaceId: string }): ReactNode {
   const md = useWorkspaces((s) => s.byId[workspaceId]?.ws.mediaDefaults);
   const audioCap = useWorkspaces((s) => s.byId[workspaceId]?.ws.plan?.limits?.audioTierMaxKbps ?? 0);
+  // The plan caps what the defaults can reach (#42): effective value = min(default, plan limit); 0 = no plan limit.
+  const presetCap = useWorkspaces((s) => s.byId[workspaceId]?.ws.plan?.limits?.streamMaxPreset ?? 0);
+  const streamsCap = useWorkspaces((s) => s.byId[workspaceId]?.ws.plan?.limits?.streamsPerRoom ?? 0);
+  const camerasCap = useWorkspaces((s) => s.byId[workspaceId]?.ws.plan?.limits?.camerasPerRoom ?? 0);
+  const presetValue = clampToCap(md?.maxStreamPreset || 3, presetCap);
+  const streamsMax = capMax(10, streamsCap);
+  const camerasMax = capMax(25, camerasCap);
   const apply = (init: Parameters<typeof api.workspaces.update>[1]): void =>
     void patchWorkspace(workspaceId, init).catch((e: unknown) => {
       if (!reportPlanError(e, workspaceId)) toast.error(err(e));
@@ -269,32 +288,32 @@ function MediaTab({ workspaceId }: { workspaceId: string }): ReactNode {
           <AudioTierOptions cap={audioCap} />
         </Select>
       </Row>
-      <Row label={t('media.maxPreset')} hint={presetDetail(md?.maxStreamPreset || 3)}>
+      <Row label={t('media.maxPreset')} hint={<ClampHint base={presetDetail(presetValue)} show={presetCap > 0} limit={presetCap > 0 ? presetText(presetCap as ConcreteScreenSharePreset) : ''} />}>
         <Select
           aria-label={t('media.maxPreset')}
           className="w-60"
-          value={md?.maxStreamPreset || 3}
+          value={presetValue}
           onChange={(e) => apply({ defaultMaxStreamPreset: Number(e.target.value) })}
         >
           {PRESETS.map((p) => (
-            <option key={p} value={p} title={presetDetail(p)}>
+            <option key={p} value={p} title={presetDetail(p)} disabled={presetCap > 0 && p > presetCap}>
               {presetText(p)}
             </option>
           ))}
         </Select>
       </Row>
-      <Row label={t('media.maxStreams')} hint={t('media.maxStreamsHint')}>
-        <Select aria-label={t('media.maxStreams')} className="w-20" value={md?.maxStreams ?? 3} onChange={(e) => apply({ defaultMaxStreams: Number(e.target.value) })}>
-          {Array.from({ length: 11 }, (_, i) => (
+      <Row label={t('media.maxStreams')} hint={<ClampHint base={t('media.maxStreamsHint')} show={streamsCap > 0} limit={String(streamsCap)} />}>
+        <Select aria-label={t('media.maxStreams')} className="w-20" value={clampToCap(md?.maxStreams ?? 3, streamsCap)} onChange={(e) => apply({ defaultMaxStreams: Number(e.target.value) })}>
+          {Array.from({ length: streamsMax + 1 }, (_, i) => (
             <option key={i} value={i}>
               {i}
             </option>
           ))}
         </Select>
       </Row>
-      <Row label={t('media.cameraLimit')} hint={t('media.cameraLimitHint')}>
-        <Select aria-label={t('media.cameraLimit')} className="w-20" value={md?.cameraLimit ?? 6} onChange={(e) => apply({ defaultCameraLimit: Number(e.target.value) })}>
-          {Array.from({ length: 26 }, (_, i) => (
+      <Row label={t('media.cameraLimit')} hint={<ClampHint base={t('media.cameraLimitHint')} show={camerasCap > 0} limit={String(camerasCap)} />}>
+        <Select aria-label={t('media.cameraLimit')} className="w-20" value={clampToCap(md?.cameraLimit ?? 6, camerasCap)} onChange={(e) => apply({ defaultCameraLimit: Number(e.target.value) })}>
+          {Array.from({ length: camerasMax + 1 }, (_, i) => (
             <option key={i} value={i}>
               {i}
             </option>

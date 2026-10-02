@@ -1,5 +1,5 @@
 import { Plan, ScreenSharePreset, SCREEN_SHARE_PRESETS, type ConcreteScreenSharePreset, type PlanLimits, type WorkspacePlan } from '@calaba/protocol';
-import { t, type MessageKey } from '../i18n';
+import { plural, t, type MessageKey, type PluralKey } from '../i18n';
 import { fmt } from './format';
 
 /**
@@ -186,8 +186,8 @@ export function planErrorNotice(err: unknown, plan: Plan): PlanNotice | null {
     if (/caldav/i.test(msg)) return { text: t('plan.caldavLocked'), contact: true };
     if (/\bmembers?\b/i.test(msg)) return { text: t('plan.membersFull', { plan: t(PLAN_LABEL[plan]), n }), contact: true };
     if (/\bboards?\b/i.test(msg)) return { text: t('plan.boardsFull', { plan: t(PLAN_LABEL[plan]), n }), contact: true };
-    const key: MessageKey = /\bbots?\b/i.test(msg) ? 'bots.planLimit' : /pack/i.test(msg) ? 'stk.planPacks' : 'stk.planStickers';
-    return { text: t(key, { n }), contact: true };
+    const key: PluralKey = /\bbots?\b/i.test(msg) ? 'bots.planLimit' : /pack/i.test(msg) ? 'stk.planPacks' : 'stk.planStickers';
+    return { text: plural(key, n), contact: true };
   }
   // A notes shelf over the uploader's personal quota (ADR-0039 §5): nothing to buy, no «Связаться».
   if (e.code === 'ERROR_CODE_FILE_QUOTA_EXCEEDED' && x.reason === 'PERSONAL_QUOTA' && x.used !== undefined && x.limit !== undefined) {
@@ -362,4 +362,14 @@ export function planUsage(
   }
   const peak = (m: Map<string, number>): number => Math.max(0, ...m.values());
   return { roomPeak: peak(people), streamPeak: peak(streams), members: members.filter((m) => !m.guest).length, bots: members.filter((m) => m.bot).length };
+}
+
+/** min(value, cap); cap 0 = no plan limit. */
+export function clampToCap(value: number, cap: number): number {
+  return cap > 0 ? Math.min(value, cap) : value;
+}
+
+/** Highest selectable value of a count select under the plan cap (0 = no plan limit). */
+export function capMax(max: number, cap: number): number {
+  return cap > 0 ? Math.min(max, cap) : max;
 }

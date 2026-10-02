@@ -253,6 +253,7 @@ export const zhCN: Dict = {
   'media.maxPreset': '屏幕共享最高画质',
   'media.maxStreams': '同时共享数',
   'media.maxStreamsHint': '可同时共享屏幕的人数（0 表示禁止）',
+  'media.planClamp': '实际生效值为 min(设定值, 套餐上限)：{limit}',
   'media.default': '跟随工作区（{v}）',
   'audioTier.8': '低',
   'audioTier.16': '普通',

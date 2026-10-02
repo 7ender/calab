@@ -1,0 +1,21 @@
+import type { ReactNode } from 'react';
+import { t } from '../../i18n';
+
+/**
+ * «Нет соединения — переподключаемся…» as an overlay (#41): a zero-height anchor right under the
+ * title bar and a solid pill on top of it, so showing/hiding never moves the layout. The pill is
+ * pointer-events-none: it never intercepts a click on the room header under it. Solid material,
+ * no blur, no animation (docs/08, CLAUDE.md perf rules).
+ */
+export function ReconnectBanner(): ReactNode {
+  return (
+    <div className="pointer-events-none relative z-[var(--z-sticky)] h-0" data-testid="reconnect-banner">
+      <div
+        role="status"
+        className="absolute left-1/2 top-1 max-w-[calc(100%-24px)] -translate-x-1/2 truncate rounded-full bg-warn px-3 py-1 text-center text-caption font-medium text-black shadow-sm"
+      >
+        {t('gateway.reconnecting')}
+      </div>
+    </div>
+  );
+}
