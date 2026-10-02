@@ -2040,7 +2040,7 @@ CALABA_WEB_URL=http://127.0.0.1:39571 npx playwright test --config playwright.we
 8. `GET …/freebusy?users=$BOB&from=…&to=…` → 200, в `busy` нет `title`; `POST …/invites/lookup` → 403 `BOT_NOT_ALLOWED`.
 9. В логе сервера на шаги 3–5 и 7 — строки `bot action` с `bot_id` и `bot_owner`.
 
-### Built-in Calab Stikers (ADR-0054)
+### Built-in Calab Stikers (ADR-0057)
 
 - `go test ./internal/builtinstickers ./internal/stickers ./internal/pbconv ./internal/messages` in `apps/server`: embedded WebP validation and public allowlist/cache.
 - PG17 + Valkey 9/Redis 7.4: `go test -tags integration -run 'Test(BuiltinStickers|Sticker)' ./internal/app` with isolated TEST_PG_URL / TEST_REDIS_URL.

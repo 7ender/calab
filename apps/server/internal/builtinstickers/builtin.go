@@ -1,4 +1,4 @@
-// Package builtinstickers contains the immutable public Calab Stikers artwork (ADR-0054).
+// Package builtinstickers contains the immutable public Calab Stikers artwork (ADR-0057).
 package builtinstickers
 
 import (

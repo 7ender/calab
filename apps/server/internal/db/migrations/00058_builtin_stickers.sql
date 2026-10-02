@@ -1,4 +1,4 @@
--- ADR-0054: global read-only stickers, no workspace storage or plan quota.
+-- ADR-0057: global read-only stickers, no workspace storage or plan quota.
 -- +goose Up
 ALTER TABLE sticker_packs ALTER COLUMN workspace_id DROP NOT NULL;
 ALTER TABLE stickers ALTER COLUMN file_id DROP NOT NULL;
