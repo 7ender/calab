@@ -297,3 +297,52 @@ func TestBoardWebhookDisable(t *testing.T) {
 	createTask(t, o, b.GetId(), &v1.CreateTaskRequest{Title: "y"}, 201)
 	recv.wait("after re-enable", func(g []*v1.BoardWebhookEvent) bool { return len(g) == 1 && g[0].GetTask().GetTitle() == "y" })
 }
+
+// Checklist writes are task changes: each queues task.updated with a "checklist" change in its
+// own transaction; convert queues task.created for the subtask and task.updated for the parent.
+func TestBoardWebhookChecklist(t *testing.T) {
+	o, _, ws, _ := setupTeam(t)
+	wid := ws.GetId()
+	setPlan(t, wid, &v1.AdminSetPlanRequest{Plan: v1.Plan_PLAN_ENTERPRISE})
+	b := createBoard(t, o, wid, &v1.CreateBoardRequest{Name: "Hook lists", Key: "WHC"}, 201)
+	task := createTask(t, o, b.GetId(), &v1.CreateTaskRequest{Title: "Релиз"}, 201)
+	recv := newBoardHookRecv(t)
+	recv.secret = "0123456789abcdef0123"
+	o.must(200, "PUT", "/api/boards/"+b.GetId()+"/webhook", &v1.SetBoardWebhookRequest{Url: recv.srv.URL, Secret: recv.secret}, nil)
+
+	cl := newChecklist(t, o, task.GetId(), "Шаги", 201).GetChecklist()
+	it := newItem(t, o, cl.GetId(), "собрать", 201).GetChecklist().GetItems()[0]
+	done := true
+	o.must(200, "PATCH", "/api/checklist-items/"+it.GetId(), &v1.UpdateTaskChecklistItemRequest{Done: &done}, nil)
+	conv := newItem(t, o, cl.GetId(), "выкатить", 201).GetChecklist().GetItems()[1]
+	var cr v1.ConvertChecklistItemResponse
+	o.must(201, "POST", "/api/checklist-items/"+conv.GetId()+"/convert", nil, &cr)
+
+	evs := recv.wait("checklist events", func(g []*v1.BoardWebhookEvent) bool { return len(g) == 6 })
+	slices.SortFunc(evs, func(a, b *v1.BoardWebhookEvent) int { return int(a.GetSequence()) - int(b.GetSequence()) })
+	var actions []string
+	for _, ev := range evs[:4] {
+		if ev.GetType() != "task.updated" || ev.GetTask().GetId() != task.GetId() || len(ev.GetChanges()) != 1 ||
+			ev.GetChanges()[0].GetField() != "checklist" {
+			t.Fatalf("checklist event: %v", ev)
+		}
+		actions = append(actions, ev.GetChanges()[0].GetAfter().GetFields()["action"].GetStringValue())
+	}
+	if !slices.Equal(actions, []string{"created", "item_added", "item_done", "item_added"}) {
+		t.Fatalf("actions %v", actions)
+	}
+	if evs[2].GetTask().GetChecklistDone() != 1 || evs[2].GetTask().GetChecklistTotal() != 1 {
+		t.Fatalf("counters in the payload: %v", evs[2].GetTask())
+	}
+	byType := map[string]*v1.BoardWebhookEvent{}
+	for _, ev := range evs[4:] {
+		byType[ev.GetType()] = ev
+	}
+	if ev := byType["task.created"]; ev.GetTask().GetId() != cr.GetTask().GetId() || ev.GetTask().GetParentId() != task.GetId() {
+		t.Fatalf("convert, subtask: %v", ev)
+	}
+	if ev := byType["task.updated"]; ev.GetTask().GetId() != task.GetId() ||
+		ev.GetChanges()[0].GetAfter().GetFields()["action"].GetStringValue() != "converted" {
+		t.Fatalf("convert, parent: %v", ev)
+	}
+}

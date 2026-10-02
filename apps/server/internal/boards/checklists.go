@@ -31,30 +31,11 @@ const (
 
 	ReasonChecklistLimit     = "CHECKLIST_LIMIT"
 	ReasonChecklistItemLimit = "CHECKLIST_ITEM_LIMIT"
-	// reasonFeatureDisabled: CONFLICT on a write to a board feature that is switched off.
-	reasonFeatureDisabled = "FEATURE_DISABLED"
 )
 
-// boardFeatureOn reports whether a board feature is enabled (boards.disabled_features keeps the
-// switched-off ones, bit = enum number).
-// TODO(boards 2.0 stage 1): switch to requireFeature once it lands on main.
-func boardFeatureOn(ctx context.Context, q *sqlc.Queries, boardID uuid.UUID, f v1.BoardFeature) (bool, error) {
-	b, err := q.GetBoard(ctx, boardID)
-	if err != nil {
-		return false, err
-	}
-	return b.DisabledFeatures&(1<<uint(f)) == 0, nil //nolint:gosec // enum value 1..13
-}
-
-func featureDisabled(field string) *httpx.Error {
-	e := httpx.Conflict("the feature is switched off on this board").WithDetails(reasonFeatureDisabled, 0, 0)
-	e.Field = field
-	return e
-}
-
-// gate refuses a write: the plan has no checklists (every write incl. delete), or the board
-// feature CHECKLISTS is off (create / edit only; deleting stays allowed).
-func (s *Service) checklistGate(ctx context.Context, q *sqlc.Queries, t taskRow, deleting bool) error {
+// checklistGate refuses a write: the plan has no checklists (every write incl. delete: read-only),
+// or the board feature CHECKLISTS is off (requireFeature; deleting stays allowed).
+func (s *Service) checklistGate(ctx context.Context, t taskRow, disabled int64, deleting bool) error {
 	if s.plans != nil {
 		lim, err := s.plans.Effective(ctx, t.WorkspaceID)
 		if err != nil {
@@ -64,17 +45,7 @@ func (s *Service) checklistGate(ctx context.Context, q *sqlc.Queries, t taskRow,
 			return plans.FeatureError("checklists")
 		}
 	}
-	if deleting {
-		return nil
-	}
-	on, err := boardFeatureOn(ctx, q, t.BoardID, v1.BoardFeature_BOARD_FEATURE_CHECKLISTS)
-	if err != nil {
-		return err
-	}
-	if !on {
-		return featureDisabled("checklists")
-	}
-	return nil
+	return requireFeature(disabled, v1.BoardFeature_BOARD_FEATURE_CHECKLISTS, "checklists", !deleting)
 }
 
 // ---- proto ----
@@ -142,16 +113,19 @@ type clOut struct {
 	subtask uuid.UUID // convert: the new task
 	t       taskRow
 	c       change
+	// disabled: the board's switched-off features (BoardAccess.DisabledFeatures).
+	disabled int64
 }
 
 // write runs a checklist mutation: resolve finds the task of the path object, then the task row
-// is locked, the caller must be able to edit it and the plan / feature gates pass.
+// is locked, the caller must be able to edit it and the plan / feature gates pass. The journal
+// entries go to the board webhook outbox in the same transaction (taskTx).
 func (s *Service) write(w http.ResponseWriter, r *http.Request, deleting bool,
 	resolve func(ctx context.Context, q *sqlc.Queries) (uuid.UUID, error),
 	fn func(q *sqlc.Queries, tx pgx.Tx, t taskRow, o *clOut) error) error {
 	me := uid(r)
 	var o clOut
-	err := s.tx(r.Context(), func(q *sqlc.Queries, tx pgx.Tx) error {
+	err := s.taskTx(r.Context(), &o.c, func(q *sqlc.Queries, tx pgx.Tx) error {
 		taskID, err := resolve(r.Context(), q)
 		if err != nil {
 			return err
@@ -166,10 +140,10 @@ func (s *Service) write(w http.ResponseWriter, r *http.Request, deleting bool,
 		if t.ArchivedAt != nil {
 			return httpx.Conflict("the task is archived; restore it first")
 		}
-		if err := s.checklistGate(r.Context(), q, t, deleting); err != nil {
+		if err := s.checklistGate(r.Context(), t, acc.DisabledFeatures, deleting); err != nil {
 			return err
 		}
-		o.t = t
+		o.t, o.disabled = t, acc.DisabledFeatures
 		if err := fn(q, tx, t, &o); err != nil {
 			return err
 		}
@@ -613,12 +587,8 @@ func (s *Service) convertChecklistItem(w http.ResponseWriter, r *http.Request) e
 		if err != nil {
 			return notFoundOr(err, "checklist item")
 		}
-		on, err := boardFeatureOn(ctx, q, t.BoardID, v1.BoardFeature_BOARD_FEATURE_SUBTASKS)
-		if err != nil {
+		if err := requireFeature(o.disabled, v1.BoardFeature_BOARD_FEATURE_SUBTASKS, "parentId", true); err != nil {
 			return err
-		}
-		if !on {
-			return featureDisabled("parentId")
 		}
 		cl, err := q.GetTaskChecklist(ctx, old.ChecklistID)
 		if err != nil {

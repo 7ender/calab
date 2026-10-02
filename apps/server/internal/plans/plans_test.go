@@ -365,3 +365,27 @@ func TestAllowsMusician(t *testing.T) {
 		t.Fatalf("override: %+v %v", l, err)
 	}
 }
+
+// ADR-0058 §5: a Custom row stored before the flags existed has webhooks off and checklists
+// on; a row that stores the flags gets them as stored.
+func TestCustomBoardFlagsDefault(t *testing.T) {
+	ctx := context.Background()
+	now := time.Date(2026, 10, 2, 12, 0, 0, 0, time.UTC)
+	f := &fakeRows{rows: map[uuid.UUID]*sqlc.WorkspacePlan{}}
+	s := testService(f, &now)
+	legacy, on, off := uuid.New(), uuid.New(), uuid.New()
+	f.rows[legacy] = &sqlc.WorkspacePlan{WorkspaceID: legacy, Plan: "custom", Limits: []byte(`{"room_members":12}`)}
+	f.rows[on] = &sqlc.WorkspacePlan{WorkspaceID: on, Plan: "custom",
+		Limits: []byte(`{"checklists_disabled":false,"board_webhooks_disabled":false}`)}
+	f.rows[off] = &sqlc.WorkspacePlan{WorkspaceID: off, Plan: "custom",
+		Limits: []byte(`{"checklists_disabled":true,"board_webhooks_disabled":true}`)}
+	for ws, want := range map[uuid.UUID][2]bool{legacy: {false, true}, on: {false, false}, off: {true, true}} {
+		l, err := s.Effective(ctx, ws)
+		if err != nil || l.ChecklistsDisabled != want[0] || l.BoardWebhooksDisabled != want[1] {
+			t.Fatalf("%v: checklists_disabled %v board_webhooks_disabled %v (%v), want %v", ws, l.ChecklistsDisabled, l.BoardWebhooksDisabled, err, want)
+		}
+	}
+	if l, _ := s.Effective(ctx, legacy); l.RoomMembers != 12 || l.Members != 0 {
+		t.Fatalf("legacy custom: %+v", l)
+	}
+}

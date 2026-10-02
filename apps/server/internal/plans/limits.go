@@ -65,6 +65,11 @@ var (
 	DefaultBusiness = Limits{RoomMembers: 50, Members: 500, Bots: 20, Boards: 50, StorageMB: 1 << 20, StreamsPerRoom: 5, CamerasPerRoom: 25}
 )
 
+// CustomBase is what a stored PLAN_CUSTOM row means for a key it lacks (rows written before the
+// key existed): no limit, except flags that are off unless granted (ADR-0058 §5: board webhooks
+// are Business only, so an older Custom row does not gain them silently; checklists default on).
+var CustomBase = Limits{BoardWebhooksDisabled: true}
+
 // Upper bounds of every limit (validation of env and admin input).
 const (
 	maxRoomMembers    = 1000

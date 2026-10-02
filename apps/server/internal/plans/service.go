@@ -222,7 +222,7 @@ func (s *Service) resolveLocked(ctx context.Context, row *sqlc.WorkspacePlan, no
 	case v1.Plan_PLAN_ENTERPRISE:
 		info.Limits = s.biz
 	case v1.Plan_PLAN_CUSTOM:
-		l, err := ParseLimits(string(row.Limits), Limits{})
+		l, err := ParseLimits(string(row.Limits), CustomBase)
 		if err != nil { // written by us, validated; fail safe to free if it is ever corrupt
 			slog.WarnContext(ctx, "invalid custom plan limits, using free", "workspace", row.WorkspaceID, "err", err)
 			l = s.free
