@@ -41,7 +41,7 @@ test('sticker emoji chip in settings', async ({ open, win }) => {
   await open();
   await general(win);
   await win.getByTestId('titlebar-title').click();
-  await win.getByRole('menuitem', { name: 'Настройки пространства' }).click();
+  await win.getByRole('menuitem', { name: 'Настройки', exact: true }).click();
   const dialog = win.getByRole('dialog');
   await dialog.getByRole('tab', { name: 'Стикеры' }).click();
   await dialog.getByTestId('sticker-pack-row').filter({ hasText: 'Calab' }).click();

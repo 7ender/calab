@@ -58,7 +58,6 @@ export const esStickers: DictShape<typeof enStickers> = {
   'stk.cover': 'Portada',
   'stk.makeCover': 'Usar como portada',
   'stk.emojiFor': 'Emoji del sticker',
-  'stk.deleteSticker': 'Eliminar sticker',
   'stk.actions': 'Acciones del sticker',
   'stk.replace': 'Reemplazar archivo',
   'stk.editEmoji': 'Cambiar emoji',

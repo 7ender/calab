@@ -91,7 +91,7 @@ export const ruChat = {
   'chat.notifyMuteForever': 'Навсегда',
   'chat.notifyMutedUntil': 'Заглушено до {time}',
   'chat.notifyWsMutedUntil': 'Пространство заглушено до {time}',
-  'chat.notifyUnmute': 'Включить уведомления',
+  'chat.notifyUnmute': 'Включить',
   'chat.notifyFailed': 'Не удалось сохранить настройки уведомлений',
   // mentions
   'chat.mentionUnknown': 'неизвестный',

@@ -51,6 +51,7 @@ export const zhCalendar: DictShape<typeof ruCalendar> = {
   'cal.edit': '编辑',
   'cal.duplicate': '复制',
   'cal.cancel': '取消会议',
+  'cal.cancelItem': '取消',
   'cal.cancelOne': '取消本次',
   'cal.cancelAll': '取消所有重复',
   'cal.cancelTitle': '取消“{title}”？',

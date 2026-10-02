@@ -277,7 +277,7 @@ function ShelfMenu({
       </Item>
       <Sep className={menuSeparator} />
       <Item className={cx(menuItem, 'text-danger-text')} onSelect={() => void remove()} data-testid="notes-delete">
-        {t('notes.delete')}
+        {t('common.delete')}
       </Item>
     </>
   );

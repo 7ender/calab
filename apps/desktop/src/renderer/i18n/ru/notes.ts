@@ -13,7 +13,6 @@ export const ruNotes = {
   'notes.rename': 'Переименовать',
   'notes.changeEmoji': 'Сменить эмодзи',
   'notes.removeEmoji': 'Убрать эмодзи',
-  'notes.delete': 'Удалить полку',
   'notes.deleteTitle': 'Удалить полку «{name}»?',
   'notes.deleteConfirm': 'Все сообщения и файлы полки будут удалены. Копии, пересланные из неё в другие чаты, останутся.',
   'notes.empty': 'Сохраняйте сюда сообщения и файлы для себя',

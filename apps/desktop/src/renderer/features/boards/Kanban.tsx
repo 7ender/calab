@@ -533,7 +533,7 @@ function ColumnHeader({
               <>
                 <Dropdown.Separator className={menuSeparator} />
                 <Dropdown.Item className={cx(menuItem, 'text-danger-text')} onSelect={() => setDeleting(true)}>
-                  <Trash2 className="size-4" aria-hidden /> {t('boards.deleteStatus')}
+                  <Trash2 className="size-4" aria-hidden /> {t('common.delete')}
                 </Dropdown.Item>
               </>
             ) : null}

@@ -133,7 +133,6 @@ export const ruVideo = {
   // room «…» menu and meeting recording (docs/09 #30)
   'roomMenu.more': 'Ещё',
   'roomMenu.moreOf': 'Действия с «{name}»',
-  'roomMenu.invite': 'Пригласить в комнату',
   'roomMenu.record': 'Запись встречи',
   'rec.badge': 'REC',
   'rec.label': 'Запись',

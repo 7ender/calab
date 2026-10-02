@@ -58,7 +58,7 @@ export const enShell: DictShape<typeof ruShell> = {
   'shell.create': 'Create',
   'shell.categoryCreate': 'Create category',
   'shell.categoryName': 'Category name',
-  'shell.categoryRename': 'Rename category',
+  'shell.categoryRename': 'Rename',
   'shell.categoryDelete': 'Delete category',
   'shell.categoryDeleteConfirm': 'Delete the “{name}” category? Its rooms will stay, without a category.',
   'shell.categoryCollapse': 'Collapse “{name}”',
@@ -96,7 +96,6 @@ export const enShell: DictShape<typeof ruShell> = {
   'shell.more': 'More',
   'shell.voiceSettings': 'Voice settings',
   'shell.connCheck': 'Test connection',
-  'shell.openRoom': 'Open room chat',
 
   // self panel
   'shell.inVoiceStatus': 'In voice',

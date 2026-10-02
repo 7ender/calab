@@ -55,7 +55,6 @@ export const enStickers = {
   'stk.cover': 'Cover',
   'stk.makeCover': 'Make cover',
   'stk.emojiFor': 'Sticker emoji',
-  'stk.deleteSticker': 'Delete sticker',
   'stk.actions': 'Sticker actions',
   'stk.replace': 'Replace file',
   'stk.editEmoji': 'Change emoji',

@@ -693,7 +693,7 @@ export function VoiceBar(): ReactNode {
               )}
               <Dropdown.Separator className={menuSeparator} />
               <Dropdown.Item className={menuItem} onSelect={goRoom}>
-                <MessageCircle className="size-4" /> {t('shell.openRoom')}
+                <MessageCircle className="size-4" /> {t('voicePreview.openChat')}
               </Dropdown.Item>
               <Dropdown.Item className={menuItem} onSelect={() => open({ kind: 'settings', tab: 'voice' })}>
                 <Settings className="size-4" /> {t('shell.voiceSettings')}

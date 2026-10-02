@@ -195,7 +195,7 @@ function CardMenu({ onForward, onCopy, onDelete }: { onForward: (() => void) | u
           {onDelete ? (
             <Dropdown.Item className={cx(menuItem, 'text-danger-text')} onSelect={onDelete} data-testid="recording-card-delete">
               <Trash2 className="size-4" aria-hidden />
-              {t('rec.delete.item')}
+              {t('common.delete')}
             </Dropdown.Item>
           ) : null}
         </Dropdown.Content>

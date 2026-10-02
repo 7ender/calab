@@ -58,7 +58,6 @@ export const zhStickers: DictShape<typeof enStickers> = {
   'stk.cover': '封面',
   'stk.makeCover': '设为封面',
   'stk.emojiFor': '贴纸表情',
-  'stk.deleteSticker': '删除贴纸',
   'stk.actions': '贴纸操作',
   'stk.replace': '替换文件',
   'stk.editEmoji': '更改表情',

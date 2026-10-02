@@ -59,7 +59,6 @@ export const ruStickers = {
   'stk.cover': 'Обложка',
   'stk.makeCover': 'Сделать обложкой',
   'stk.emojiFor': 'Эмодзи стикера',
-  'stk.deleteSticker': 'Удалить стикер',
   'stk.actions': 'Действия со стикером',
   'stk.replace': 'Заменить файл',
   'stk.editEmoji': 'Изменить эмодзи',

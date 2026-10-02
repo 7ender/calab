@@ -92,7 +92,7 @@ export function NotesHeader({ room }: { room: Room }): ReactNode {
               ) : null}
               <Dropdown.Separator className={menuSeparator} />
               <Dropdown.Item className={cx(menuItem, 'text-danger-text')} onSelect={() => void remove()}>
-                <Trash2 className="size-4" aria-hidden /> {t('notes.delete')}
+                <Trash2 className="size-4" aria-hidden /> {t('common.delete')}
               </Dropdown.Item>
             </Dropdown.Content>
           </Dropdown.Portal>

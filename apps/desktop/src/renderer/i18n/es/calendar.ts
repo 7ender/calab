@@ -51,6 +51,7 @@ export const esCalendar: DictShape<typeof ruCalendar> = {
   'cal.edit': 'Editar',
   'cal.duplicate': 'Duplicar',
   'cal.cancel': 'Cancelar reunión',
+  'cal.cancelItem': 'Cancelar',
   'cal.cancelOne': 'Cancelar esta repetición',
   'cal.cancelAll': 'Cancelar todas las repeticiones',
   'cal.cancelTitle': '¿Cancelar «{title}»?',

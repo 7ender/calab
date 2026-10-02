@@ -48,7 +48,7 @@ export function DmActionsMenu({ roomId, className }: { roomId: string; className
           ) : null}
           <Dropdown.Separator className={menuSeparator} />
           <Dropdown.Item className={cx(menuItem, 'text-danger-text')} onSelect={() => void confirmDeleteDm(roomId)}>
-            <Trash2 className="size-4" aria-hidden /> {t('dm.delete')}
+            <Trash2 className="size-4" aria-hidden /> {t('common.delete')}
           </Dropdown.Item>
         </Dropdown.Content>
       </Dropdown.Portal>
