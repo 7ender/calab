@@ -1,5 +1,8 @@
 -- ADR-0057: global read-only stickers, no workspace storage or plan quota.
 -- +goose Up
+-- The checks scan sticker_packs/stickers under ACCESS EXCLUSIVE; fail fast instead of
+-- queueing every message-history read behind a long transaction (see 00055).
+SET LOCAL lock_timeout = '10s';
 ALTER TABLE sticker_packs ALTER COLUMN workspace_id DROP NOT NULL;
 ALTER TABLE stickers ALTER COLUMN file_id DROP NOT NULL;
 ALTER TABLE sticker_packs ADD CONSTRAINT builtin_pack_scope CHECK (
@@ -31,6 +34,7 @@ INSERT INTO stickers (id, pack_id, emoji, position, width, height) VALUES
 UPDATE sticker_packs SET cover_sticker_id = '1b2b7d35-8800-5fee-9ed7-33672e202bdd' WHERE id = '5a976390-e511-5ebf-8e74-3e214d88c7c0';
 
 -- +goose Down
+SET LOCAL lock_timeout = '10s';
 -- Refuse rollback once messages use this pack; never silently erase sticker history.
 -- +goose StatementBegin
 DO $$ BEGIN

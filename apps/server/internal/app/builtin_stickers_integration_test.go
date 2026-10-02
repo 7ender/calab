@@ -56,7 +56,9 @@ func TestBuiltinStickers(t *testing.T) {
 	}
 	custom := createPack(t, o, ws.Id, "Custom")
 	o.must(200, "PUT", "/api/me/sticker-packs/order", &v1.SetStickerPackOrderRequest{PackIds: []string{custom.Id}}, nil)
-	o.must(422, "PUT", "/api/me/sticker-packs/order", &v1.SetStickerPackOrderRequest{PackIds: []string{p.Id, custom.Id}}, nil)
+	// A pre-ADR-0057 client lists the built-in pack too: it is skipped, not a 422.
+	o.must(200, "PUT", "/api/me/sticker-packs/order", &v1.SetStickerPackOrderRequest{PackIds: []string{p.Id, custom.Id}}, nil)
+	o.must(422, "PUT", "/api/me/sticker-packs/order", &v1.SetStickerPackOrderRequest{PackIds: []string{p.Id, p.Id, custom.Id}}, nil)
 	// Regular send, nonce replay and history all resolve embedded metadata.
 	var sent v1.CreateMessageResponse
 	payload := &v1.CreateMessageRequest{StickerId: sid, Nonce: uniq("builtin")}

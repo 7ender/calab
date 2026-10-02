@@ -1006,6 +1006,12 @@ func (h *Handlers) order(w http.ResponseWriter, r *http.Request) error {
 	ids := make([]uuid.UUID, 0, len(req.GetPackIds()))
 	for _, s := range req.GetPackIds() {
 		id, err := uuid.Parse(s)
+		// Clients before ADR-0057 list the built-in pack they received in installed; it has
+		// a fixed place, so it is skipped rather than failing their reorder.
+		if err == nil && id.String() == builtinstickers.PackID() && !seen[id] {
+			seen[id] = true
+			continue
+		}
 		if err != nil || !mine[id] || seen[id] {
 			return httpx.Validation("packIds", "must list every installed pack once")
 		}
