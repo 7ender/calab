@@ -214,10 +214,9 @@ ACL SETUSER calab on >ПАРОЛЬ resetkeys resetchannels ~calab:* &calab:* db=
 
 ### Релиз 2.0.0: текущий порядок
 
-Подготовка документации выполнена на implementation base
-`1b590b855051c74924dceecdf959235d3b1103c8`. Это не финальный release SHA:
-после merge документации и browser evidence лид назначает точный commit для QA
-и обоих security/protocol review. До их завершения выпуск заблокирован.
+Выпущено 2026-10-02 с PR #52 + исправлениями ревью (`34c2270a`): первое ревью (4 направления) и второе
+независимое security-ревью исправлений — без blocker/major; CI на PostgreSQL 17 зелёный. Порядок ниже
+сохраняется для следующих identity-релизов.
 
 1. На конечном SHA: scope/ADR сверены, нет blocker/major, генерация без drift,
    обязательные CI checks и целевые PG17 проверки зелёные, один полный server
@@ -323,8 +322,9 @@ Deployment `calab-prod` с digest обоих образов в payload: API и �
 
 Контракт: [ADR-0054](adr/0054-workspace-identity.md), [Identity v1](plans/release-2.0-identity.md).
 Фактическая инфраструктура и оставшиеся operator inputs:
-[production preflight](plans/identity-v2-operator-preflight.md). Итоговые QA/reviews
-ещё не выполнены; подготовленный код не означает разрешение включать identity.
+[production preflight](plans/identity-v2-operator-preflight.md). Ревью пройдены (2.0.0); включение в проде —
+отдельный шаг оператора: без `IDENTITY_*`/`OAUTH_*` identity выключена (эндпоинты 503), политика пространств
+по умолчанию «Выключена» — пилот `optional`, `enforced` только после проверки recovery (ADR-0054).
 
 #### Grants, тарифы и ключи
 
