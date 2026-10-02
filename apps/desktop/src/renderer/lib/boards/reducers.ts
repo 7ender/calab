@@ -260,6 +260,8 @@ export function setChecklists(d: BoardsData, taskId: string, list: readonly Task
  * checklist of every board).
  */
 export function upsertChecklist(d: BoardsData, taskId: string, c: TaskChecklist | undefined, total: number, done: number): Partial<BoardsData> {
+  // A task nothing shows (its board not loaded): nothing to keep (as TASK_UPDATE, services/boards.ts).
+  if (!d.tasks[taskId] && !d.checklists[taskId]) return {};
   const out = setCounts(d, taskId, total, done);
   const list = d.checklists[taskId];
   if (c && list) {
@@ -275,6 +277,7 @@ export function upsertChecklist(d: BoardsData, taskId: string, c: TaskChecklist 
 
 /** TASK_CHECKLIST_DELETE / DELETE answer. */
 export function removeChecklist(d: BoardsData, taskId: string, checklistId: string, total: number, done: number): Partial<BoardsData> {
+  if (!d.tasks[taskId] && !d.checklists[taskId]) return {};
   const out = setCounts(d, taskId, total, done);
   const list = d.checklists[taskId];
   if (list?.some((c) => c.id === checklistId)) out.checklists = { ...d.checklists, [taskId]: list.filter((c) => c.id !== checklistId) };

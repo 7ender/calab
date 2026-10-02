@@ -151,7 +151,6 @@ export function BoardsList({ workspaceId }: { workspaceId: string }): ReactNode 
     [creator, layoutNow],
   );
 
-  const boardCount = tokens.filter((x) => x.startsWith('b:')).length;
   return (
     <div
       ref={list}
@@ -210,7 +209,7 @@ export function BoardsList({ workspaceId }: { workspaceId: string }): ReactNode 
           </p>
         )
       ) : null}
-      {creator || manageAny ? <ArchivedBoards workspaceId={workspaceId} live={boardCount} /> : null}
+      {creator || manageAny ? <ArchivedBoards workspaceId={workspaceId} live={live} /> : null}
       {line !== null ? <div aria-hidden className="pointer-events-none absolute inset-x-3 z-10 h-0.5 rounded-full bg-accent" style={{ top: Math.max(0, line - 1) }} /> : null}
       {newCat ? <NewCategoryDialog workspaceId={workspaceId} onClose={() => setNewCat(false)} /> : null}
     </div>

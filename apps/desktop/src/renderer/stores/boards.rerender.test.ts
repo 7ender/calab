@@ -84,10 +84,12 @@ describe('a checklist tick on a board of 200 tasks', () => {
     expect(checklistProgress(useBoards.getState(), 't7')).toBe('4/4');
   });
 
-  it('an event for a task whose panel is closed stores only the counters', () => {
+  it('an event for a task whose panel is closed stores only the counters; an unknown task nothing', () => {
     useBoards.getState().upsertChecklist('t3', create(TaskChecklistSchema, { id: 'c9', taskId: 't3', items: [create(TaskChecklistItemSchema, { id: 'z', done: true })] }), 1, 1);
     expect(useBoards.getState().checklists['t3']).toBeUndefined();
     expect(checklistProgress(useBoards.getState(), 't3')).toBe('1/1');
+    useBoards.getState().upsertChecklist('elsewhere', undefined, 5, 1);
+    expect(useBoards.getState().checkCounts['elsewhere']).toBeUndefined();
   });
 
   it('TASK_CHECKLIST_DELETE drops the checklist and sets the counters', () => {
