@@ -44,10 +44,10 @@ describe('stickers (ADR-0030)', () => {
   });
 });
 
- it('built-in packs work across workspaces and DMs, but not for guests or unknown members', () => {
+ it('built-in packs work across workspaces and DMs, including guests, but not unknown members', () => {
   const p = create(StickerPackSchema, { builtin: true });
   expect(packUsable(p, { workspaceId: 'w' }, 'me', () => WorkspaceRole.MEMBER)).toBe(true);
-  expect(packUsable(p, { workspaceId: 'w' }, 'me', () => WorkspaceRole.GUEST)).toBe(false);
+  expect(packUsable(p, { workspaceId: 'w' }, 'me', () => WorkspaceRole.GUEST)).toBe(true);
   expect(packUsable(p, { workspaceId: 'w' }, 'me', () => undefined)).toBe(false);
   expect(packUsable(p, { dmPeerId: 'unrelated' }, 'me', () => undefined)).toBe(true);
  });

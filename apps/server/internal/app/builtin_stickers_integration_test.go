@@ -70,8 +70,8 @@ func TestBuiltinStickers(t *testing.T) {
 	if len(history.Messages) != 1 || history.Messages[0].GetSticker().GetId() != sid {
 		t.Fatalf("history: %v", &history)
 	}
-	guest.must(403, "POST", "/api/rooms/"+room+"/messages", &v1.CreateMessageRequest{StickerId: sid}, nil)
-	guest.must(403, "POST", "/api/rooms/"+room+"/messages/"+sent.Message.Id+"/forward", &v1.ForwardMessageRequest{ToRoomId: room}, nil)
+	guest.must(201, "POST", "/api/rooms/"+room+"/messages", &v1.CreateMessageRequest{StickerId: sid}, nil)
+	guest.must(201, "POST", "/api/rooms/"+room+"/messages/"+sent.Message.Id+"/forward", &v1.ForwardMessageRequest{ToRoomId: room}, nil)
 	mem.must(422, "POST", "/api/rooms/"+room+"/messages", &v1.CreateMessageRequest{StickerId: sid, Content: "text"}, nil)
 	// DM of users without a shared workspace is allowed for the global pack.
 	other := register(t, invite(t, o, ws.Id))
@@ -86,4 +86,18 @@ func TestBuiltinStickers(t *testing.T) {
 	// SEND_MESSAGES remains mandatory, independently of owning the global pack.
 	o.must(200, "PUT", "/api/rooms/"+room+"/permissions", &v1.SetRoomPermissionsRequest{Overrides: []*v1.RoomPermissionOverride{userOv(mem.id, 0, perm.SendMessages)}}, nil)
 	mem.must(403, "POST", "/api/rooms/"+room+"/messages", &v1.CreateMessageRequest{StickerId: sid}, nil)
+}
+
+func TestBuiltinStickersScopedSession(t *testing.T) {
+	f := identitySetup(t, "optional")
+	p := builtinstickers.Pack()
+	var mine v1.MyStickerPacksResponse
+	f.scoped.must(200, "GET", "/api/me/sticker-packs", nil, &mine)
+	if len(mine.Installed) == 0 || mine.Installed[0].Id != p.Id {
+		t.Fatal("scoped session has no built-in pack")
+	}
+	f.scoped.must(200, "GET", "/api/sticker-packs/"+p.Id, nil, nil)
+	f.scoped.must(201, "POST", "/api/rooms/"+f.roomA+"/messages", &v1.CreateMessageRequest{StickerId: p.Stickers[0].Id}, nil)
+	f.scoped.must(403, "POST", "/api/rooms/"+f.roomB+"/messages", &v1.CreateMessageRequest{StickerId: p.Stickers[0].Id}, nil)
+	f.scoped.must(403, "DELETE", "/api/sticker-packs/"+p.Id, nil, nil)
 }

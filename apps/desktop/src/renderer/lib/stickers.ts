@@ -19,7 +19,10 @@ const full = (r: WorkspaceRole | undefined): boolean => r !== undefined && r !==
  * participants are non-guest members of the pack's workspace (docs/04 «Стикеры»).
  */
 export function packUsable(pack: Pick<StickerPack, 'workspaceId'> & Partial<Pick<StickerPack, 'builtin'>>, place: StickerPlace, me: string, roleOf: RoleOf): boolean {
-  if (pack.builtin) return 'workspaceId' in place ? full(roleOf(place.workspaceId, me)) : !!me;
+  if (pack.builtin) {
+    const role = 'workspaceId' in place ? roleOf(place.workspaceId, me) : undefined;
+    return 'workspaceId' in place ? role !== undefined && role !== WorkspaceRole.UNSPECIFIED : !!me;
+  }
   if (!full(roleOf(pack.workspaceId, me))) return false;
   if ('workspaceId' in place) return place.workspaceId === pack.workspaceId;
   return full(roleOf(pack.workspaceId, place.dmPeerId));

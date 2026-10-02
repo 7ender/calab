@@ -112,7 +112,7 @@ WHERE s.id = o.id AND s.pack_id = sqlc.arg('pack_id');
 
 -- name: GetStickerFileWorkspace :one
 -- The workspace of the pack whose sticker is this file (no row = not a sticker file).
-SELECT p.workspace_id FROM stickers s JOIN sticker_packs p ON p.id = s.pack_id WHERE s.file_id = sqlc.arg('file_id')::uuid;
+SELECT coalesce(p.workspace_id, '00000000-0000-0000-0000-000000000000'::uuid)::uuid AS workspace_id FROM stickers s JOIN sticker_packs p ON p.id = s.pack_id WHERE s.file_id = sqlc.arg('file_id')::uuid;
 
 -- name: StickerFileRooms :many
 -- Rooms where a live message shows the sticker of this file.

@@ -177,9 +177,6 @@ func (h *Handlers) sticker(ctx context.Context, raw string, acc perm.RoomAccess,
 		return nil, err
 	}
 	if s.WorkspaceID == uuid.Nil {
-		if !acc.DM && (acc.Role == perm.RoleGuest || acc.Role == "") {
-			return nil, httpx.Forbidden("guests cannot send stickers")
-		}
 		return &s, nil
 	}
 	users, ws := []uuid.UUID{author}, s.WorkspaceID

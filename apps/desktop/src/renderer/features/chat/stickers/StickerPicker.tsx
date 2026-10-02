@@ -1,5 +1,5 @@
 import * as Popover from '@radix-ui/react-popover';
-import { WorkspaceRole, type Sticker, type StickerPack } from '@calaba/protocol';
+import { type Sticker, type StickerPack } from '@calaba/protocol';
 import { Clock3, Search, Sticker as StickerIcon } from 'lucide-react';
 import { useEffect, useMemo, useRef, useState, type KeyboardEvent, type MouseEvent, type ReactNode } from 'react';
 import { createPortal } from 'react-dom';
@@ -101,8 +101,6 @@ export function StickerPanel({ place, onSend, onClose }: { place: StickerPlace; 
   );
   const recent = useMemo(() => resolveRecent(recentIds, usable), [recentIds, usable]);
   const found = useMemo(() => (q.trim() ? searchStickers(usable, q, searchEmoji) : null), [q, usable]);
-  // A guest of this workspace only looks at stickers (ADR-0030 §4).
-  const guestHere = 'workspaceId' in place && byId[place.workspaceId]?.role === WorkspaceRole.GUEST;
   const firstId = recent.length ? 'recent' : (usable[0]?.id ?? null);
   const current = active ?? firstId;
 
@@ -141,7 +139,6 @@ export function StickerPanel({ place, onSend, onClose }: { place: StickerPlace; 
   const size = { cell, img: cell - 2 * INSET, preview: !mobile };
   const grid = (list: readonly Sticker[]): ReactNode => <Grid stickers={list} onSend={onSend} {...size} />;
 
-  if (guestHere) return <Note>{t('stk.guest')}</Note>;
   if (!loaded) {
     return (
       <div className="grid flex-1 place-items-center">

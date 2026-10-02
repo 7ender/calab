@@ -150,13 +150,13 @@ func (q *Queries) GetSticker(ctx context.Context, id uuid.UUID) (GetStickerRow, 
 }
 
 const getStickerFileWorkspace = `-- name: GetStickerFileWorkspace :one
-SELECT p.workspace_id FROM stickers s JOIN sticker_packs p ON p.id = s.pack_id WHERE s.file_id = $1::uuid
+SELECT coalesce(p.workspace_id, '00000000-0000-0000-0000-000000000000'::uuid)::uuid AS workspace_id FROM stickers s JOIN sticker_packs p ON p.id = s.pack_id WHERE s.file_id = $1::uuid
 `
 
 // The workspace of the pack whose sticker is this file (no row = not a sticker file).
-func (q *Queries) GetStickerFileWorkspace(ctx context.Context, fileID uuid.UUID) (*uuid.UUID, error) {
+func (q *Queries) GetStickerFileWorkspace(ctx context.Context, fileID uuid.UUID) (uuid.UUID, error) {
 	row := q.db.QueryRow(ctx, getStickerFileWorkspace, fileID)
-	var workspace_id *uuid.UUID
+	var workspace_id uuid.UUID
 	err := row.Scan(&workspace_id)
 	return workspace_id, err
 }

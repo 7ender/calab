@@ -900,7 +900,10 @@ func (h *Handlers) myPacks(ctx context.Context, user uuid.UUID) (*v1.MyStickerPa
 	filter := func(rows []sqlc.StickerPack) ([]sqlc.StickerPack, error) {
 		visible := rows[:0]
 		for _, row := range rows {
-			if err := perm.CheckAccess(ctx, row.WorkspaceID, user); err == nil {
+			if row.WorkspaceID == nil {
+				continue
+			}
+			if err := perm.CheckAccess(ctx, *row.WorkspaceID, user); err == nil {
 				visible = append(visible, row)
 			} else if httpx.AsError(err).Status >= 500 {
 				return nil, err
