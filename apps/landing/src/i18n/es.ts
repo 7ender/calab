@@ -25,7 +25,7 @@ const es: Dict = {
     language: 'Idioma',
   },
   hero: {
-    badge: 'Novedad: llamadas a teléfonos, aplicaciones web y Bot API v2',
+    badge: 'SSO · Active Directory · OAuth 2.0',
     title: 'Todo el equipo en una ventana',
     lead: 'Salas de voz, chat, reuniones y tareas en tu propio servidor. Ligero como Discord, cómodo como Telegram.',
     download: 'Descargar',
@@ -285,6 +285,7 @@ const es: Dict = {
       contact: 'Contactar',
       license: 'Condiciones de la licencia',
     },
+    identity: { title: "SSO, Active Directory e inicio de sesión con Calab", text: "Business y Enterprise incluyen inicio de sesión mediante OpenID Connect (SSO), sincronización por LDAPS del estado de miembros vinculados y grupos directos de Active Directory, y OAuth 2.0 / OpenID Connect para acceder a tus aplicaciones con Calab. Los clientes OAuth se registran en los ajustes del espacio; el usuario autoriza compartir un perfil mínimo. No dan acceso a la API del chat." },
     table: {
       caption: 'Comparación de planes',
       feature: 'Función',
@@ -307,6 +308,9 @@ const es: Dict = {
         calendar: 'Calendario',
         musician: 'Modo músico',
         caldav: 'CalDAV',
+        sso: "SSO (OpenID Connect)",
+        directory: "Active Directory (LDAPS)",
+        oauth: "OAuth 2.0 / OIDC para aplicaciones",
         onprem: 'On-prem (servidor propio)',
         support: 'Soporte',
         price: 'Precio',
@@ -325,6 +329,9 @@ const es: Dict = {
         calendar: ['✓', '✓', '✓', '✓'],
         musician: ['✗', '✓', '✓', '✓'],
         caldav: ['—', '✓', '✓', '✓'],
+        sso: ['✗', '✗', '✓', '✓'],
+        directory: ['✗', '✗', '✓', '✓'],
+        oauth: ['✗', '✗', '✓', '✓'],
         onprem: ['—', '—', '—', '✓'],
         support: ['—', '✓', 'prioritario', '✓'],
         price: ['gratis', 'bajo consulta', 'bajo consulta', 'BSL 1.1; comercial bajo consulta'],
@@ -338,6 +345,7 @@ const es: Dict = {
     eyebrow: 'Preguntas',
     title: 'Lo esencial, en breve',
     items: {
+      identity: { q: "¿Cómo configuro SSO, Active Directory y OAuth?", a: "Abre la configuración de SSO del espacio para conectar un proveedor OpenID Connect y un directorio LDAPS, o Clientes OAuth para registrar una aplicación con sus URI de redirección. Se requiere Business vigente o Enterprise activado. Las cuentas se vinculan explícitamente, nunca por coincidencia del correo. La sincronización no crea usuarios ni procesa grupos anidados." },
       server: {
         q: '¿Qué necesito para tener mi propio servidor?',
         a: 'Un host Linux con Docker, una IP pública y un dominio. Puertos abiertos: 80 y 443 (TCP y UDP), 7881/TCP y 7882/UDP. Para un equipo de hasta 30 personas, unos 4 vCPU y 8 GB de memoria; la cifra exacta depende de cuántas pantallas se compartan a la vez.',

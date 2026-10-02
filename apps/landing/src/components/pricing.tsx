@@ -21,6 +21,9 @@ const ROW_IDS = Object.keys({
   calendar: 0,
   musician: 0,
   caldav: 0,
+  sso: 0,
+  directory: 0,
+  oauth: 0,
   onprem: 0,
   support: 0,
   price: 0,
@@ -87,7 +90,14 @@ export function Pricing({ t }: { t: Dict['pricing'] }) {
   const tb = t.table;
   return (
     <Section id="pricing" labelledBy="pricing-title">
+      <div className="sticker-section-heading">
       <SectionHeading id="pricing-title" eyebrow={t.eyebrow} title={t.title} lead={t.lead} />
+        <img className="section-sticker" src="/editorial/sticker-pricing.webp" width={180} height={180} alt="" loading="lazy" />
+      </div>
+      <div className="mt-10 max-w-[860px] border-l-4 border-accent pl-6">
+        <h3 className="text-[20px] leading-7 font-semibold">{t.identity.title}</h3>
+        <p className="mt-3 text-[16px] leading-6 text-pretty text-fg-2">{t.identity.text}</p>
+      </div>
       <ul className="mt-12 grid gap-4 sm:mt-16 md:grid-cols-2 lg:grid-cols-4">
         {PLAN_IDS.map((id, col) => {
           const plan = t.plans[id];
@@ -96,7 +106,7 @@ export function Pricing({ t }: { t: Dict['pricing'] }) {
             <li
               key={id}
               className={
-                'relative flex flex-col rounded-[20px] border bg-card p-6 ' + (start ? 'border-2 border-accent' : 'border-line')
+                'relative flex flex-col rounded-[24px] border bg-card p-6 ' + (start ? 'border-2 border-accent' : 'border-line')
               }
             >
               {start && (
@@ -130,7 +140,9 @@ export function Pricing({ t }: { t: Dict['pricing'] }) {
           );
         })}
       </ul>
-      <div className="mt-8 hidden overflow-hidden rounded-[20px] border border-line md:block">
+      <details className="mt-10 hidden md:block pricing-comparison">
+        <summary className="inline-flex cursor-pointer items-center gap-3 rounded-full bg-white px-6 py-3 font-semibold text-black">{tb.caption}<ChevronDown size={18} aria-hidden /></summary>
+      <div className="mt-6 overflow-hidden rounded-[24px]">
         <table className="w-full table-fixed border-collapse text-[15px] leading-6">
           <caption className="sr-only">{tb.caption}</caption>
           <colgroup>
@@ -165,7 +177,8 @@ export function Pricing({ t }: { t: Dict['pricing'] }) {
           </tbody>
         </table>
       </div>
-      <p className="mx-auto mt-8 max-w-[760px] text-center text-[14px] leading-5 text-pretty text-fg-2">
+      </details>
+      <p className="mt-10 max-w-[860px] border-l-4 border-accent pl-6 text-[14px] leading-5 text-pretty text-fg-2">
         {t.license}{' '}
         <a href={repoFile('LICENSE')} className="link">
           {t.licenseLink}

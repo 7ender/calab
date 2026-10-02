@@ -7,6 +7,7 @@ export const dynamic = 'force-static';
 // Pages under each locale ('' = the home page); the root `/` is only a redirect.
 const PAGES = [
   { page: '', priority: 1 },
+  { page: 'features/', priority: 0.8 },
   { page: 'bots/', priority: 0.6 },
 ] as const;
 

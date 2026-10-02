@@ -6,7 +6,7 @@ import { SCREENS, type ScreenName } from '@/lib/screens';
 export const cx = (...c: (string | false | undefined)[]): string => c.filter(Boolean).join(' ');
 
 export function Container({ children, className }: { children: ReactNode; className?: string }) {
-  return <div className={cx('mx-auto w-full max-w-[1200px] px-4 sm:px-6', className)}>{children}</div>;
+  return <div className={cx('editorial-container mx-auto w-full px-5 sm:px-8', className)}>{children}</div>;
 }
 
 export function Section({
@@ -23,7 +23,7 @@ export function Section({
   className?: string;
 }) {
   return (
-    <section id={id} aria-labelledby={labelledBy} className={cx('py-20 sm:py-28', alt && 'surface-alt bg-bg-alt', className)}>
+    <section id={id} aria-labelledby={labelledBy} className={cx('editorial-section py-20 sm:py-28', alt && 'surface-alt bg-bg-alt', className)}>
       <Container>{children}</Container>
     </section>
   );
@@ -31,12 +31,12 @@ export function Section({
 
 export function SectionHeading({ id, eyebrow, title, lead }: { id: string; eyebrow: string; title: string; lead?: string }) {
   return (
-    <div className="mx-auto max-w-[760px] text-center">
-      <p className="text-[15px] leading-5 font-semibold text-accent-text">{eyebrow}</p>
-      <h2 id={id} className="mt-3 text-[32px] leading-10 font-semibold tracking-tight text-balance sm:text-[48px] sm:leading-[56px]">
+    <div className="max-w-[960px]">
+      <p className="editorial-eyebrow text-accent-text">{eyebrow}</p>
+      <h2 id={id} className="editorial-title mt-5 text-balance">
         {title}
       </h2>
-      {lead && <p className="mt-5 text-[17px] leading-7 text-pretty text-fg-2 sm:text-[19px] sm:leading-8">{lead}</p>}
+      {lead && <p className="mt-5 max-w-[720px] text-[17px] leading-7 text-pretty text-fg-2 sm:text-[19px] sm:leading-8">{lead}</p>}
     </div>
   );
 }
@@ -57,12 +57,12 @@ export function Button({ href, children, variant = 'primary', size = 'md', class
       href={href}
       {...(external ? { target: '_blank', rel: 'noopener' } : {})}
       className={cx(
-        'inline-flex items-center justify-center gap-2 rounded-full font-medium whitespace-nowrap',
+        'inline-flex items-center justify-center gap-2 rounded-full border font-semibold whitespace-nowrap',
         'motion-safe:transition-colors motion-safe:duration-150 motion-safe:ease-out',
         { lg: 'h-12 px-7 text-[17px]', md: 'h-11 px-6 text-[17px]', sm: 'h-8 px-4 text-[14px]', card: 'h-11 px-3 text-[15px]' }[size],
         variant === 'primary'
-          ? 'bg-accent-strong text-white hover:bg-accent-strong-hover active:bg-accent-strong-hover'
-          : 'bg-accent-tint text-accent-text hover:bg-[color-mix(in_srgb,var(--color-accent-tint),var(--color-accent)_8%)]',
+          ? 'border-transparent bg-accent-strong text-white hover:bg-accent-strong-hover active:bg-accent-strong-hover'
+          : 'border-transparent bg-white text-black hover:bg-neutral-200',
         className,
       )}
     >
@@ -118,5 +118,5 @@ export function Screen({
 
 /** The app window around a screenshot: a solid dark frame, a hairline border, a soft shadow (no glass). */
 export function Frame({ children, className }: { children: ReactNode; className?: string }) {
-  return <div className={cx('shot-frame overflow-hidden rounded-[14px]', className)}>{children}</div>;
+  return <div className={cx('shot-frame overflow-hidden rounded-[6px]', className)}>{children}</div>;
 }

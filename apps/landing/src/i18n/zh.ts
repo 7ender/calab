@@ -26,7 +26,7 @@ const zh: Dict = {
     language: '语言',
   },
   hero: {
-    badge: '新功能：拨打电话、工作区网页应用和 Bot API v2',
+    badge: 'SSO · Active Directory · OAuth 2.0',
     title: '整个团队，一个窗口',
     lead: '语音房间、聊天、会议和任务，都在你自己的服务器上。像 Discord 一样轻量，像 Telegram 一样好用。',
     download: '下载',
@@ -286,6 +286,7 @@ const zh: Dict = {
       contact: '联系我们',
       license: '许可条款',
     },
+    identity: { title: "SSO、Active Directory 与使用 Calab 登录", text: "Business 和 Enterprise 提供 OpenID Connect 单点登录（SSO）、通过 LDAPS 同步已关联成员的状态和 Active Directory 直接组，以及让用户通过 Calab 登录其他应用的 OAuth 2.0 / OpenID Connect。OAuth 客户端在工作区设置中创建；用户须同意共享最小范围的个人资料。这些客户端不提供聊天 API 访问权限。" },
     table: {
       caption: '套餐对比',
       feature: '功能',
@@ -308,6 +309,9 @@ const zh: Dict = {
         calendar: '日历',
         musician: '音乐人模式',
         caldav: 'CalDAV',
+        sso: "SSO（OpenID Connect）",
+        directory: "Active Directory（LDAPS）",
+        oauth: "应用 OAuth 2.0 / OIDC",
         onprem: 'On-prem（自有服务器）',
         support: '技术支持',
         price: '价格',
@@ -326,6 +330,9 @@ const zh: Dict = {
         calendar: ['✓', '✓', '✓', '✓'],
         musician: ['✗', '✓', '✓', '✓'],
         caldav: ['—', '✓', '✓', '✓'],
+        sso: ['✗', '✗', '✓', '✓'],
+        directory: ['✗', '✗', '✓', '✓'],
+        oauth: ['✗', '✗', '✓', '✓'],
         onprem: ['—', '—', '—', '✓'],
         support: ['—', '✓', '优先', '✓'],
         price: ['免费', '详询', '详询', 'BSL 1.1；商业许可详询'],
@@ -339,6 +346,7 @@ const zh: Dict = {
     eyebrow: '常见问题',
     title: '要点速览',
     items: {
+      identity: { q: "如何配置 SSO、Active Directory 和 OAuth？", a: "在工作区的 SSO 设置中连接 OpenID Connect 提供商和 LDAPS 目录，或在 OAuth 客户端中注册应用及回调 URI。需要有效的 Business 或已激活的 Enterprise 权限。账户必须明确关联，不会因邮箱相同而自动关联。目录同步不会创建用户，也不处理嵌套组。" },
       server: {
         q: '自建服务器需要什么？',
         a: '一台装有 Docker 的 Linux 主机、一个公网 IP 和一个域名。需开放端口：80 和 443（TCP 和 UDP）、7881/TCP、7882/UDP。30 人以内的团队大约需要 4 个 vCPU 和 8 GB 内存；具体取决于同时进行的屏幕共享数量。',
