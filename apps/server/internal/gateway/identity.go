@@ -209,14 +209,46 @@ func (s *Session) allowsEvent(enc *encEvent) bool {
 	return len(enc.scopes) > 0
 }
 
-// The existing wire variants are explicit; a new or absent oneof needs classification.
+// eventScope classifies every DispatchEvent variant by name. workspaceScoped variants may
+// travel as workspace-attributed events (lease-gated by that workspace); unscoped ones are
+// delivered only through their own explicit allowsEvent/prepareEvent paths. A variant
+// missing from this list is denied when workspace-attributed; TestEventScopeClassified
+// fails until a new oneof field is classified here.
+var eventScope = map[protoreflect.Name]bool{
+	"ready": false, "resumed": false, "dm_create": false, "dm_state_update": false,
+	"call_ring": false, "call_state": false, "notes_create": false, "notes_update": false,
+	"notes_delete": false, "bot_callback": false, "workspace_identity_access_update": false,
+
+	"workspace_create": true, "workspace_update": true, "workspace_delete": true,
+	"workspace_member_add": true, "workspace_member_update": true, "workspace_member_remove": true,
+	"room_create": true, "room_update": true, "room_delete": true, "room_permissions_update": true,
+	"message_create": true, "message_update": true, "message_delete": true, "typing_start": true,
+	"presence_update": true, "voice_state_update": true, "voice_stream_start": true,
+	"voice_stream_stop": true, "read_state_update": true, "user_update": true,
+	"category_create": true, "category_update": true, "category_delete": true,
+	"message_reaction_add": true, "message_reaction_remove": true, "voice_moved": true,
+	"room_notification_update": true, "voice_camera_stop": true, "workspace_notification_update": true,
+	"room_recording": true, "workspace_ban_add": true, "workspace_ban_remove": true,
+	"role_create": true, "role_update": true, "role_delete": true,
+	"sticker_pack_create": true, "sticker_pack_update": true, "sticker_pack_delete": true,
+	"badge_create": true, "badge_update": true, "badge_delete": true, "read_receipt": true,
+	"background_create": true, "background_update": true, "background_delete": true,
+	"voice_disconnected": true, "sound_create": true, "sound_update": true, "sound_delete": true,
+	"sound_play": true, "bot_create": true, "bot_update": true, "bot_delete": true,
+	"event_create": true, "event_update": true, "event_delete": true, "event_rsvp": true,
+	"event_reminder": true, "room_event_active": true, "room_event_ended": true,
+	"room_admission_request": true, "room_admission_decided": true,
+	"board_create": true, "board_update": true, "board_delete": true,
+	"task_create": true, "task_update": true, "task_delete": true, "task_activity": true,
+	"sip_call_update": true, "workspace_app_upsert": true, "workspace_app_delete": true,
+}
+
+// knownScopedEvent: the variant is explicitly classified as workspace-scoped; an absent
+// or unclassified oneof denies.
 func knownScopedEvent(ev *v1.DispatchEvent) bool {
-	f := ev.ProtoReflect().WhichOneof(ev.ProtoReflect().Descriptor().Oneofs().ByName("event"))
-	if f == nil {
-		return false
-	}
-	n := f.Number()
-	return n >= 2 && n <= 85 && n != 22 && n != 31 && n != 39 && n != 46 && n != 47 && (n < 57 || n > 59) && (n < 72 || n > 74) && n != 82
+	m := ev.ProtoReflect()
+	f := m.WhichOneof(m.Descriptor().Oneofs().ByName("event"))
+	return f != nil && eventScope[f.Name()]
 }
 
 // prepareEvent resolves resource parents once, outside all gateway locks. Its result is

@@ -8,6 +8,7 @@ import (
 	"github.com/coder/websocket"
 	"github.com/google/uuid"
 	"google.golang.org/protobuf/proto"
+	"google.golang.org/protobuf/reflect/protoreflect"
 
 	v1 "github.com/calaba/calaba/server/gen/calaba/v1"
 	"github.com/calaba/calaba/server/internal/perm"
@@ -265,5 +266,39 @@ func TestOriginAllowed(t *testing.T) {
 		if got := OriginAllowed(origin, true, allowed); got != want {
 			t.Errorf("%q with cookie: got %v want %v", origin, got, want)
 		}
+	}
+}
+
+// Every DispatchEvent variant must be classified explicitly (gateway/identity.go eventScope):
+// a new oneof field (e.g. new board events) fails here until someone decides its scope.
+func TestEventScopeClassified(t *testing.T) {
+	fields := (&v1.DispatchEvent{}).ProtoReflect().Descriptor().Oneofs().ByName("event").Fields()
+	seen := map[protoreflect.Name]bool{}
+	for i := 0; i < fields.Len(); i++ {
+		f := fields.Get(i)
+		seen[f.Name()] = true
+		if _, ok := eventScope[f.Name()]; !ok {
+			t.Errorf("DispatchEvent.%s (%d) is not classified in eventScope", f.Name(), f.Number())
+		}
+	}
+	for name := range eventScope {
+		if !seen[name] {
+			t.Errorf("eventScope lists %q, which is not a DispatchEvent variant", name)
+		}
+	}
+	// The explicit list keeps the 2.0 wire classification of fields 1..86 (2..85 minus the
+	// unscoped variants); later fields are classified only by the list.
+	for i := 0; i < fields.Len(); i++ {
+		n := fields.Get(i).Number()
+		if n > 86 {
+			continue
+		}
+		old := n >= 2 && n <= 85 && n != 22 && n != 31 && n != 39 && n != 46 && n != 47 && (n < 57 || n > 59) && (n < 72 || n > 74) && n != 82
+		if eventScope[fields.Get(i).Name()] != old {
+			t.Errorf("DispatchEvent field %d changed scope classification", n)
+		}
+	}
+	if knownScopedEvent(&v1.DispatchEvent{}) {
+		t.Error("an absent variant must deny")
 	}
 }
