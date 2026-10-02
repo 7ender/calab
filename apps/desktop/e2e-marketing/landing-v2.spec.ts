@@ -200,6 +200,20 @@ async function consentRoutes(ctx: Ctx): Promise<void> {
   await context.route('**/api/oauth/requests/*/bind', (r) => r.fulfill(json(toJson(OAuthConsentSnapshotSchema, snapshot))));
 }
 
+async function ssoScene(ctx: Ctx, heading: string, scene: string): Promise<void> {
+  const { page } = ctx;
+  await openRoom(ctx, ctx.c.rooms.general);
+  await page.getByTestId('titlebar-title').click();
+  await page.getByRole('menuitem', { name: 'Настройки', exact: true }).click();
+  await page.getByRole('tab', { name: 'Настройка SSO' }).click();
+  await expect(page.getByTestId('identity-settings')).toBeVisible();
+  await expect(page.getByTestId('identity-settings').getByRole('textbox').first()).toHaveValue(ctx.c2.sso.name);
+  await page.getByRole('heading', { name: heading }).evaluate((el) => el.scrollIntoView({ block: 'start' }));
+  await setLocale(page, ctx.short);
+  await page.waitForTimeout(400);
+  await shoot(ctx, scene);
+}
+
 function inRoom(mock: MockServer, k: PersonKey, extra: { camera?: boolean; streaming?: boolean; muted?: boolean } = {}): void {
   mock.setVoiceState({ userId: IDS.users[k], roomId: IDS.rooms.meeting, joinedAtMs: NOW.getTime() - 14 * 60_000, ...extra });
 }
@@ -223,9 +237,9 @@ const scenes: Record<string, { run: (ctx: Ctx) => Promise<void>; seed?: (mock: M
       await boards(ctx);
       await ctx.page.getByTestId('task-card').filter({ hasText: '3/7' }).getByTestId('card-title').click();
       const panel = ctx.page.getByTestId('task-panel');
-      await expect(panel.getByText(ctx.c2.checklists[1].title)).toBeVisible();
+      await expect(panel.getByTestId('checklist-title').filter({ hasText: ctx.c2.checklists[1].title })).toBeVisible();
       await setLocale(ctx.page, ctx.short);
-      await panel.getByText(ctx.c2.checklists[0].title).scrollIntoViewIfNeeded();
+      await panel.getByTestId('checklist-title').filter({ hasText: ctx.c2.checklists[0].title }).first().evaluate((el) => el.scrollIntoView({ block: 'start' }));
       await ctx.page.waitForTimeout(400);
       await shoot(ctx, 'checklists');
     },
@@ -255,23 +269,9 @@ const scenes: Record<string, { run: (ctx: Ctx) => Promise<void>; seed?: (mock: M
     },
   },
 
-  // Workspace settings → «Настройка SSO»: Entra connection configured and active, mode «По выбору».
-  sso: {
-    routes: identityRoutes,
-    async run(ctx) {
-      const { page } = ctx;
-      await openRoom(ctx, ctx.c.rooms.general);
-      await page.getByTestId('titlebar-title').click();
-      await page.getByRole('menuitem', { name: 'Настройки', exact: true }).click();
-      await page.getByRole('tab', { name: 'Настройка SSO' }).click();
-      await expect(page.getByTestId('identity-settings')).toBeVisible();
-      await expect(page.getByTestId('identity-settings').getByRole('textbox').first()).toHaveValue(ctx.c2.sso.name);
-      await setLocale(page, ctx.short);
-      await page.getByTestId('identity-settings').locator(':scope > div').nth(3).evaluate((el) => el.scrollIntoView({ block: 'start' }));
-      await page.waitForTimeout(400);
-      await shoot(ctx, 'sso');
-    },
-  },
+  // Workspace settings → «Настройка SSO»: Entra connection configured; the policy card below it (mode «По выбору»).
+  sso: { routes: identityRoutes, run: (ctx) => ssoScene(ctx, 'SSO-подключение', 'sso') },
+  ssopolicy: { routes: identityRoutes, run: (ctx) => ssoScene(ctx, 'Политика входа', 'ssopolicy') },
 
   // «Войти через Calab»: the consent screen of an OAuth client (web route /oauth/consent).
   consent: {
@@ -321,7 +321,6 @@ const scenes: Record<string, { run: (ctx: Ctx) => Promise<void>; seed?: (mock: M
       inRoom(mock, 'boris');
       inRoom(mock, 'vera', { muted: true });
       inRoom(mock, 'grigory', { camera: true });
-      inRoom(mock, 'dina', { muted: true });
     },
     async run(ctx) {
       await openRoom(ctx, ctx.c.rooms.general);
