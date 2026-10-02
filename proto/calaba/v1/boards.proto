@@ -67,6 +67,68 @@ enum BoardTemplate {
   BOARD_TEMPLATE_EMPTY = 3;       // one status «Todo» (a board needs a default status)
 }
 
+// A switchable feature of a board (ADR-0058 §3). The DB stores the disabled ones as a bit mask
+// (bit = the value), so a feature added later is on for existing boards.
+enum BoardFeature {
+  BOARD_FEATURE_UNSPECIFIED = 0;
+  BOARD_FEATURE_ESTIMATE = 1;    // Task.estimate
+  BOARD_FEATURE_START_DATE = 2;  // Task.start_on
+  BOARD_FEATURE_DUE_DATE = 3;    // Task.due_on
+  BOARD_FEATURE_PRIORITY = 4;    // Task.priority other than NONE
+  BOARD_FEATURE_LABELS = 5;      // Task.label_ids
+  BOARD_FEATURE_MILESTONES = 6;  // Task.milestone_id
+  BOARD_FEATURE_SUBTASKS = 7;    // new Task.parent_id, checklist item convert
+  BOARD_FEATURE_RELATIONS = 8;   // adding relations (removing stays allowed)
+  BOARD_FEATURE_APPROVALS = 9;   // approvers, votes and the approval gate
+  BOARD_FEATURE_CHECKLISTS = 10; // creating / editing checklists (deleting stays allowed)
+  BOARD_FEATURE_ATTACHMENTS = 11; // attachments of the description
+  BOARD_FEATURE_COMMENTS = 12;   // the task room is read-only (like an archived task)
+  BOARD_FEATURE_TIMELINE = 13;   // the timeline view (client only)
+}
+
+// The scale of Task.estimate (ADR-0058 §3). Writes outside the scale are 422 (field
+// "estimate"); changing the scale does not rewrite tasks. UNSPECIFIED is never sent.
+enum EstimateScale {
+  ESTIMATE_SCALE_UNSPECIFIED = 0;
+  ESTIMATE_SCALE_FIBONACCI = 1; // 1, 2, 3, 5, 8, 13, 21 (the default)
+  ESTIMATE_SCALE_LINEAR = 2;    // 1..10
+  ESTIMATE_SCALE_TSHIRT = 3;    // XS = 1, S = 2, M = 3, L = 5, XL = 8 (the number is stored)
+}
+
+// A category of the boards list (ADR-0058 §1), separate from room categories. Seen by every
+// member who sees boards; clients hide categories without visible boards.
+message BoardCategory {
+  string id = 1;
+  string workspace_id = 2;
+  string name = 3; // 1..100 characters
+  int32 position = 4;
+}
+
+// An item of a task checklist (ADR-0058 §2).
+message TaskChecklistItem {
+  string id = 1;
+  string checklist_id = 2;
+  string task_id = 3;
+  string text = 4; // 1..500 characters
+  bool done = 5;
+  string done_by = 6;                       // empty while not done
+  google.protobuf.Timestamp done_at = 7;    // unset while not done
+  double position = 8;                      // fractional order within the checklist, ascending
+  string created_by = 9;
+  google.protobuf.Timestamp created_at = 10;
+}
+
+// A named checklist of a task (≤ 10 per task, ≤ 100 items each).
+message TaskChecklist {
+  string id = 1;
+  string task_id = 2;
+  string title = 3; // 1..100 characters
+  int32 position = 4;
+  repeated TaskChecklistItem items = 5; // by position
+  string created_by = 6;
+  google.protobuf.Timestamp created_at = 7;
+}
+
 message BoardStatus {
   string id = 1;
   string name = 2; // 1..32 characters
@@ -142,6 +204,15 @@ message Board {
   // workspace-level bits give no access; VIEW_BOARD comes only from an allow override on the
   // board (by role or personally); the workspace owner always sees it. Strangers get 404.
   bool restricted = 24;
+  // Board categories (ADR-0058 §1): the category the board is listed in; empty = none.
+  // position is the order within that container (a category or «без категории»).
+  string category_id = 25;
+  // Board features switched off (ADR-0058 §3), ascending, no duplicates; empty = all on. The data
+  // of a disabled feature is kept and still served; writes that set it are refused (409
+  // CONFLICT, reason FEATURE_DISABLED, field = the JSON field name).
+  repeated BoardFeature disabled_features = 26;
+  // The estimate scale (ADR-0058 §3); the server always sends a concrete value.
+  EstimateScale estimate_scale = 27;
 }
 
 message TaskAssignee {
@@ -247,6 +318,11 @@ message Task {
   repeated TaskApprover approvers = 36;
   uint32 approval_required = 37;
   TaskApprovalState approval_state = 38;
+  // Checklists (ADR-0058 §2): items over all checklists of the task and of them done (every
+  // task list, events and REST); the checklists themselves only in GET /tasks/{id}.
+  uint32 checklist_total = 39;
+  uint32 checklist_done = 40;
+  repeated TaskChecklist checklists = 41; // GET /tasks/{id} only, by position
 }
 
 // One entry of the task journal (ADR-0042 §1): written on every change, never edited.
@@ -394,12 +470,19 @@ message UpdateBoardRequest {
   // MANAGE_BOARD on the board; the owner may always lift it. Switching it on gives the caller
   // (unless the owner) a personal allow VIEW_BOARD | MANAGE_BOARD so they keep access.
   optional bool restricted = 9;
+  // Board features (ADR-0058 §3): set_disabled_features replaces the disabled set with
+  // disabled_features (UNSPECIFIED and unknown values are 422); estimate_scale UNSPECIFIED is 422.
+  bool set_disabled_features = 10;
+  repeated BoardFeature disabled_features = 11;
+  optional EstimateScale estimate_scale = 12;
 }
 
 // PUT /api/boards/{id}/position (MANAGE_BOARD): the new index in the list; others shift
-// (BOARD_UPDATE for each board that moved).
+// (BOARD_UPDATE for each board that moved). category_id set moves the board into that category
+// of the workspace ("" = none) and position is the index there (ADR-0058 §1).
 message SetBoardPositionRequest {
   int32 position = 1;
+  optional string category_id = 2;
 }
 
 // GET / PUT /api/boards/{id}/permissions (MANAGE_BOARD; PUT: people only). Like room overrides:
@@ -645,6 +728,222 @@ message BoardViewResponse {
   BoardView view = 1;
 }
 
+// ---- board categories (ADR-0058 §1) ----
+
+// GET /api/workspaces/{id}/board-categories — every board category of the workspace, by
+// position (guests: 403).
+message ListBoardCategoriesResponse {
+  repeated BoardCategory categories = 1;
+}
+
+// POST /api/workspaces/{id}/board-categories (CREATE_BOARDS) → 201 BoardCategoryResponse;
+// ≤ 50 per workspace (409 CONFLICT, reason "BOARD_CATEGORY_LIMIT"). position unset = last.
+message CreateBoardCategoryRequest {
+  string name = 1;
+  optional int32 position = 2;
+}
+
+// PATCH /api/board-categories/{id} (CREATE_BOARDS) → BoardCategoryResponse. DELETE → 204: its
+// boards move to «без категории» at the end (BOARD_UPDATE for each).
+message UpdateBoardCategoryRequest {
+  optional string name = 1;
+  optional int32 position = 2; // new index; others shift
+}
+
+message BoardCategoryResponse {
+  BoardCategory category = 1;
+}
+
+// PUT /api/workspaces/{id}/boards/order — one drag & drop in one transaction: listed boards get
+// the given category ("" = none) and position (MANAGE_BOARD on each; a board the caller does not
+// see is 422), listed categories the given position (CREATE_BOARDS). Unlisted items are
+// unchanged.
+message SetBoardOrderRequest {
+  message BoardPosition {
+    string board_id = 1;
+    string category_id = 2;
+    int32 position = 3;
+  }
+  message CategoryPosition {
+    string category_id = 1;
+    int32 position = 2;
+  }
+  repeated BoardPosition boards = 1;
+  repeated CategoryPosition categories = 2;
+}
+
+// The boards the caller sees and every category, after the change.
+message SetBoardOrderResponse {
+  repeated Board boards = 1;
+  repeated BoardCategory categories = 2;
+}
+
+// ---- checklists (ADR-0058 §2) ----
+// Rights as for the task's fields: EDIT_TASKS on any task, CREATE_TASKS on tasks the caller
+// created or is assigned to (bots alike). The board feature CHECKLISTS off: creating and
+// editing is 409 FEATURE_DISABLED (deleting is allowed); a plan without checklists
+// (PlanLimits.checklists_disabled): every write is 409 PLAN_LIMIT, reading stays.
+// Every write answers TaskChecklistResponse and sends TASK_CHECKLIST_UPDATE / _DELETE (not
+// TASK_UPDATE) and a "checklist" journal entry.
+
+// POST /api/tasks/{id}/checklists → 201 TaskChecklistResponse; ≤ 10 per task (409 CONFLICT,
+// reason "CHECKLIST_LIMIT"). position unset = last.
+message CreateTaskChecklistRequest {
+  string title = 1;
+  optional int32 position = 2;
+}
+
+// PATCH /api/checklists/{id} → TaskChecklistResponse. DELETE /api/checklists/{id} →
+// TaskChecklistResponse without checklist (the task's new counters).
+message UpdateTaskChecklistRequest {
+  optional string title = 1;
+  optional int32 position = 2; // new index among the task's checklists; others shift
+}
+
+// POST /api/checklists/{id}/items → 201 TaskChecklistResponse; ≤ 100 per checklist (409
+// CONFLICT, reason "CHECKLIST_ITEM_LIMIT"). position unset = last.
+message CreateTaskChecklistItemRequest {
+  string text = 1;
+  optional double position = 2;
+}
+
+// PATCH /api/checklist-items/{id} → TaskChecklistResponse (the item's checklist after the
+// change). checklist_id moves the item to another checklist of the same task (422 otherwise).
+// DELETE /api/checklist-items/{id} → TaskChecklistResponse.
+message UpdateTaskChecklistItemRequest {
+  optional string text = 1;
+  optional bool done = 2;
+  optional double position = 3;
+  optional string checklist_id = 4;
+}
+
+// The changed checklist and the task's counters (Task.checklist_total / checklist_done).
+message TaskChecklistResponse {
+  TaskChecklist checklist = 1; // unset after DELETE /api/checklists/{id}
+  uint32 checklist_total = 2;
+  uint32 checklist_done = 3;
+}
+
+// POST /api/checklist-items/{id}/convert → 201 ConvertChecklistItemResponse: a subtask titled
+// with the item's text in the default status (no other fields); the item is removed. Needs the
+// board feature SUBTASKS (409 FEATURE_DISABLED, field "parentId") and a task that is not a
+// subtask itself (422).
+message ConvertChecklistItemResponse {
+  Task task = 1;                    // the new subtask
+  TaskChecklist checklist = 2;      // the item's checklist without it
+  uint32 checklist_total = 3;
+  uint32 checklist_done = 4;
+}
+
+// ---- board webhook (ADR-0058 §4) ----
+// MANAGE_BOARD on the board and MANAGE_INTEGRATIONS of the workspace; people only (bots: 403).
+// Business plan only (PlanLimits.board_webhooks_disabled: PUT / ping are 409 PLAN_LIMIT).
+
+// Why deliveries are paused while the webhook stays configured.
+enum BoardWebhookPauseReason {
+  BOARD_WEBHOOK_PAUSE_REASON_UNSPECIFIED = 0; // not paused
+  // The workspace's plan no longer includes board webhooks: new events are not queued; after
+  // an upgrade delivery resumes with new events.
+  BOARD_WEBHOOK_PAUSE_REASON_PLAN = 1;
+}
+
+// The webhook of a board (one per board). The secret itself is never returned after PUT.
+message BoardWebhook {
+  string board_id = 1;
+  string url = 2;          // https only, ≤ 2048 characters, a public address
+  bool has_secret = 3;
+  bool enabled = 4;        // false = disabled after a day of failures (PUT enables it again)
+  google.protobuf.Timestamp disabled_at = 5;
+  google.protobuf.Timestamp failing_since = 6; // unset = the last attempt succeeded
+  google.protobuf.Timestamp last_ok_at = 7;
+  string last_error = 8;
+  uint32 pending = 9;      // deliveries waiting in the queue
+  string created_by = 10;
+  google.protobuf.Timestamp created_at = 11;
+  google.protobuf.Timestamp updated_at = 12;
+  BoardWebhookPauseReason paused_reason = 13;
+}
+
+// PUT /api/boards/{id}/webhook → BoardWebhookResponse (creates, replaces or re-enables).
+// secret: 16..256 characters, or empty — the server generates 32 random bytes (base64url).
+message SetBoardWebhookRequest {
+  string url = 1;
+  string secret = 2;
+}
+
+// GET / PUT /api/boards/{id}/webhook (GET without a webhook: webhook unset); DELETE → 204, the
+// queue is marked failed.
+message BoardWebhookResponse {
+  BoardWebhook webhook = 1;
+  string secret = 2; // PUT only, once: the signing secret in effect
+}
+
+// POST /api/boards/{id}/webhook/ping: a synchronous delivery of a "ping" event over the same
+// transport, ≤ 1 per 10 s per board (429).
+message BoardWebhookPingResponse {
+  bool ok = 1;
+  uint32 status = 2; // the receiver's HTTP status; 0 = no answer
+  string error = 3;
+}
+
+// The JSON body of a board webhook delivery (protojson with default values emitted), version 1.
+// POST to BoardWebhook.url with the headers X-Calab-Webhook-Version: 1, X-Calab-Timestamp:
+// <unix seconds>, X-Calab-Signature: v1=<hex HMAC-SHA256(secret, timestamp + "." + body)>,
+// X-Calab-Delivery: <id>, X-Calab-Event: <type>, User-Agent: Calab-Webhook/1.0. Receivers reject
+// a timestamp more than 5 minutes away, dedupe by id (at-least-once) and order by sequence
+// (monotonic per board). The contract changes only by adding fields.
+// type: "task.created" | "task.updated" | "task.archived" | "task.restored" | "task.moved_out" |
+// "task.moved_in" | "task.comment.created" | "task.comment.updated" | "task.comment.deleted" |
+// "ping".
+message BoardWebhookEvent {
+  // A board as the webhook shows it.
+  message BoardRef {
+    string id = 1;
+    string key = 2;
+    string name = 3;
+  }
+  // Who made the change; unset (null) for the server's own changes (auto-archive).
+  message Actor {
+    string id = 1;
+    string name = 2;
+    bool is_bot = 3;
+  }
+  // One task_activity entry of the change (field = its kind; before / after = its data).
+  message Change {
+    string field = 1;
+    google.protobuf.Struct before = 2;
+    google.protobuf.Struct after = 3;
+  }
+  message CommentAttachment {
+    string name = 1;
+    uint64 size = 2;
+    string mime = 3;
+  }
+  // task.comment.*: the comment (a message of the task room).
+  message Comment {
+    string id = 1;
+    string author_id = 2;
+    string text = 3;
+    repeated CommentAttachment attachments = 4;
+    google.protobuf.Timestamp created_at = 5;
+    google.protobuf.Timestamp edited_at = 6;
+  }
+  string id = 1;        // the delivery id: the idempotency key
+  uint32 version = 2;   // 1
+  string type = 3;
+  uint32 sequence = 4;  // per board, from 1
+  google.protobuf.Timestamp occurred_at = 5;
+  string workspace_id = 6;
+  BoardRef board = 7;
+  Actor actor = 8;
+  // The task without the recipient-specific fields (subscribed, muted, unread, viewer_state),
+  // attachments and checklists (the counters stay). Unset for "ping".
+  Task task = 9;
+  string task_url = 10; // the task's link (PUBLIC_APP_URL/t/FNG-12)
+  repeated Change changes = 11;
+  Comment comment = 12;
+}
+
 // ---- gateway events (docs/05; to the board's viewers, like room events) ----
 
 message BoardCreate {
@@ -714,4 +1013,40 @@ message TaskDelete {
 message TaskActivityAppend {
   string workspace_id = 1;
   TaskActivity activity = 2;
+}
+
+// Board categories (ADR-0058 §1): to every member of the workspace except guests.
+message BoardCategoryCreate {
+  BoardCategory category = 1;
+}
+
+message BoardCategoryUpdate {
+  BoardCategory category = 1;
+}
+
+// Its boards move to «без категории» (BOARD_UPDATE follows for each).
+message BoardCategoryDelete {
+  string workspace_id = 1;
+  string category_id = 2;
+}
+
+// TASK_CHECKLIST_UPDATE (ADR-0058 §2): a checklist was created or changed (items too); to the
+// board's viewers. TASK_UPDATE is not sent for checklist changes: patch the task's counters.
+message TaskChecklistUpdate {
+  string workspace_id = 1;
+  string board_id = 2;
+  string task_id = 3;
+  TaskChecklist checklist = 4; // the whole checklist (≤ 100 items)
+  uint32 checklist_total = 5;
+  uint32 checklist_done = 6;
+}
+
+// TASK_CHECKLIST_DELETE: a checklist was deleted; the task's new counters.
+message TaskChecklistDelete {
+  string workspace_id = 1;
+  string board_id = 2;
+  string task_id = 3;
+  string checklist_id = 4;
+  uint32 checklist_total = 5;
+  uint32 checklist_done = 6;
 }
