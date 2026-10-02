@@ -1,3 +1,4 @@
+import { localAuthority } from '../features/identity/model';
 import { isMenuAction, type MenuAction, type MenuState } from '../../shared/menu';
 import { cameraBlock } from '../lib/media/cameraLogic';
 import { mayArrangeRooms, mayInviteMembers } from '../lib/permissions';
@@ -100,6 +101,7 @@ export function runMenuAction(a: MenuAction): void {
       ui.openDialog({ kind: 'settings', tab: 'hotkeys' });
       return;
     case 'new-message':
+      if (!localAuthority(useSession.getState().authority)) return;
       ui.openDialog({ kind: 'new-dm' });
       return;
     case 'room-create':
@@ -115,6 +117,7 @@ export function runMenuAction(a: MenuAction): void {
       toggleMembers();
       return;
     case 'dms':
+      if (!localAuthority(useSession.getState().authority)) return;
       ui.setWorkspace(HOME);
       return;
     case 'toggle-mute':

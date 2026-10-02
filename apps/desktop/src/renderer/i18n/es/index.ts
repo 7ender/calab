@@ -1,3 +1,4 @@
+import { esIdentity } from './identity';
 import type { Dict } from '../types';
 import { esApp } from './app';
 import { esChat } from './chat';
@@ -29,6 +30,7 @@ import { esWebApps } from './webapps';
 
 /** Spanish UI strings (ADR-0022): same keys and placeholders as `ru`/`en`; glossary docs/i18n-glossary.md. */
 export const es: Dict = {
+  ...esIdentity,
   ...esShell,
   ...esChat,
   ...esPeople,

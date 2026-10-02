@@ -120,8 +120,9 @@ SDK — [`packages/bot-sdk`](packages/bot-sdk), examples — [`examples/bots`](e
 
 ### 🔒 Self-hosted and secure
 
+- **Identity 2.0** — workspace-scoped OIDC SSO, LDAPS lifecycle sync and OAuth/OIDC clients for “Sign in with Calab”, with explicit linking, consent and owner recovery. Requires a positive workspace grant plus Business or operator-approved on-prem Enterprise. Keycloak 26.4.7 RP evidence is available; live Entra ID, AD FS and Windows AD compatibility remains unverified. Setup and activation gates: [deployment guide](docs/06-deployment.md#identity-20-настройка-и-приёмка).
 - **Works everywhere**: UDP → ICE/TCP → TURN/UDP 443 → TURN/TLS 443 automatically; one public IP; tested behind VPNs.
-- Media — DTLS-SRTP; API — HTTPS/WSS, HSTS, strict CSP, `HttpOnly/SameSite=Strict` cookies for the web, argon2id, refresh-token rotation with reuse detection, rate limits. No end-to-end encryption yet: media goes through your own media server.
+- Media — DTLS-SRTP; API — HTTPS/WSS, HSTS, strict CSP, argon2id, refresh-token rotation with reuse detection, rate limits. Ordinary web refresh uses `HttpOnly/SameSite=Strict`; identity browser binding, scoped SSO refresh and root authorize resolver cookies use `Secure/HttpOnly/SameSite=Lax` for browser redirects ([cookie contract](docs/plans/release-2.0-identity.md#браузерный-consent-и-cookies)). No end-to-end encryption yet: media goes through your own media server.
 - Every right (rooms, boards, calendar) is checked on the server; the LiveKit grant mirrors the rights.
 - **Roles by function** — separate rights for boards, members, bots, integrations, journals, events and recordings; private and closed rooms and boards that even administrators can’t see ([ADR-0048](docs/adr/0048-roles-v2.md)).
 - **Docker Compose** with hardened containers, automatic Let’s Encrypt certificates, daily backups with verified restore, Prometheus metrics; PostgreSQL 17 or 18.
@@ -162,7 +163,7 @@ cd apps/server && go run ./cmd/server serve       # API on :3000
 pnpm -F @calaba/desktop dev                       # Electron
 ```
 
-Checks: `make test` (Go + TS), `make test-integration`, visual tests per screen (`pnpm -F @calaba/desktop e2e:visual -g "<screen>"`). Architecture: [overview](docs/01-architecture.md) · [media](docs/02-media.md) · [network](docs/03-network.md) · [data model and rights](docs/04-data-model.md) · [realtime protocol](docs/05-realtime-protocol.md) · [design system](docs/08-design.md) · [ADR](docs/adr/).
+Checks: `make lint` from the repository root, `make test` (Go + TS), `make test-integration` with an isolated test environment. Visual suites are disabled by the owner; Identity 2.0 final acceptance commands are in [TESTING.md](TESTING.md#identity-20-final-acceptance). Architecture: [overview](docs/01-architecture.md) · [media](docs/02-media.md) · [network](docs/03-network.md) · [data model and rights](docs/04-data-model.md) · [realtime protocol](docs/05-realtime-protocol.md) · [design system](docs/08-design.md) · [ADR](docs/adr/).
 
 ## Plans
 
@@ -182,6 +183,7 @@ Checks: `make test` (Go + TS), `make test-integration`, visual tests per screen 
 | CalDAV sync | — | ✓ | ✓ | ✓ |
 | Task approvals | ✓ | ✓ | ✓ | ✓ |
 | Embedded web apps | ✓ | ✓ | ✓ | ✓ |
+| Identity 2.0: SSO / directory / OAuth provider | — | — | positive workspace grant | positive grant + operator workspace allowlist |
 | Telephony (SIP) | ✓ | ✓ | ✓ | ✓ |
 | White-label | — | — | — | ✓ |
 | Support | — | support | priority | — |

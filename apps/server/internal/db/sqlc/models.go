@@ -156,6 +156,45 @@ type CaldavPush struct {
 	CreatedAt time.Time
 }
 
+type DirectoryObject struct {
+	ID                uuid.UUID
+	WorkspaceID       uuid.UUID
+	DirectoryID       uuid.UUID
+	ObjectGuid        uuid.UUID
+	UserID            *uuid.UUID
+	DistinguishedName string
+	Status            string
+	Version           int64
+	LastSeenRunID     *uuid.UUID
+	MissingFullScans  int32
+	UpdatedAt         time.Time
+}
+
+type DirectorySyncObject struct {
+	WorkspaceID       uuid.UUID
+	DirectoryID       uuid.UUID
+	RunID             uuid.UUID
+	ObjectGuid        uuid.UUID
+	DistinguishedName string
+	Eligible          bool
+	Disabled          bool
+}
+
+type DirectorySyncRun struct {
+	ID            uuid.UUID
+	WorkspaceID   uuid.UUID
+	DirectoryID   uuid.UUID
+	FullScan      bool
+	ConfigVersion int64
+	Generation    int64
+	LeaseUntil    time.Time
+	Status        string
+	Complete      bool
+	ObjectsSeen   int32
+	StartedAt     time.Time
+	FinishedAt    *time.Time
+}
+
 type DmMember struct {
 	RoomID    uuid.UUID
 	UserID    uuid.UUID
@@ -277,6 +316,52 @@ type File struct {
 	VoiceWaveform   []byte
 }
 
+type IdentityInvalidationOutbox struct {
+	ID            uuid.UUID
+	WorkspaceID   uuid.UUID
+	UserID        *uuid.UUID
+	SessionID     *uuid.UUID
+	PolicyVersion int64
+	AccessVersion int64
+	Reason        string
+	CreatedAt     time.Time
+	DeliveredAt   *time.Time
+}
+
+type IdentityLoginTransaction struct {
+	ID                uuid.UUID
+	WorkspaceID       uuid.UUID
+	ConnectionID      uuid.UUID
+	ConnectionVersion int64
+	Purpose           string
+	SessionID         *uuid.UUID
+	UserID            *uuid.UUID
+	StateHash         []byte
+	BrowserHash       []byte
+	NonceHash         []byte
+	VerifierBox       []byte
+	ReturnUri         string
+	NativeChallenge   *string
+	BrowserStartHash  []byte
+	BrowserStartedAt  *time.Time
+	ResultBox         []byte
+	CompletedAt       *time.Time
+	FinishedAt        *time.Time
+	ExpiresAt         time.Time
+	ConsumedAt        *time.Time
+	CreatedAt         time.Time
+}
+
+type IdentityNativeHandoff struct {
+	ID            uuid.UUID
+	TransactionID uuid.UUID
+	TicketHash    []byte
+	Challenge     string
+	ResultBox     []byte
+	ExpiresAt     time.Time
+	ConsumedAt    *time.Time
+}
+
 type MailOutbox struct {
 	ID        uuid.UUID
 	ToAddr    string
@@ -355,6 +440,142 @@ type MessageReaction struct {
 	UserID    uuid.UUID
 	Emoji     string
 	CreatedAt time.Time
+}
+
+type OauthAuthorizationCode struct {
+	ID            uuid.UUID
+	WorkspaceID   uuid.UUID
+	GrantID       uuid.UUID
+	UserID        uuid.UUID
+	ClientID      uuid.UUID
+	CodeHash      []byte
+	RedirectUri   string
+	PkceChallenge string
+	Nonce         string
+	CreatedAt     time.Time
+	ExpiresAt     time.Time
+	ConsumedAt    *time.Time
+}
+
+type OauthAuthorizationRequest struct {
+	ID            uuid.UUID
+	WorkspaceID   uuid.UUID
+	ClientID      uuid.UUID
+	Issuer        string
+	ClientVersion int64
+	HandleHash    []byte
+	BrowserHash   []byte
+	CsrfHash      []byte
+	SessionID     *uuid.UUID
+	UserID        *uuid.UUID
+	RedirectUri   string
+	Scopes        []string
+	State         string
+	Nonce         string
+	PkceChallenge string
+	Prompt        string
+	MaxAgeSeconds *int32
+	ExpiresAt     time.Time
+	ConsumedAt    *time.Time
+	CreatedAt     time.Time
+}
+
+type OauthClient struct {
+	ID             uuid.UUID
+	WorkspaceID    uuid.UUID
+	ClientID       string
+	Name           string
+	ClientType     string
+	RefreshEnabled bool
+	AllowedOrigins []string
+	AuthMethod     string
+	Scopes         []string
+	Version        int64
+	DisabledAt     *time.Time
+	CreatedBy      *uuid.UUID
+	CreatedAt      time.Time
+}
+
+type OauthClientRedirect struct {
+	WorkspaceID uuid.UUID
+	ClientID    uuid.UUID
+	RedirectUri string
+}
+
+type OauthClientSecret struct {
+	ID          uuid.UUID
+	WorkspaceID uuid.UUID
+	ClientID    uuid.UUID
+	SecretHash  []byte
+	CreatedAt   time.Time
+	ValidUntil  time.Time
+	RevokedAt   *time.Time
+}
+
+type OauthConsent struct {
+	ID             uuid.UUID
+	WorkspaceID    uuid.UUID
+	UserID         uuid.UUID
+	ClientID       uuid.UUID
+	Scopes         []string
+	Version        int64
+	RefreshAllowed bool
+	ClientName     string
+	GrantedAt      time.Time
+	RevokedAt      *time.Time
+}
+
+type OauthGrant struct {
+	ID                 uuid.UUID
+	WorkspaceID        uuid.UUID
+	UserID             uuid.UUID
+	ClientID           uuid.UUID
+	ConsentID          uuid.UUID
+	SessionID          uuid.UUID
+	Scopes             []string
+	Issuer             string
+	ClientVersion      int64
+	ConsentVersion     int64
+	PolicyVersion      int64
+	AccessVersion      int64
+	EntitlementVersion int64
+	SessionVersion     int64
+	AuthenticatedAt    time.Time
+	AssuranceExpiresAt *time.Time
+	CreatedAt          time.Time
+	ExpiresAt          time.Time
+	IdleExpiresAt      time.Time
+	RevokedAt          *time.Time
+	RevokedReason      *string
+}
+
+type OauthSubject struct {
+	WorkspaceID uuid.UUID
+	UserID      uuid.UUID
+	Subject     string
+}
+
+type OauthToken struct {
+	ID            uuid.UUID
+	WorkspaceID   uuid.UUID
+	GrantID       uuid.UUID
+	UserID        uuid.UUID
+	ClientID      uuid.UUID
+	TokenHash     []byte
+	TokenType     string
+	Generation    int64
+	ParentTokenID *uuid.UUID
+	CreatedAt     time.Time
+	ExpiresAt     time.Time
+	UsedAt        *time.Time
+	RevokedAt     *time.Time
+}
+
+type ProductAdminGrant struct {
+	UserID       uuid.UUID
+	GrantedAt    time.Time
+	RevokedAt    *time.Time
+	OperatorNote string
 }
 
 type ReadState struct {
@@ -479,22 +700,45 @@ type RoomRecording struct {
 }
 
 type Session struct {
-	ID                   uuid.UUID
-	UserID               uuid.UUID
-	RefreshTokenHash     []byte
-	PrevRefreshTokenHash []byte
-	RotatedAt            *time.Time
-	DeviceName           string
-	Ip                   string
-	UserAgent            string
-	CreatedAt            time.Time
-	LastSeenAt           time.Time
-	ExpiresAt            time.Time
-	RevokedAt            *time.Time
-	RefreshGen           int64
-	RefreshUsedAt        *time.Time
-	ReplaySeal           []byte
-	RevokedReason        *string
+	ID                      uuid.UUID
+	UserID                  uuid.UUID
+	RefreshTokenHash        []byte
+	PrevRefreshTokenHash    []byte
+	RotatedAt               *time.Time
+	DeviceName              string
+	Ip                      string
+	UserAgent               string
+	CreatedAt               time.Time
+	LastSeenAt              time.Time
+	ExpiresAt               time.Time
+	RevokedAt               *time.Time
+	RefreshGen              int64
+	RefreshUsedAt           *time.Time
+	ReplaySeal              []byte
+	RevokedReason           *string
+	AuthorityKind           string
+	AuthorityWorkspaceID    *uuid.UUID
+	AuthorityConnectionID   *uuid.UUID
+	LocalAuthenticatedAt    *time.Time
+	RecoveryAuthenticatedAt *time.Time
+	AuthorityVersion        int64
+}
+
+type SessionWorkspaceAssurance struct {
+	SessionID          uuid.UUID
+	WorkspaceID        uuid.UUID
+	UserID             uuid.UUID
+	ConnectionID       uuid.UUID
+	IdentityID         uuid.UUID
+	AuthenticatedAt    time.Time
+	ValidUntil         time.Time
+	PolicyVersion      int64
+	AccessVersion      int64
+	ConnectionVersion  int64
+	IdentityVersion    int64
+	EntitlementVersion int64
+	SessionVersion     int64
+	RevokedAt          *time.Time
 }
 
 type SipAccount struct {
@@ -757,6 +1001,111 @@ type WorkspaceBan struct {
 	Email       *string
 	Reason      string
 	BannedBy    *uuid.UUID
+	CreatedAt   time.Time
+}
+
+type WorkspaceDirectory struct {
+	ID                  uuid.UUID
+	WorkspaceID         uuid.UUID
+	Name                string
+	Host                string
+	Url                 string
+	AllowedGroupDns     []string
+	Generation          int64
+	Port                int32
+	BaseDn              string
+	BindDn              string
+	BindSecretBox       []byte
+	CaPem               string
+	SyncIntervalSeconds int32
+	MaxStalenessSeconds int32
+	Version             int64
+	LastSuccessAt       *time.Time
+	CursorBox           []byte
+	LastError           string
+	DisabledAt          *time.Time
+	CreatedAt           time.Time
+}
+
+type WorkspaceExternalIdentity struct {
+	ID           uuid.UUID
+	WorkspaceID  uuid.UUID
+	ConnectionID uuid.UUID
+	UserID       uuid.UUID
+	Issuer       string
+	Subject      string
+	Status       string
+	Version      int64
+	LinkedAt     time.Time
+}
+
+type WorkspaceIdentityAccess struct {
+	WorkspaceID uuid.UUID
+	UserID      uuid.UUID
+	Status      string
+	Version     int64
+	Reason      string
+	UpdatedAt   time.Time
+}
+
+type WorkspaceIdentityAudit struct {
+	ID          uuid.UUID
+	WorkspaceID uuid.UUID
+	ActorID     *uuid.UUID
+	Action      string
+	TargetID    *uuid.UUID
+	Outcome     string
+	CreatedAt   time.Time
+}
+
+type WorkspaceIdentityConnection struct {
+	ID              uuid.UUID
+	WorkspaceID     uuid.UUID
+	Name            string
+	Status          string
+	TenantID        string
+	Provider        string
+	Issuer          string
+	ClientID        string
+	ClientSecretBox []byte
+	Scopes          []string
+	Version         int64
+	TestedVersion   *int64
+	TestedAt        *time.Time
+	DisabledAt      *time.Time
+	CreatedBy       *uuid.UUID
+	CreatedAt       time.Time
+}
+
+type WorkspaceIdentityGrant struct {
+	WorkspaceID uuid.UUID
+	Feature     string
+	Enabled     bool
+	Source      string
+	ValidUntil  *time.Time
+	RevokedAt   *time.Time
+	Version     int64
+	UpdatedBy   *uuid.UUID
+	UpdatedAt   time.Time
+}
+
+type WorkspaceIdentityPolicy struct {
+	WorkspaceID            uuid.UUID
+	EntitlementVersion     int64
+	Mode                   string
+	Version                int64
+	AssuranceMaxAgeSeconds int32
+	UpdatedBy              *uuid.UUID
+	UpdatedAt              time.Time
+}
+
+type WorkspaceIdentityRecoveryCode struct {
+	ID          uuid.UUID
+	WorkspaceID uuid.UUID
+	OwnerID     uuid.UUID
+	CodeHash    []byte
+	ExpiresAt   time.Time
+	ConsumedAt  *time.Time
 	CreatedAt   time.Time
 }
 

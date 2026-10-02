@@ -25,6 +25,7 @@ import (
 	"github.com/calaba/calaba/server/internal/config"
 	"github.com/calaba/calaba/server/internal/db"
 	"github.com/calaba/calaba/server/internal/db/sqlc"
+	"github.com/calaba/calaba/server/internal/directory"
 	"github.com/calaba/calaba/server/internal/dms"
 	"github.com/calaba/calaba/server/internal/events"
 	"github.com/calaba/calaba/server/internal/files"
@@ -33,10 +34,12 @@ import (
 	"github.com/calaba/calaba/server/internal/guests"
 	"github.com/calaba/calaba/server/internal/health"
 	"github.com/calaba/calaba/server/internal/httpx"
+	"github.com/calaba/calaba/server/internal/identitypolicy"
 	"github.com/calaba/calaba/server/internal/mail"
 	"github.com/calaba/calaba/server/internal/messages"
 	"github.com/calaba/calaba/server/internal/moderation"
 	"github.com/calaba/calaba/server/internal/notes"
+	"github.com/calaba/calaba/server/internal/oauthprovider"
 	"github.com/calaba/calaba/server/internal/perm"
 	"github.com/calaba/calaba/server/internal/plans"
 	"github.com/calaba/calaba/server/internal/recording"
@@ -45,6 +48,7 @@ import (
 	"github.com/calaba/calaba/server/internal/rtc"
 	"github.com/calaba/calaba/server/internal/sip"
 	"github.com/calaba/calaba/server/internal/sounds"
+	"github.com/calaba/calaba/server/internal/sso"
 	"github.com/calaba/calaba/server/internal/stickers"
 	"github.com/calaba/calaba/server/internal/superadmin"
 	"github.com/calaba/calaba/server/internal/unfurl"
@@ -55,11 +59,13 @@ import (
 
 // Deps are the long-lived dependencies of the server.
 type Deps struct {
-	Config *config.Config
-	DB     *db.DB
-	Redis  rueidis.Client
-	Events events.Publisher
-	Blob   blob.Store
+	IdentityEndpointPolicy   sso.EndpointPolicy
+	IdentityDirectoryScanner directory.Scanner
+	Config                   *config.Config
+	DB                       *db.DB
+	Redis                    rueidis.Client
+	Events                   events.Publisher
+	Blob                     blob.Store
 	// LiveKit overrides the LiveKit client (tests); nil = real client from config.
 	LiveKit rtc.LiveKit
 	// UnfurlAllowAddr overrides the link-preview address policy (tests only, to reach a
@@ -94,14 +100,17 @@ func BlobConfig(c *config.Config) blob.Config {
 
 // App is the assembled server.
 type App struct {
-	Handler http.Handler
-	Auth    *auth.Service
-	Gateway *gateway.Hub
-	Files   *files.Service
-	Guests  *guests.Service
-	RTC     *rtc.Service // nil when LiveKit is not configured
-	Plans   *plans.Service
-	Mail    *mail.Service
+	SSO       *sso.Service
+	Directory *directory.Service
+	OAuth     *oauthprovider.Service
+	Handler   http.Handler
+	Auth      *auth.Service
+	Gateway   *gateway.Hub
+	Files     *files.Service
+	Guests    *guests.Service
+	RTC       *rtc.Service // nil when LiveKit is not configured
+	Plans     *plans.Service
+	Mail      *mail.Service
 	// Recording: meeting recording and GPTunneL (ADR-0025).
 	Recording *recording.Service
 	// Bots: bots and the Bot API (ADR-0031), with the webhook worker.
@@ -119,8 +128,9 @@ type App struct {
 	// Rooms: room handlers with the temporary rooms sweeper (ADR-0044).
 	Rooms *rooms.Handlers
 	// SIP: telephony (ADR-0046) with the lost-call sweeper.
-	SIP   *sip.Service
-	redis rueidis.Client
+	SIP        *sip.Service
+	redis      rueidis.Client
+	identityDB *db.DB
 	// tempRetention: TEMP_ROOM_RETENTION_DAYS.
 	tempRetention time.Duration
 	// Routes: every registered route pattern (the bot route table test).
@@ -131,6 +141,10 @@ type App struct {
 // voice reconcile) until ctx is done.
 func (a *App) Run(ctx context.Context) {
 	go a.Gateway.Run(ctx)
+	go a.runIdentityInvalidations(ctx)
+	if a.Directory != nil {
+		go a.runIdentityDirectory(ctx)
+	}
 	go a.Files.RunCleanup(ctx, time.Hour)
 	go a.Files.RunStorageMetrics(ctx, time.Minute)
 	go a.Guests.RunCleanup(ctx, time.Hour)
@@ -138,6 +152,7 @@ func (a *App) Run(ctx context.Context) {
 	go a.Plans.Run(ctx)
 	if a.RTC != nil {
 		go a.RTC.RunReconcile(ctx, 30*time.Second)
+		go a.RTC.RunIdentityEnforcement(ctx)
 	}
 	go a.Mail.Run(ctx) // returns at once without mail
 	go a.Recording.Run(ctx)
@@ -149,6 +164,9 @@ func (a *App) Run(ctx context.Context) {
 	go a.Boards.Run(ctx, a.redis, boards.SweepInterval)
 	go a.Rooms.RunTempRooms(ctx, a.redis, a.tempRetention)
 	go a.SIP.Run(ctx)
+	if a.OAuth != nil {
+		go a.OAuth.Run(ctx, a.redis, oauthprovider.SweepInterval) // provider retention
+	}
 }
 
 // mailSender: the test override, else SMTP from config, else nil (mail disabled).
@@ -237,6 +255,63 @@ func New(d Deps) *App {
 	}
 	if rtcSvc != nil {
 		rtcSvc.Revoked = authSvc.IsRevoked
+		rtcSvc.IdentityAccess = func(ctx context.Context, ws, room, user, session uuid.UUID) error {
+			u, err := d.DB.Q.GetUser(ctx, user)
+			if err != nil {
+				return httpx.Unavailable(err)
+			}
+			id := auth.Identity{UserID: user, SessionID: session, IsBot: u.IsBot}
+			if u.IsBot {
+				bot, err := d.DB.Q.GetBotAuth(ctx, user)
+				if err != nil || bot.TokenID == nil || *bot.TokenID != session || len(bot.TokenHash) == 0 {
+					return httpx.Forbidden("bot session revoked")
+				}
+			}
+			if !u.IsBot {
+				p, err := authSvc.ResolvePrincipal(ctx, id)
+				if err != nil {
+					return httpx.Unavailable(err)
+				}
+				id.Principal = p
+			}
+			row, err := d.DB.Q.GetRoom(ctx, room)
+			if err != nil {
+				return httpx.Unavailable(err)
+			}
+			if u.DisabledAt != nil {
+				return httpx.Forbidden("account disabled")
+			}
+			if voice.IsDM(ws, room) {
+				if row.WorkspaceID != nil || row.Type != "dm" {
+					return httpx.Forbidden("voice scope mismatch")
+				}
+				if err := authSvc.CheckGlobal(ctx, id, identitypolicy.GlobalRead); err != nil {
+					return err
+				}
+			} else {
+				if row.WorkspaceID == nil || *row.WorkspaceID != ws {
+					return httpx.Forbidden("voice scope mismatch")
+				}
+				if err := auth.RecordMutationWorkspace(ctx, ws); err != nil {
+					return err
+				}
+				if err := authSvc.CheckWorkspace(ctx, id, ws, identitypolicy.RTC); err != nil {
+					return err
+				}
+			}
+			access, err := perm.NewResolver(d.DB.Q).ReadRoom(ctx, room, user)
+			if err != nil {
+				return err
+			}
+			required := perm.ViewRoom
+			if !voice.IsDM(ws, room) {
+				required |= perm.Connect
+			}
+			if !access.Bits.Has(required) {
+				return httpx.Forbidden("missing voice access")
+			}
+			return nil
+		}
 	}
 	var egress rtc.Egress
 	if rtcSvc != nil {
@@ -292,29 +367,35 @@ func New(d Deps) *App {
 	// permission resolver + the suspension guard (write routes of suspended workspaces,
 	// item 32).
 	guard := moderation.Guard(d.DB.Q, func(ctx context.Context) uuid.UUID { return auth.MustFromContext(ctx).UserID })
+	if rtcSvc != nil {
+		hub.IdentityInvalidated = rtcSvc.IdentityChanged
+	}
 	private := func(h http.Handler) http.Handler {
-		g := guard(h)
+		g := identityGate(d.DB.Q, authSvc, guard(h))
 		return authSvc.Require(botGate(d.DB.Q, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			g.ServeHTTP(w, r.WithContext(perm.WithResolver(r.Context(), d.DB.Q)))
 		})))
 	}
 
-	mux := &routeRecorder{ServeMux: http.NewServeMux()}
+	previews := redisx.NewRateLimiter(d.Redis, "rl:invite-preview:", 30, 30) // 30 per minute per IP, before policy/unknown-code rejection
+	mux := &routeRecorder{ServeMux: http.NewServeMux(), capability: publicIdentityGate(d.DB.Q, previews)}
 	health.Routes(mux, d.DB.Pool, d.Redis)
 	buildinfo.Routes(mux, d.Config.PlanContact())
 	mux.Handle("GET /metrics", promhttp.Handler())
 	mux.Handle("GET /gateway", hub)
 
 	ah := auth.NewHandlers(authSvc, authLimiter, accountLimiter, d.Config.AllowedOrigins())
+	ah.IdentityOrigin = d.Config.IdentityPublicOrigin
+	rp, ds, op := wireIdentity(d, mux, authSvc)
 	ah.Public(mux)
 	ah.Private(mux, private)
 	users.NewHandlers(d.DB, pub, hub).Routes(mux, private)
 	workspaces.NewHandlers(d.DB, pub, d.Blob, workspaces.Limits{
-		MaxOwned:       d.Config.MaxWorkspacesPerUser,
-		Quota:          d.Config.DefaultWorkspaceQuotaBytes,
-		CreateLimiter:  redisx.NewRateLimiter(d.Redis, "rl:ws-create:", d.Config.WorkspaceCreatesPerHour, float64(d.Config.WorkspaceCreatesPerHour)/60),
-		Plans:          planSvc,
-		PreviewLimiter: redisx.NewRateLimiter(d.Redis, "rl:invite-preview:", 30, 30), // 30 per minute per IP
+		MaxOwned:      d.Config.MaxWorkspacesPerUser,
+		Quota:         d.Config.DefaultWorkspaceQuotaBytes,
+		CreateLimiter: redisx.NewRateLimiter(d.Redis, "rl:ws-create:", d.Config.WorkspaceCreatesPerHour, float64(d.Config.WorkspaceCreatesPerHour)/60),
+		Plans:         planSvc,
+		// Public identity wrapper charges preview requests exactly once.
 	}).WithEmailInvites(workspaces.EmailInvites{
 		Mail: mailSvc, PublicURL: d.Config.PublicAppURL,
 		Lookup: redisx.NewRateLimiter(d.Redis, "rl:invite-lookup:", 20, 20), // 20 per minute
@@ -364,6 +445,9 @@ func New(d Deps) *App {
 		redisx.NewRateLimiter(d.Redis, "rl:event-write:", 30, 2), // 30 at once, 120 per hour
 		redisx.NewRateLimiter(d.Redis, "rl:event-rsvp:", 30, 30)) // signed answer links: 30 per minute per IP
 	calSvc.Presence = hub.Statuses
+	// CalDAV push and meeting mails leave Calab without a request: the workspace identity
+	// policy decides per user (ADR-0054).
+	calSvc.Identity = &identitypolicy.Delivery{Loader: identitypolicy.NewSQLLoader(d.DB.Q, d.Config.IdentityEntitlements())}
 	recSvc.OnStarted = calSvc.RecordingStarted
 	calSvc.FreeBusyLimit = redisx.NewRateLimiter(d.Redis, "rl:freebusy:", 60, 60) // ADR-0041 §5: 60 per minute
 	calSvc.SuggestLimit = redisx.NewRateLimiter(d.Redis, "rl:suggest:", 30, 30)   // 30 per minute
@@ -417,7 +501,7 @@ func New(d Deps) *App {
 		httpx.Recover,
 		events.Middleware, // one post-commit publish budget per request
 	)
-	return &App{Handler: h, Auth: authSvc, Gateway: hub, Files: filesSvc, Guests: guestSvc, RTC: rtcSvc, Plans: planSvc, Mail: mailSvc,
-		Recording: recSvc, Bots: botSvc, Birthdays: bdSvc, Calls: callSvc, Calendar: calSvc, CalDAV: cdSvc, Boards: boardSvc, Rooms: roomHandlers, SIP: sipSvc, redis: d.Redis, Routes: mux.patterns,
+	return &App{SSO: rp, Directory: ds, OAuth: op, Handler: h, Auth: authSvc, Gateway: hub, Files: filesSvc, Guests: guestSvc, RTC: rtcSvc, Plans: planSvc, Mail: mailSvc,
+		Recording: recSvc, Bots: botSvc, Birthdays: bdSvc, Calls: callSvc, Calendar: calSvc, CalDAV: cdSvc, Boards: boardSvc, Rooms: roomHandlers, SIP: sipSvc, redis: d.Redis, identityDB: d.DB, Routes: mux.patterns,
 		tempRetention: time.Duration(d.Config.TempRoomRetentionDays) * 24 * time.Hour}
 }

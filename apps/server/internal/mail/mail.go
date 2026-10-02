@@ -157,13 +157,15 @@ func (s *Service) Enqueue(ctx context.Context, q *sqlc.Queries, m Mail) error {
 	if ttl <= 0 || ttl > MaxRetry {
 		ttl = MaxRetry
 	}
-	if q == nil {
-		q = s.db.Q
-	}
-	_, err = q.EnqueueMail(ctx, sqlc.EnqueueMailParams{
+	params := sqlc.EnqueueMailParams{
 		ToAddr: m.To, Template: string(m.Template), Locale: Locale(m.Locale), Params: sealed,
 		Priority: m.Priority, ExpiresAt: time.Now().Add(ttl),
-	})
+	}
+	if q == nil {
+		_, err = db.GuardValue(ctx, s.db, func(guarded *sqlc.Queries) (uuid.UUID, error) { return guarded.EnqueueMail(ctx, params) })
+	} else {
+		_, err = q.EnqueueMail(ctx, params)
+	}
 	return err
 }
 
@@ -248,10 +250,14 @@ func (s *Service) Run(ctx context.Context) {
 
 func (s *Service) cleanup(ctx context.Context) {
 	now := time.Now()
-	if _, err := s.db.Q.DeleteOldMail(ctx, now.Add(-7*24*time.Hour)); err != nil {
+	if _, err := db.GuardValue(ctx, s.db, func(guarded *sqlc.Queries) (int64, error) {
+		return guarded.DeleteOldMail(ctx, now.Add(-7*24*time.Hour))
+	}); err != nil {
 		slog.WarnContext(ctx, "mail: cleanup outbox", "err", err)
 	}
-	if _, err := s.db.Q.DeleteExpiredEmailCodes(ctx, now.Add(-time.Hour)); err != nil {
+	if _, err := db.GuardValue(ctx, s.db, func(guarded *sqlc.Queries) (int64, error) {
+		return guarded.DeleteExpiredEmailCodes(ctx, now.Add(-time.Hour))
+	}); err != nil {
 		slog.WarnContext(ctx, "mail: cleanup codes", "err", err)
 	}
 }
@@ -261,7 +267,9 @@ func (s *Service) cleanup(ctx context.Context) {
 func (s *Service) ProcessOnce(ctx context.Context) (int, error) {
 	sent := 0
 	for range 20 { // ≤ 20 batches per wake-up; the next tick continues
-		rows, err := s.db.Q.ClaimMail(ctx, sqlc.ClaimMailParams{Lease: durationInterval(s.Lease), Lim: int32(s.Batch)}) //nolint:gosec // small
+		rows, err := db.GuardValue(ctx, s.db, func(guarded *sqlc.Queries) ([]sqlc.MailOutbox, error) {
+			return guarded.ClaimMail(ctx, sqlc.ClaimMailParams{Lease: durationInterval(s.Lease), Lim: int32(s.Batch)}) //nolint:gosec // Batch is validated by the existing mail configuration.
+		}) //nolint:gosec // small
 		if err != nil {
 			return sent, err
 		}
@@ -288,7 +296,9 @@ func (s *Service) ProcessOnce(ctx context.Context) (int, error) {
 func (s *Service) postpone(ctx context.Context, rows []sqlc.MailOutbox, wait time.Duration) {
 	at := time.Now().Add(wait)
 	for _, r := range rows {
-		if err := s.db.Q.PostponeMail(ctx, sqlc.PostponeMailParams{ID: r.ID, NextAt: at}); err != nil {
+		if err := db.GuardExec(ctx, s.db, func(guarded *sqlc.Queries) error {
+			return guarded.PostponeMail(ctx, sqlc.PostponeMailParams{ID: r.ID, NextAt: at})
+		}); err != nil {
 			slog.WarnContext(ctx, "mail: postpone", "id", r.ID, "err", err)
 		}
 	}
@@ -306,7 +316,9 @@ func Backoff(attempt int32) time.Duration {
 func (s *Service) deliver(ctx context.Context, row sqlc.MailOutbox) bool {
 	log := slog.With("mail_id", row.ID, "template", row.Template, "attempt", row.Attempts+1)
 	fail := func(err error) {
-		if e := s.db.Q.MarkMailFailed(ctx, sqlc.MarkMailFailedParams{ID: row.ID, Error: clipErr(err)}); e != nil {
+		if e := db.GuardExec(ctx, s.db, func(guarded *sqlc.Queries) error {
+			return guarded.MarkMailFailed(ctx, sqlc.MarkMailFailedParams{ID: row.ID, Error: clipErr(err)})
+		}); e != nil {
 			log.WarnContext(ctx, "mail: mark failed", "err", e)
 		}
 		log.WarnContext(ctx, "mail: giving up", "err", err)
@@ -330,7 +342,7 @@ func (s *Service) deliver(ctx context.Context, row sqlc.MailOutbox) bool {
 	err = s.sender.Send(sctx, msg)
 	cancel()
 	if err == nil {
-		if e := s.db.Q.MarkMailSent(ctx, row.ID); e != nil {
+		if e := db.GuardExec(ctx, s.db, func(guarded *sqlc.Queries) error { return guarded.MarkMailSent(ctx, row.ID) }); e != nil {
 			log.WarnContext(ctx, "mail: mark sent", "err", e)
 		}
 		log.InfoContext(ctx, "mail sent")
@@ -341,7 +353,9 @@ func (s *Service) deliver(ctx context.Context, row sqlc.MailOutbox) bool {
 		fail(err)
 		return false
 	}
-	if e := s.db.Q.MarkMailRetry(ctx, sqlc.MarkMailRetryParams{ID: row.ID, NextAt: next, Error: clipErr(err)}); e != nil {
+	if e := db.GuardExec(ctx, s.db, func(guarded *sqlc.Queries) error {
+		return guarded.MarkMailRetry(ctx, sqlc.MarkMailRetryParams{ID: row.ID, NextAt: next, Error: clipErr(err)})
+	}); e != nil {
 		log.WarnContext(ctx, "mail: mark retry", "err", e)
 	}
 	log.WarnContext(ctx, "mail: send failed, will retry", "err", err, "next_at", next)

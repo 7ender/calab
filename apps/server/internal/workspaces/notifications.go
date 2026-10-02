@@ -5,6 +5,7 @@ import (
 	"time"
 
 	v1 "github.com/calaba/calaba/server/gen/calaba/v1"
+	"github.com/calaba/calaba/server/internal/db"
 	"github.com/calaba/calaba/server/internal/db/sqlc"
 	"github.com/calaba/calaba/server/internal/httpx"
 	"github.com/calaba/calaba/server/internal/notifications"
@@ -47,12 +48,16 @@ func (h *Handlers) setNotifications(w http.ResponseWriter, r *http.Request) erro
 	out := &v1.WorkspaceNotificationSettings{WorkspaceId: wsID.String(), Level: v1.NotificationLevel_NOTIFICATION_LEVEL_MENTIONS,
 		TaskLevel: v1.NotificationLevel_NOTIFICATION_LEVEL_ALL}
 	if level == notifications.DBMentions && until == nil && taskLevel == notifications.DBAll {
-		if err := h.db.Q.DeleteWorkspaceNotificationSettings(r.Context(), sqlc.DeleteWorkspaceNotificationSettingsParams{UserID: userID, WorkspaceID: wsID}); err != nil {
+		if err := db.GuardExec(r.Context(), h.db, func(guarded *sqlc.Queries) error {
+			return guarded.DeleteWorkspaceNotificationSettings(r.Context(), sqlc.DeleteWorkspaceNotificationSettingsParams{UserID: userID, WorkspaceID: wsID})
+		}); err != nil {
 			return err
 		}
 	} else {
-		row, err := h.db.Q.UpsertWorkspaceNotificationSettings(r.Context(), sqlc.UpsertWorkspaceNotificationSettingsParams{
-			UserID: userID, WorkspaceID: wsID, Level: level, MutedUntil: until, TaskLevel: taskLevel,
+		row, err := db.GuardValue(r.Context(), h.db, func(guarded *sqlc.Queries) (sqlc.WorkspaceNotificationSetting, error) {
+			return guarded.UpsertWorkspaceNotificationSettings(r.Context(), sqlc.UpsertWorkspaceNotificationSettingsParams{
+				UserID: userID, WorkspaceID: wsID, Level: level, MutedUntil: until, TaskLevel: taskLevel,
+			})
 		})
 		if err != nil {
 			return err

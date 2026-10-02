@@ -32,11 +32,12 @@ func SetRefreshCookie(w http.ResponseWriter, t *v1.AuthTokens) { setRefreshCooki
 
 // Handlers exposes the auth REST API.
 type Handlers struct {
-	svc     *Service
-	limiter *redisx.RateLimiter // per client IP: login and register
-	account *redisx.RateLimiter // per account (email): login attempts, against distributed guessing
-	origins []string            // allowed browser origins (PUBLIC_APP_URL, PUBLIC_APP_URL_ALT)
-	cred    *redisx.RateLimiter // per user: password checks of password / email changes
+	IdentityOrigin string
+	svc            *Service
+	limiter        *redisx.RateLimiter // per client IP: login and register
+	account        *redisx.RateLimiter // per account (email): login attempts, against distributed guessing
+	origins        []string            // allowed browser origins (PUBLIC_APP_URL, PUBLIC_APP_URL_ALT)
+	cred           *redisx.RateLimiter // per user: password checks of password / email changes
 }
 
 // Password checks of an authenticated account: 5 per 15 minutes.
@@ -142,7 +143,7 @@ func (h *Handlers) register(w http.ResponseWriter, r *http.Request) error {
 		return nil
 	}
 	if isWeb(r) {
-		setRefreshCookie(w, resp.GetTokens())
+		h.browserRefreshCookie(w, resp.GetTokens())
 	}
 	httpx.Write(w, http.StatusCreated, resp)
 	return nil
@@ -171,7 +172,7 @@ func (h *Handlers) login(w http.ResponseWriter, r *http.Request) error {
 		return err
 	}
 	if isWeb(r) {
-		setRefreshCookie(w, resp.GetTokens())
+		h.browserRefreshCookie(w, resp.GetTokens())
 	}
 	httpx.Write(w, http.StatusOK, resp)
 	return nil
@@ -192,13 +193,13 @@ func (h *Handlers) refresh(w http.ResponseWriter, r *http.Request) error {
 	resp, err := h.svc.Refresh(r.Context(), &v1.RefreshRequest{RefreshToken: tok}, client(r, ""))
 	if err != nil {
 		if cookie && (errors.Is(err, errInvalidRefresh) || errors.Is(err, errSessionRevoked)) {
-			clearRefreshCookie(w) // dead token: stop the browser from resending it
+			h.clearBrowserRefreshCookie(w) // dead token: stop the browser from resending it
 		}
 		// errRefreshRace keeps the cookie: a parallel request already stored the new token.
 		return err
 	}
 	if cookie || isWeb(r) {
-		setRefreshCookie(w, resp.GetTokens())
+		h.browserRefreshCookie(w, resp.GetTokens())
 	}
 	httpx.Write(w, http.StatusOK, resp)
 	return nil
@@ -233,7 +234,7 @@ func (h *Handlers) logout(w http.ResponseWriter, r *http.Request) error {
 		return httpx.Unauthenticated("missing bearer token or refresh token")
 	}
 	if refreshFromCookie(r) != "" {
-		clearRefreshCookie(w)
+		h.clearBrowserRefreshCookie(w)
 	}
 	httpx.NoContent(w)
 	return nil

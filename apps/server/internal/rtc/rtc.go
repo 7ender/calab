@@ -53,6 +53,10 @@ type Service struct {
 	events events.Publisher
 	// Revoked reports revoked auth sessions (set by the app); joins of revoked devices are kicked.
 	Revoked func(ctx context.Context, sessionID uuid.UUID) (bool, error)
+	// IdentityAccess verifies the exact device principal and target at the DB source.
+	identityWake   chan struct{}
+	IdentityAccess func(context.Context, uuid.UUID, uuid.UUID, uuid.UUID, uuid.UUID) error
+	identitySweep  identitySweepState
 	// noSFUMove is set once LiveKit answered MoveParticipant with "not implemented"
 	// (open-source LiveKit): moves then go the app-level way right away (ADR-0019).
 	noSFUMove atomic.Bool
@@ -78,7 +82,7 @@ func (s *Service) SetSFUMove(supported bool) { s.noSFUMove.Store(!supported) }
 
 // NewService wires the rtc service. ev must be the plain publisher (not the Sync decorator).
 func NewService(cfg Config, d *db.DB, r rueidis.Client, lk LiveKit, ev events.Publisher) *Service {
-	s := &Service{cfg: cfg, db: d, redis: r, lk: lk, voice: voice.Store{C: r}, events: ev}
+	s := &Service{cfg: cfg, db: d, redis: r, lk: lk, voice: voice.Store{C: r}, events: ev, identityWake: make(chan struct{}, 1)}
 	s.voice.OnCalls = s.publishCalls
 	return s
 }
@@ -225,6 +229,9 @@ func (s *Service) join(w http.ResponseWriter, r *http.Request) error {
 	if err := s.lk.CreateRoom(r.Context(), name, EmptyTimeout, s.cfg.MaxParticipants); err != nil {
 		return httpx.Unavailable(err)
 	}
+	if err := s.checkIdentity(r.Context(), room.WorkspaceID, room.ID, id.UserID, id.SessionID); err != nil {
+		return err
+	}
 	slot := false
 	if acc.Bits.Has(perm.Stream) {
 		if slot, err = s.streamSlotFree(r.Context(), roomID, identity, media.GetMaxStreams()); err != nil {
@@ -267,6 +274,9 @@ func (s *Service) join(w http.ResponseWriter, r *http.Request) error {
 func (s *Service) recordPending(ctx context.Context, room wsRoom, uid, sid uuid.UUID, adm admission) (pending bool, joinedAt int64, err error) {
 	var c voice.Change
 	err = s.voice.WithLock(ctx, room.WorkspaceID, func() error {
+		if err := s.checkIdentity(ctx, room.WorkspaceID, room.ID, uid, sid); err != nil {
+			return err
+		}
 		if adm.active() {
 			if err := s.admit(ctx, room.WorkspaceID, room.ID, uid, adm); err != nil {
 				return err
@@ -370,6 +380,16 @@ func (s *Service) serverMuted(ctx context.Context, wid, uid uuid.UUID) bool {
 // state before a /camera/request, or before a moderator's stop-camera, is corrected by
 // re-reading it after the push.
 func (s *Service) pushGrant(ctx context.Context, lkRoom, identity string, wid, uid uuid.UUID, bits perm.Bits, slot bool) error {
+	if user, sid, ok := voice.ParseIdentity(identity); ok {
+		ws, rid, roomOK := voice.ParseRoomName(lkRoom)
+		if !roomOK || ws != wid || user != uid {
+			return httpx.Forbidden("voice scope mismatch")
+		}
+		if err := s.checkIdentity(ctx, wid, rid, user, sid); err != nil {
+			s.removeIdentities(ctx, lkRoom, []string{identity})
+			return err
+		}
+	}
 	sm, cam := s.serverMuted(ctx, wid, uid), s.cameraHeld(ctx, lkRoom, identity)
 	if voice.IsDMRoomName(lkRoom) { // a call keeps its camera source (dm.go)
 		return s.lk.UpdatePermission(ctx, lkRoom, identity, Grant(bits, slot, true))
@@ -447,7 +467,7 @@ func (s *Service) publishCall(ctx context.Context, wsID, rid uuid.UUID) {
 	}
 	if room.GetVoiceStartedAt() == nil && room.GetVoiceStatus() != "" {
 		// The call ended: its status line goes with it (same ROOM_UPDATE).
-		if _, err := s.db.Q.ClearVoiceStatus(ctx, rid); err != nil {
+		if _, err := db.GuardValue(ctx, s.db, func(guarded *sqlc.Queries) (int64, error) { return guarded.ClearVoiceStatus(ctx, rid) }); err != nil {
 			slog.WarnContext(ctx, "clear voice status", "room", rid, "err", err)
 		} else {
 			room.VoiceStatus = ""
@@ -489,6 +509,9 @@ func (s *Service) voiceSelf(w http.ResponseWriter, r *http.Request) error {
 	}
 	if !ok {
 		return httpx.Conflict("not connected to a voice room")
+	}
+	if err := s.checkIdentity(r.Context(), wsID, roomID, id.UserID, id.SessionID); err != nil {
+		return err
 	}
 	// Musician mode (ADR-0052) is a plan feature: Team and above (409 PLAN_LIMIT on Free).
 	if req.GetMusician() {
@@ -918,7 +941,9 @@ func (s *Service) setVoiceStatus(w http.ResponseWriter, r *http.Request) error {
 			val = &status
 		}
 		var err error
-		upd, err = s.db.Q.SetVoiceStatus(r.Context(), sqlc.SetVoiceStatusParams{ID: roomID, Status: val})
+		upd, err = db.GuardValue(r.Context(), s.db, func(guarded *sqlc.Queries) (sqlc.Room, error) {
+			return guarded.SetVoiceStatus(r.Context(), sqlc.SetVoiceStatusParams{ID: roomID, Status: val})
+		})
 		return err
 	})
 	if db.IsNotFound(err) {

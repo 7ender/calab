@@ -642,7 +642,9 @@ func (s *Service) rsvp(w http.ResponseWriter, r *http.Request) error {
 	if err := s.writes.Take(ctx, me.String()); err != nil { // every answer is a workspace broadcast
 		return err
 	}
-	a, err := s.db.Q.SetEventAttendeeStatus(ctx, sqlc.SetEventAttendeeStatusParams{EventID: b.ev.ID, UserID: &me, Status: status})
+	a, err := db.GuardValue(ctx, s.db, func(guarded *sqlc.Queries) (sqlc.EventAttendee, error) {
+		return guarded.SetEventAttendeeStatus(ctx, sqlc.SetEventAttendeeStatusParams{EventID: b.ev.ID, UserID: &me, Status: status})
+	})
 	if err != nil {
 		return err
 	}
@@ -690,6 +692,12 @@ func (s *Service) today(w http.ResponseWriter, r *http.Request) error {
 	viewers := map[uuid.UUID]*viewer{}
 	var rows []occurrenceRow
 	for _, b := range bs {
+		if err := perm.CheckAccess(ctx, b.ev.WorkspaceID, id.UserID); err != nil {
+			if httpx.AsError(err).Status >= 500 {
+				return err
+			}
+			continue
+		}
 		if a, ok := b.attendee(id.UserID); ok && a.Status == StatusDeclined {
 			continue
 		}

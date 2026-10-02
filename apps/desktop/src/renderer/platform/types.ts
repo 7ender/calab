@@ -16,6 +16,7 @@ export interface GuestJoin {
  */
 export interface Platform extends CalabaApi {
   kind: 'electron' | 'web';
+  finishSso?(): Promise<import('../../shared/ipc').IpcResult<import('../../shared/ipc').SsoResult>>;
   /** Prefix for API paths (`calaba-api://api` in Electron, '' on the web = same origin). */
   apiBase: string;
   /** Authenticated API request (Bearer + one refresh-and-retry on 401 where needed). */
@@ -29,6 +30,7 @@ export interface Platform extends CalabaApi {
   mediaUrl(path: string): Promise<string>;
   /** Whether the platform can hand out a synchronous media URL (no blob fetch needed). */
   directMedia: boolean;
+  clearProtectedMedia?(): void;
   /**
    * Guest sign-in by a room link without an account (POST /api/room-invites/{code}/join with a
    * nickname, ADR-0016). Web only; undefined where the host cannot adopt a session (Electron:

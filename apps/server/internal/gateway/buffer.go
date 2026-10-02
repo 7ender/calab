@@ -26,10 +26,13 @@ const (
 )
 
 type entry struct {
-	id    uuid.UUID
-	seq   uint64
-	frame []byte        // binary GatewayFrame
-	flush chan struct{} // writer barrier (not stored)
+	enc            *encEvent // resolved replay attribution; not serialized
+	workspace      uuid.UUID
+	identityFormat bool
+	id             uuid.UUID
+	seq            uint64
+	frame          []byte        // binary GatewayFrame
+	flush          chan struct{} // writer barrier (not stored)
 }
 
 func (e entry) encode() []byte {
@@ -37,6 +40,8 @@ func (e entry) encode() []byte {
 	b = append(b, e.id[:]...)
 	b = strconv.AppendUint(b, e.seq, 10)
 	b = append(b, ':')
+	b = append(b, 'I', '2', ':')
+	b = append(b, e.workspace[:]...)
 	return append(b, e.frame...)
 }
 
@@ -57,7 +62,14 @@ func decodeEntry(b []byte) (entry, error) {
 	if err != nil {
 		return entry{}, err
 	}
-	return entry{id: id, seq: seq, frame: rest[i+1:]}, nil
+	payload := rest[i+1:]
+	e := entry{id: id, seq: seq, frame: payload}
+	if len(payload) >= 19 && string(payload[:3]) == "I2:" {
+		e.identityFormat = true
+		e.workspace, _ = uuid.FromBytes(payload[3:19])
+		e.frame = payload[19:]
+	}
+	return e, nil
 }
 
 // since returns the entries after seq. ok=false when the buffer no longer covers seq+1

@@ -29,7 +29,7 @@ const (
 	Plan_PLAN_FREE        Plan = 1 // limits from PLAN_FREE_LIMITS
 	Plan_PLAN_TEAM        Plan = 2 // limits from PLAN_TEAM_LIMITS
 	Plan_PLAN_CUSTOM      Plan = 3 // limits as stored for the workspace
-	Plan_PLAN_ENTERPRISE  Plan = 4 // no limits at all (like self-hosted), not configurable
+	Plan_PLAN_ENTERPRISE  Plan = 4 // cloud Business; on-prem Enterprise is an operator edition
 )
 
 // Enum value maps for Plan.
@@ -244,13 +244,14 @@ func (x *PlanLimits) GetMusicianDisabled() bool {
 
 // The plan of a workspace as members see it (Workspace.plan).
 type WorkspacePlan struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	Plan          Plan                   `protobuf:"varint,1,opt,name=plan,proto3,enum=calaba.v1.Plan" json:"plan,omitempty"`          // stored plan; FREE when none was ever set
-	Limits        *PlanLimits            `protobuf:"bytes,2,opt,name=limits,proto3" json:"limits,omitempty"`                           // effective limits (FREE's when expired)
-	ValidUntil    *timestamppb.Timestamp `protobuf:"bytes,3,opt,name=valid_until,json=validUntil,proto3" json:"valid_until,omitempty"` // unset = no expiry
-	Expired       bool                   `protobuf:"varint,4,opt,name=expired,proto3" json:"expired,omitempty"`                        // valid_until passed: the FREE limits apply
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
+	state                protoimpl.MessageState         `protogen:"open.v1"`
+	Plan                 Plan                           `protobuf:"varint,1,opt,name=plan,proto3,enum=calaba.v1.Plan" json:"plan,omitempty"`          // stored plan; FREE when none was ever set
+	Limits               *PlanLimits                    `protobuf:"bytes,2,opt,name=limits,proto3" json:"limits,omitempty"`                           // effective limits (FREE's when expired)
+	ValidUntil           *timestamppb.Timestamp         `protobuf:"bytes,3,opt,name=valid_until,json=validUntil,proto3" json:"valid_until,omitempty"` // unset = no expiry
+	IdentityEntitlements *WorkspaceIdentityEntitlements `protobuf:"bytes,5,opt,name=identity_entitlements,json=identityEntitlements,proto3" json:"identity_entitlements,omitempty"`
+	Expired              bool                           `protobuf:"varint,4,opt,name=expired,proto3" json:"expired,omitempty"` // valid_until passed: the FREE limits apply
+	unknownFields        protoimpl.UnknownFields
+	sizeCache            protoimpl.SizeCache
 }
 
 func (x *WorkspacePlan) Reset() {
@@ -304,6 +305,13 @@ func (x *WorkspacePlan) GetValidUntil() *timestamppb.Timestamp {
 	return nil
 }
 
+func (x *WorkspacePlan) GetIdentityEntitlements() *WorkspaceIdentityEntitlements {
+	if x != nil {
+		return x.IdentityEntitlements
+	}
+	return nil
+}
+
 func (x *WorkspacePlan) GetExpired() bool {
 	if x != nil {
 		return x.Expired
@@ -315,7 +323,7 @@ var File_calaba_v1_plan_proto protoreflect.FileDescriptor
 
 const file_calaba_v1_plan_proto_rawDesc = "" +
 	"\n" +
-	"\x14calaba/v1/plan.proto\x12\tcalaba.v1\x1a\x1fgoogle/protobuf/timestamp.proto\x1a\x15calaba/v1/media.proto\"\x8e\x05\n" +
+	"\x14calaba/v1/plan.proto\x12\tcalaba.v1\x1a\x1fgoogle/protobuf/timestamp.proto\x1a\x15calaba/v1/media.proto\x1a\x18calaba/v1/identity.proto\"\x8e\x05\n" +
 	"\n" +
 	"PlanLimits\x12!\n" +
 	"\froom_members\x18\x01 \x01(\rR\vroomMembers\x12H\n" +
@@ -335,12 +343,13 @@ const file_calaba_v1_plan_proto_rawDesc = "" +
 	"\x06boards\x18\x16 \x01(\rR\x06boards\x12(\n" +
 	"\x10cameras_per_room\x18\x1b \x01(\rR\x0ecamerasPerRoom\x12'\n" +
 	"\x0fcaldav_disabled\x18\x17 \x01(\bR\x0ecaldavDisabled\x12+\n" +
-	"\x11musician_disabled\x18\x1c \x01(\bR\x10musicianDisabled\"\xba\x01\n" +
+	"\x11musician_disabled\x18\x1c \x01(\bR\x10musicianDisabled\"\x99\x02\n" +
 	"\rWorkspacePlan\x12#\n" +
 	"\x04plan\x18\x01 \x01(\x0e2\x0f.calaba.v1.PlanR\x04plan\x12-\n" +
 	"\x06limits\x18\x02 \x01(\v2\x15.calaba.v1.PlanLimitsR\x06limits\x12;\n" +
 	"\vvalid_until\x18\x03 \x01(\v2\x1a.google.protobuf.TimestampR\n" +
-	"validUntil\x12\x18\n" +
+	"validUntil\x12]\n" +
+	"\x15identity_entitlements\x18\x05 \x01(\v2(.calaba.v1.WorkspaceIdentityEntitlementsR\x14identityEntitlements\x12\x18\n" +
 	"\aexpired\x18\x04 \x01(\bR\aexpired*`\n" +
 	"\x04Plan\x12\x14\n" +
 	"\x10PLAN_UNSPECIFIED\x10\x00\x12\r\n" +
@@ -366,11 +375,12 @@ func file_calaba_v1_plan_proto_rawDescGZIP() []byte {
 var file_calaba_v1_plan_proto_enumTypes = make([]protoimpl.EnumInfo, 1)
 var file_calaba_v1_plan_proto_msgTypes = make([]protoimpl.MessageInfo, 2)
 var file_calaba_v1_plan_proto_goTypes = []any{
-	(Plan)(0),                     // 0: calaba.v1.Plan
-	(*PlanLimits)(nil),            // 1: calaba.v1.PlanLimits
-	(*WorkspacePlan)(nil),         // 2: calaba.v1.WorkspacePlan
-	(ScreenSharePreset)(0),        // 3: calaba.v1.ScreenSharePreset
-	(*timestamppb.Timestamp)(nil), // 4: google.protobuf.Timestamp
+	(Plan)(0),                             // 0: calaba.v1.Plan
+	(*PlanLimits)(nil),                    // 1: calaba.v1.PlanLimits
+	(*WorkspacePlan)(nil),                 // 2: calaba.v1.WorkspacePlan
+	(ScreenSharePreset)(0),                // 3: calaba.v1.ScreenSharePreset
+	(*timestamppb.Timestamp)(nil),         // 4: google.protobuf.Timestamp
+	(*WorkspaceIdentityEntitlements)(nil), // 5: calaba.v1.WorkspaceIdentityEntitlements
 }
 var file_calaba_v1_plan_proto_depIdxs = []int32{
 	3, // 0: calaba.v1.PlanLimits.stream_max_preset:type_name -> calaba.v1.ScreenSharePreset
@@ -378,11 +388,12 @@ var file_calaba_v1_plan_proto_depIdxs = []int32{
 	0, // 2: calaba.v1.WorkspacePlan.plan:type_name -> calaba.v1.Plan
 	1, // 3: calaba.v1.WorkspacePlan.limits:type_name -> calaba.v1.PlanLimits
 	4, // 4: calaba.v1.WorkspacePlan.valid_until:type_name -> google.protobuf.Timestamp
-	5, // [5:5] is the sub-list for method output_type
-	5, // [5:5] is the sub-list for method input_type
-	5, // [5:5] is the sub-list for extension type_name
-	5, // [5:5] is the sub-list for extension extendee
-	0, // [0:5] is the sub-list for field type_name
+	5, // 5: calaba.v1.WorkspacePlan.identity_entitlements:type_name -> calaba.v1.WorkspaceIdentityEntitlements
+	6, // [6:6] is the sub-list for method output_type
+	6, // [6:6] is the sub-list for method input_type
+	6, // [6:6] is the sub-list for extension type_name
+	6, // [6:6] is the sub-list for extension extendee
+	0, // [0:6] is the sub-list for field type_name
 }
 
 func init() { file_calaba_v1_plan_proto_init() }
@@ -391,6 +402,7 @@ func file_calaba_v1_plan_proto_init() {
 		return
 	}
 	file_calaba_v1_media_proto_init()
+	file_calaba_v1_identity_proto_init()
 	type x struct{}
 	out := protoimpl.TypeBuilder{
 		File: protoimpl.DescBuilder{

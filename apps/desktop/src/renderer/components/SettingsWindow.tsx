@@ -1,7 +1,7 @@
 import * as DialogP from '@radix-ui/react-dialog';
 import * as Tabs from '@radix-ui/react-tabs';
 import type { LucideIcon } from 'lucide-react';
-import { Search } from 'lucide-react';
+import { Lock, Search } from 'lucide-react';
 import { createContext, useContext, useEffect, useLayoutEffect, useMemo, useRef, useState, type KeyboardEvent, type ReactNode } from 'react';
 import { t } from '../i18n';
 import { highlight, hintExcerpt, labelMatches, queryWords, searchSettings, type SettingsEntry } from './settingsSearch';
@@ -14,6 +14,8 @@ export interface SettingsSection {
   content: ReactNode;
   /** Red label (e.g. «Удалить пространство»). */
   destructive?: boolean;
+  /** Feature is unavailable on the current plan; the section explains access. */
+  locked?: boolean;
   /** A small accent pill after the label (e.g. «Обновление» on «О программе», docs/09 #125). */
   badge?: string;
   /** Extra words the search matches the section by (e.g. «обновление» for «О программе»). */
@@ -281,6 +283,7 @@ export function SettingsWindow({
                         >
                           <s.icon className="size-4 shrink-0" aria-hidden />
                           <SectionLabel label={s.label} badge={s.badge} />
+                          {s.locked ? <Lock className="ml-auto size-3.5 shrink-0" aria-label={t('identity.plan')} /> : null}
                         </button>
                         {g.rows.map((r) => (
                           <button
@@ -325,6 +328,7 @@ export function SettingsWindow({
                     >
                       <s.icon className="size-4 shrink-0" aria-hidden />
                       <SectionLabel label={s.label} badge={s.badge} />
+                          {s.locked ? <Lock className="ml-auto size-3.5 shrink-0" aria-label={t('identity.plan')} /> : null}
                     </Tabs.Trigger>
                   ))}
                 </Tabs.List>

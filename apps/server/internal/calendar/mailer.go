@@ -22,6 +22,10 @@ import (
 // mailTTL: an invitation not delivered within a day is dropped.
 const mailTTL = mail.MaxRetry
 
+// contentFreeTitle stands for the meeting title and organizer in mails of an enforced-SSO
+// workspace (the product name, not a translation).
+const contentFreeTitle = "Calab"
+
 func (s *Service) eventURL(id uuid.UUID) string {
 	return strings.TrimRight(s.cfg.PublicURL, "/") + "/e/" + id.String()
 }
@@ -109,6 +113,10 @@ func (s *Service) sendMails(ctx context.Context, b *bundle, tmpl mail.Template, 
 			names = append(names, deref(a.Email))
 		}
 	}
+	// Enforced SSO (ADR-0054): the mail leaves the IdP's control, so it carries no meeting
+	// details — no title, organizer, room, attendees or invite.ics, only the time and the
+	// meeting link, which needs the organization's sign-in to open.
+	free := s.contentFree(ctx, b.ev.WorkspaceID)
 	queued := 0
 	for _, a := range to {
 		addr, locale, loc := "", mail.LocaleEN, b.series.Loc
@@ -141,6 +149,15 @@ func (s *Service) sendMails(ctx context.Context, b *bundle, tmpl mail.Template, 
 			invite = BuildICS(s.icsEvent(b, method, users, icsOrg, roomName, own, link))
 		}
 		date, when := formatWhen(locale, occ, b.ev.AllDay, loc)
+		if free {
+			p := mail.Params{"title": contentFreeTitle, "date": date, "when": when, "organizer": contentFreeTitle, "url": s.eventURL(b.ev.ID)}
+			if err := s.mail.Enqueue(ctx, nil, mail.Mail{To: addr, Template: tmpl, Locale: locale, Params: p, Priority: mail.PriorityNotice, TTL: mailTTL}); err != nil {
+				logErr(ctx, "mail: enqueue", err)
+				continue
+			}
+			queued++
+			continue
+		}
 		p := mail.Params{
 			"title": b.ev.Title, "date": date, "when": when, "organizer": orgName(locale), "url": link,
 			"room": roomName, "repeat": repeatText(locale, b.series.Rule.Repeat), "attendees": attendees,

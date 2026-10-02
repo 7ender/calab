@@ -10,6 +10,7 @@ import (
 	"google.golang.org/protobuf/types/known/timestamppb"
 
 	v1 "github.com/calaba/calaba/server/gen/calaba/v1"
+	"github.com/calaba/calaba/server/internal/db"
 	"github.com/calaba/calaba/server/internal/db/sqlc"
 	"github.com/calaba/calaba/server/internal/events"
 )
@@ -45,7 +46,7 @@ func (s *Service) Run(ctx context.Context, interval time.Duration) {
 		}
 		if now.Sub(lastCleanup) > time.Hour {
 			lastCleanup = now
-			logErr(ctx, "cleanup", s.db.Q.DeleteOldEventSignals(ctx, now.Add(-72*time.Hour)))
+			logErr(ctx, "cleanup", db.GuardExec(ctx, s.db, func(guarded *sqlc.Queries) error { return guarded.DeleteOldEventSignals(ctx, now.Add(-72*time.Hour)) }))
 		}
 		select {
 		case <-ctx.Done():
@@ -144,7 +145,9 @@ func (s *Service) signal(ctx context.Context, b *bundle, o Occurrence, now time.
 	default:
 		return
 	}
-	n, err := s.db.Q.ClaimEventRoomSignal(ctx, sqlc.ClaimEventRoomSignalParams{EventID: b.ev.ID, OccurrenceAt: o.Start, Kind: kind})
+	n, err := db.GuardValue(ctx, s.db, func(guarded *sqlc.Queries) (int64, error) {
+		return guarded.ClaimEventRoomSignal(ctx, sqlc.ClaimEventRoomSignalParams{EventID: b.ev.ID, OccurrenceAt: o.Start, Kind: kind})
+	})
 	if err != nil || n == 0 {
 		logErr(ctx, "claim room signal", err)
 		return
@@ -181,8 +184,10 @@ func (s *Service) remind(ctx context.Context, due []pendingReminder) int {
 		if !r.dnd && dnd[r.user] {
 			continue // not claimed: sent after DND ends if still within the grace
 		}
-		n, err := s.db.Q.ClaimEventReminder(ctx, sqlc.ClaimEventReminderParams{
-			EventID: r.b.ev.ID, OccurrenceAt: r.occ.Start, UserID: r.user, Minutes: int16(r.minutes), //nolint:gosec // ≤ 1440
+		n, err := db.GuardValue(ctx, s.db, func(guarded *sqlc.Queries) (int64, error) {
+			return guarded.ClaimEventReminder(ctx, sqlc.ClaimEventReminderParams{
+				EventID: r.b.ev.ID, OccurrenceAt: r.occ.Start, UserID: r.user, Minutes: int16(r.minutes), //nolint:gosec // ≤ 1440
+			})
 		})
 		if err != nil || n == 0 {
 			logErr(ctx, "claim reminder", err)

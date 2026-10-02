@@ -1,4 +1,4 @@
-import type { Me } from '@calaba/protocol';
+import type { Me, SessionAuthority } from '@calaba/protocol';
 import { create } from 'zustand';
 import type { AppInfo, AppSettings, LogoutReason, UpdateStatus } from '../../shared/ipc';
 import type { GatewayStatus } from '../lib/gateway/client';
@@ -11,6 +11,7 @@ export interface SessionState {
   serverUrl: string;
   sessionId: string;
   me: Me | null;
+  authority: SessionAuthority | null;
   /** Where to ask for a paid plan (READY.plan_contact, ADR-0024): mailto: or https:; '' = unknown. */
   planContact: string;
   gateway: GatewayStatus;
@@ -34,6 +35,7 @@ export const useSession = create<SessionState>()((set) => ({
   serverUrl: '',
   sessionId: '',
   me: null,
+  authority: null,
   planContact: '',
   gateway: 'idle',
   reconnectBanner: false,

@@ -1,6 +1,6 @@
 module github.com/calaba/calaba/server
 
-go 1.26.0
+go 1.26.8
 
 tool google.golang.org/protobuf/cmd/protoc-gen-go
 
@@ -12,7 +12,11 @@ require (
 	github.com/aws/smithy-go v1.28.2
 	github.com/caarlos0/env/v11 v11.4.1
 	github.com/coder/websocket v1.8.15
+	github.com/coreos/go-oidc/v3 v3.21.0
 	github.com/gen2brain/webp v0.6.4
+	github.com/go-asn1-ber/asn1-ber v1.5.8
+	github.com/go-jose/go-jose/v4 v4.1.4
+	github.com/go-ldap/ldap/v3 v3.4.14
 	github.com/golang-jwt/jwt/v5 v5.3.1
 	github.com/google/uuid v1.6.0
 	github.com/jackc/pgx/v5 v5.11.0
@@ -24,6 +28,7 @@ require (
 	golang.org/x/crypto v0.57.0
 	golang.org/x/image v0.46.0
 	golang.org/x/net v0.59.0
+	golang.org/x/oauth2 v0.37.0
 	golang.org/x/text v0.42.0
 	google.golang.org/protobuf v1.36.12
 )
@@ -33,6 +38,7 @@ require (
 	buf.build/go/protovalidate v1.2.0 // indirect
 	buf.build/go/protoyaml v0.7.0 // indirect
 	cel.dev/expr v0.25.2 // indirect
+	github.com/Azure/go-ntlmssp v0.1.1 // indirect
 	github.com/antlr4-go/antlr/v4 v4.13.1 // indirect
 	github.com/aws/aws-sdk-go-v2/aws/protocol/eventstream v1.7.20 // indirect
 	github.com/aws/aws-sdk-go-v2/internal/configsources v1.5.4 // indirect

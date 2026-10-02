@@ -1,0 +1,285 @@
+# Identity 2.0 independent protocol/security review
+
+Reviewed final integrated source: **`e0ff654c49e44fc58d603971bf274505e2d24ba4`**, against baseline `99a60fc54cb1989c26c1a114a77631ea3380ecde`, 2026-10-01. The independent full pass at `479d99c8f42ffe3c5f9be47d4dbb298fcbc2707a` was followed by inspection and focused execution of every subsequent production delta: RTC/DM, provider P1–P6 corrections and UserInfo wrapper normalization. No other review was read before completing this independent assessment. ADR-0054, ADR-0055, release contract including section 13, implementation, SQL, root wiring, native/web clients, proxy routes and official standards were inspected. Only this report is committed; reviewer-authored reproduction tests use Go overlays outside the checkout.
+
+**Final verdict: ACCEPT the reviewed protocol/security scope at `e0ff654c`; no known blocker or major remains in this review.** The initial source was rejected for six confirmed majors, all independently confirmed resolved at `a119d174a8c887513e0cde7916f467bdc8b7cb47`. The final delta preserves those corrections and does not change their affected source. Coordinator explicitly chose exactly bound code-replay revocation in specification commit `3e576cf4`. This verdict is one independent review, not OIDC certification or a claim that the coordinator's full QA/release gates have already passed.
+
+## Final-SHA delta and impact confirmation
+
+`a119d174..e0ff654c` contains only seven production lines in `internal/app/identitywiring.go` and the new 255-line T12 test. Exact registered GET/POST UserInfo patterns reject bot bearer with HTTP401 `invalid_token` and `WWW-Authenticate: Bearer error="invalid_token"`; other feature routes retain HTTP403 and existing first-party errors. No handler is entered, permission widened or provider family revoked by this rejection. Existing no-store/error-security headers remain. This matches [OIDC Core §5.3.3](https://openid.net/specs/openid-connect-core-1_0.html#UserInfoError) and [RFC 6750 §3/§3.1](https://www.rfc-editor.org/rfc/rfc6750.html#section-3).
+
+At exact final production source, the new independent `TestProtocolReviewUserInfoBotWrapper` passed nine subcases, including GET/POST UserInfo and unchanged token/revoke/authorize/JWKS/management denial. It failed only the two UserInfo cases before correction at `a119d174`, confirming the intended behavioral delta. This wrapper probe uses a synthetic bot-prefix credential to isolate route behavior; real credential issuance is covered separately below.
+
+Independently inspected and ran `TestIdentityRealProviderTokenIsolationAcrossRESTGatewayRTC`: **PASS**, including access/refresh/ID subcases. Production App handlers create the RP client, authorization request, session-bound consent, code and live access/refresh/RS256 ID tokens. The test verifies a live ID token against JWKS, intended UserInfo access and refresh controls, and rejection of these provider credentials by first-party REST, WS IDENTIFY and RTC token issuance. Valid local and bot controls still work; first-party/local/bot/refresh/ID credentials fail UserInfo with protocol-shaped errors, without revoking valid provider/local sessions. RTC check is token issuance only, with no media run.
+
+Both runs used Go1.26.5 `-race`, own PG18 `identity_protocol`, Redis DB10 and the prefix below. Commands:
+
+```sh
+go test -race -tags integration -overlay /tmp/identity-v2-protocol-wrapper-overlay.json -count=1 -run '^TestProtocolReviewUserInfoBotWrapper$' -v ./internal/app
+go test -race -tags integration -count=1 -run '^TestIdentityRealProviderTokenIsolationAcrossRESTGatewayRTC$' -v ./internal/app
+```
+
+Final logs: `/tmp/identity-v2-protocol-wrapper-final.log`, `/tmp/identity-v2-protocol-t12-final.log`; expected pre-correction failure: `/tmp/identity-v2-protocol-wrapper-before.log`. The wrapper execution's filter also contained `^TestIdentityRealIssued`, which matched no test; T12 was then explicitly run with its actual function name in the second command above. No skipped or unmatched selection is counted as T12 evidence. Unchanged-layer evidence below remains applicable; complete common integration is the assigned QA runner's separate gate.
+
+## Resolution assessment at a119d174
+
+Independently inspected the integrated provider correction, root method/resolver/route census changes, SQL and generated query. Re-ran all seven reviewer-authored wire probes with the maintained go-oidc RP, own DB and Go1.26.5 race detector: **PASS**. This closes P1–P6 without new confirmed blocker/major in that delta. Findings below retain their initial-source behavior and severity as historical evidence, not current release defects.
+
+| Finding | Verified correction |
+|---|---|
+| P1 | Both discovery paths explicitly publish unsupported Request URI as false and authorization-response issuer support as true. Existing issuer success/error binding is retained. |
+| P2 | Discovery/JWKS reflect only exact active SPA origins in the issuer workspace, use `Vary: Origin`, omit credentials/wildcards, and preserve public no-Origin retrieval. Wrong, disabled, cross-workspace and malformed origins fail; token/UserInfo/revoke do not inherit public-document CORS. |
+| P3 | Consumed-code lookup locks exact workspace/client/code/redirect/S256 bindings; family revocation commits despite `invalid_grant`. Wrong client/secret/verifier/redirect/workspace cannot revoke the victim. Original and rotated access/refresh descendants fail after replay; replay/refresh race leaves no usable descendant and unrelated families survive. |
+| P4 | GET and bounded single-valued POST authorize share validators and 303 handling; query/body ambiguity, duplicate/malformed/oversize forms and unsupported media fail. Root resolver reads validated POST fields, preserves browser-only prompt=none behavior, quotas and bot denial; management still requires bearer. |
+| P5 | Optional `acr_values` preferences no longer error or synthesize ACR/AMR evidence. Duplicate/malformed parameters still fail. |
+| P6 | Unsupported `id_token_hint` is explicitly rejected before consent/code creation for both methods. No hint-based subject selection was introduced. |
+
+Additional narrow author regressions were independently executed at the same source, rather than accepted from the author's report: six provider test functions (POST positives/negatives, SPA origin boundaries, durable replay bindings, replay/refresh race and token-CORS isolation) and two root App test functions (GET/POST browser session resolver/route census and invalid forms), all **PASS** with `-race`. Commands and logs are recorded below. No common full regression was repeated because the unchanged protocol/client layers retain the original evidence and the affected integrations received focused checks.
+
+## Historical confirmed findings
+
+### P1 — Major: discovery describes incompatible protocol capabilities
+
+`apps/server/internal/oauthprovider/http.go:192` omits `request_uri_parameter_supported` although `consent.go:92` rejects `request_uri`. Its OIDC-defined omitted default is **true**; the response therefore announces an unsupported feature. It also omits `authorization_response_iss_parameter_supported` despite `redirectURL` returning `iss` on success and errors; RFC 9207 requires support to be announced as true. A client selecting issuer-based mix-up protection through discovery sees false. These are metadata contract defects, not evidence of an exercised cross-issuer token forgery. [OIDC Discovery §3](https://openid.net/specs/openid-connect-discovery-1_0.html#ProviderMetadata), [RFC 9207 §2.1/§3](https://www.rfc-editor.org/rfc/rfc9207.html#section-2.1).
+
+Reproduction: `TestProtocolReviewMetadataDefaults` below fails on both OIDC and RFC 8414 documents: both fields are absent. Required correction: explicit `request_uri_parameter_supported:false` and `authorization_response_iss_parameter_supported:true` on both paths; retain issuer on successful and redirected error responses. Existing explicit response/grant/algorithm/subject/scope lists are otherwise consistent with this release profile.
+
+### P2 — Major: supported cross-origin SPA cannot discover issuer or validate signatures
+
+`http.go:181` and `http.go:194` return metadata/JWKS without CORS. An active registered public SPA with origin `https://rp.example.test` receives HTTP 200 but no `Access-Control-Allow-Origin` at either document. Browser fetch cannot read discovery or JWKS, so normal browser OIDC clients fail before discovery or ID-token verification. Successful token/UserInfo CORS does not repair this. Discovery/JWKS CORS is a standards **SHOULD**, while the severity comes from unusable advertised SPA support. [OIDC Discovery §3 and §4](https://openid.net/specs/openid-connect-discovery-1_0.html#ProviderConfig).
+
+Reproduction: `TestProtocolReviewSPADiscoveryCORS` below. Required correction per lead decision: permit the exact origin of an active registered SPA in this workspace on both metadata routes and JWKS, add `Vary: Origin`, omit credentials/wildcards, deny unregistered/disabled/cross-workspace origins. No CORS should be added to authorize merely to address this finding. Wire headers prove the browser restriction; this probe is not a browser-rendering QA pass.
+
+### P3 — Major: proven authorization-code replay leaves the compromised family usable
+
+`token.go:220` maps consumed-code lookup failure directly to `invalid_grant`. `queries/oauth.sql:157` filters away consumed codes, preventing the caller from identifying/revoking the family. After a successful exchange, an identical authenticated-client/redirect/PKCE exchange fails, but the issued access token still returns UserInfo 200 and its refresh token still issues new tokens. This preserves attacker credentials if a party possessing a code and its verifier redeems first and the legitimate client subsequently detects replay. Code theft alone does not defeat PKCE, and this finding does not assert that it does.
+
+RFC 6749 requires denial (**MUST**, already satisfied) and recommends revocation of previously issued tokens when possible (**SHOULD**, currently unsatisfied). Here the durable consumed code and grant make revocation possible; the release lead has explicitly adopted it. Existing `TestProviderIndependentRPAndTokenIsolation` actually relies on tokens remaining usable after code replay, so its green result cannot establish this property. [RFC 6749 §4.1.2](https://www.rfc-editor.org/rfc/rfc6749.html#section-4.1.2).
+
+Reproduction: `TestProtocolReviewCodeReplayRevocation` below: incorrect client cannot exchange or revoke the victim; correct client plus all original bindings receives 400, then victim UserInfo and refresh both receive 200. Required correction: detect exactly bound consumed code and commit family revocation before returning `invalid_grant`; retain non-revocation for incorrect client/issuer/redirect/verifier and nonexistent codes. Concurrent double exchange still has one issuance, with the replay loser revoking that issuance. Add durable DB and descendant-refresh checks.
+
+### P4 — Major: valid OIDC authorization POST is rejected
+
+`http.go:33` registers only GET authorize; `consent.go` reads only the query. Valid form-urlencoded POST with the same client, redirect, scope, state, nonce and S256 challenge that works over GET receives **405**, `Allow: GET, HEAD, OPTIONS`. OIDC Core requires GET **and** POST at the authorization endpoint; the OAuth-only rule permits POST as optional, but this release advertises OIDC. The GET-only internal release table does not remove the normative OIDC requirement. [OIDC Core §3.1.2.1](https://openid.net/specs/openid-connect-core-1_0.html#AuthRequest).
+
+Reproduction: `TestProtocolReviewAuthorizationPOST` below, Go1.26.5/own PG18, `/tmp/identity-v2-protocol-post.log`. Required correction: register POST, parse bounded single-valued form body, reject query/body ambiguity, preserve exact redirect/PKCE/prompt rules and identity quotas. Review root recorder/resolver assumptions about method/query as part of integration. Form navigation must retain 303 redirects without forwarding the form body to the client.
+
+### P5 — Major: all-OP minimum `acr_values` support returns an error
+
+`parseAuthorize` explicitly rejects `acr_values`. OIDC Core §15.1 applies to **all** OPs, including statically registered ones: the minimum support for this optional preference is that using it does not cause an error. Valid authorization with `acr_values=urn:example:unsupported-acr` currently redirects `invalid_request`; the same wire probe accepts `display`, `ui_locales` and `claims_locales`. [OIDC Core §15.1](https://openid.net/specs/openid-connect-core-1_0.html#MandatoryToImplement).
+
+Reproduction: `TestProtocolReviewMinimumUIAndACRParameters`; `/tmp/identity-v2-protocol-minimum.log`. Required correction accepted in lead spec `e1685b30`: accept/ignore unsupported optional ACR preferences, retain malformed/duplicate checks, and do not fabricate `acr`, `amr` or MFA evidence. Dynamic-OP requirements in §15.2 do not apply to this static-client profile; this finding does not require implicit flow, dynamic registration or Request URI support.
+
+### P6 — Major: invalid `id_token_hint` is silently ignored
+
+`parseAuthorize` accepts `id_token_hint=not-a-jwt` and starts a normal consent request. OIDC Core §3.1.2.2 steps 4–5 require issuer validation when a hint is supplied and prohibit a positive response for another hinted subject. Silently dropping a recognized subject hint bypasses those checks. The confirmed wire failure is malformed-hint acceptance; no cross-account exploit or token forgery is claimed. [OIDC Core §3.1.2.2](https://openid.net/specs/openid-connect-core-1_0.html#AuthRequestValidation).
+
+Reproduction: `TestProtocolReviewIDTokenHintValidation`; `/tmp/identity-v2-protocol-hint.log`. Required narrow correction: explicitly reject unsupported hints before creating a request/code; full validation/subject selection is unnecessary for this release. Continue rejecting unsupported claims/request/request_uri inputs without fetching remote data.
+
+## Independent assessment of the remaining protocol boundaries
+
+- Path issuer discovery uses the OIDC suffix and RFC 8414 prefix correctly, with the exact trusted origin/workspace issuer in both documents. Caddy proxies both before SPA fallback; Host/forwarded input does not construct issuer. Maintained `coreos/go-oidc/v3` RP successfully discovered, fetched JWKS, and verified RS256/issuer/audience/expiry plus the original nonce. [OIDC Discovery §4.1](https://openid.net/specs/openid-connect-discovery-1_0.html#ProviderConfigurationRequest), [RFC 8414 §3](https://www.rfc-editor.org/rfc/rfc8414.html#section-3).
+- Authorization/token redirects are exact except the deliberate native loopback port exception; the actual complete redirect is saved and matched at exchange. S256 is mandatory, verifier syntax/challenge binding are strict, authorization errors redirect only after registered URI lookup. State/nonce are mandatory as a documented Calaba profile restriction. Native handoff adds a separate initiating verifier, expiry and atomic consume; pending contexts are cancelled on account/server switch. [RFC 8252 §7](https://www.rfc-editor.org/rfc/rfc8252.html#section-7), [RFC 7636 §4](https://www.rfc-editor.org/rfc/rfc7636.html#section-4).
+- Inbound SSO state ties connection/callback/browser to the saved flow; distinct connection callback paths and verified exact upstream issuer protect mix-up. Upstream ID verification restricts RS256 and checks nonce, audience/azp, issuer, expiry/iat/nbf/auth_time and Entra tenant; no email autolink/global privileges. Guarded discovery/token/JWKS endpoints have no redirects/proxy/private-network fallback. Tests distinguish local TLS fake IdP from actual Keycloak.
+- Prompt/consent/max_age are validated; none returns protocol errors instead of UI, login requires authentication after request creation. Auth time is authority-specific; same-session scoped step-up preserves SID/authority/absolute deadline and rejects changed subject/version/revocation. Refresh ID token keeps original auth_time and omits nonce, matching the refresh rules. This pass found no new bypass in these paths. [OIDC Core §3.1.2.1 and §12.2](https://openid.net/specs/openid-connect-core-1_0.html#RefreshTokenResponse).
+- Consent requires exact Origin, HttpOnly Secure per-request cookie, first-party bearer, atomic one-session bind and one-use hashed decision CSRF. Snapshot fixes client/workspace/redirect/scopes; account substitution/rebind/replay fail. Same-session return context is bounded, single-use and restricted to the consent route. Browser round-trip/manual UI QA remains a separate coordinator gate.
+- Refresh rotation locks the identified client/family, commits revocation on replay even on HTTP error, preserves absolute/idle/session/original-assurance deadlines and scope narrowing. Wrong-client refresh/revoke does not revoke the victim. Post-lock DB/application clocks constrain issuance and source policy versions; entitlement loss does not prevent user withdrawal. [RFC 9700 §4.14](https://www.rfc-editor.org/rfc/rfc9700.html#section-4.14).
+- Signing fixes RSA/RS256/kid, rejects weak/duplicate/config-confused keys, exposes only public JWK fields and pins issuer/audience. First-party HMAC, bot, provider opaque access/refresh and provider ID tokens have distinct parsing/authority paths. Rotation retains public verification keys via immutable operator snapshots; deployment must perform documented publish/activate/retire overlap. This review does not certify production key custody/rotation execution.
+- Added protobuf fields preserve prior numbers and authority comes from DB, not absent/attacker claims. Local refresh stays local, scoped refresh stays workspace-scoped, old local/bot/guest behavior with SSO off is covered only to the extent of selected App and client tests. Final T12 below adds actual issued-token REST/WS/RTC separation checks. Full historical-client builds, complete API/WS/RTC regression, PG17 and generated drift belong to the assigned QA runner and are not claimed here.
+
+## Integrated RTC/DM delta assessment
+
+Source delta `479d99c8..fbaabf8a` incorporates RTC correction `7c9e0a81` and its root DM gate repair. Enumeration now streams room responses into bounded enforcement workers instead of waiting for all rooms; a serialized sweep and sorted-room cursor handle cancellation and slow prefixes. Local DM retains global local-authority/member checks and exact DM row type while requiring ViewRoom; workspace voice still requires Connect. No provider/session authority was widened by this delta.
+
+At `fbaabf8a`, with the same own DB/Redis and Go1.26.5, `go test -race -count=1 -run TestIdentity -v ./internal/rtc` passed 9 tests, and `go test -race -tags integration -count=1 -run '^TestIdentityRTCEnumerationLostRedisEvictsBeforeBarrierPreservesBAndDM$' -v ./internal/app` passed. Logs: `/tmp/identity-v2-protocol-rtc-delta.log`, `/tmp/identity-v2-protocol-rtc-app-delta.log`. This establishes the tested topology; the stated 30-second bound is measured for the supported fixture topology, not arbitrary overload. RTC/DM production code is unchanged at `a119d174`; these targeted results remain applicable. The final `e0ff654c` delta leaves RTC/DM unchanged; final-SHA impact confirmation is recorded above.
+
+## Evidence and reproduction
+
+Review runs use Go **1.26.5 darwin/arm64**, PostgreSQL **18** in the original retained local harness, own `identity_protocol` DB on `127.0.0.1:57418`; App uses dedicated Redis DB10 on port57479 with `identity-protocol:review:` prefix and `TEST_RTC_REDIS_DB=10`. Provider/SSO/App fixtures create/drop unique child DBs. Initial Go1.27.1/independent disposable port59718 runs were superseded by these CI-aligned runs. Missing `identity_protocol`, absent Vitest dependencies and missing live-Keycloak env caused setup failures; each was corrected before final evidence.
+
+| SHA 479d99c8 check | Actual result |
+|---|---|
+| `go test -race -tags integration -count=1 -json ./internal/oauthprovider/... ./internal/sso/... ./internal/identitynet/... ./internal/identitycrypto/...` | PASS; identitycrypto: 3 passing cases, oauthprovider/signing: 48 passing cases, identitynet: 65 passing cases, sso: 74 passing cases, oauthprovider: 71 passing cases. Default live Keycloak case skipped, separately executed below. |
+| `go test -race -tags integration -count=1 -json -run 'TestIdentityHTTP\|TestIdentityAuthorityAndStepUp\|TestIdentityRouteInventoryAndCrossWorkspace\|TestIdentityRefreshAndRecoveryScope\|TestIdentityNoGrantAndLostRedisRevocation\|TestIdentityGatewayPerSessionFanoutAndStaleReplay' ./internal/app` | PASS, 238 cases including route subtests. |
+| Independent provider overlay, `-run TestProtocolReview` | maintained RP PASS; six finding probes FAIL as expected; no race report. |
+| Keycloak26.4.7 TLS live RP, `CALABA_KEYCLOAK_LIVE=1`, `-run TestKeycloakLiveRP` | PASS, eight subtests; only overlay alteration is fixture DB admission from `identity_keycloak` to own `identity_protocol`. |
+| `pnpm -F @calaba/desktop test src/main/auth.identity.test.ts src/main/ssoHandoff.test.ts src/main/deeplink.test.ts src/renderer/platform/web.identity.test.ts src/shared/ssoReturn.test.ts src/shared/identityOrigin.test.ts src/renderer/services/identity.test.ts` | PASS, 7 files / 136 tests; installed frozen lockfile with scripts disabled. |
+
+Provider correction evidence on `a119d174a8c887513e0cde7916f467bdc8b7cb47`, same environment:
+
+```sh
+go test -race -tags integration -overlay /tmp/identity-v2-protocol-overlay.json -count=1 -run TestProtocolReview -v ./internal/oauthprovider
+go test -race -tags integration -count=1 -run 'TestProviderPublicDocumentsSPACORS|TestProviderCodeReplayBindingsAndDurableRevocation|TestProviderCodeReplayRacesRefresh|TestProviderPublicDocumentRegistrationDoesNotWidenTokenCORS|TestProviderAuthorizationPOST' -v ./internal/oauthprovider
+go test -race -tags integration -count=1 -run '^TestIdentityProviderAuthorizationPOST' -v ./internal/app
+```
+
+All PASS; logs `/tmp/identity-v2-protocol-probes-accepted.log`, `/tmp/identity-v2-protocol-corrections.log`, `/tmp/identity-v2-protocol-corrections-app.log`. Overlay contains exactly the seven executable reviewer probes below; no production source is replaced.
+
+Raw local evidence: `/tmp/identity-v2-protocol-final.json`, `/tmp/identity-v2-protocol-app-final.json`, `/tmp/identity-v2-protocol-probes-final.log`, `/tmp/identity-v2-protocol-post.log`, `/tmp/identity-v2-protocol-minimum.log`, `/tmp/identity-v2-protocol-hint.log`, `/tmp/identity-v2-protocol-keycloak-final.log`, `/tmp/identity-v2-protocol-desktop.log`. These paths are ephemeral, so executable finding probes are included below. Report-only changes do not justify rerunning common lint/full integration; no visual suites, media or production mutations were run.
+
+Not verified here: Entra, AD FS2019+, Windows AD/LDAPS interoperability, actual external browser consent render/navigation, production proxy/key/secret/backup setup, PG17, full server integration and legacy application binaries. Positive Keycloak evidence proves generic local OIDC interoperability only. Coordinator must ensure two independent final-SHA reviews and QA gates; this report is one independent review.
+
+To reproduce without source edits, save the following as `/tmp/protocol_review_probes_test.go`, then from the repository root run:
+
+```sh
+python3 - <<'PYCODE'
+from pathlib import Path
+import json
+virtual = Path.cwd() / 'apps/server/internal/oauthprovider/protocol_review_probes_test.go'
+Path('/tmp/protocol-review-overlay.json').write_text(json.dumps({'Replace': {str(virtual): '/tmp/protocol_review_probes_test.go'}}))
+PYCODE
+cd apps/server
+export GOTOOLCHAIN=go1.26.5
+export TEST_PG_URL=postgres://identity_test:fixture-only-password@127.0.0.1:57418/identity_protocol
+go test -race -tags integration -overlay /tmp/protocol-review-overlay.json -count=1 -run TestProtocolReview -v ./internal/oauthprovider
+```
+
+The admin URL must point to this reviewer's dedicated local database, with permission to create/drop disposable child DBs; never use production.
+
+```go
+//go:build integration
+package oauthprovider
+import (
+ "context"
+ "encoding/json"
+ "encoding/base64"
+ "net/http"
+ "net/url"
+ "testing"
+ v1 "github.com/calaba/calaba/server/gen/calaba/v1"
+ "github.com/coreos/go-oidc/v3/oidc"
+)
+func TestProtocolReviewMaintainedRP(t *testing.T) {
+ f:=fixture(t); c:=f.client(v1.OAuthClientType_OAUTH_CLIENT_TYPE_CONFIDENTIAL_WEB,true)
+ ctx:=oidc.ClientContext(context.Background(),f.http)
+ rp,err:=oidc.NewProvider(ctx,f.s.issuer(f.ws)); if err!=nil {t.Fatal(err)}
+ req,code:=f.code(c.Client,true); status,tokens,b:=f.exchange(c,req,code)
+ if status!=200 {t.Fatalf("token %d %s",status,b)}
+ id,err:=rp.Verifier(&oidc.Config{ClientID:c.Client.ClientId,SupportedSigningAlgs:[]string{"RS256"}}).Verify(ctx,tokens.IDToken)
+ if err!=nil || id.Nonce!=req.nonce {t.Fatalf("maintained RP rejects ID: %v",err)}
+ t.Log("maintained go-oidc discovery, JWKS, RS256, issuer, audience, expiry and nonce PASS")
+}
+func TestProtocolReviewMetadataDefaults(t *testing.T) {
+ f:=fixture(t)
+ for _,path:=range []string{"/oidc/workspaces/"+f.ws.String()+"/.well-known/openid-configuration","/.well-known/oauth-authorization-server/oidc/workspaces/"+f.ws.String()} {
+  status,_,b:=f.wire("GET",path,"",nil,"",""); if status!=200 {t.Fatalf("metadata %d",status)}
+  var m map[string]any; if err:=json.Unmarshal(b,&m);err!=nil {t.Fatal(err)}
+  if m["request_uri_parameter_supported"]!=false {t.Errorf("%s: request_uri unsupported but metadata defaults to true: %v",path,m["request_uri_parameter_supported"])}
+  if m["authorization_response_iss_parameter_supported"]!=true {t.Errorf("%s: response includes iss but metadata defaults to false: %v",path,m["authorization_response_iss_parameter_supported"])}
+ }
+}
+func TestProtocolReviewSPADiscoveryCORS(t *testing.T) {
+ f:=fixture(t); _=f.client(v1.OAuthClientType_OAUTH_CLIENT_TYPE_PUBLIC_SPA,false)
+ origin:="https://rp.example.test"
+ for _,suffix:=range []string{"/.well-known/openid-configuration","/jwks"} {
+  status,h,_:=f.wire(http.MethodGet,"/oidc/workspaces/"+f.ws.String()+suffix,"",nil,"",origin)
+  if status!=200 || (h.Get("Access-Control-Allow-Origin")!=origin && h.Get("Access-Control-Allow-Origin")!="*") {t.Errorf("browser cannot read %s: status=%d ACAO=%q",suffix,status,h.Get("Access-Control-Allow-Origin"))}
+ }
+}
+func TestProtocolReviewCodeReplayRevocation(t *testing.T) {
+ f:=fixture(t); c:=f.client(v1.OAuthClientType_OAUTH_CLIENT_TYPE_PUBLIC_NATIVE,true)
+ req,code:=f.code(c.Client,true); status,tokens,b:=f.exchange(c,req,code); if status!=200 {t.Fatalf("initial %d %s",status,b)}
+ other:=f.client(v1.OAuthClientType_OAUTH_CLIENT_TYPE_PUBLIC_NATIVE,true)
+ if status,_,_:=f.exchange(other,req,code);status!=400 {t.Fatalf("cross-client replay %d",status)}
+ if status,_:=f.info(tokens.AccessToken);status!=200 {t.Fatal("cross-client replay revoked victim")}
+ if status,_,_:=f.exchange(c,req,code);status!=400 {t.Fatalf("replay %d",status)}
+ if status,_:=f.info(tokens.AccessToken);status!=401 {t.Errorf("correct-client code replay left access valid: %d",status)}
+ if status,_,_:=f.token(c,url.Values{"grant_type":{"refresh_token"},"refresh_token":{tokens.RefreshToken}});status!=400 {t.Errorf("correct-client code replay left refresh usable: %d",status)}
+}
+
+func TestProtocolReviewAuthorizationPOST(t *testing.T) {
+ f:=fixture(t); c:=f.client(v1.OAuthClientType_OAUTH_CLIENT_TYPE_CONFIDENTIAL_WEB,false)
+ req:=f.begin(c.Client,nil)
+ form:=url.Values{"response_type":{"code"},"client_id":{c.Client.ClientId},"redirect_uri":{req.redirect},"scope":{"openid"},"state":{req.state},"nonce":{req.nonce},"code_challenge_method":{"S256"},"code_challenge":{base64.RawURLEncoding.EncodeToString(hash(req.verifier))}}
+ status,h,b:=f.wire("POST","/oidc/workspaces/"+f.ws.String()+"/authorize","application/x-www-form-urlencoded",[]byte(form.Encode()),"","")
+ if status!=303 {t.Fatalf("valid OIDC POST authorization rejected: %d allow=%q body=%s",status,h.Get("Allow"),b)}
+ u,err:=url.Parse(h.Get("Location")); if err!=nil || u.Path!="/oauth/consent" || u.Query().Get("request")=="" {t.Fatal("missing POST consent request")}
+}
+
+func TestProtocolReviewMinimumUIAndACRParameters(t *testing.T) {
+ for _,parameter:=range []string{"display","ui_locales","claims_locales","acr_values"} {
+  t.Run(parameter,func(t *testing.T) {
+   f:=fixture(t); c:=f.client(v1.OAuthClientType_OAUTH_CLIENT_TYPE_CONFIDENTIAL_WEB,false)
+   req:=f.begin(c.Client,nil)
+   q:=url.Values{"response_type":{"code"},"client_id":{c.Client.ClientId},"redirect_uri":{req.redirect},"scope":{"openid"},"state":{req.state},"nonce":{req.nonce},"code_challenge_method":{"S256"},"code_challenge":{base64.RawURLEncoding.EncodeToString(hash(req.verifier))}}
+   q.Set(parameter,map[string]string{"display":"popup","ui_locales":"de","claims_locales":"de","acr_values":"urn:example:unsupported-acr"}[parameter])
+   status,h,b:=f.wire("GET","/oidc/workspaces/"+f.ws.String()+"/authorize?"+q.Encode(),"",nil,"","")
+   u,err:=url.Parse(h.Get("Location")); if status!=303 || err!=nil || u.Path!="/oauth/consent" || u.Query().Get("request")=="" {t.Fatalf("mandatory minimum parameter support failed: status=%d location=%s body=%s",status,h.Get("Location"),b)}
+  })
+ }
+}
+
+func TestProtocolReviewIDTokenHintValidation(t *testing.T) {
+ f:=fixture(t); c:=f.client(v1.OAuthClientType_OAUTH_CLIENT_TYPE_CONFIDENTIAL_WEB,false)
+ req:=f.begin(c.Client,nil)
+ q:=url.Values{"response_type":{"code"},"client_id":{c.Client.ClientId},"redirect_uri":{req.redirect},"scope":{"openid"},"state":{req.state},"nonce":{req.nonce},"code_challenge_method":{"S256"},"code_challenge":{base64.RawURLEncoding.EncodeToString(hash(req.verifier))},"id_token_hint":{"not-a-jwt"}}
+ status,h,b:=f.wire("GET","/oidc/workspaces/"+f.ws.String()+"/authorize?"+q.Encode(),"",nil,"","")
+ u,err:=url.Parse(h.Get("Location")); if status==303 && err==nil && u.Path=="/oauth/consent" {t.Fatalf("invalid ID-token hint ignored, request accepted: status=%d body=%s",status,b)}
+}
+```
+
+
+The additional independent wrapper probe can be reproduced by saving this as `/tmp/protocol_review_wrapper_test.go` and mapping virtual `apps/server/internal/app/protocol_review_wrapper_test.go` to it in the same overlay format above; run `-run '^TestProtocolReviewUserInfoBotWrapper$' ./internal/app` with the same dedicated database/Redis environment.
+
+```go
+//go:build integration
+package app
+
+import (
+ "encoding/json"
+ "net/http"
+ "net/http/httptest"
+ "testing"
+)
+
+func TestProtocolReviewUserInfoBotWrapper(t *testing.T) {
+ for _,tc:=range []struct{method,path,pattern string; status int; protocol bool}{
+  {"GET","/oidc/workspaces/test/userinfo","GET /oidc/workspaces/{workspace}/userinfo",401,true},
+  {"POST","/oidc/workspaces/test/userinfo","POST /oidc/workspaces/{workspace}/userinfo",401,true},
+  {"POST","/oidc/workspaces/test/token","POST /oidc/workspaces/{workspace}/token",403,true},
+  {"POST","/oidc/workspaces/test/revoke","POST /oidc/workspaces/{workspace}/revoke",403,true},
+  {"GET","/oidc/workspaces/test/authorize","GET /oidc/workspaces/{workspace}/authorize",403,true},
+  {"POST","/oidc/workspaces/test/authorize","POST /oidc/workspaces/{workspace}/authorize",403,true},
+  {"GET","/oidc/workspaces/test/jwks","GET /oidc/workspaces/{workspace}/jwks",403,true},
+  {"GET","/api/workspaces/test/oauth/clients","GET /api/workspaces/{workspace}/oauth/clients",403,false},
+  {"GET","/api/userinfo","GET /api/userinfo",403,false},
+ } {
+  t.Run(tc.method+tc.path,func(t *testing.T){
+   mux:=&routeRecorder{ServeMux:http.NewServeMux()}; reg:=identityRegistrar{mux:mux,enabled:true}
+   called:=false; reg.HandleFunc(tc.pattern,func(http.ResponseWriter,*http.Request){called=true})
+   req:=httptest.NewRequest(tc.method,tc.path,nil); req.Header.Set("Authorization","Bearer calab_bot_synthetic")
+   w:=httptest.NewRecorder(); mux.ServeHTTP(w,req)
+   if called {t.Fatal("bot reached feature handler")}; if w.Code!=tc.status {t.Fatalf("status %d want %d; %s",w.Code,tc.status,w.Body.String())}
+   if tc.protocol {
+    var body map[string]any; if err:=json.Unmarshal(w.Body.Bytes(),&body);err!=nil {t.Fatal(err)}
+    want:="access_denied"; if tc.status==401 {want="invalid_token"}
+    if body["error"]!=want || w.Header().Get("Cache-Control")!="no-store" || w.Header().Get("Pragma")!="no-cache" {t.Fatalf("protocol error/cache mismatch %v %v",body,w.Header())}
+   }
+   wantHeader:=""; if tc.status==401 {wantHeader=`Bearer error="invalid_token"`}
+   if got:=w.Header().Get("WWW-Authenticate");got!=wantHeader {t.Fatalf("WWW-Authenticate %q want %q",got,wantHeader)}
+  })
+ }
+}
+```
+
+## R2 continuation: lint delta impact at 415e1a30
+
+On 2026-10-01 this dispatched reviewer independently inspected only `e0ff654c49e44fc58d603971bf274505e2d24ba4..415e1a302f1f028c9674c4318ccf8f8a85f69292`: the existing R2 acceptance documentation and four mechanical lint corrections. The original full audit and its executions above belong to the earlier reviewer; they were not repeated or authored by this continuation. **ACCEPT this delta's impact at exact source `415e1a302f1f028c9674c4318ccf8f8a85f69292`: no new blocker/major found, and the previously accepted R2 protocol/security conclusions remain applicable.**
+
+- `buf.yaml` exempts only `ENUM_VALUE_PREFIX` in `oauth_client.proto`, retaining the existing `OAUTH_CLIENT_TYPE_*` names. Actual `.proto`, generated Go/TS, SQL and breaking-check configuration are unchanged, so no wire/JSON enum names or numbers change.
+- `directory/service.go` removes a dead initializer: both the present-object and absent-object branches assign `status` before every use. Active/unmapped/disabled/deleted transitions, invalidation, audit and publication remain identical; this is the only production-code delta.
+- The browser fixture now opens the trusted bundle directory with `os.OpenRoot` and uses its `FS()` for stat, static serving and the fixed `index.html` fallback. Inspection of the local Go1.26.5 standard library confirms invalid FS paths and escaping symlinks are rejected; no request-selected file access bypasses that root. Normal asset/SPA serving is retained, and root lifetime extends beyond server shutdown. This is a test-only change, not production web serving.
+- Fixture cookies gain Secure/HttpOnly/SameSite=Lax flags matching production cookie attributes. The test sends them via `Request.AddCookie`, which serializes only name/value; the positive and negative authorization requests are unchanged. This does not establish browser cookie enforcement or replace browser QA.
+- The single-site G204 exception is justified: `exec.CommandContext(ctx, "node", script)` runs only in an opt-in integration fixture, and the repository runner assigns `IDENTITY_BROWSER_SCRIPT` to its checked-in script. No HTTP value chooses the command/entrypoint, no shell is introduced, and the context timeout remains. Checking the stdout pass-marker write can only fail the fixture on an output error.
+
+**Evidence inspected, not executed by this continuation:** `/tmp/identity-final-qa-task929/final-root-lint.receipt.json` and its log show root `make lint` PASS (0 Go lint issues plus pnpm lint); `final-format-gen-buf.receipt.json` and its log show gofmt/buf lint/`make gen`/generated drift/clean-tree checks PASS, both at exact `415e1a30`, Go1.26.5 macOS arm64. `directory-lint-correction.receipt.json` and raw JSON log show eight directory tests PASS with race/integration tags and no skips at **`95327500af8ee89305f79b2f70d2e994adc37fa4`**, before the dead-initializer cleanup; unchanged behavior makes that evidence relevant, but it is not a directory run at `415e1a30`. Own execution was limited to Git diff/source inspection and report whitespace checks; no application, DB/container, browser, common full suite or external probe was run.
+
+This is continuation of completed R2 evidence, **not a second full independent review**. The incomplete R1 restriction remains an unresolved release gate; R1 was not read, resumed or retried. Full PG18/PG17 and browser/Keycloak acceptance on the final source remain FinalQA's responsibility; this confirmation does not close those gates or authorize release/activation.
+
+## R2 continuation: toolchain delta impact at 83bb2143
+
+At the coordinator's follow-up request, independently inspected the complete `415e1a302f1f028c9674c4318ccf8f8a85f69292..83bb214390a0f700ef007af8ce954d379e5c800e` diff. Only three tooling/build files change: `apps/server/go.mod` raises the minimum from Go1.26.0 to Go1.26.8; the browser runner changes its explicit pin/version check from Go1.26.5 to Go1.26.8; the Dockerfile labels the existing digest as `golang:1.26.8-alpine`. The Docker digest is byte-for-byte unchanged; its registry/version identity was not independently probed here. Dependencies, go.sum, application source, schema, generated contracts and wire names are unchanged. CI already selects Go1.26.x. **ACCEPT this narrow tooling delta's impact at exact source `83bb214390a0f700ef007af8ce954d379e5c800e`: no new blocker/major identified, with the `415e1a30` lint impact assessment retained.**
+
+Own checks: `bash -n infra/identity-test/browser-identity-e2e.sh` and `git diff --check` PASS; Git comparison confirms the merged source tree equals `83bb2143` before this report-only addition. The toolchain commit message reports Go1.26.8/govulncheck PASS, but this continuation did not execute govulncheck or inspect its raw result receipt. The Go1.26.5 lint/gen/directory evidence above remains accurately attributed historical evidence, not execution on the new toolchain. Application source semantics are unchanged; validating runtime/library changes, generated drift and final acceptance with Go1.26.8 belongs to FinalQA.
+
+**Release is NOT accepted by this continuation.** The coordinator reports separate guest-admission/call-lifecycle full-integration regressions requiring repair; those paths were not audited here and any repair needs its own impact review. Incomplete R1 and final QA remain unresolved gates. This limited R2 continuation does not supply a second full independent security/protocol review or certify the whole `415e1a30`/`83bb2143` release.

@@ -240,7 +240,9 @@ func (h *Handlers) removeReaction(w http.ResponseWriter, r *http.Request) error 
 	if err != nil {
 		return err
 	}
-	n, err := h.db.Q.RemoveReaction(r.Context(), sqlc.RemoveReactionParams{MessageID: m.ID, UserID: uid(r), Emoji: emoji})
+	n, err := db.GuardValue(r.Context(), h.db, func(guarded *sqlc.Queries) (int64, error) {
+		return guarded.RemoveReaction(r.Context(), sqlc.RemoveReactionParams{MessageID: m.ID, UserID: uid(r), Emoji: emoji})
+	})
 	if err != nil {
 		return err
 	}

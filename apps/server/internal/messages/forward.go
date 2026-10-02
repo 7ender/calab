@@ -132,7 +132,9 @@ func (h *Handlers) forward(w http.ResponseWriter, r *http.Request) error {
 	}
 	pb := out[0]
 	if dst.DM && !dst.Notes { // docs/09 item 51: an incoming message takes the DM out of the recipient's archive
-		states, err := h.db.Q.UnarchiveDMForRecipients(ctx, sqlc.UnarchiveDMForRecipientsParams{RoomID: toID, AuthorID: me})
+		states, err := db.GuardValue(ctx, h.db, func(guarded *sqlc.Queries) ([]sqlc.DmState, error) {
+			return guarded.UnarchiveDMForRecipients(ctx, sqlc.UnarchiveDMForRecipientsParams{RoomID: toID, AuthorID: me})
+		})
 		if err != nil {
 			return err
 		}

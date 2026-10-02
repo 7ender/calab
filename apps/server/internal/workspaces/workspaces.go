@@ -408,7 +408,15 @@ func (h *Handlers) list(w http.ResponseWriter, r *http.Request) error {
 	if err != nil {
 		return err
 	}
-	list := workspaceList(rows)
+	filtered := rows[:0]
+	for _, row := range rows {
+		if err := perm.CheckAccess(r.Context(), row.ID, uid(r)); err == nil {
+			filtered = append(filtered, row)
+		} else if httpx.AsError(err).Status >= 500 {
+			return err
+		}
+	}
+	list := workspaceList(filtered)
 	if err := h.limits.Plans.FillAll(r.Context(), list); err != nil {
 		return err
 	}
@@ -551,7 +559,7 @@ func (h *Handlers) update(w http.ResponseWriter, r *http.Request) error {
 		}
 		p.TimeFormat = &f
 	}
-	ws, err := h.db.Q.UpdateWorkspace(r.Context(), p)
+	ws, err := db.GuardValue(r.Context(), h.db, func(guarded *sqlc.Queries) (sqlc.Workspace, error) { return guarded.UpdateWorkspace(r.Context(), p) })
 	if db.IsForeignKeyViolation(err) {
 		return httpx.Validation("iconFileId", "file not found")
 	}
@@ -648,6 +656,12 @@ func join(ctx context.Context, q *sqlc.Queries, pl *plans.Service, wsID, userID 
 }
 
 func (h *Handlers) memberResponse(ctx context.Context, ws sqlc.Workspace, m sqlc.WorkspaceMember) (*v1.JoinWorkspaceResponse, error) {
+	if err := auth.CheckPublicCapability(ctx, h.db.Q, ws.ID); err != nil {
+		if httpx.AsError(err).Code == v1.ErrorCode_ERROR_CODE_SSO_REQUIRED {
+			return &v1.JoinWorkspaceResponse{IdentityAccess: &v1.WorkspaceIdentityAccess{WorkspaceId: ws.ID.String(), Mode: v1.IdentityPolicyMode_IDENTITY_POLICY_MODE_ENFORCED, Reason: v1.IdentityAccessReason_IDENTITY_ACCESS_REASON_SSO_REQUIRED}}, nil
+		}
+		return nil, err
+	}
 	u, err := h.db.Q.GetUser(ctx, m.UserID)
 	if err != nil {
 		return nil, err
@@ -797,6 +811,9 @@ func (h *Handlers) joinInvite(w http.ResponseWriter, r *http.Request) error {
 		if err != nil {
 			return err
 		}
+		if _, err = q.LockOAuthWorkspace(r.Context(), inv.WorkspaceID); err != nil {
+			return err
+		}
 		if ws, err = q.GetWorkspace(r.Context(), inv.WorkspaceID); err != nil {
 			return err
 		}
@@ -876,9 +893,11 @@ func (h *Handlers) createInvite(w http.ResponseWriter, r *http.Request) error {
 		if err != nil {
 			return err
 		}
-		inv, err := h.db.Q.CreateInvite(r.Context(), sqlc.CreateInviteParams{
-			WorkspaceID: wsID, Code: code, CreatedBy: uid(r),
-			MaxUses: int32(req.GetMaxUses()), ExpiresAt: expires, //nolint:gosec // validated
+		inv, err := db.GuardValue(r.Context(), h.db, func(guarded *sqlc.Queries) (sqlc.WorkspaceInvite, error) {
+			return guarded.CreateInvite(r.Context(), sqlc.CreateInviteParams{
+				WorkspaceID: wsID, Code: code, CreatedBy: uid(r),
+				MaxUses: int32(req.GetMaxUses()), ExpiresAt: expires, //nolint:gosec // validated
+			})
 		})
 		if db.UniqueViolation(err) != "" {
 			continue // astronomically unlikely code collision
@@ -918,7 +937,9 @@ func (h *Handlers) deleteInvite(w http.ResponseWriter, r *http.Request) error {
 	if err != nil {
 		return err
 	}
-	n, err := h.db.Q.DeleteInvite(r.Context(), sqlc.DeleteInviteParams{ID: invID, WorkspaceID: wsID})
+	n, err := db.GuardValue(r.Context(), h.db, func(guarded *sqlc.Queries) (int64, error) {
+		return guarded.DeleteInvite(r.Context(), sqlc.DeleteInviteParams{ID: invID, WorkspaceID: wsID})
+	})
 	if err != nil {
 		return err
 	}
@@ -1118,7 +1139,7 @@ func (h *Handlers) updateMember(w http.ResponseWriter, r *http.Request) error {
 		s := string(newRole)
 		p.Role = &s
 	}
-	m, err := h.db.Q.UpdateMember(r.Context(), p)
+	m, err := db.GuardValue(r.Context(), h.db, func(guarded *sqlc.Queries) (sqlc.WorkspaceMember, error) { return guarded.UpdateMember(r.Context(), p) })
 	if err != nil {
 		return err
 	}
@@ -1173,6 +1194,10 @@ func (h *Handlers) removeMember(w http.ResponseWriter, r *http.Request) error {
 		}
 	}
 	err = h.db.Tx(r.Context(), func(q *sqlc.Queries) error {
+		actor := uid(r)
+		if err := auth.InvalidateIdentity(r.Context(), q, wsID, &target, &actor, "member_removed"); err != nil {
+			return err
+		}
 		if _, err := q.RemoveMember(r.Context(), sqlc.RemoveMemberParams{WorkspaceID: wsID, UserID: target}); err != nil {
 			return err
 		}

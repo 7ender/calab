@@ -138,7 +138,7 @@ func boardTransition(before, after perm.Bits, board *v1.Board, wid uuid.UUID, ch
 // routeBoards delivers board and task events (st.mu held); false = not a board event.
 func (h *Hub) routeBoards(st *wsState, wid, id uuid.UUID, sessions []*Session, ev *v1.DispatchEvent) bool {
 	toBoard := func(boardID uuid.UUID) {
-		shared := newEnc(ev)
+		shared := newScopedEnc(wid, ev)
 		for _, s := range sessions {
 			if st.boardBits(boardID, s.user).Has(perm.ViewBoard) {
 				s.dispatchEnc(id, shared)
@@ -164,7 +164,7 @@ func (h *Hub) routeBoards(st *wsState, wid, id uuid.UUID, sessions []*Session, e
 				changed = nil
 			}
 			if out := boardTransition(before[s], after, b, wid, changed); out != nil {
-				s.dispatch(id, out)
+				s.dispatchScoped(wid, id, out)
 			}
 		}
 	case *v1.DispatchEvent_BoardDelete:
@@ -216,7 +216,7 @@ func (h *Hub) reviewBoards(st *wsState, wid uuid.UUID, sessions []*Session, who 
 	for s, was := range before {
 		for bid, b := range st.boards {
 			if out := boardTransition(was[bid], st.boardBits(bid, s.user), b, wid, nil); out != nil {
-				s.dispatch(uuid.New(), out)
+				s.dispatchScoped(wid, uuid.New(), out)
 			}
 		}
 	}

@@ -29,6 +29,49 @@ const (
 // registers must be listed: TestBotRouteTable fails on an unlisted route, so a new route
 // needs an explicit decision; an unlisted pattern is denied to bots at run time.
 var botRoutes = map[string]botAccess{
+	"PUT /api/workspaces/{workspace_id}/identity/policy":                                botDeny,
+	"PUT /api/workspaces/{workspace_id}/identity/directory/members/{user_id}":           botDeny,
+	"PUT /api/workspaces/{workspace_id}/identity/directory":                             botDeny,
+	"PUT /api/workspaces/{workspace_id}/identity/connection":                            botDeny,
+	"POST /oidc/workspaces/{workspace}/userinfo":                                        botDeny,
+	"POST /oidc/workspaces/{workspace}/token":                                           botDeny,
+	"POST /oidc/workspaces/{workspace}/revoke":                                          botDeny,
+	"POST /oidc/workspaces/{workspace}/authorize":                                       botDeny,
+	"POST /api/workspaces/{workspace}/oauth/clients/{client}/rotate-secret":             botDeny,
+	"POST /api/workspaces/{workspace}/oauth/clients":                                    botDeny,
+	"POST /api/workspaces/{workspace_id}/identity/test":                                 botDeny,
+	"POST /api/workspaces/{workspace_id}/identity/recovery-kit":                         botDeny,
+	"POST /api/workspaces/{workspace_id}/identity/directory/test":                       botDeny,
+	"POST /api/workspaces/{workspace_id}/identity/directory/sync":                       botDeny,
+	"POST /api/workspaces/{workspace_id}/identity/connections/{connection_id}/activate": botDeny,
+	"POST /api/oauth/requests/{request}/decision":                                       botDeny,
+	"POST /api/oauth/requests/{request}/bind":                                           botDeny,
+	"POST /api/auth/sso/workspaces/{workspace_id}/recover":                              botDeny,
+	"POST /api/auth/sso/workspaces/{workspace_id}/begin":                                botDeny,
+	"POST /api/auth/sso/workspaces/{id}/refresh":                                        botDeny,
+	"POST /api/auth/sso/workspaces/{id}/logout":                                         botDeny,
+	"POST /api/auth/sso/finish":                                                         botDeny,
+	"POST /api/auth/sso/exchange":                                                       botDeny,
+	"POST /api/auth/local/reauth":                                                       botDeny,
+	"PATCH /api/workspaces/{workspace}/oauth/clients/{client}":                          botDeny,
+	"OPTIONS /oidc/workspaces/{workspace}/{endpoint}":                                   botDeny,
+	"GET /oidc/workspaces/{workspace}/userinfo":                                         botDeny,
+	"GET /oidc/workspaces/{workspace}/jwks":                                             botDeny,
+	"GET /oidc/workspaces/{workspace}/authorize":                                        botDeny,
+	"GET /oidc/workspaces/{workspace}/.well-known/openid-configuration":                 botDeny,
+	"GET /api/workspaces/{workspace}/oauth/clients/{client}":                            botDeny,
+	"GET /api/workspaces/{workspace}/oauth/clients":                                     botDeny,
+	"GET /api/workspaces/{workspace_id}/identity/directory/members":                     botDeny,
+	"GET /api/workspaces/{workspace_id}/identity/directory":                             botDeny,
+	"GET /api/workspaces/{workspace_id}/identity":                                       botDeny,
+	"GET /api/me/oauth-grants":                                                          botDeny,
+	"GET /api/auth/sso/workspaces/{slug}":                                               botDeny,
+	"GET /api/auth/sso/callback/{connection_id}":                                        botDeny,
+	"GET /api/auth/sso/browser-start":                                                   botDeny,
+	"GET /.well-known/oauth-authorization-server/oidc/workspaces/{workspace}":           botDeny,
+	"DELETE /api/workspaces/{workspace}/oauth/clients/{client}":                         botDeny,
+	"DELETE /api/workspaces/{workspace_id}/identity/link":                               botDeny,
+	"DELETE /api/me/oauth-grants/{grant}":                                               botDeny,
 	// outside /api and public
 	"GET /healthz":                                         botPublic,
 	"GET /readyz":                                          botPublic,
@@ -415,17 +458,20 @@ func (a *auditWriter) Unwrap() http.ResponseWriter { return a.ResponseWriter }
 // routeRecorder records every pattern registered on the mux (App.Routes).
 type routeRecorder struct {
 	*http.ServeMux
-	patterns []string
+	patterns   []string
+	capability func(string, http.Handler) http.Handler
 }
 
 func (m *routeRecorder) Handle(pattern string, h http.Handler) {
 	m.patterns = append(m.patterns, pattern)
+	if m.capability != nil {
+		h = m.capability(pattern, h)
+	}
 	m.ServeMux.Handle(pattern, h)
 }
 
 func (m *routeRecorder) HandleFunc(pattern string, f func(http.ResponseWriter, *http.Request)) {
-	m.patterns = append(m.patterns, pattern)
-	m.ServeMux.HandleFunc(pattern, f)
+	m.Handle(pattern, http.HandlerFunc(f))
 }
 
 // BotRouteAccess reports how bots may use a registered route: "public", "allow", "deny" or ""

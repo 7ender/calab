@@ -5,6 +5,7 @@ package rtc
 import (
 	"cmp"
 	"context"
+	"errors"
 	"os"
 	"strconv"
 	"sync"
@@ -99,8 +100,55 @@ func testService(t *testing.T, lk LiveKit) (*Service, rueidis.Client) {
 		}
 	})
 	s := NewService(Config{}, nil, rc, lk, events.Nop{})
+	known := &sync.Map{}
+	fixturePrincipals.Store(s, known)
+	t.Cleanup(func() { fixturePrincipals.Delete(s) })
+	// These Redis/SFU component fixtures intentionally have no DB or auth service.
+	// Their trusted principal registry is the explicit fixture device pairs, not a
+	// production allow fallback; unknown pairs remain denied.
+	s.IdentityAccess = func(ctx context.Context, wid, rid, uid, sid uuid.UUID) error {
+		if uid == uuid.Nil || sid == uuid.Nil {
+			return errors.New("unknown fixture principal")
+		}
+		if _, ok := known.Load([4]uuid.UUID{wid, rid, uid, sid}); ok {
+			return ctx.Err()
+		}
+		states, err := s.voice.List(ctx, wid)
+		if err != nil {
+			return err
+		}
+		for _, state := range states {
+			if state.UserID == uid && state.SessionID == sid {
+				return nil
+			}
+		}
+		participants, err := lk.ListParticipants(ctx, voice.RoomName(wid, rid))
+		if err != nil {
+			return err
+		}
+		for _, p := range participants {
+			if p.Identity == voice.Identity(uid, sid) {
+				return nil
+			}
+		}
+		return errors.New("unknown fixture principal")
+	}
 	s.voice.OnCalls = nil // call-start announcements need Postgres; not under test here
 	return s, rc
+}
+
+var fixturePrincipals sync.Map
+
+// recordFixturePending explicitly supplies the trusted principal/scope being
+// exercised by a Redis-only fixture, before its first voice state exists.
+func recordFixturePending(ctx context.Context, t *testing.T, s *Service, room wsRoom, user, session uuid.UUID, a admission) (bool, int64, error) {
+	t.Helper()
+	registry, ok := fixturePrincipals.Load(s)
+	if !ok {
+		t.Fatal("missing fixture principal registry")
+	}
+	registry.(*sync.Map).Store([4]uuid.UUID{room.WorkspaceID, room.ID, user, session}, true)
+	return s.recordPending(ctx, room, user, session, a)
 }
 
 // setState records a device in a room with the given join time (0 = now).

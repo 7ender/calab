@@ -15,7 +15,7 @@ import (
 const createSession = `-- name: CreateSession :one
 INSERT INTO sessions (user_id, refresh_token_hash, device_name, ip, user_agent, expires_at)
 VALUES ($1, $2, $3, $4, $5, $6)
-RETURNING id, user_id, refresh_token_hash, prev_refresh_token_hash, rotated_at, device_name, ip, user_agent, created_at, last_seen_at, expires_at, revoked_at, refresh_gen, refresh_used_at, replay_seal, revoked_reason
+RETURNING id, user_id, refresh_token_hash, prev_refresh_token_hash, rotated_at, device_name, ip, user_agent, created_at, last_seen_at, expires_at, revoked_at, refresh_gen, refresh_used_at, replay_seal, revoked_reason, authority_kind, authority_workspace_id, authority_connection_id, local_authenticated_at, recovery_authenticated_at, authority_version
 `
 
 type CreateSessionParams struct {
@@ -54,12 +54,18 @@ func (q *Queries) CreateSession(ctx context.Context, arg CreateSessionParams) (S
 		&i.RefreshUsedAt,
 		&i.ReplaySeal,
 		&i.RevokedReason,
+		&i.AuthorityKind,
+		&i.AuthorityWorkspaceID,
+		&i.AuthorityConnectionID,
+		&i.LocalAuthenticatedAt,
+		&i.RecoveryAuthenticatedAt,
+		&i.AuthorityVersion,
 	)
 	return i, err
 }
 
 const getSession = `-- name: GetSession :one
-SELECT id, user_id, refresh_token_hash, prev_refresh_token_hash, rotated_at, device_name, ip, user_agent, created_at, last_seen_at, expires_at, revoked_at, refresh_gen, refresh_used_at, replay_seal, revoked_reason FROM sessions WHERE id = $1
+SELECT id, user_id, refresh_token_hash, prev_refresh_token_hash, rotated_at, device_name, ip, user_agent, created_at, last_seen_at, expires_at, revoked_at, refresh_gen, refresh_used_at, replay_seal, revoked_reason, authority_kind, authority_workspace_id, authority_connection_id, local_authenticated_at, recovery_authenticated_at, authority_version FROM sessions WHERE id = $1
 `
 
 func (q *Queries) GetSession(ctx context.Context, id uuid.UUID) (Session, error) {
@@ -82,12 +88,18 @@ func (q *Queries) GetSession(ctx context.Context, id uuid.UUID) (Session, error)
 		&i.RefreshUsedAt,
 		&i.ReplaySeal,
 		&i.RevokedReason,
+		&i.AuthorityKind,
+		&i.AuthorityWorkspaceID,
+		&i.AuthorityConnectionID,
+		&i.LocalAuthenticatedAt,
+		&i.RecoveryAuthenticatedAt,
+		&i.AuthorityVersion,
 	)
 	return i, err
 }
 
 const getSessionForUpdate = `-- name: GetSessionForUpdate :one
-SELECT id, user_id, refresh_token_hash, prev_refresh_token_hash, rotated_at, device_name, ip, user_agent, created_at, last_seen_at, expires_at, revoked_at, refresh_gen, refresh_used_at, replay_seal, revoked_reason FROM sessions WHERE id = $1 FOR UPDATE
+SELECT id, user_id, refresh_token_hash, prev_refresh_token_hash, rotated_at, device_name, ip, user_agent, created_at, last_seen_at, expires_at, revoked_at, refresh_gen, refresh_used_at, replay_seal, revoked_reason, authority_kind, authority_workspace_id, authority_connection_id, local_authenticated_at, recovery_authenticated_at, authority_version FROM sessions WHERE id = $1 FOR UPDATE
 `
 
 func (q *Queries) GetSessionForUpdate(ctx context.Context, id uuid.UUID) (Session, error) {
@@ -110,12 +122,18 @@ func (q *Queries) GetSessionForUpdate(ctx context.Context, id uuid.UUID) (Sessio
 		&i.RefreshUsedAt,
 		&i.ReplaySeal,
 		&i.RevokedReason,
+		&i.AuthorityKind,
+		&i.AuthorityWorkspaceID,
+		&i.AuthorityConnectionID,
+		&i.LocalAuthenticatedAt,
+		&i.RecoveryAuthenticatedAt,
+		&i.AuthorityVersion,
 	)
 	return i, err
 }
 
 const listActiveSessions = `-- name: ListActiveSessions :many
-SELECT id, user_id, refresh_token_hash, prev_refresh_token_hash, rotated_at, device_name, ip, user_agent, created_at, last_seen_at, expires_at, revoked_at, refresh_gen, refresh_used_at, replay_seal, revoked_reason FROM sessions
+SELECT id, user_id, refresh_token_hash, prev_refresh_token_hash, rotated_at, device_name, ip, user_agent, created_at, last_seen_at, expires_at, revoked_at, refresh_gen, refresh_used_at, replay_seal, revoked_reason, authority_kind, authority_workspace_id, authority_connection_id, local_authenticated_at, recovery_authenticated_at, authority_version FROM sessions
 WHERE user_id = $1 AND revoked_at IS NULL AND expires_at > now()
 ORDER BY last_seen_at DESC
 `
@@ -146,6 +164,12 @@ func (q *Queries) ListActiveSessions(ctx context.Context, userID uuid.UUID) ([]S
 			&i.RefreshUsedAt,
 			&i.ReplaySeal,
 			&i.RevokedReason,
+			&i.AuthorityKind,
+			&i.AuthorityWorkspaceID,
+			&i.AuthorityConnectionID,
+			&i.LocalAuthenticatedAt,
+			&i.RecoveryAuthenticatedAt,
+			&i.AuthorityVersion,
 		); err != nil {
 			return nil, err
 		}
@@ -287,7 +311,7 @@ UPDATE sessions SET
     ip                      = $4,
     user_agent              = $5
 WHERE id = $1
-RETURNING id, user_id, refresh_token_hash, prev_refresh_token_hash, rotated_at, device_name, ip, user_agent, created_at, last_seen_at, expires_at, revoked_at, refresh_gen, refresh_used_at, replay_seal, revoked_reason
+RETURNING id, user_id, refresh_token_hash, prev_refresh_token_hash, rotated_at, device_name, ip, user_agent, created_at, last_seen_at, expires_at, revoked_at, refresh_gen, refresh_used_at, replay_seal, revoked_reason, authority_kind, authority_workspace_id, authority_connection_id, local_authenticated_at, recovery_authenticated_at, authority_version
 `
 
 type RotateSessionParams struct {
@@ -327,6 +351,12 @@ func (q *Queries) RotateSession(ctx context.Context, arg RotateSessionParams) (S
 		&i.RefreshUsedAt,
 		&i.ReplaySeal,
 		&i.RevokedReason,
+		&i.AuthorityKind,
+		&i.AuthorityWorkspaceID,
+		&i.AuthorityConnectionID,
+		&i.LocalAuthenticatedAt,
+		&i.RecoveryAuthenticatedAt,
+		&i.AuthorityVersion,
 	)
 	return i, err
 }

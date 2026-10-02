@@ -888,3 +888,16 @@ export function applyView(boardId: string, v: BoardView, fromFilter: (f: BoardVi
 export function blankTask(boardId: string): Task {
   return createMsg(TaskSchema, { boardId });
 }
+
+export function clearWorkspaceBoards(workspaceId: string): void {
+  const tasks = new Set(
+    Object.values(useBoards.getState().tasks)
+      .filter((task) => task.workspaceId === workspaceId)
+      .map((task) => task.id),
+  );
+  for (const [id, room] of taskRooms) if (room.workspaceId === workspaceId) taskRooms.delete(id);
+  useTaskDetails.setState((s) => ({
+    byTask: Object.fromEntries(Object.entries(s.byTask).filter(([id]) => !tasks.has(id))),
+    mine: Object.fromEntries(Object.entries(s.mine).filter(([id]) => !tasks.has(id))),
+  }));
+}

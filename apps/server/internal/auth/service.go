@@ -23,6 +23,7 @@ import (
 	"github.com/calaba/calaba/server/internal/db/sqlc"
 	"github.com/calaba/calaba/server/internal/events"
 	"github.com/calaba/calaba/server/internal/httpx"
+	"github.com/calaba/calaba/server/internal/identitypolicy"
 	"github.com/calaba/calaba/server/internal/mail"
 	"github.com/calaba/calaba/server/internal/moderation"
 	"github.com/calaba/calaba/server/internal/pbconv"
@@ -48,15 +49,18 @@ const (
 
 // Service implements the auth use cases.
 type Service struct {
-	db       *db.DB
-	redis    rueidis.Client
-	tokens   *Tokens
-	events   events.Publisher
-	mode     config.RegistrationMode
-	refresh  time.Duration
-	accessTL time.Duration
-	now      func() time.Time
-	used     usedGens
+	// Policy evaluates fresh workspace state from the database.
+	Policy       *identitypolicy.Service
+	entitlements identitypolicy.EntitlementConfig
+	db           *db.DB
+	redis        rueidis.Client
+	tokens       *Tokens
+	events       events.Publisher
+	mode         config.RegistrationMode
+	refresh      time.Duration
+	accessTL     time.Duration
+	now          func() time.Time
+	used         usedGens
 
 	// Mail sends verification / reset codes (ADR-0023); disabled = no SMTP (addresses are
 	// then verified at registration). Set before serving.
@@ -79,14 +83,16 @@ type Service struct {
 // NewService wires the auth service.
 func NewService(cfg *config.Config, d *db.DB, r rueidis.Client, ev events.Publisher) *Service {
 	return &Service{
-		db:       d,
-		redis:    r,
-		tokens:   NewTokens([]byte(cfg.JWTSecret), cfg.AccessTokenTTL),
-		events:   ev,
-		mode:     cfg.RegistrationMode,
-		refresh:  cfg.RefreshTokenTTL,
-		accessTL: cfg.AccessTokenTTL,
-		now:      time.Now,
+		db:           d,
+		redis:        r,
+		tokens:       NewTokens([]byte(cfg.JWTSecret), cfg.AccessTokenTTL),
+		events:       ev,
+		mode:         cfg.RegistrationMode,
+		refresh:      cfg.RefreshTokenTTL,
+		accessTL:     cfg.AccessTokenTTL,
+		now:          time.Now,
+		Policy:       &identitypolicy.Service{Loader: identitypolicy.NewSQLLoader(d.Q, cfg.IdentityEntitlements())},
+		entitlements: cfg.IdentityEntitlements(),
 	}
 }
 
@@ -218,11 +224,27 @@ func (s *Service) newSessionTTL(ctx context.Context, q *sqlc.Queries, userID uui
 	if err != nil {
 		return nil, fmt.Errorf("create session: %w", err)
 	}
+	u, err := q.GetUser(ctx, userID)
+	if err != nil {
+		return nil, err
+	}
+	if !u.IsGuest && !u.IsBot && u.PasswordHash != nil {
+		if sess, err = q.RecordLocalAuthentication(ctx, sqlc.RecordLocalAuthenticationParams{SessionID: sess.ID, UserID: userID, AuthenticatedAt: ptrTime(s.now())}); err != nil {
+			return nil, err
+		}
+	}
 	return s.tokenPair(sess, secret)
 }
 
 func (s *Service) tokenPair(sess sqlc.Session, secret string) (*v1.AuthTokens, error) {
-	access, exp, err := s.tokens.Issue(sess.UserID, sess.ID, sess.RefreshGen)
+	deadline := sess.ExpiresAt
+	if sess.AuthorityKind != string(identitypolicy.LocalAccount) {
+		limit := s.now().Add(5 * time.Minute)
+		if limit.Before(deadline) {
+			deadline = limit
+		}
+	}
+	access, exp, err := s.tokens.IssueUntil(sess.UserID, sess.ID, sess.RefreshGen, deadline)
 	if err != nil {
 		return nil, err
 	}
@@ -232,6 +254,7 @@ func (s *Service) tokenPair(sess sqlc.Session, secret string) (*v1.AuthTokens, e
 		RefreshToken:     FormatRefreshToken(sess.ID, secret),
 		RefreshExpiresAt: timestamppb.New(sess.ExpiresAt),
 		SessionId:        sess.ID.String(),
+		Authority:        pbconv.SessionAuthority(sess),
 	}, nil
 }
 
@@ -312,6 +335,9 @@ func (s *Service) Register(ctx context.Context, req *v1.RegisterRequest, c Clien
 				return errInviteInvalid
 			}
 			if err != nil {
+				return err
+			}
+			if _, err := q.LockOAuthWorkspace(ctx, i.WorkspaceID); err != nil {
 				return err
 			}
 			ei, err := q.GetEmailInviteByInvite(ctx, i.ID)
@@ -459,7 +485,11 @@ func (s *Service) Login(ctx context.Context, req *v1.LoginRequest, c Client) (*v
 	// Unverified (e.g. accounts from before ADR-0023): a fresh code with every sign-in,
 	// unless one was sent less than 60 s ago.
 	s.sendVerificationQuietly(ctx, user)
-	return &v1.LoginResponse{Tokens: tokens, Me: pbconv.Me(user)}, nil
+	me, err := pbconv.LocalMe(ctx, s.db.Q, user)
+	if err != nil {
+		return nil, err
+	}
+	return &v1.LoginResponse{Tokens: tokens, Me: me}, nil
 }
 
 // Refresh rotates the refresh token of a session. The previous token gets the same new pair
@@ -467,6 +497,17 @@ func (s *Service) Login(ctx context.Context, req *v1.LoginRequest, c Client) (*v
 // the previous one after the new one was used, or an older one — is reuse: the session is
 // revoked (401 SESSION_REVOKED, reason REUSE).
 func (s *Service) Refresh(ctx context.Context, req *v1.RefreshRequest, c Client) (*v1.RefreshResponse, error) {
+	return s.refreshAuthority(ctx, req, c, identitypolicy.LocalAccount, uuid.Nil)
+}
+
+// RefreshWorkspace rotates only the presented workspace session; proof is never renewed.
+func (s *Service) RefreshWorkspace(ctx context.Context, ws uuid.UUID, req *v1.RefreshRequest, c Client) (*v1.RefreshResponse, error) {
+	if ws == uuid.Nil {
+		return nil, errInvalidRefresh
+	}
+	return s.refreshAuthority(ctx, req, c, identitypolicy.WorkspaceSSO, ws)
+}
+func (s *Service) refreshAuthority(ctx context.Context, req *v1.RefreshRequest, c Client, authority identitypolicy.Authority, ws uuid.UUID) (*v1.RefreshResponse, error) {
 	sid, secret, ok := ParseRefreshToken(req.GetRefreshToken())
 	if !ok {
 		return nil, errInvalidRefresh
@@ -477,6 +518,32 @@ func (s *Service) Refresh(ctx context.Context, req *v1.RefreshRequest, c Client)
 		revoked string // reason of a revocation made here
 	)
 	err := s.db.Tx(ctx, func(q *sqlc.Queries) error {
+		// Workspace mutations and RP issuance lock the source row before any session.
+		// Take that same boundary before rotating a scoped refresh token.
+		if authority == identitypolicy.WorkspaceSSO {
+			if _, err := q.LockOAuthWorkspace(ctx, ws); err != nil {
+				return errInvalidRefresh
+			}
+		}
+		before, err := q.GetSession(ctx, sid)
+		if err != nil {
+			if db.IsNotFound(err) {
+				return errInvalidRefresh
+			}
+			return err
+		}
+		beforeUser, err := q.GetUser(ctx, before.UserID)
+		if err != nil {
+			return err
+		}
+		if beforeUser.IsGuest {
+			_, err = q.LockIdentityUserExclusive(ctx, before.UserID)
+		} else {
+			_, err = q.LockIdentityUserShared(ctx, before.UserID)
+		}
+		if err != nil {
+			return err
+		}
 		sess, err := q.GetSessionForUpdate(ctx, sid)
 		if db.IsNotFound(err) {
 			return errInvalidRefresh
@@ -484,7 +551,19 @@ func (s *Service) Refresh(ctx context.Context, req *v1.RefreshRequest, c Client)
 		if err != nil {
 			return err
 		}
+		databaseNow, err := q.IdentityDatabaseNow(ctx)
+		if err != nil {
+			return err
+		}
 		now := s.now()
+		if databaseNow.After(now) {
+			now = databaseNow
+		}
+		p := SessionPrincipal(sess)
+		if p.Authority != authority || p.WorkspaceID != ws {
+			return errInvalidRefresh
+		}
+
 		current := subtle.ConstantTimeCompare(presented, sess.RefreshTokenHash) == 1
 		previous := !current && sess.PrevRefreshTokenHash != nil && subtle.ConstantTimeCompare(presented, sess.PrevRefreshTokenHash) == 1
 		if sess.RevokedAt != nil {
@@ -517,6 +596,12 @@ func (s *Service) Refresh(ctx context.Context, req *v1.RefreshRequest, c Client)
 				return nil // commit the revocation
 			}
 		}
+		if authority == identitypolicy.WorkspaceSSO {
+			d, err := s.checkWorkspaceDecision(ctx, q, Identity{UserID: p.UserID, SessionID: p.SessionID, Principal: p}, ws, identitypolicy.WorkspaceRead)
+			if err != nil {
+				return IdentityError(p, d, err)
+			}
+		}
 		user, err := q.GetUser(ctx, sess.UserID)
 		if err != nil {
 			return err
@@ -547,10 +632,20 @@ func (s *Service) Refresh(ctx context.Context, req *v1.RefreshRequest, c Client)
 		if err != nil {
 			return err
 		}
+		expires := now.Add(ttl)
+		if hostUntil := s.now().Add(ttl); hostUntil.Before(expires) {
+			expires = hostUntil
+		}
+		if dbUntil := databaseNow.Add(ttl); dbUntil.Before(expires) {
+			expires = dbUntil
+		}
+		if authority != identitypolicy.LocalAccount && sess.ExpiresAt.Before(expires) {
+			expires = sess.ExpiresAt // corporate session has an absolute RP deadline
+		}
 		sess, err = q.RotateSession(ctx, sqlc.RotateSessionParams{
 			ID:               sess.ID,
 			RefreshTokenHash: newHash,
-			ExpiresAt:        now.Add(ttl),
+			ExpiresAt:        expires,
 			Ip:               clip(c.IP, 64),
 			UserAgent:        clip(c.UserAgent, 256),
 			ReplaySeal:       seal,
@@ -584,14 +679,21 @@ func derefStr(p *string) string {
 // Logout revokes the caller's session, or all of the user's sessions.
 func (s *Service) Logout(ctx context.Context, id Identity, all bool) error {
 	if all {
-		ids, err := s.db.Q.RevokeAllUserSessions(ctx, sqlc.RevokeAllUserSessionsParams{UserID: id.UserID, Reason: RevokeLogoutAll})
+		if err := s.CheckGlobal(ctx, id, identitypolicy.GlobalWrite); err != nil {
+			return err
+		}
+		ids, err := db.GuardValue(ctx, s.db, func(guarded *sqlc.Queries) ([]uuid.UUID, error) {
+			return guarded.RevokeAllUserSessions(ctx, sqlc.RevokeAllUserSessionsParams{UserID: id.UserID, Reason: RevokeLogoutAll})
+		})
 		if err != nil {
 			return err
 		}
 		s.afterRevokeMany(ctx, ids, RevokeLogoutAll)
 		return nil
 	}
-	if _, err := s.db.Q.RevokeSession(ctx, sqlc.RevokeSessionParams{ID: id.SessionID, Reason: RevokeLogout}); err != nil {
+	if _, err := db.GuardValue(ctx, s.db, func(guarded *sqlc.Queries) (int64, error) {
+		return guarded.RevokeSession(ctx, sqlc.RevokeSessionParams{ID: id.SessionID, Reason: RevokeLogout})
+	}); err != nil {
 		return err
 	}
 	s.afterRevoke(ctx, id.SessionID, RevokeLogout)
@@ -630,7 +732,9 @@ func (s *Service) LogoutByRefresh(ctx context.Context, token string, all bool) e
 
 // RevokeSession revokes one of the user's own sessions.
 func (s *Service) RevokeSession(ctx context.Context, userID, sessionID uuid.UUID) error {
-	n, err := s.db.Q.RevokeUserSession(ctx, sqlc.RevokeUserSessionParams{ID: sessionID, UserID: userID, Reason: RevokeOtherDevice})
+	n, err := db.GuardValue(ctx, s.db, func(guarded *sqlc.Queries) (int64, error) {
+		return guarded.RevokeUserSession(ctx, sqlc.RevokeUserSessionParams{ID: sessionID, UserID: userID, Reason: RevokeOtherDevice})
+	})
 	if err != nil {
 		return err
 	}

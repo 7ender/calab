@@ -12,8 +12,12 @@ import (
 // other members (USER_UPDATE, READY member list) and can be cleared.
 func TestProfileTimezone(t *testing.T) {
 	o, bob, ws, _ := setupTeam(t)
+	// Observe this workspace with an isolated member. The shared bootstrap owner
+	// accumulates unrelated workspaces across the full suite; their READY snapshots
+	// are outside this profile propagation test.
+	viewer := register(t, invite(t, o, ws.GetId()))
 	og := dialGW(t)
-	og.identify(o.token)
+	og.identify(viewer.token)
 	tz := func(s string) *v1.UpdateMeRequest { return &v1.UpdateMeRequest{Timezone: &s} }
 
 	for _, bad := range []string{"Mars/Olympus", "Local", "europe/moscow", "../../etc/passwd"} {
@@ -34,7 +38,7 @@ func TestProfileTimezone(t *testing.T) {
 		t.Fatal("GET /api/me lacks the time zone")
 	}
 	member := func() *v1.User {
-		for _, s := range dialGW(t).identify(o.token).GetWorkspaces() {
+		for _, s := range dialGW(t).identify(viewer.token).GetWorkspaces() {
 			if s.GetWorkspace().GetId() != ws.GetId() {
 				continue
 			}

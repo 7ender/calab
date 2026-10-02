@@ -1,0 +1,97 @@
+# Local identity QA only. Use tools/identity-test-env.sh to bind project/ports.
+name: ${IDENTITY_TEST_PROJECT:?use tools/identity-test-env.sh}
+
+x-pg: &pg
+  environment:
+    POSTGRES_USER: identity_test
+    POSTGRES_PASSWORD: fixture-only-password
+    POSTGRES_DB: identity_test
+  healthcheck:
+    test: [CMD-SHELL, pg_isready -U identity_test -d identity_test]
+    interval: 2s
+    timeout: 2s
+    retries: 30
+  mem_limit: 384m
+  cpus: 0.5
+
+x-valkey: &valkey
+  image: valkey/valkey:9-alpine@sha256:48332870af354a799964c0012ae1194a0bf2bf894eb508f945810596dc2d8d11
+  command: [valkey-server, --save, '', --appendonly, 'no']
+  healthcheck:
+    test: [CMD, valkey-cli, ping]
+    interval: 2s
+    timeout: 2s
+    retries: 30
+  mem_limit: 128m
+  cpus: 0.25
+
+services:
+  pg18:
+    <<: *pg
+    profiles: [core]
+    image: postgres:18-alpine@sha256:77f585114c32fbca283dc835b0596f4e52b51b4c6662d7810b2f4084f60a1873
+    ports: ["127.0.0.1:${IDENTITY_TEST_PG18_PORT}:5432"]
+    volumes: [pg18:/var/lib/postgresql]
+  pg17:
+    <<: *pg
+    profiles: [pg17]
+    image: postgres:17-alpine@sha256:b0f9560a2de083e2cc7382e75f808c7381a32852a7ec49117deedb300e552b24
+    ports: ["127.0.0.1:${IDENTITY_TEST_PG17_PORT}:5432"]
+    volumes: [pg17:/var/lib/postgresql/data]
+  valkey-qa:
+    <<: *valkey
+    profiles: [core]
+    ports: ["127.0.0.1:${IDENTITY_TEST_REDIS_QA_PORT}:6379"]
+  valkey-foundation:
+    <<: *valkey
+    profiles: [foundation]
+    ports: ["127.0.0.1:${IDENTITY_TEST_REDIS_FOUNDATION_PORT}:6379"]
+  valkey-rp:
+    <<: *valkey
+    profiles: [rp]
+    ports: ["127.0.0.1:${IDENTITY_TEST_REDIS_RP_PORT}:6379"]
+  valkey-provider:
+    <<: *valkey
+    profiles: [provider]
+    ports: ["127.0.0.1:${IDENTITY_TEST_REDIS_PROVIDER_PORT}:6379"]
+  valkey-enforcement:
+    <<: *valkey
+    profiles: [enforcement]
+    ports: ["127.0.0.1:${IDENTITY_TEST_REDIS_ENFORCEMENT_PORT}:6379"]
+  oidc:
+    profiles: [oidc]
+    image: quay.io/keycloak/keycloak:26.4.7@sha256:9409c59bdfb65dbffa20b11e6f18b8abb9281d480c7ca402f51ed3d5977e6007
+    command: [start-dev, --import-realm, --http-enabled=false]
+    environment:
+      KC_BOOTSTRAP_ADMIN_USERNAME: fixture-admin
+      KC_BOOTSTRAP_ADMIN_PASSWORD: fixture-only-admin-password
+      KC_HOSTNAME: https://127.0.0.1:${IDENTITY_TEST_OIDC_PORT}
+      KC_HTTPS_CERTIFICATE_FILE: /fixtures/tls/localhost.crt
+      KC_HTTPS_CERTIFICATE_KEY_FILE: /fixtures/tls/localhost.key
+      JAVA_OPTS_KC_HEAP: -Xms128m -Xmx512m
+    ports: ["127.0.0.1:${IDENTITY_TEST_OIDC_PORT}:8443"]
+    volumes:
+      - ../identity-test/realm.json:/opt/keycloak/data/import/identity.test-realm.json:ro
+      - ${IDENTITY_TEST_RUNTIME}/tls:/fixtures/tls:ro
+    mem_limit: 1g
+    cpus: 1
+    healthcheck:
+      test: [CMD, bash, -c, "exec 3<>/dev/tcp/127.0.0.1/8443"]
+      interval: 3s
+      timeout: 2s
+      retries: 60
+      start_period: 20s
+  rtc:
+    profiles: [rtc]
+    image: livekit/livekit-server:v1.13@sha256:6fd3b7088874c4d119160dd688798dfec852bc014786d392caad15f6f63912a3
+    command: [--dev, --bind, 0.0.0.0]
+    ports:
+      - "127.0.0.1:${IDENTITY_TEST_RTC_PORT}:7880"
+      - "127.0.0.1:${IDENTITY_TEST_RTC_TCP_PORT}:7881"
+      - "127.0.0.1:${IDENTITY_TEST_RTC_UDP_PORT}:7882/udp"
+    mem_limit: 256m
+    cpus: 0.5
+
+volumes:
+  pg18:
+  pg17:

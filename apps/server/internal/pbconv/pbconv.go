@@ -3,6 +3,7 @@
 package pbconv
 
 import (
+	"context"
 	"encoding/json"
 	"time"
 
@@ -12,6 +13,7 @@ import (
 	"google.golang.org/protobuf/types/known/timestamppb"
 
 	v1 "github.com/calaba/calaba/server/gen/calaba/v1"
+	"github.com/calaba/calaba/server/internal/db"
 	"github.com/calaba/calaba/server/internal/db/sqlc"
 	"github.com/calaba/calaba/server/internal/notifications"
 	"github.com/calaba/calaba/server/internal/perm"
@@ -274,6 +276,7 @@ func Session(s sqlc.Session, current uuid.UUID) *v1.Session {
 		LastSeenAt: ts(s.LastSeenAt),
 		ExpiresAt:  ts(s.ExpiresAt),
 		Current:    s.ID == current,
+		Authority:  SessionAuthority(s),
 	}
 }
 
@@ -694,4 +697,49 @@ func WorkspaceNotificationSettings(s sqlc.WorkspaceNotificationSetting) *v1.Work
 		Level:     notifications.LevelFromDB(s.Level, v1.NotificationLevel_NOTIFICATION_LEVEL_MENTIONS),
 		TaskLevel: notifications.LevelFromDB(s.TaskLevel, v1.NotificationLevel_NOTIFICATION_LEVEL_ALL),
 	}
+}
+
+// SessionAuthority exposes persisted provenance without adding assurance.
+func SessionAuthority(s sqlc.Session) *v1.SessionAuthority {
+	kind := v1.SessionAuthorityKind_SESSION_AUTHORITY_KIND_UNSPECIFIED
+	switch s.AuthorityKind {
+	case "local_account":
+		kind = v1.SessionAuthorityKind_SESSION_AUTHORITY_KIND_LOCAL_ACCOUNT
+	case "workspace_sso":
+		kind = v1.SessionAuthorityKind_SESSION_AUTHORITY_KIND_WORKSPACE_SSO
+	case "recovery":
+		kind = v1.SessionAuthorityKind_SESSION_AUTHORITY_KIND_RECOVERY
+	}
+	a := &v1.SessionAuthority{Kind: kind, Version: uint64(max(s.AuthorityVersion, 0))}
+	if s.AuthorityWorkspaceID != nil {
+		a.WorkspaceId = s.AuthorityWorkspaceID.String()
+	}
+	if s.AuthorityConnectionID != nil {
+		a.ConnectionId = s.AuthorityConnectionID.String()
+	}
+	if s.LocalAuthenticatedAt != nil {
+		a.LocalAuthenticatedAt = ts(*s.LocalAuthenticatedAt)
+	}
+	return a
+}
+
+// ScopedMe is the minimal profile available under workspace authority.
+func ScopedMe(u sqlc.User) *v1.Me {
+	return &v1.Me{User: &v1.User{Id: u.ID.String(), DisplayName: u.DisplayName}}
+}
+
+// LocalMe resolves the operator UUID grant for an independently local account profile.
+// Corporate/recovery consumers must instead use ScopedMe and never call this conversion.
+func LocalMe(ctx context.Context, q *sqlc.Queries, u sqlc.User) (*v1.Me, error) {
+	out := Me(u)
+	if u.IsGuest || u.IsBot || u.DisabledAt != nil {
+		out.IsSuperadmin = false
+		return out, nil
+	}
+	grant, err := q.GetProductAdminGrant(ctx, u.ID)
+	if err != nil && !db.IsNotFound(err) {
+		return nil, err
+	}
+	out.IsSuperadmin = out.IsSuperadmin || err == nil && grant.RevokedAt == nil
+	return out, nil
 }

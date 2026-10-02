@@ -897,6 +897,23 @@ func (h *Handlers) myPacks(ctx context.Context, user uuid.UUID) (*v1.MyStickerPa
 	if err != nil {
 		return nil, err
 	}
+	filter := func(rows []sqlc.StickerPack) ([]sqlc.StickerPack, error) {
+		visible := rows[:0]
+		for _, row := range rows {
+			if err := perm.CheckAccess(ctx, row.WorkspaceID, user); err == nil {
+				visible = append(visible, row)
+			} else if httpx.AsError(err).Status >= 500 {
+				return nil, err
+			}
+		}
+		return visible, nil
+	}
+	if inst, err = filter(inst); err != nil {
+		return nil, err
+	}
+	if avail, err = filter(avail); err != nil {
+		return nil, err
+	}
 	all, err := withStickers(ctx, h.db.Q, append(append([]sqlc.StickerPack{}, inst...), avail...))
 	if err != nil {
 		return nil, err
@@ -945,7 +962,9 @@ func (h *Handlers) install(w http.ResponseWriter, r *http.Request) error {
 	if n >= MaxInstalled {
 		return httpx.Validation("id", fmt.Sprintf("at most %d installed sticker packs", MaxInstalled))
 	}
-	if _, err := h.db.Q.InstallStickerPack(r.Context(), sqlc.InstallStickerPackParams{UserID: uid(r), PackID: p.ID}); err != nil {
+	if _, err := db.GuardValue(r.Context(), h.db, func(guarded *sqlc.Queries) (int64, error) {
+		return guarded.InstallStickerPack(r.Context(), sqlc.InstallStickerPackParams{UserID: uid(r), PackID: p.ID})
+	}); err != nil {
 		return err
 	}
 	return h.writeMine(w, r)
@@ -959,7 +978,9 @@ func (h *Handlers) uninstall(w http.ResponseWriter, r *http.Request) error {
 	if id.String() == builtinstickers.PackID() {
 		return httpx.Forbidden("built-in sticker pack cannot be removed")
 	}
-	if _, err := h.db.Q.UninstallStickerPack(r.Context(), sqlc.UninstallStickerPackParams{UserID: uid(r), PackID: id}); err != nil {
+	if _, err := db.GuardValue(r.Context(), h.db, func(guarded *sqlc.Queries) (int64, error) {
+		return guarded.UninstallStickerPack(r.Context(), sqlc.UninstallStickerPackParams{UserID: uid(r), PackID: id})
+	}); err != nil {
 		return err
 	}
 	return h.writeMine(w, r)
@@ -991,7 +1012,9 @@ func (h *Handlers) order(w http.ResponseWriter, r *http.Request) error {
 	if len(ids) != len(have) {
 		return httpx.Validation("packIds", "must list every installed pack once")
 	}
-	if err := h.db.Q.SetUserStickerPackOrder(r.Context(), sqlc.SetUserStickerPackOrderParams{UserID: uid(r), PackIds: ids}); err != nil {
+	if err := db.GuardExec(r.Context(), h.db, func(guarded *sqlc.Queries) error {
+		return guarded.SetUserStickerPackOrder(r.Context(), sqlc.SetUserStickerPackOrderParams{UserID: uid(r), PackIds: ids})
+	}); err != nil {
 		return err
 	}
 	return h.writeMine(w, r)

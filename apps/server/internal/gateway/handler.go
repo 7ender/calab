@@ -24,6 +24,7 @@ import (
 	"github.com/calaba/calaba/server/internal/db/sqlc"
 	"github.com/calaba/calaba/server/internal/dms"
 	"github.com/calaba/calaba/server/internal/guests"
+	"github.com/calaba/calaba/server/internal/identitypolicy"
 	"github.com/calaba/calaba/server/internal/notes"
 	"github.com/calaba/calaba/server/internal/pbconv"
 	"github.com/calaba/calaba/server/internal/perm"
@@ -197,6 +198,9 @@ func (h *Hub) loop(c *conn, s *Session) {
 				return
 			}
 		case *v1.GatewayFrame_SetPresence:
+			if !s.bot && h.auth.CheckGlobal(c.ctx, s.identity(), identitypolicy.GlobalWrite) != nil {
+				continue
+			}
 			if p.SetPresence.GetUntil() != nil {
 				h.setManualPresence(s.user, p.SetPresence.GetStatus(), p.SetPresence.GetUntil())
 			} else {
@@ -256,7 +260,8 @@ func (h *Hub) sessionRevoked(s *Session) bool {
 		return true
 	default:
 		slog.Warn("gateway: session recheck failed", "session_id", s.asess, "err", err)
-		return false
+		h.destroy(s, 4000, "identity dependency unavailable")
+		return true
 	}
 }
 
@@ -383,6 +388,7 @@ func (h *Hub) identify(c *conn, req *v1.Identify) *Session {
 		return nil
 	}
 	s := newSession(h, gsid, id.UserID, id.SessionID, id.IsBot)
+	s.principal = id.Principal
 	s.client = newClientInfo(req.GetDevice(), time.Now())
 	// Register first so that events published while READY is being built are queued.
 	h.register(s, wids)
@@ -396,10 +402,19 @@ func (h *Hub) identify(c *conn, req *v1.Identify) *Session {
 		h.destroy(s, 4000, "try again")
 		return nil
 	}
+	enc := newEnc(&v1.DispatchEvent{Event: &v1.DispatchEvent_Ready{Ready: ready}})
+	s.prepareAdmissionReceipts(ctx, enc)
+	filtered := ready.PendingAdmissions[:0]
+	for _, receipt := range ready.PendingAdmissions {
+		if s.allowsAdmissionReceipt(enc, receipt) {
+			filtered = append(filtered, receipt)
+		}
+	}
+	ready.PendingAdmissions = filtered
 	s.mu.Lock()
 	s.attachLocked(c)
 	s.ready = true
-	s.emit(uuid.New(), newEnc(&v1.DispatchEvent{Event: &v1.DispatchEvent_Ready{Ready: ready}}))
+	s.emit(uuid.New(), enc)
 	s.flushPending(nil)
 	s.mu.Unlock()
 	h.publishPresence(ctx, s.user)
@@ -411,22 +426,56 @@ func (h *Hub) buildReady(ctx context.Context, s *Session, uid uuid.UUID) (*v1.Re
 	if err != nil {
 		return nil, err
 	}
+	ctx = h.auth.WithPolicy(ctx, s.identity(), identitypolicy.WorkspaceRead)
 	res := perm.NewResolver(h.db.Q)
 	wss, err := h.db.Q.ListUserWorkspaces(ctx, uid)
 	if err != nil {
 		return nil, err
 	}
-	ready := &v1.Ready{SessionId: s.id.String(), Me: pbconv.Me(u), PlanContact: h.cfg.PlanContact}
-	if m := manualFromDB(u.PresenceStatus, u.PresenceUntil, time.Now()); m.status != v1.PresenceStatus_PRESENCE_STATUS_UNSPECIFIED {
+	me, err := pbconv.LocalMe(ctx, h.db.Q, u)
+	if err != nil {
+		return nil, err
+	}
+	ready := &v1.Ready{SessionId: s.id.String(), Me: me, PlanContact: h.cfg.PlanContact}
+	if s.principal.Authority == identitypolicy.WorkspaceSSO {
+		ready.Me = pbconv.ScopedMe(u)
+	}
+	if m := manualFromDB(u.PresenceStatus, u.PresenceUntil, time.Now()); s.principal.Authority == identitypolicy.LocalAccount && m.status != v1.PresenceStatus_PRESENCE_STATUS_UNSPECIFIED {
 		ready.Presence = m.self(uid)
 	}
 	// The user's ringing / active call (ADR-0034), so a reconnected client restores its UI.
-	if c, ok, err := (calls.Store{C: h.redis}).Current(ctx, uid); err != nil {
-		return nil, err
-	} else if ok {
-		ready.Call = c.Proto()
+	if s.bot || s.principal.Authority == identitypolicy.LocalAccount {
+		if c, ok, err := (calls.Store{C: h.redis}).Current(ctx, uid); err != nil {
+			return nil, err
+		} else if ok {
+			ready.Call = c.Proto()
+		}
 	}
 	for _, w := range wss {
+		var access *v1.WorkspaceIdentityAccess
+		if !s.bot {
+			if s.principal.Authority == identitypolicy.WorkspaceSSO && w.ID != s.principal.WorkspaceID {
+				continue
+			}
+			decision, err := s.refreshWorkspaceLease(ctx, w.ID)
+			if err == nil && decision.Allowed && !s.workspaceLeaseAllows(w.ID) {
+				// Allowed but not leased (invalidations kept racing the evaluation): READY
+				// filtering would close the fresh connection. Leave the workspace out and
+				// unsubscribe; the identity sweep re-adds it with WORKSPACE_CREATE once leased.
+				err = errLeaseUnavailable
+				h.leaveWorkspace(s, w.ID)
+			}
+			access = identityAccessStatus(w.ID, decision, err, s.principal)
+			if policy, e := h.db.Q.GetIdentityPolicy(ctx, w.ID); e == nil {
+				access.Mode = identityMode(policy.Mode)
+			} else if db.IsNotFound(e) {
+				access.Mode = v1.IdentityPolicyMode_IDENTITY_POLICY_MODE_OFF
+			}
+			ready.IdentityAccess = append(ready.IdentityAccess, access)
+			if !decision.Allowed || err != nil {
+				continue
+			}
+		}
 		me, err := res.Member(ctx, w.ID, uid)
 		if err != nil {
 			continue
@@ -435,6 +484,9 @@ func (h *Hub) buildReady(ctx context.Context, s *Session, uid uuid.UUID) (*v1.Re
 		if err != nil {
 			return nil, err
 		}
+		if access != nil {
+			snap.Workspace.IdentityAccess = access
+		}
 		h.fillLive(ctx, w.ID, snap)
 		if u.IsBot {
 			snap.Apps = nil // web apps are for people (ADR-0050)
@@ -442,9 +494,12 @@ func (h *Hub) buildReady(ctx context.Context, s *Session, uid uuid.UUID) (*v1.Re
 		ready.Workspaces = append(ready.Workspaces, snap)
 	}
 	// Guest admission (ADR-0040): the recipient's own knocks, and the knocks they decide.
-	if ready.PendingAdmissions, err = guests.OwnAdmissions(ctx, h.db.Q, uid); err != nil {
-		return nil, err
+	if !s.bot && s.principal.Authority == identitypolicy.LocalAccount {
+		if ready.PendingAdmissions, err = guests.OwnAdmissions(ctx, h.db.Q, uid); err != nil {
+			return nil, err
+		}
 	}
+
 	if err := guests.FillAdmissions(ctx, h.db.Q, uid, ready.Workspaces); err != nil {
 		return nil, err
 	}
@@ -461,8 +516,10 @@ func (h *Hub) buildReady(ctx context.Context, s *Session, uid uuid.UUID) (*v1.Re
 		}
 	}
 	// Direct messages (ADR-0020): their read states come with the DM list.
-	if ready.Dms, err = dms.List(ctx, h.db.Q, uid); err != nil {
-		return nil, err
+	if s.bot || s.principal.Authority == identitypolicy.LocalAccount {
+		if ready.Dms, err = dms.List(ctx, h.db.Q, uid); err != nil {
+			return nil, err
+		}
 	}
 	dmRooms := make([]uuid.UUID, 0, len(ready.Dms))
 	for _, d := range ready.Dms {
@@ -472,7 +529,7 @@ func (h *Hub) buildReady(ctx context.Context, s *Session, uid uuid.UUID) (*v1.Re
 		ready.ReadStates = append(ready.ReadStates, d.GetReadState())
 	}
 	// Notes shelves (ADR-0039): people only; nothing in them is ever unread (own messages).
-	if !u.IsBot && !u.IsGuest {
+	if !u.IsBot && !u.IsGuest && s.principal.Authority == identitypolicy.LocalAccount {
 		if ready.Notes, err = notes.List(ctx, h.db.Q, uid); err != nil {
 			return nil, err
 		}
@@ -511,6 +568,9 @@ func (h *Hub) buildReady(ctx context.Context, s *Session, uid uuid.UUID) (*v1.Re
 		return nil, err
 	}
 	for _, n := range wns {
+		if !s.bot && !s.allowsWorkspace(ctx, n.WorkspaceID) {
+			continue
+		}
 		ready.WorkspaceNotificationSettings = append(ready.WorkspaceNotificationSettings, pbconv.WorkspaceNotificationSettings(n))
 	}
 	return ready, nil
@@ -587,6 +647,14 @@ func (h *Hub) takeover(ctx context.Context, gsid uuid.UUID, meta sessMeta) *Sess
 		return nil
 	}
 	s := newSession(h, gsid, meta.user, meta.asess, meta.bot)
+	if !meta.bot {
+		p, err := h.auth.ResolvePrincipal(ctx, s.identity())
+		if err != nil {
+			s.closeQueue()
+			return nil
+		}
+		s.principal = p
+	}
 	s.client = h.pres.client(ctx, meta.user, gsid)
 	h.register(s, wids) // events from now on are queued (s.ready=false)
 	for _, w := range wids {
@@ -624,14 +692,14 @@ func (h *Hub) abandon(s *Session) {
 	s.closeQueue()
 }
 
-func transcodeAll(c *conn, es []entry) ([]outMsg, bool) {
+func transcodeAll(c *conn, s *Session, es []entry) ([]outMsg, bool) {
 	out := make([]outMsg, 0, len(es))
 	for _, e := range es {
 		typ, b, err := c.codec.transcode(e.frame)
 		if err != nil {
 			return nil, false
 		}
-		out = append(out, outMsg{typ: typ, data: b})
+		out = append(out, outMsg{typ: typ, data: b, session: s, event: e.enc})
 	}
 	return out, true
 }
@@ -668,7 +736,11 @@ func (h *Hub) replayLocal(ctx context.Context, s *Session, c *conn, clientSeq ui
 			kept = append(kept, e)
 		}
 	}
-	frames, ok := transcodeAll(c, kept)
+	if !s.replayAllowed(kept) {
+		c.setReplay(nil)
+		return false
+	}
+	frames, ok := transcodeAll(c, s, kept)
 	if !ok {
 		c.setReplay(nil)
 		return false
@@ -695,7 +767,10 @@ func (h *Hub) replayTakenOver(ctx context.Context, s *Session, c *conn, clientSe
 	if !ok {
 		return false
 	}
-	frames, ok := transcodeAll(c, missed)
+	if !s.replayAllowed(missed) {
+		return false
+	}
+	frames, ok := transcodeAll(c, s, missed)
 	if !ok {
 		return false
 	}
@@ -836,6 +911,20 @@ func (h *Hub) typing(s *Session, roomIDStr string) {
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
 	defer cancel()
+	if !s.bot {
+		if wid != uuid.Nil {
+			if !s.allowsWorkspace(ctx, wid) {
+				return
+			}
+		} else if h.auth.CheckGlobal(ctx, s.identity(), identitypolicy.GlobalRead) != nil {
+			return
+		}
+	}
+	// A receive lease cannot authorize publication. Bot credentials retain
+	// the existing machine suspension check through the same fresh command gate.
+	if wid != uuid.Nil && h.auth != nil && h.auth.CheckWorkspace(ctx, s.identity(), wid, identitypolicy.Realtime) != nil {
+		return
+	}
 	peer := uuid.Nil
 	if wid == uuid.Nil { // not a workspace room: a DM of the user? (both participants may type)
 		peer = h.dmPeer(ctx, s, rid)
