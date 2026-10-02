@@ -238,6 +238,59 @@ func (q *Queries) EndEventAt(ctx context.Context, arg EndEventAtParams) (Event, 
 	return i, err
 }
 
+const followRoomExpiryEvents = `-- name: FollowRoomExpiryEvents :many
+UPDATE events SET ends_at = $1, sequence = sequence + 1, updated_at = now()
+WHERE room_id = $2 AND cancelled_at IS NULL AND rrule IS NULL
+  AND ends_at = $3 AND starts_at < $1
+RETURNING id, workspace_id, room_id, title, description, starts_at, ends_at, all_day, tz, organizer_id, record, rrule, until_at, sequence, created_at, updated_at, cancelled_at
+`
+
+type FollowRoomExpiryEventsParams struct {
+	EndsAt    time.Time
+	RoomID    *uuid.UUID
+	OldEndsAt time.Time
+}
+
+// A temporary room was extended or shortened (ADR-0044): its one-off meetings that ended with the
+// room (ends_at = the old end) follow the new end; a meeting moved by hand is left alone.
+func (q *Queries) FollowRoomExpiryEvents(ctx context.Context, arg FollowRoomExpiryEventsParams) ([]Event, error) {
+	rows, err := q.db.Query(ctx, followRoomExpiryEvents, arg.EndsAt, arg.RoomID, arg.OldEndsAt)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []Event{}
+	for rows.Next() {
+		var i Event
+		if err := rows.Scan(
+			&i.ID,
+			&i.WorkspaceID,
+			&i.RoomID,
+			&i.Title,
+			&i.Description,
+			&i.StartsAt,
+			&i.EndsAt,
+			&i.AllDay,
+			&i.Tz,
+			&i.OrganizerID,
+			&i.Record,
+			&i.Rrule,
+			&i.UntilAt,
+			&i.Sequence,
+			&i.CreatedAt,
+			&i.UpdatedAt,
+			&i.CancelledAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const getEvent = `-- name: GetEvent :one
 SELECT id, workspace_id, room_id, title, description, starts_at, ends_at, all_day, tz, organizer_id, record, rrule, until_at, sequence, created_at, updated_at, cancelled_at FROM events WHERE id = $1
 `

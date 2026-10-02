@@ -62,36 +62,44 @@ func tempPatch(req *v1.UpdateRoomRequest, acc perm.RoomAccess, now time.Time) (t
 }
 
 // applyTempPatch applies a validated tempChange to cur (locked) inside the PATCH transaction.
-func (h *Handlers) applyTempPatch(ctx context.Context, q *sqlc.Queries, cur sqlc.Room, t tempChange) error {
+func (h *Handlers) applyTempPatch(ctx context.Context, q *sqlc.Queries, cur sqlc.Room, t tempChange) (func(context.Context), error) {
+	var publish func(context.Context)
 	if !t.any() {
-		return nil
+		return nil, nil
 	}
 	if cur.ExpiresAt == nil || cur.WorkspaceID == nil { // made permanent meanwhile
-		return httpx.Validation("expiresAt", "temporary rooms only")
+		return nil, httpx.Validation("expiresAt", "temporary rooms only")
 	}
 	if t.expires != nil || t.permanent {
 		if _, err := q.SetRoomExpiry(ctx, sqlc.SetRoomExpiryParams{ID: cur.ID, ExpiresAt: t.expires}); err != nil {
-			return err
+			return nil, err
 		}
 		if t.expires != nil {
 			if err := q.FollowRoomExpiry(ctx, sqlc.FollowRoomExpiryParams{RoomID: cur.ID, ExpiresAt: t.expires, OldExpiresAt: cur.ExpiresAt}); err != nil {
-				return err
+				return nil, err
+			}
+			// The room's meeting that ended with it follows too (a hand-edited one stays).
+			if h.Meetings != nil {
+				var err error
+				if publish, err = h.Meetings.FollowRoomExpiry(ctx, q, cur.ID, *cur.ExpiresAt, *t.expires); err != nil {
+					return nil, err
+				}
 			}
 		}
 	}
 	if t.private != nil && *t.private != cur.IsPrivate {
 		if _, err := q.SetRoomPrivate(ctx, sqlc.SetRoomPrivateParams{ID: cur.ID, IsPrivate: *t.private}); err != nil {
-			return err
+			return nil, err
 		}
 		if err := setPrivate(ctx, q, *cur.WorkspaceID, cur.ID, *t.private); err != nil {
-			return err
+			return nil, err
 		}
 		// The creator keeps seeing their room (as at creation of a private one).
 		if *t.private && cur.CreatedBy != nil {
 			if err := q.GrantUserOverride(ctx, sqlc.GrantUserOverrideParams{RoomID: cur.ID, UserID: cur.CreatedBy.String(), Allow: int64(perm.ViewRoom)}); err != nil {
-				return err
+				return nil, err
 			}
 		}
 	}
-	return nil
+	return publish, nil
 }

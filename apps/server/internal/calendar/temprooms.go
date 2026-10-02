@@ -98,3 +98,37 @@ func (s *Service) CloseRoomMeetings(ctx context.Context, q *sqlc.Queries, roomID
 		}
 	}, nil
 }
+
+// FollowRoomExpiry runs inside the transaction that moves a temporary room's end: its one-off
+// meetings that ended with the room (ends_at = oldEnd) move to newEnd, others stay. publish
+// announces the changes after the commit as a manual edit would (EVENT_UPDATE, room badge,
+// mail to attendees, CalDAV push).
+func (s *Service) FollowRoomExpiry(ctx context.Context, q *sqlc.Queries, roomID uuid.UUID, oldEnd, newEnd time.Time) (func(context.Context), error) {
+	evs, err := q.FollowRoomExpiryEvents(ctx, sqlc.FollowRoomExpiryEventsParams{RoomID: &roomID, EndsAt: newEnd.UTC(), OldEndsAt: oldEnd.UTC()})
+	if err != nil || len(evs) == 0 {
+		return func(context.Context) {}, err
+	}
+	type change struct{ before, after *bundle }
+	var changes []change
+	for _, ev := range evs {
+		after, err := loadOne(ctx, q, ev)
+		if err != nil {
+			return nil, err
+		}
+		prev := ev
+		prev.EndsAt, prev.Sequence = oldEnd.UTC(), ev.Sequence-1
+		before, err := loadOne(ctx, q, prev)
+		if err != nil {
+			return nil, err
+		}
+		changes = append(changes, change{before: before, after: after})
+	}
+	return func(ctx context.Context) {
+		for _, c := range changes {
+			s.ev.Workspace(ctx, c.after.ev.WorkspaceID, &v1.DispatchEvent{Event: &v1.DispatchEvent_EventUpdate{EventUpdate: &v1.CalendarEventUpdate{Event: c.after.proto(nil, nil)}}})
+			s.roomSignals(ctx, c.before, c.after)
+			s.sendMails(ctx, c.after, mail.TemplateEventUpdate, MethodRequest, c.after.att)
+			s.changed(ctx, c.before, c.after)
+		}
+	}, nil
+}
