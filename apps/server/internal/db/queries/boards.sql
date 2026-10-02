@@ -91,6 +91,14 @@ UPDATE boards SET
 WHERE id = sqlc.arg('id')
 RETURNING *;
 
+-- name: SetBoardFeatures :one
+-- Board features (ADR-0058 §3): the disabled BoardFeature bit mask and the estimate scale.
+UPDATE boards SET
+    disabled_features = coalesce(sqlc.narg('disabled_features'), disabled_features),
+    estimate_scale    = coalesce(sqlc.narg('estimate_scale'), estimate_scale)
+WHERE id = sqlc.arg('id')
+RETURNING *;
+
 -- name: SetBoardPosition :exec
 UPDATE boards SET position = $2 WHERE id = $1;
 
@@ -365,13 +373,16 @@ WHERE kind = sqlc.arg('kind') AND ((task_id = sqlc.arg('a') AND related_id = sql
     OR (kind <> 'blocks' AND task_id = sqlc.arg('b') AND related_id = sqlc.arg('a')));
 
 -- name: TaskCounts :many
--- Per task: live subtasks and finished ones, live comments, attachments.
+-- Per task: live subtasks and finished ones, live comments, attachments, checklist items and
+-- done ones (ADR-0058 §2).
 SELECT t.id,
     (SELECT count(*) FROM tasks s WHERE s.parent_id = t.id AND s.archived_at IS NULL)::integer AS subtasks,
     (SELECT count(*) FROM tasks s JOIN board_statuses st ON st.id = s.status_id
         WHERE s.parent_id = t.id AND s.archived_at IS NULL AND st.type IN ('completed', 'cancelled'))::integer AS subtasks_done,
     (SELECT count(*) FROM messages m WHERE m.room_id = t.room_id AND m.deleted_at IS NULL)::integer AS comments,
-    (SELECT count(*) FROM task_attachments a WHERE a.task_id = t.id)::integer AS attachments
+    (SELECT count(*) FROM task_attachments a WHERE a.task_id = t.id)::integer AS attachments,
+    (SELECT count(*) FROM task_checklist_items ci WHERE ci.task_id = t.id)::integer AS checklist_total,
+    (SELECT count(*) FROM task_checklist_items ci WHERE ci.task_id = t.id AND ci.done)::integer AS checklist_done
 FROM tasks t WHERE t.id = ANY(sqlc.arg('task_ids')::uuid[]);
 
 -- name: ListTaskAttachments :many

@@ -20,22 +20,33 @@ type BirthdayGreeting struct {
 }
 
 type Board struct {
-	ID              uuid.UUID
-	WorkspaceID     uuid.UUID
-	Name            string
-	Key             string
-	Emoji           string
-	IconFileID      *uuid.UUID
-	Description     string
-	IsPrivate       bool
-	Position        int32
-	NextNumber      int32
-	AutoArchiveDays int32
-	DefaultViewID   *uuid.UUID
-	CreatedBy       *uuid.UUID
-	CreatedAt       time.Time
-	ArchivedAt      *time.Time
-	Restricted      bool
+	ID               uuid.UUID
+	WorkspaceID      uuid.UUID
+	Name             string
+	Key              string
+	Emoji            string
+	IconFileID       *uuid.UUID
+	Description      string
+	IsPrivate        bool
+	Position         int32
+	NextNumber       int32
+	AutoArchiveDays  int32
+	DefaultViewID    *uuid.UUID
+	CreatedBy        *uuid.UUID
+	CreatedAt        time.Time
+	ArchivedAt       *time.Time
+	Restricted       bool
+	CategoryID       *uuid.UUID
+	DisabledFeatures int64
+	EstimateScale    string
+}
+
+type BoardCategory struct {
+	ID          uuid.UUID
+	WorkspaceID uuid.UUID
+	Name        string
+	Position    int32
+	CreatedAt   time.Time
 }
 
 type BoardLabel struct {
@@ -84,6 +95,34 @@ type BoardView struct {
 	CreatedBy uuid.UUID
 	Position  int32
 	CreatedAt time.Time
+}
+
+type BoardWebhook struct {
+	BoardID      uuid.UUID
+	Url          string
+	SecretEnc    []byte
+	DisabledAt   *time.Time
+	FailingSince *time.Time
+	LastOkAt     *time.Time
+	LastError    string
+	NextSeq      int64
+	CreatedBy    *uuid.UUID
+	CreatedAt    time.Time
+	UpdatedAt    time.Time
+}
+
+type BoardWebhookDelivery struct {
+	ID          uuid.UUID
+	BoardID     uuid.UUID
+	Seq         int64
+	EventType   string
+	Payload     []byte
+	Attempts    int32
+	NextAt      time.Time
+	CreatedAt   time.Time
+	DeliveredAt *time.Time
+	FailedAt    *time.Time
+	Error       string
 }
 
 type Bot struct {
@@ -866,6 +905,28 @@ type TaskAttachment struct {
 	TaskID   uuid.UUID
 	FileID   uuid.UUID
 	Position int16
+}
+
+type TaskChecklist struct {
+	ID        uuid.UUID
+	TaskID    uuid.UUID
+	Title     string
+	Position  int32
+	CreatedBy *uuid.UUID
+	CreatedAt time.Time
+}
+
+type TaskChecklistItem struct {
+	ID          uuid.UUID
+	ChecklistID uuid.UUID
+	TaskID      uuid.UUID
+	Text        string
+	Done        bool
+	DoneBy      *uuid.UUID
+	DoneAt      *time.Time
+	Position    float64
+	CreatedBy   *uuid.UUID
+	CreatedAt   time.Time
 }
 
 type TaskLabel struct {
