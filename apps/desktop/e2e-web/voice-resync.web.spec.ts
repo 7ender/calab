@@ -81,7 +81,8 @@ async function livekitRoom(page: Page): Promise<string> {
 }
 
 async function joinRoom(page: Page, room: { id: string; name: string }): Promise<void> {
-  await sidebar(page).getByRole('button', { name: room.name, exact: true }).click();
+  await sidebar(page).getByRole('button', { name: room.name, exact: true }).hover();
+  await sidebar(page).getByRole('button', { name: `Войти в голос «${room.name}»` }).click();
   await expect(voicePanel(page).getByText('Голос подключён')).toBeVisible({ timeout: 30_000 });
   await expectInSync(page, room);
 }
@@ -114,7 +115,8 @@ test('a stale /join of the reconnect cycle lands after a switch: the seat follow
   await expect.poll(() => held, { timeout: 10_000 }).toBe(1);
 
   // …the user clicks another room meanwhile and gets in…
-  await sidebar(page).getByRole('button', { name: MEETING.name, exact: true }).click();
+  await sidebar(page).getByRole('button', { name: MEETING.name, exact: true }).hover();
+  await sidebar(page).getByRole('button', { name: `Войти в голос «${MEETING.name}»` }).click();
   await expect(voicePanel(page).getByText('Голос подключён')).toBeVisible({ timeout: 30_000 });
   await expect.poll(() => livekitRoom(page), { timeout: 20_000 }).toBe(`${PREFIX}${MEETING.id}`);
 

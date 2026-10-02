@@ -44,8 +44,8 @@ export const esShell: DictShape<typeof enShell> = {
   'shell.ownerCannotLeave': 'El propietario no puede abandonar el espacio',
   'shell.invite': 'Invitar',
   'shell.inviteTo': 'Invitar a «{name}»',
-  'shell.roomChat': 'Chat de la sala',
-  'shell.roomChatOf': 'Chat de «{name}»',
+  'shell.joinVoiceShort': 'Unirse',
+  'shell.joinVoiceOf': 'Unirse a la voz de «{name}»',
   'shell.roomSettingsOf': 'Editar «{name}»',
   // voice room rows under the room I am in (docs/09 #48)
   'shell.voiceStatus.label': 'Estado de la sala',

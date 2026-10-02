@@ -44,8 +44,8 @@ export const zhShell: DictShape<typeof enShell> = {
   'shell.ownerCannotLeave': '所有者不能离开工作区',
   'shell.invite': '邀请',
   'shell.inviteTo': '邀请加入"{name}"',
-  'shell.roomChat': '房间聊天',
-  'shell.roomChatOf': '"{name}"的聊天',
+  'shell.joinVoiceShort': '加入',
+  'shell.joinVoiceOf': '加入"{name}"的语音',
   'shell.roomSettingsOf': '编辑"{name}"',
   // voice room rows under the room I am in (docs/09 #48)
   'shell.voiceStatus.label': '房间状态',
