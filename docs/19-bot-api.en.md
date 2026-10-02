@@ -31,7 +31,7 @@ its rights are only what its roles and room overrides give it, exactly as for pe
    ```sh
    pnpm install && pnpm -F @calaba/bot-sdk build
    cd examples/bots/echo && npm install
-   BOT_TOKEN=calab_bot_… CALAB_SERVER=https://app.calab.ru npm start
+   BOT_TOKEN=calab_bot_… CALAB_SERVER=https://app.calab.io npm start
    ```
    Write anything in a room, or `/echo hello` — the bot answers.
 
@@ -40,7 +40,7 @@ A minimal bot with the SDK ([`packages/bot-sdk`](../packages/bot-sdk/README.md))
 ```js
 import { Bot } from '@calaba/bot-sdk';
 
-const bot = new Bot(process.env.BOT_TOKEN, { server: 'https://app.calab.ru' });
+const bot = new Bot(process.env.BOT_TOKEN, { server: 'https://app.calab.io' });
 await bot.commands([{ name: 'echo', description: 'Repeat the text' }]);
 bot.on('message', (m) => bot.reply(m, m.content));
 bot.on('command', (c) => c.name === 'echo' && bot.reply(c, c.args || 'Type: /echo text'));
@@ -81,13 +81,13 @@ Without the SDK — any language with HTTP and WebSocket: REST below, the gatewa
 
 ## REST
 
-The base is the app address (`https://app.calab.ru` or your `https://<APP_HOST>`). Request and response bodies are
+The base is the app address (`https://app.calab.io` or your `https://<APP_HOST>`). Request and response bodies are
 proto messages as JSON (protojson): lowerCamelCase fields, enums by full name (`"ROOM_TYPE_VOICE"`), `uint64` as
 strings, times in RFC 3339; fields with default values are present in responses, unknown request fields are
 ignored. An error is `ApiError { code, message, field?, reason?, used?, limit? }`.
 
 ```sh
-export CALAB=https://app.calab.ru
+export CALAB=https://app.calab.io
 export TOKEN=calab_bot_…
 curl -s $CALAB/api/bots/me -H "Authorization: Bearer $TOKEN"
 ```

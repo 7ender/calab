@@ -73,9 +73,12 @@ The minimum persistent delivery in an authorized release window is:
    **string**, including escaped PEM newlines; a Vault nested object would become
    a Python dict string and fail the Go JSON loader. Use independent protected
    operator-provided keys, never `JWT_SECRET`; no keys were generated here.
-2. Deliver `IDENTITY_PUBLIC_ORIGIN=https://app.calab.ru` as the lead-approved canonical
-   origin in the platform source for `calab-api` (matches its current
-   `PUBLIC_APP_URL`, confirmed by the lead on 2026-10-01).
+2. Deliver `IDENTITY_PUBLIC_ORIGIN=https://app.calab.io` as the canonical origin in
+   the platform source for `calab-api` (owner decision 2026-10-02: calab.io is the
+   primary domain; it supersedes `https://app.calab.ru` confirmed by the lead on
+   2026-10-01 — identity is not enabled yet, so the issuer may still change; once
+   enabled it never changes). Set `PUBLIC_APP_URL=https://app.calab.io` and keep
+   `https://app.calab.ru` in `PUBLIC_APP_URLS` (docs/06 «Домены»).
    Put edition/workspace/network settings there when required by the pilot.
    Avoid duplicate names in Secret and ConfigMap: later envFrom sources win.
    ConfigMap-only edits do not alter the Secret checksum and therefore do not

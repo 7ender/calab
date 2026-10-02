@@ -31,7 +31,7 @@ LiveKit-клиентом как обычный участник.
    ```sh
    pnpm install && pnpm -F @calaba/bot-sdk build
    cd examples/bots/echo && npm install
-   BOT_TOKEN=calab_bot_… CALAB_SERVER=https://app.calab.ru npm start
+   BOT_TOKEN=calab_bot_… CALAB_SERVER=https://app.calab.io npm start
    ```
    Напишите в комнате что угодно или `/echo привет` — бот ответит.
 
@@ -40,7 +40,7 @@ LiveKit-клиентом как обычный участник.
 ```js
 import { Bot } from '@calaba/bot-sdk';
 
-const bot = new Bot(process.env.BOT_TOKEN, { server: 'https://app.calab.ru' });
+const bot = new Bot(process.env.BOT_TOKEN, { server: 'https://app.calab.io' });
 await bot.commands([{ name: 'echo', description: 'Повторить текст' }]);
 bot.on('message', (m) => bot.reply(m, m.content));
 bot.on('command', (c) => c.name === 'echo' && bot.reply(c, c.args || 'Напишите: /echo текст'));
@@ -79,13 +79,13 @@ await bot.start();
 
 ## REST
 
-База — адрес приложения (`https://app.calab.ru` или ваш `https://<APP_HOST>`). Тела запросов и ответов — proto-сообщения
+База — адрес приложения (`https://app.calab.io` или ваш `https://<APP_HOST>`). Тела запросов и ответов — proto-сообщения
 в JSON (protojson): поля в lowerCamelCase, enum — полными именами (`"ROOM_TYPE_VOICE"`), `uint64` — строками, время —
 RFC 3339; поля со значениями по умолчанию в ответе присутствуют, неизвестные поля в запросе игнорируются. Ошибка —
 `ApiError { code, message, field?, reason?, used?, limit? }`.
 
 ```sh
-export CALAB=https://app.calab.ru
+export CALAB=https://app.calab.io
 export TOKEN=calab_bot_…
 curl -s $CALAB/api/bots/me -H "Authorization: Bearer $TOKEN"
 ```
