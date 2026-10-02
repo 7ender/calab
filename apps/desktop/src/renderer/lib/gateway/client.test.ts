@@ -87,6 +87,7 @@ function setup(
     getToken?: () => Promise<string | null>;
     failCreate?: () => boolean;
     onStatus?: (s: GatewayStatus) => void;
+    tab?: { id: () => string; renew: () => void; hidden: () => boolean };
   } = {},
 ) {
   const sockets: FakeSocket[] = [];
@@ -111,6 +112,7 @@ function setup(
     },
     onFatal: (k, r) => fatals.push(r ? `${k}:${r}` : k),
     random: () => 0.5,
+    ...(opts.tab && { tabId: opts.tab.id, renewTabId: opts.tab.renew, isHidden: opts.tab.hidden }),
   });
   const last = (): FakeSocket => {
     const s = sockets[sockets.length - 1];
@@ -720,6 +722,95 @@ describe('GatewayClient robustness', () => {
     await vi.advanceTimersByTimeAsync(backoffDelay(1, 0.5));
     expect(t.sockets).toHaveLength(3);
     expect(t.fatals).toEqual([]);
+  });
+});
+
+describe('GatewayClient tabs of one auth session (#40)', () => {
+  function webTab(hidden = false) {
+    const st = { id: 'tab-1', hidden, renewed: 0 };
+    const t = setup({
+      tab: {
+        id: () => st.id,
+        renew: () => {
+          st.renewed++;
+          st.id = `tab-${st.renewed + 1}`;
+        },
+        hidden: () => st.hidden,
+      },
+    });
+    return { ...t, st };
+  }
+  const identifyOf = (s: FakeSocket) => s.sent.find((f) => f.payload.case === 'identify')?.payload.value as { tabId: string } | undefined;
+
+  it('IDENTIFY carries the tab id on the web and none on the desktop', async () => {
+    const w = webTab();
+    w.client.start();
+    expect(identifyOf(await handshake(w))?.tabId).toBe('tab-1');
+    const d = setup();
+    d.client.start();
+    expect(identifyOf(await handshake(d))?.tabId).toBe('');
+  });
+
+  it('4000 «replaced by a new session» (a duplicated tab took the id): new id, fresh IDENTIFY, no loop', async () => {
+    const w = webTab();
+    w.client.start();
+    const s1 = await handshake(w);
+    s1.deliver(ready(1));
+    s1.serverClose(GatewayCloseCode.UNKNOWN_ERROR, 'replaced by a new session');
+    expect(w.st.renewed).toBe(1);
+    await vi.advanceTimersByTimeAsync(BACKOFF_MAX_MS);
+    const s2 = await handshake(w);
+    expect(s2.ops()).toContain(GatewayOpcode.IDENTIFY);
+    expect(s2.ops()).not.toContain(GatewayOpcode.RESUME);
+    expect(identifyOf(s2)?.tabId).toBe('tab-2');
+  });
+
+  it('desktop: 4000 «replaced» keeps the old behaviour (RESUME attempt, no tab id)', async () => {
+    const d = setup();
+    d.client.start();
+    const s1 = await handshake(d);
+    s1.deliver(ready(1));
+    s1.serverClose(GatewayCloseCode.UNKNOWN_ERROR, 'replaced by a new session');
+    await vi.advanceTimersByTimeAsync(BACKOFF_MAX_MS);
+    expect((await handshake(d)).ops()).toContain(GatewayOpcode.RESUME);
+  });
+
+  it('4011 evicted while hidden: no timer, reconnects with IDENTIFY only once shown', async () => {
+    const w = webTab(true);
+    w.client.start();
+    const s1 = await handshake(w);
+    s1.deliver(ready(1));
+    s1.serverClose(GatewayCloseCode.SESSION_EVICTED, 'evicted by a newer tab');
+    expect(vi.getTimerCount()).toBe(0);
+    await vi.advanceTimersByTimeAsync(10 * BACKOFF_MAX_MS);
+    expect(w.sockets).toHaveLength(1);
+    w.client.wake(); // e.g. `online` while still hidden
+    expect(w.sockets).toHaveLength(1);
+    w.st.hidden = false;
+    w.client.wake();
+    expect(w.sockets).toHaveLength(2);
+    const s2 = await handshake(w);
+    expect(s2.ops()).toContain(GatewayOpcode.IDENTIFY);
+    expect(identifyOf(s2)?.tabId).toBe('tab-1');
+  });
+
+  it('4011 evicted while visible: slow backoff that READY does not reset', async () => {
+    const w = webTab(false);
+    w.client.start();
+    let s = await handshake(w);
+    s.deliver(ready(1));
+    s.serverClose(GatewayCloseCode.SESSION_EVICTED, 'evicted by a newer tab');
+    await vi.advanceTimersByTimeAsync(backoffDelay(2, 0.5) - 1);
+    expect(w.sockets).toHaveLength(1);
+    await vi.advanceTimersByTimeAsync(1);
+    expect(w.sockets).toHaveLength(2);
+    s = await handshake(w);
+    s.deliver(ready(1, 'gs2'));
+    s.serverClose(GatewayCloseCode.SESSION_EVICTED, 'evicted by a newer tab');
+    await vi.advanceTimersByTimeAsync(backoffDelay(3, 0.5) - 1);
+    expect(w.sockets).toHaveLength(2);
+    await vi.advanceTimersByTimeAsync(1);
+    expect(w.sockets).toHaveLength(3);
   });
 });
 

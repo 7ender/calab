@@ -70,6 +70,15 @@ export interface GatewayDeps {
   log?(msg: string): void;
   /** Random source for jitter (tests inject a constant). */
   random?: () => number;
+  /**
+   * Web only (#40): this tab's id for Identify.tab_id, so tabs sharing the auth session keep
+   * their own gateway sessions; `renewTabId` is called when another tab took the id over (close
+   * 4000 «replaced by a new session», a duplicated tab). Desktop: absent (one window = one device).
+   */
+  tabId?: () => string;
+  renewTabId?: () => void;
+  /** Tab / window hidden now: an evicted session (4011) waits for wake() instead of a timer. */
+  isHidden?: () => boolean;
 }
 
 const OPEN = 1;
@@ -94,6 +103,13 @@ export const WAKE_RESET_MIN_MS = 30_000;
  * «too many active devices»); any other 4008 (rate limit, send queue overflow) is transient.
  */
 export const TOO_MANY_DEVICES_REASON = /devices/i;
+/** Close 4000 with this reason = another IDENTIFY of the same tab id replaced this session. */
+export const REPLACED_REASON = /replaced by a new session/i;
+/**
+ * A visible tab evicted by the tab cap (4011) retries after backoffDelay(evictions + this): 4 s,
+ * 8 s, … 30 s, never reset by READY, so two visible windows above the cap cannot ping-pong fast.
+ */
+export const EVICTED_BACKOFF_SHIFT = 2;
 
 /** Exponential backoff 1 s → 30 s with ±50 % jitter (full attempts counter). */
 export function backoffDelay(attempt: number, random: number): number {
@@ -133,6 +149,10 @@ export class GatewayClient {
   /** READY/RESUMED received on the current socket. */
   private established = false;
   private stopped = true;
+  /** Evicted (4011) while hidden: no timer, the next wake() while shown reconnects. */
+  private parked = false;
+  /** 4011 closes so far (see EVICTED_BACKOFF_SHIFT). */
+  private evictions = 0;
   private readonly rnd: () => number;
   private tokens = OUT_BURST;
   private tokensAt = Date.now();
@@ -160,6 +180,8 @@ export class GatewayClient {
   /** Stop for good (logout). */
   stop(): void {
     this.stopped = true;
+    this.parked = false;
+    this.evictions = 0;
     this.clearTimers();
     if (this.deferTimer) clearTimeout(this.deferTimer);
     this.deferTimer = null;
@@ -196,6 +218,14 @@ export class GatewayClient {
    */
   wake(): void {
     if (this.stopped) return;
+    if (this.parked) {
+      // Evicted by the tab cap while hidden: reconnect only once the tab is shown (an `online`
+      // event in a background tab must not evict another tab in turn).
+      if (this.deps.isHidden?.()) return;
+      this.parked = false;
+      this.reconnectNow('wake: evicted tab is shown, reconnecting', false);
+      return;
+    }
     const now = Date.now();
     const ws = this.ws;
     // At most one backoff reset per WAKE_RESET_MIN_MS: within it, a pending backoff keeps
@@ -323,6 +353,7 @@ export class GatewayClient {
 
   private connect(): void {
     if (this.stopped) return;
+    this.parked = false;
     this.established = false;
     this.awaitingAck = false;
     this.connectAt = Date.now();
@@ -485,7 +516,12 @@ export class GatewayClient {
     } else {
       this.sendFrame(GatewayOpcode.IDENTIFY, {
         case: 'identify',
-        value: create(IdentifySchema, { token, device: create(DeviceInfoSchema, this.deps.device), capabilities: 0n }),
+        value: create(IdentifySchema, {
+          token,
+          device: create(DeviceInfoSchema, this.deps.device),
+          capabilities: 0n,
+          tabId: this.deps.tabId?.() ?? '',
+        }),
       });
     }
   }
@@ -578,6 +614,24 @@ export class GatewayClient {
         }
         this.backoff(); // slow consumer / rate limit → RESUME after backoff
         return;
+      case GatewayCloseCode.SESSION_EVICTED: {
+        // Too many tabs of this auth session; this one was claimed longest ago (#40). The
+        // session is gone: the next connect IDENTIFYs. Hidden → park until shown (no timer);
+        // visible → a slow backoff that READY does not reset.
+        this.sessionId = '';
+        this.seq = 0n;
+        const n = this.evictions++;
+        if (this.deps.isHidden?.()) {
+          this.log('evicted by a newer tab, waiting until shown');
+          this.parked = true;
+          this.setStatus('reconnecting');
+          return;
+        }
+        const d = backoffDelay(n + EVICTED_BACKOFF_SHIFT, this.rnd());
+        this.log(`evicted by a newer tab, reconnect in ${d} ms`);
+        this.scheduleReconnect(d);
+        return;
+      }
       case GatewayCloseCode.NOT_AUTHENTICATED:
       case GatewayCloseCode.INVALID_SEQ:
       case GatewayCloseCode.SESSION_TIMED_OUT:
@@ -586,6 +640,14 @@ export class GatewayClient {
         this.backoff();
         return;
       default:
+        if (closeCode === GatewayCloseCode.UNKNOWN_ERROR && this.deps.renewTabId && REPLACED_REASON.test(reason)) {
+          // Another tab IDENTIFYed with this tab's id (a duplicated tab copies sessionStorage):
+          // take a new id and IDENTIFY with it, so the two tabs coexist instead of replacing
+          // each other (#40). The old session is gone, a RESUME would only be rejected.
+          this.deps.renewTabId();
+          this.sessionId = '';
+          this.seq = 0n;
+        }
         this.backoff(); // network drop, 4000–4002, 1006: RESUME
     }
   }

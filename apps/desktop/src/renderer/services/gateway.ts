@@ -1,6 +1,7 @@
 import { PresenceStatus } from '@calaba/protocol';
 import { ReconnectBanner } from '../lib/gateway/banner';
 import { GatewayClient, gatewayUrl, type GatewayFatal } from '../lib/gateway/client';
+import { TabId } from '../lib/gateway/tabId';
 import { log } from '../lib/log';
 import { useSession } from '../stores/session';
 import { isAway } from './afk';
@@ -15,6 +16,23 @@ let subscribed: string[] = [];
 /** «переподключаемся…» banner: only after a real drop > 3 s, gone at once on READY/RESUMED. */
 const banner = new ReconnectBanner((reconnectBanner) => useSession.getState().set({ reconnectBanner }));
 let wakeInstalled = false;
+/**
+ * Web: tabs of one browser share the auth session; each keeps its own gateway session under
+ * its own tab id (#40). Desktop: none — one window = one device.
+ */
+let tab: TabId | null = null;
+function tabIdentity(): TabId | null {
+  if (!tab && platform.kind === 'web') tab = new TabId(safeSessionStorage());
+  return tab;
+}
+
+function safeSessionStorage(): Storage | null {
+  try {
+    return typeof sessionStorage === 'undefined' ? null : sessionStorage;
+  } catch {
+    return null; // storage blocked: the tab id lives in memory only
+  }
+}
 
 /**
  * Timers of a hidden tab / a sleeping machine are throttled or frozen: when the window comes
@@ -34,6 +52,7 @@ export function startGateway(onFatal: (kind: GatewayFatal, reason?: LogoutReason
   installWake();
   const s = useSession.getState();
   const info = s.appInfo;
+  const tabId = tabIdentity();
   client = new GatewayClient({
     url: () => gatewayUrl(useSession.getState().serverUrl),
     getToken: () => platform.auth.accessToken(),
@@ -60,6 +79,11 @@ export function startGateway(onFatal: (kind: GatewayFatal, reason?: LogoutReason
     },
     onFatal,
     log: (m) => log.info(m),
+    ...(tabId && {
+      tabId: () => tabId.get(),
+      renewTabId: () => void tabId.renew(),
+      isHidden: () => document.visibilityState === 'hidden',
+    }),
   });
   client.start();
 }
