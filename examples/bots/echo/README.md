@@ -5,7 +5,7 @@ commands so the composer suggests them on `/`. `ECHO_ALL=0` answers only command
 
 ```sh
 npm install
-BOT_TOKEN=calab_bot_… [CALAB_SERVER=https://app.calab.ru] [ECHO_ALL=0] npm start
+BOT_TOKEN=calab_bot_… [CALAB_SERVER=https://app.calab.io] [ECHO_ALL=0] npm start
 ```
 
 Needs `SEND_MESSAGES` in the rooms it should answer in (the default member role has it).

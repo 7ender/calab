@@ -6,7 +6,7 @@
 
 Env:
   CALAB_RELEASE_BOT_TOKEN  bot token (required unless --dry-run); sent only as `Authorization: Bearer`
-  CALAB_API_URL            default https://app.calab.ru
+  CALAB_API_URL            default https://app.calab.io
   CALAB_RELEASE_ROOM       default «Calab - что нового? ✨» (exact room name)
   CALAB_RELEASE_NOTES_URL  «Подробнее» link template, `{version}` is substituted
                            (default https://github.com/itrcz/calab/releases/tag/v{version})
@@ -36,7 +36,7 @@ import urllib.parse
 import urllib.request
 
 MAX_CONTENT = 4000  # runes; apps/server/internal/messages MaxContent
-DEFAULT_API = "https://app.calab.ru"
+DEFAULT_API = "https://app.calab.io"
 DEFAULT_ROOM = "Calab - что нового? ✨"
 
 # Section order and emoji; «Обновление» (operator notes: migrations, env) is never posted.

@@ -9,8 +9,8 @@
 # at download time; newer ones stage the newest download while the quit is held, ≤ 20 s), then
 # relaunches it and checks that the bundle and the running app are the NEW version.
 #
-#   apps/desktop/scripts/update-smoke.sh                 # 0.1.0 → 0.1.1 from https://releases.calab.ru/
-#   OLD=0.1.0 NEW=0.1.1 FEED=https://releases.calab.ru/ TIMEOUT=90 KEEP=1 apps/desktop/scripts/update-smoke.sh
+#   apps/desktop/scripts/update-smoke.sh                 # 0.1.0 → 0.1.1 from https://releases.calab.io/
+#   OLD=0.1.0 NEW=0.1.1 FEED=https://releases.calab.io/ TIMEOUT=90 KEEP=1 apps/desktop/scripts/update-smoke.sh
 #
 # Env: OLD, NEW (versions), FEED (update feed; the app itself uses the feed baked in at build time,
 # this one is only used to download the old DMG and to check latest-mac.yml), OLD_URL (explicit
@@ -21,7 +21,7 @@ set -uo pipefail
 
 OLD="${OLD:-0.1.0}"
 NEW="${NEW:-0.1.1}"
-FEED="${FEED:-https://releases.calab.ru/}"
+FEED="${FEED:-https://releases.calab.io/}"
 FEED="${FEED%/}/"
 TIMEOUT="${TIMEOUT:-90}"
 case "${ARCH:-$(uname -m)}" in

@@ -3,7 +3,7 @@ import { apiErrorFrom } from './errors.js';
 
 /** Options of the REST client (normally set through `new Bot(token, options)`). */
 export interface RestOptions {
-  /** Server origin, e.g. `https://app.calab.ru`. */
+  /** Server origin, e.g. `https://app.calab.io`. */
   server: string;
   token: string;
   /** Custom fetch (tests, proxies). Default: global fetch. */

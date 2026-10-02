@@ -17,7 +17,7 @@
   <img alt="Electron" src="https://img.shields.io/badge/desktop-Electron-47848F">
   <img alt="Go" src="https://img.shields.io/badge/server-Go-00ADD8">
   <img alt="LiveKit" src="https://img.shields.io/badge/media-LiveKit-ff6b35">
-  <a href="https://calab.ru/en/"><img alt="calab.ru" src="https://img.shields.io/badge/site-calab.ru-0A84FF"></a>
+  <a href="https://calab.io/en/"><img alt="calab.io" src="https://img.shields.io/badge/site-calab.io-0A84FF"></a>
 </p>
 
 <p align="center">
@@ -111,7 +111,7 @@ A bot is a member with a token: the same REST and gateway as the app, rights thr
 ```ts
 import { Bot } from '@calaba/bot-sdk';
 
-const bot = new Bot(process.env.BOT_TOKEN, { server: 'https://app.calab.ru' });
+const bot = new Bot(process.env.BOT_TOKEN, { server: 'https://app.calab.io' });
 bot.on('message', (m) => bot.reply(m, m.content));
 await bot.start();
 ```
@@ -152,7 +152,7 @@ Ports: `80/443` TCP, `443/UDP`, `7881/TCP`, `7882/UDP`. The first registered use
 
 ### The app
 
-Builds for macOS, Windows and Linux are at [calab.ru](https://calab.ru/en/#download) and on your server at `https://app.<domain>/download/`; the web app is at `https://app.<domain>`. What’s new in each version — [CHANGELOG.md](CHANGELOG.md) (in Russian; the same text goes into [GitHub Releases](https://github.com/itrcz/calab/releases)).
+Builds for macOS, Windows and Linux are at [calab.io](https://calab.io/en/#download) and on your server at `https://app.<domain>/download/`; the web app is at `https://app.<domain>`. What’s new in each version — [CHANGELOG.md](CHANGELOG.md) (in Russian; the same text goes into [GitHub Releases](https://github.com/itrcz/calab/releases)).
 
 ### Development
 
@@ -189,7 +189,7 @@ Checks: `make lint` from the repository root, `make test` (Go + TS), `make test-
 | Support | — | support | priority | — |
 | Price | free | on request (**it@gptunnel.ai**) | on request (**it@gptunnel.ai**) | free for non-commercial use (BSL 1.1, “Powered by GPTunneL”); commercial licence on request |
 
-Free, Team and Business are cloud plans of a workspace ([ADR-0024](docs/adr/0024-plans-and-limits.md)); Enterprise is your own server with no plan limits. CalDAV belongs to a person: it works if any of their workspaces is on Team or above. Details — [calab.ru/en/#pricing](https://calab.ru/en/#pricing) and [COMMERCIAL-LICENSE.md](COMMERCIAL-LICENSE.md).
+Free, Team and Business are cloud plans of a workspace ([ADR-0024](docs/adr/0024-plans-and-limits.md)); Enterprise is your own server with no plan limits. CalDAV belongs to a person: it works if any of their workspaces is on Team or above. Details — [calab.io/en/#pricing](https://calab.io/en/#pricing) and [COMMERCIAL-LICENSE.md](COMMERCIAL-LICENSE.md).
 
 ## Licence
 

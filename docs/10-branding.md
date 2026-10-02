@@ -4,15 +4,22 @@
 Продукт называется **Calab**. Рабочее имя «Calaba» остаётся только во внутренних идентификаторах (npm-пакеты `@calaba/*`, Go-модуль, имена compose-контейнеров и volume, каталоги) — переименование их в пользовательском интерфейсе не видно и запланировано на после релиза (ADR при необходимости). Всё видимое пользователю — «Calab»: название приложения, окно, «О программе», лендинг, инсталляторы (`Calab-0.1.0-arm64.dmg`, `Calab Setup 0.1.0.exe`, `calab` для Linux), deep-link схема `calab://` (старая `calaba://` принимается как алиас), документы лицензии.
 
 ## Домены
+Основной домен с 2.0.0 — `calab.io` (решение владельца 2026-10-02); каждый хост `calab.ru` остаётся алиасом без срока (правила совместимости — docs/06, «Домены: calab.io…»).
+
 | Хост | Что | Обслуживает |
 |---|---|---|
-| `calab.ru` | лендинг (Next.js static export, `apps/landing`; `/ru/` `/en/` `/es/` `/zh/`, `/` — выбор языка, ADR-0022) | Caddy `file_server` из `/srv/landing`; неизвестная локаль → `/en/`; `/download/*` → те же релизы, что на app |
-| `app.calab.ru` | приложение (веб-клиент, API, gateway, `/download/`) | Caddy → api :3000 + `/srv/web` |
-| `rtc.calab.ru` | LiveKit signal | Caddy → :7880 |
-| `turn.calab.ru` | TURN/TLS | Caddy layer4 → :5349 |
+| `calab.io` | лендинг (Next.js static export, `apps/landing`; `/ru/` `/en/` `/es/` `/zh/`, `/` — выбор языка, ADR-0022) | Caddy `file_server` из `/srv/landing`; неизвестная локаль → `/en/`; `/download/*` → те же релизы, что на app |
+| `app.calab.io` | приложение (веб-клиент, API, gateway, `/download/`) | Caddy → api :3000 + `/srv/web` |
+| `releases.calab.io` | фид автообновления и установщики (S3) | Caddy → бакет |
+| `rtc.calab.io` | LiveKit signal | Caddy → :7880 |
+| `turn.calab.io` | TURN/TLS | Caddy layer4 → :5349 |
+| `calab.ru` | старый адрес лендинга | 301 на `calab.io` (`LANDING_HOST_ALIASES`) |
+| `app.calab.ru` | сохранённый сервер клиентов до 2.0.0 | как `app.` (`DOMAIN_LEGACY`) |
+| `releases.calab.ru` | фид, зашитый в сборки до 2.0.0 | тот же фид (`RELEASES_HOST_ALIASES`) |
+| `rtc.calab.ru`, `turn.calab.ru` | LiveKit/TURN для CSP сборок до 2.0.0; `rtc.calab.ru` пока отдаётся клиентам (`LIVEKIT_URL`) | как `rtc.`/`turn.` (`DOMAIN_ALIASES`, `RTC_PUBLIC_HOST`) |
 | `meet.gptunnel.ru` | алиас приложения (бренд GPTunneL) | как `app.` |
 
-Конфиг Caddy: `DOMAIN=calab.ru`, `APP_HOST=app.calab.ru` (по умолчанию = DOMAIN), `LANDING_HOST=calab.ru` (пусто = без лендинга), `DOMAIN_ALT`/`DOMAIN_LEGACY` — дополнительные app-хосты. Сервер: `PUBLIC_APP_URLS` — список разрешённых origin через запятую (`PUBLIC_APP_URL`/`_ALT` остаются для совместимости). LiveKit `turn.domain = turn.${DOMAIN}`. DNS — Cloudflare, только DNS-only.
+Конфиг Caddy: `DOMAIN=calab.io`, `APP_HOST=app.calab.io` (по умолчанию = DOMAIN), `LANDING_HOST=calab.io` (пусто = без лендинга), `DOMAIN_ALT`/`DOMAIN_LEGACY` — дополнительные app-хосты, `DOMAIN_ALIASES` — дополнительные зоны для `rtc.`/`turn.`, `LANDING_HOST_ALIASES` / `RELEASES_HOST_ALIASES` — алиасы лендинга (301) и фида (тот же контент). Сервер: `PUBLIC_APP_URLS` — список разрешённых origin через запятую (`PUBLIC_APP_URL`/`_ALT` остаются для совместимости). LiveKit `turn.domain = turn.${DOMAIN}`; клиентам — `LIVEKIT_URL=wss://${RTC_PUBLIC_HOST:-rtc.${DOMAIN}}`. Почта — `noreply@calab.io`. DNS — Cloudflare, только DNS-only.
 
 ## Атрибуция
 «Powered by GPTunneL» остаётся обязательной по лицензии (BSL 1.1, NOTICE) — на лендинге в футере, в «О программе», на экране входа.

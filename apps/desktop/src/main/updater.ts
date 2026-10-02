@@ -17,7 +17,7 @@ import { createUpdateFlow, type NudgeReason, type UpdateFlow } from './updateFlo
  *
  * - Feeds (security review M3, review pass 3 B1): decided in main, never by the renderer —
  *   shared/updateFeed.ts. Auto-install only from the build-time feed MAIN_VITE_UPDATE_FEED
- *   (release builds: `https://releases.calab.ru/`, .env.production; https only). Without it
+ *   (release builds: `https://releases.calab.io/`, .env.production; https only). Without it
  *   (dev / self-built) the feed derived from the server (`https://app.X` → `https://releases.X/`,
  *   else `https://<host>/download/`) is used for notify-only. CALABA_UPDATE_URL (runtime) is a
  *   notify-only override: it replaces the feed and disables auto-install.

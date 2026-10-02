@@ -22,10 +22,10 @@ The Bot API itself: [`docs/19-bot-api.en.md`](../../docs/19-bot-api.en.md) (Russ
    ```sh
    cd examples/bots/echo
    npm install
-   BOT_TOKEN=calab_bot_… CALAB_SERVER=https://app.calab.ru npm start
+   BOT_TOKEN=calab_bot_… CALAB_SERVER=https://app.calab.io npm start
    ```
 
-`CALAB_SERVER` defaults to `https://app.calab.ru`; point it at your own server (`https://<APP_HOST>`).
+`CALAB_SERVER` defaults to `https://app.calab.io`; point it at your own server (`https://<APP_HOST>`).
 Keep the token out of git and logs; one running process per token (a second one takes the gateway over and
 the first stops with `GatewayFatalError: replaced`).
 

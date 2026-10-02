@@ -25,7 +25,7 @@ Create a bot in **Workspace settings → Bots**, copy the token (it is shown onc
 ```js
 import { Bot } from '@calaba/bot-sdk';
 
-const bot = new Bot(process.env.BOT_TOKEN, { server: 'https://app.calab.ru' });
+const bot = new Bot(process.env.BOT_TOKEN, { server: 'https://app.calab.io' });
 
 await bot.commands([{ name: 'echo', description: 'Repeat the text' }]);
 

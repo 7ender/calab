@@ -8,12 +8,12 @@
 #                       SRC_REF=WORKTREE builds the working tree as is (local checks only, never publish)
 #   VERSION=1.2.3       override apps/desktop/package.json version (applied to the export only)
 #   UPDATE_URL=…        electron-updater generic feed baked into app-update.yml / latest*.yml
-#                       (default https://releases.calab.ru/ — docs/10-branding.md; same as release.yml)
+#                       (default https://releases.calab.io/ — docs/10-branding.md; same as release.yml)
 #   UPDATE_FEED=…       the pinned feed baked into the app bundle as MAIN_VITE_UPDATE_FEED — the only host the
-#                       app auto-installs updates from (default https://releases.calab.ru/, https only; see
+#                       app auto-installs updates from (default https://releases.calab.io/, https only; see
 #                       src/shared/updateFeed.ts). MAIN_VITE_UPDATES_SIGNED=1 (macOS auto-install) is set only
 #                       for SIGN=1 NOTARIZE=1 builds.
-#   HOMEPAGE=…          package homepage (deb metadata; default https://calab.ru, the landing)
+#   HOMEPAGE=…          package homepage (deb metadata; default https://calab.io, the landing)
 #   OUT_DIR=…           artifacts dir (default apps/desktop/dist-release)
 #   WORK_DIR=…          scratch dir (default $TMPDIR/calaba-release; removed on exit unless KEEP_WORK=1)
 #   SIGN=1              macOS: sign with the owner's Developer ID from cert/developerID_full.p12 (password:
@@ -43,9 +43,9 @@ set -euo pipefail
 ROOT="$(cd "$(dirname "$0")/../../.." && pwd)"
 OUT="${OUT_DIR:-$ROOT/apps/desktop/dist-release}"
 SRC_REF="${SRC_REF:-HEAD}"
-UPDATE_URL="${UPDATE_URL:-https://releases.calab.ru/}"
-UPDATE_FEED="${UPDATE_FEED:-https://releases.calab.ru/}"
-HOMEPAGE="${HOMEPAGE:-https://calab.ru}"
+UPDATE_URL="${UPDATE_URL:-https://releases.calab.io/}"
+UPDATE_FEED="${UPDATE_FEED:-https://releases.calab.io/}"
+HOMEPAGE="${HOMEPAGE:-https://calab.io}"
 WORK="${WORK_DIR:-${TMPDIR:-/tmp}/calaba-release}"
 SRC="$WORK/src"
 # The scratch dir (source export, node_modules, per-OS build dirs) is removed on exit; only

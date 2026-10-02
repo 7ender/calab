@@ -9,7 +9,7 @@ export type VoicePhase = 'idle' | 'connecting' | 'connected' | 'reconnecting' | 
 
 /** Voice connection diagnostics (the reconnect notice, Settings → Соединение). */
 export interface VoiceLink {
-  /** LiveKit host from the last /join (`rtc.calab.ru`). */
+  /** LiveKit host from the last /join (`rtc.calab.io`). */
   rtcHost: string | null;
   /** Failed connect attempts in a row (reset when connected, on join and leave). */
   attempts: number;

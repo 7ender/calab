@@ -1,4 +1,4 @@
-# @calaba/landing — calab.ru
+# @calaba/landing — calab.io
 
 Marketing landing for **Calab**. Next.js 15 (`output: 'export'`) + Tailwind v4, no server: the build is plain static
 files in `out/`. Localized (ADR-0022 §3): `ru` (source), `en`, `es`, `zh-CN`.
@@ -21,7 +21,7 @@ Preview the export: `npx -y serve apps/landing/out` (or `python3 -m http.server 
   `dynamicParams = false`), `<html lang>`, title/description/OG, canonical and `hreflang` (+ `x-default → /en/`) per locale.
 - `/` is `out/index.html` from `src/app/index.html/route.ts`: a content-less redirect page (no React runtime). Order:
   the switcher's saved choice (`localStorage['calab.locale']`) → `navigator.languages` (first supported: ru/uk/be/kk →
-  `ru`, zh* → `zh`, es* → `es`, en* → `en`) → `/en/`. Query and `#hash` are kept, so old `calab.ru/#download` links
+  `ru`, zh* → `zh`, es* → `es`, en* → `en`) → `/en/`. Query and `#hash` are kept, so old `calab.io/#download` links
   (release notes, `/download/` fallback in Caddy) land on `/<locale>/#download`. Without JS: `<noscript>` meta refresh
   to `/en/`. In `next dev` it is served at `/index.html`, not `/`.
 - Texts: `src/i18n/<locale>.ts`, typed by `ru.ts` (`Dict`): a missing or extra key fails `typecheck`. `{name}`
@@ -39,10 +39,11 @@ Preview the export: `npx -y serve apps/landing/out` (or `python3 -m http.server 
 
 ## Where it is served
 
-`https://calab.ru` — Caddy `file_server` from `/srv/landing` (see `docs/10-branding.md`, `LANDING_HOST`).
+`https://calab.io` — Caddy `file_server` from `/srv/landing` (see `docs/10-branding.md`, `LANDING_HOST`); the old
+`https://calab.ru` redirects there (301, same path — `LANDING_HOST_ALIASES`).
 Copy the contents of `out/` there. `trailingSlash: true`, so every page `/x/` is exported as `x/index.html`.
-Links: «Открыть в браузере» → `https://app.calab.ru`, downloads → direct links to the stable names
-`https://releases.calab.ru/latest/<file>` (`DOWNLOADS` in `src/lib/site.ts`; the main button picks the visitor's OS
+Links: «Открыть в браузере» → `https://app.calab.io`, downloads → direct links to the stable names
+`https://releases.calab.io/latest/<file>` (`DOWNLOADS` in `src/lib/site.ts`; the main button picks the visitor's OS
 in the browser, the version comes from `latest/VERSION`, never versioned file names), licence and support → `it@gptunnel.ai` (`CONTACT_EMAIL`), source → `https://github.com/itrcz/calab` (`REPO_URL` in `src/lib/site.ts`; LICENSE/SECURITY/TRADEMARKS links point to `blob/main/…`).
 
 ## Design

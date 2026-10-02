@@ -2,7 +2,7 @@
 
 Все заметные изменения Calab для пользователей. Формат — [Keep a Changelog](https://keepachangelog.com/ru/1.1.0/), версии — [SemVer](https://semver.org/lang/ru/).
 
-Скачать приложение: [calab.ru](https://calab.ru/#download) · файлы и обновления: [releases.calab.ru](https://releases.calab.ru/)
+Скачать приложение: [calab.io](https://calab.io/#download) · файлы и обновления: [releases.calab.io](https://releases.calab.io/)
 
 ## [Unreleased]
 
@@ -15,7 +15,7 @@ Calab 2.0 — корпоративный вход, каталог LDAPS и «В�
 - Связь с каталогом компании (AD/LDAPS): уволенный или отключённый сотрудник сам теряет доступ к пространству.
 - «Войти через Calab»: приложения вашего пространства могут входить под аккаунтом Calab.
 - Владелец не потеряет доступ, если SSO сломается: есть аварийный вход по одноразовым кодам.
-- Новый сайт calab.ru.
+- Новый сайт calab.io. Старые адреса calab.ru продолжают работать: менять ничего не нужно, приложение остаётся на вашем сервере и обновляется как раньше.
 
 ### Добавлено
 - **Корпоративный SSO** через OpenID Connect: вход в системном браузере, явная привязка внешней личности после локального входа, режимы «Выключен / Необязательный / Обязательный». SSO-сессия открывает только своё пространство; совпадение email не объединяет аккаунты и не даёт доступ к личным данным или другим организациям.
@@ -23,7 +23,7 @@ Calab 2.0 — корпоративный вход, каталог LDAPS и «В�
 - **«Войти через Calab»**: OAuth/OIDC-клиенты одного пространства для web, native и SPA, Authorization Code + PKCE S256, явное согласие на `openid profile email`, UserInfo, ротация refresh и отзыв согласий. Эти токены не дают доступ к API чата и не заменяют токены бота.
 - **Восстановление SSO**: комплект одноразовых кодов владельца и отдельная десятиминутная сессия для ремонта политики. Она требует независимого локального входа владельца и не открывает чаты или выпуск OAuth-токенов.
 - Настройки SSO, каталога и OAuth-клиентов, экран согласия, статус блокировки и повторное подтверждение входа в вебе и десктопе; завершение native-входа привязано к инициировавшему его процессу.
-- **Новый лендинг** (calab.ru): интерактивная подача продукта, карточки сценариев, витрина скриншотов (на телефоне — прокручиваемая лента), каталог возможностей, инфографика доступа и безопасности, FAQ, компактная навигация, скачивание с учётом ОС, описание корпоративной идентификации для Business/Enterprise, 14 анимированных стикеров с запасным вариантом для `prefers-reduced-motion` и сенсорных экранов.
+- **Новый лендинг** (calab.io): интерактивная подача продукта, карточки сценариев, витрина скриншотов (на телефоне — прокручиваемая лента), каталог возможностей, инфографика доступа и безопасности, FAQ, компактная навигация, скачивание с учётом ОС, описание корпоративной идентификации для Business/Enterprise, 14 анимированных стикеров с запасным вариантом для `prefers-reduced-motion` и сенсорных экранов.
 
 ### Изменено
 - Серверная модель authority и проверки identity охватывают REST, gateway/RESUME и RTC. При обязательном SSO локальный пароль, приглашение, восстановление пароля и гостевой вход не заменяют SSO; отказ IdP или понижение тарифа не снимают enforcement.
@@ -34,9 +34,10 @@ Calab 2.0 — корпоративный вход, каталог LDAPS и «В�
 Согласно [ADR-0054](docs/adr/0054-workspace-identity.md) функция выкатывается выключенной: сначала релиз без включения, затем по желанию пилот («Необязательный») в одном пространстве, и режим «Обязательный» — только после проверки recovery и живого целевого IdP. Что держит её выключенной в проде: (1) пока все семь операторских настроек (`IDENTITY_PUBLIC_ORIGIN`, `IDENTITY_ENCRYPTION_KEYS`, `IDENTITY_ENCRYPTION_ACTIVE_KID`, `OAUTH_SIGNING_KEYS`, `OAUTH_SIGNING_ACTIVE_KID`, `IDENTITY_ENDPOINTS`, `IDENTITY_DIRECTORY_HOSTS`) пусты, сервер стартует как раньше, а identity-эндпоинты отвечают 503; (2) режим политики каждого пространства по умолчанию «Выключен», а без положительного grant и тарифа Business/Enterprise функции недоступны. Единого булева флага нет: включение — это доставка ключей оператором и затем действие владельца пространства.
 
 ### Для операторов
-- Новые env: `IDENTITY_PUBLIC_ORIGIN` (для платформы — `https://app.calab.ru`), независимые keyrings `IDENTITY_ENCRYPTION_KEYS`/`IDENTITY_ENCRYPTION_ACTIVE_KID` (AES-256) и `OAUTH_SIGNING_KEYS`/`OAUTH_SIGNING_ACTIVE_KID` (RSA 2048–8192), опционально `IDENTITY_ENDPOINTS`, `IDENTITY_DIRECTORY_HOSTS` (обязателен для LDAPS), `IDENTITY_EDITION` (`cloud`/`enterprise`) и `IDENTITY_ENTERPRISE_WORKSPACE_IDS`. Значения ключей не публикуются, `JWT_SECRET` не используется; частичная или невалидная конфигурация останавливает старт. Записи для частных сетей привязываются к `workspace_ids` (вне `enterprise`-редакции обязательны).
+- Новые env: `IDENTITY_PUBLIC_ORIGIN` (для платформы — `https://app.calab.io`; после включения identity не меняется), независимые keyrings `IDENTITY_ENCRYPTION_KEYS`/`IDENTITY_ENCRYPTION_ACTIVE_KID` (AES-256) и `OAUTH_SIGNING_KEYS`/`OAUTH_SIGNING_ACTIVE_KID` (RSA 2048–8192), опционально `IDENTITY_ENDPOINTS`, `IDENTITY_DIRECTORY_HOSTS` (обязателен для LDAPS), `IDENTITY_EDITION` (`cloud`/`enterprise`) и `IDENTITY_ENTERPRISE_WORKSPACE_IDS`. Значения ключей не публикуются, `JWT_SECRET` не используется; частичная или невалидная конфигурация останавливает старт. Записи для частных сетей привязываются к `workspace_ids` (вне `enterprise`-редакции обязательны).
 - Caddy: маршруты провайдера `/oidc/workspaces/*` и `/.well-known/oauth-authorization-server/oidc/workspaces/*` должны идти до SPA fallback, с no-store/no-referrer/frame-ancestors; в проде конфиг Caddy задаёт кластер, не образ. Подробности и gates логирования — [runbook](docs/06-deployment.md#identity-20-настройка-и-приёмка).
 - Миграции `00055`–`00057` выполняются автоматически при старте API под advisory lock; `00055` и `00057` работают с `lock_timeout = 10s` — при занятой таблице миграция падает быстро (под перезапускает), а не блокирует вход на всех репликах.
+- **Домен `calab.io`**: новые сборки по умолчанию используют `app.calab.io` и фид `releases.calab.io`; все хосты `calab.ru` остаются алиасами без срока (сохранённый адрес сервера не мигрирует, старые сборки обновляются с `releases.calab.ru`). `LIVEKIT_URL` пока остаётся `wss://rtc.calab.ru`, письма — от `noreply@calab.io`; `release.yml` до сборки проверяет TLS фида и `app.calab.io`. Подробности — [docs/06 «Домены»](docs/06-deployment.md#домены-calabio--основной-calabru--вечный-алиас-с-200).
 - Продакшен работает в Kubernetes на PostgreSQL 17; интеграционные тесты CI идут только на PG17. Выпуск API/web — тег → `images.yml` → GitHub Deployment `calab-prod`; конфигурация кластера, Vault, proxy logging и безопасный rollback — отдельные операторские gates.
 - Откат на identity-unaware бинарник после активации запрещён. Для Keycloak 26.4.7 нужны встроенные scopes `basic`, `profile`, `email`; совместимость с Entra ID, AD FS и Windows AD живыми проверками не подтверждена ([evidence](docs/plans/identity-v2-keycloak-evidence.md)).
 - Тариф: SSO, каталог и OAuth provider требуют положительного grant текущего пространства и действующего Business либо разрешённого оператором on-prem Enterprise. `PLAN_ENTERPRISE`/SQL `enterprise` по-прежнему означают облачный Business; Free, Team, истёкший и custom без основания доступа не дают.

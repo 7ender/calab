@@ -54,8 +54,8 @@ Every test starts from a clean seeded state (`e2e-visual/app.ts`: mock reset, st
 | Variable | Purpose |
 |---|---|
 | `CALABA_SERVER_URL` | API address (overrides the value saved in settings). There are no hosts in the code: when the variable is unset, the user enters the address on the login screen |
-| `MAIN_VITE_DEFAULT_SERVER_URL` | Build-time default server for installers (`.env.production`: `https://app.calab.ru`) |
-| `MAIN_VITE_UPDATE_FEED` | Build time. The pinned update feed, the only one updates are auto-installed from (https only). `.env.production` sets `https://releases.calab.ru/` for `build`; `build-release.sh` passes `UPDATE_FEED`. Empty (dev, `electron-vite dev`) → notify-only |
+| `MAIN_VITE_DEFAULT_SERVER_URL` | Build-time default server for installers (`.env.production`: `https://app.calab.io`). First run only: a saved server (e.g. `https://app.calab.ru` from builds before 2.0.0) is never rewritten (docs/06 «Домены») |
+| `MAIN_VITE_UPDATE_FEED` | Build time. The pinned update feed, the only one updates are auto-installed from (https only). `.env.production` sets `https://releases.calab.io/` for `build` (builds before 2.0.0 use `https://releases.calab.ru/` — the same feed); `build-release.sh` passes `UPDATE_FEED`. Empty (dev, `electron-vite dev`) → notify-only |
 | `MAIN_VITE_UPDATES_SIGNED=1` | Build time, only for signed + notarized macOS builds (`build-release.sh`: `SIGN=1 NOTARIZE=1`; CI: when signing is real). Enables macOS auto-install (Squirrel.Mac refuses unsigned updates) |
 | `CALABA_UPDATE_URL` | Runtime, **notify-only** feed override for testing (https only): replaces the feed and disables auto-install. Not settable from the UI |
 | `CALABA_USER_DATA` | Separate profile directory (tests, two instances on one machine) |

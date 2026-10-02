@@ -2,7 +2,7 @@
  * Update feed rules (security review M3, review pass 3 B1), pure for tests.
  *
  * Trust model:
- * - The build-time feed (MAIN_VITE_UPDATE_FEED, `https://releases.calab.ru/` in release builds,
+ * - The build-time feed (MAIN_VITE_UPDATE_FEED, `https://releases.calab.io/` in release builds,
  *   empty in dev) is the ONLY feed an update may be downloaded and installed from automatically.
  *   It is baked into the bundle; neither the server, the renderer nor a runtime env can change it.
  * - The feed derived from the server the app is connected to is notify-only: it can at most show

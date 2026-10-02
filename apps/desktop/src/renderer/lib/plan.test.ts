@@ -70,7 +70,7 @@ describe('preset locks (ADR-0024)', () => {
 describe('plan contact', () => {
   it('only mailto: and http(s)', () => {
     expect(contactHref('mailto:it@gptunnel.ai')).toBe('mailto:it@gptunnel.ai');
-    expect(contactHref(' https://calab.ru/buy ')).toBe('https://calab.ru/buy');
+    expect(contactHref(' https://calab.io/buy ')).toBe('https://calab.io/buy');
     expect(contactHref('javascript:alert(1)')).toBeNull();
     expect(contactHref('file:///etc/passwd')).toBeNull();
     expect(contactHref('')).toBeNull();

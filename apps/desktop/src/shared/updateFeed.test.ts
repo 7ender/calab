@@ -3,9 +3,11 @@ import { downloadPage, feedUrl, httpsFeed } from './updateFeed';
 
 describe('update feed (review M3)', () => {
   it('app.X → https://releases.X/', () => {
+    expect(feedUrl('https://app.calab.io', '')).toBe('https://releases.calab.io/');
+    expect(feedUrl('https://app.calab.io/', '')).toBe('https://releases.calab.io/');
+    expect(feedUrl('https://app.calab.io///', '')).toBe('https://releases.calab.io/');
+    // A server saved before 2.0.0 keeps its own family (releases.calab.ru serves the same feed).
     expect(feedUrl('https://app.calab.ru', '')).toBe('https://releases.calab.ru/');
-    expect(feedUrl('https://app.calab.ru/', '')).toBe('https://releases.calab.ru/');
-    expect(feedUrl('https://app.calab.ru///', '')).toBe('https://releases.calab.ru/');
   });
   it('nested app.a.b → releases.a.b', () => {
     expect(feedUrl('https://app.team.example.com', '')).toBe('https://releases.team.example.com/');
@@ -31,9 +33,9 @@ describe('update feed (review M3)', () => {
   });
   it('a launch/build-time override wins and gets a trailing slash', () => {
     expect(feedUrl('https://a.example', 'https://updates.example/calaba')).toBe('https://updates.example/calaba/');
-    expect(feedUrl('https://app.calab.ru', 'https://updates.example/')).toBe('https://updates.example/');
+    expect(feedUrl('https://app.calab.io', 'https://updates.example/')).toBe('https://updates.example/');
     // A non-https override does not fall back to the derived feed.
-    expect(feedUrl('https://app.calab.ru', 'http://updates.example/')).toBeNull();
+    expect(feedUrl('https://app.calab.io', 'http://updates.example/')).toBeNull();
   });
   it('no server and no override → off', () => {
     expect(feedUrl('', '')).toBeNull();
@@ -43,10 +45,10 @@ describe('update feed (review M3)', () => {
 
 describe('build-time feed (review pass 3 B1)', () => {
   it('https only, trailing slash; anything else is treated as empty', () => {
-    expect(httpsFeed('https://releases.calab.ru/')).toBe('https://releases.calab.ru/');
-    expect(httpsFeed(' https://releases.calab.ru ')).toBe('https://releases.calab.ru/');
+    expect(httpsFeed('https://releases.calab.io/')).toBe('https://releases.calab.io/');
+    expect(httpsFeed(' https://releases.calab.io ')).toBe('https://releases.calab.io/');
     expect(httpsFeed('https://updates.example/calab')).toBe('https://updates.example/calab/');
-    expect(httpsFeed('http://releases.calab.ru/')).toBeNull();
+    expect(httpsFeed('http://releases.calab.io/')).toBeNull();
     expect(httpsFeed('file:///tmp/feed')).toBeNull();
     expect(httpsFeed('not a url')).toBeNull();
     expect(httpsFeed('')).toBeNull();
@@ -55,13 +57,13 @@ describe('build-time feed (review pass 3 B1)', () => {
 
 describe('download page (review pass 3 L)', () => {
   it('https server → <server origin>/download/, never the feed root', () => {
-    expect(downloadPage('https://app.calab.ru', 'https://releases.calab.ru/')).toBe('https://app.calab.ru/download/');
-    expect(downloadPage('https://app.calab.ru/', null)).toBe('https://app.calab.ru/download/');
+    expect(downloadPage('https://app.calab.io', 'https://releases.calab.io/')).toBe('https://app.calab.io/download/');
+    expect(downloadPage('https://app.calab.io/', null)).toBe('https://app.calab.io/download/');
     expect(downloadPage('https://chat.example.com:8443/x', null)).toBe('https://chat.example.com:8443/download/');
   });
   it('no server / not https → the build-time feed (or none)', () => {
-    expect(downloadPage('', 'https://releases.calab.ru/')).toBe('https://releases.calab.ru/');
-    expect(downloadPage('http://localhost:3000', 'https://releases.calab.ru/')).toBe('https://releases.calab.ru/');
+    expect(downloadPage('', 'https://releases.calab.io/')).toBe('https://releases.calab.io/');
+    expect(downloadPage('http://localhost:3000', 'https://releases.calab.io/')).toBe('https://releases.calab.io/');
     expect(downloadPage('not a url', null)).toBeNull();
     expect(downloadPage('', null)).toBeNull();
   });

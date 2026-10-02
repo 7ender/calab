@@ -31,9 +31,9 @@ describe('connection check verdicts (Settings → Соединение, 0.2.1)',
 
   it('TURN: relay candidate passes; ICE error text; no data / no such server → skip', () => {
     expect(iceRow('turnUdp', 1, { relayMs: 120.6, errors: [], timedOut: false })).toMatchObject({ status: 'pass', ms: 121 });
-    expect(iceRow('turnTls', 1, { relayMs: null, errors: [{ url: 'turns:turn.calab.ru:443', errorCode: 701, errorText: 'TURN allocate request timed out.' }], timedOut: true })).toMatchObject({
+    expect(iceRow('turnTls', 1, { relayMs: null, errors: [{ url: 'turns:turn.calab.io:443', errorCode: 701, errorText: 'TURN allocate request timed out.' }], timedOut: true })).toMatchObject({
       status: 'fail',
-      detail: '701 TURN allocate request timed out. (turns:turn.calab.ru:443)',
+      detail: '701 TURN allocate request timed out. (turns:turn.calab.io:443)',
     });
     expect(iceRow('turnUdp', 1, { relayMs: null, errors: [], timedOut: true }).detail).toBe('Нет ответа за 8 с');
     expect(iceRow('turnUdp', 1, { relayMs: null, errors: [], timedOut: false }).detail).toBe('Нет кандидата relay');
@@ -45,12 +45,12 @@ describe('connection check verdicts (Settings → Соединение, 0.2.1)',
 
   it('splits LiveKit ICE servers by transport', () => {
     const { udp, tls } = splitTurn([
-      { urls: ['turn:turn.calab.ru:443?transport=udp', 'turn:turn.calab.ru:3478', 'turn:turn.calab.ru:443?transport=tcp'], username: 'u', credential: 'c' },
-      { urls: 'turns:turn.calab.ru:443?transport=tcp', username: 'u', credential: 'c' },
+      { urls: ['turn:turn.calab.io:443?transport=udp', 'turn:turn.calab.io:3478', 'turn:turn.calab.io:443?transport=tcp'], username: 'u', credential: 'c' },
+      { urls: 'turns:turn.calab.io:443?transport=tcp', username: 'u', credential: 'c' },
       { urls: ['stun:stun.l.google.com:19302'] },
     ]);
-    expect(udp).toEqual([{ urls: ['turn:turn.calab.ru:443?transport=udp', 'turn:turn.calab.ru:3478'], username: 'u', credential: 'c' }]);
-    expect(tls).toEqual([{ urls: ['turns:turn.calab.ru:443?transport=tcp'], username: 'u', credential: 'c' }]);
+    expect(udp).toEqual([{ urls: ['turn:turn.calab.io:443?transport=udp', 'turn:turn.calab.io:3478'], username: 'u', credential: 'c' }]);
+    expect(tls).toEqual([{ urls: ['turns:turn.calab.io:443?transport=tcp'], username: 'u', credential: 'c' }]);
   });
 
   it('candidate type from the field or the candidate line', () => {

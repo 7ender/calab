@@ -1,9 +1,9 @@
 // Public URLs shown on the landing. These are site content (not runtime config).
-export const SITE_URL = 'https://calab.ru';
-export const APP_URL = 'https://app.calab.ru';
+export const SITE_URL = 'https://calab.io';
+export const APP_URL = 'https://app.calab.io';
 // Stable installer names of the newest release (release.yml copies each stable release to latest/;
 // latest/VERSION holds its number). Same names as the /download/<os> shortcuts in infra/docker/caddy.
-export const LATEST_URL = 'https://releases.calab.ru/latest';
+export const LATEST_URL = 'https://releases.calab.io/latest';
 export const DOWNLOADS = {
   macArm64: `${LATEST_URL}/Calab-mac-arm64.dmg`,
   macX64: `${LATEST_URL}/Calab-mac-x64.dmg`,

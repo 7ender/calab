@@ -11,7 +11,7 @@ describe('picker search', () => {
   });
 
   it('matches any field: name, nickname, email', () => {
-    const anna = item('anna', 'Аня', 'Анна Петрова', 'anna@calab.ru');
+    const anna = item('anna', 'Аня', 'Анна Петрова', 'anna@calab.io');
     expect(matchRank(anna, normalize('петров'))).toBe(1);
     expect(matchRank(anna, normalize('calab'))).toBe(1);
     expect(matchRank(anna, normalize('етр'))).toBe(2);

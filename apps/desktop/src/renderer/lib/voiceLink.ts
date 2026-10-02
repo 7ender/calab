@@ -71,7 +71,7 @@ export class DisplayedPhase {
   }
 }
 
-/** `wss://rtc.calab.ru/…` → `rtc.calab.ru` (null for a non-URL). */
+/** `wss://rtc.calab.io/…` → `rtc.calab.io` (null for a non-URL). */
 export function hostOfUrl(url: string | null | undefined): string | null {
   if (!url) return null;
   try {

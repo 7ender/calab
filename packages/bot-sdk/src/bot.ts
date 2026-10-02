@@ -108,7 +108,7 @@ import { DELIVERY_HEADER, SIGNATURE_HEADER, parseWebhookUpdate, verifyWebhookSig
 // ---- public types ----
 
 export interface BotOptions {
-  /** Server origin, e.g. `https://app.calab.ru` (the gateway is `wss://<host>/gateway`). */
+  /** Server origin, e.g. `https://app.calab.io` (the gateway is `wss://<host>/gateway`). */
   server: string;
   /** Webhook secret: `handleWebhook` then requires a valid X-Calab-Signature. */
   webhookSecret?: string;
@@ -222,7 +222,7 @@ const MAX_SEEN_DELIVERIES = 2048;
  * A Calab bot: REST client + realtime gateway (or webhook) with typed events.
  *
  * ```ts
- * const bot = new Bot(process.env.BOT_TOKEN!, { server: 'https://app.calab.ru' });
+ * const bot = new Bot(process.env.BOT_TOKEN!, { server: 'https://app.calab.io' });
  * bot.on('message', (m) => bot.reply(m, `echo: ${m.content}`));
  * await bot.start();
  * ```

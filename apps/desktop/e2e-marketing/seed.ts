@@ -356,7 +356,7 @@ export function seedNotes(mock: MockServer, c: Copy): string {
   c.notes.items.forEach((text, i) => at(mock.injectMessage({ roomId: first, authorId: U.anna, content: text }), times[i] ?? '12:50'));
   at(mock.injectMessage({ roomId: first, authorId: U.anna, content: c.notes.forwarded, forward: { authorId: U.vera, sentAtMs: msk('16:05', '2026-01-14'), roomId: R.general } }), '13:02');
   const second = ids[1];
-  if (second) at(mock.injectMessage({ roomId: second, authorId: U.anna, content: 'https://calab.ru' }), '10:00');
+  if (second) at(mock.injectMessage({ roomId: second, authorId: U.anna, content: 'https://calab.io' }), '10:00');
   const third = ids[2];
   if (third) at(mock.injectMessage({ roomId: third, authorId: U.anna, content: c.slide.items.join('\n') }), '12:00');
   return first;

@@ -31,13 +31,13 @@ describe('memberItems', () => {
   });
 
   it('shows the nickname with the profile name muted and finds by either, or by email', () => {
-    const items = memberItems(team, { emails: { vera: 'vera@calab.ru' } });
+    const items = memberItems(team, { emails: { vera: 'vera@calab.io' } });
     const gr = items.find((i) => i.userId === 'grigory');
     expect(gr).toMatchObject({ name: 'Гриша', secondary: 'Григорий' });
     expect(filterItems(items, 'григ').map((i) => i.userId)).toEqual(['grigory']);
     expect(filterItems(items, 'ГРИША').map((i) => i.userId)).toEqual(['grigory']);
     expect(filterItems(items, 'vera@').map((i) => i.userId)).toEqual(['vera']);
-    expect(items.find((i) => i.userId === 'vera')?.secondary).toBe('vera@calab.ru');
+    expect(items.find((i) => i.userId === 'vera')?.secondary).toBe('vera@calab.io');
   });
 
   it('leaves out excluded ids', () => {

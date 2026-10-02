@@ -3,8 +3,13 @@
 #   DOMAIN         primary domain: rtc.<DOMAIN>, turn.<DOMAIN> (LiveKit announces turn.<DOMAIN>)
 #   APP_HOST       the app (web client, API, gateway, /download/); default: DOMAIN
 #   LANDING_HOST   static landing (optional; empty = no landing site)
-#   DOMAIN_ALT, DOMAIN_LEGACY  extra app hosts (aliases, optional; e.g. meet.gptunnel.ru). Only the app is
-#                  served there: clients get the rtc./turn. URLs of DOMAIN from the API
+#   DOMAIN_ALT, DOMAIN_LEGACY  extra app hosts (aliases, optional; e.g. meet.gptunnel.ru, or app.calab.ru after
+#                  the move to calab.io). Only the app is served there: clients get the rtc. URL from the API
+#   DOMAIN_ALIASES extra zones, space-separated (optional; e.g. calab.ru next to DOMAIN=calab.io): rtc.<zone> and
+#                  turn.<zone> are served too (same LiveKit), so a client allowed only the old family keeps working
+#   LANDING_HOST_ALIASES   extra landing hosts, space-separated (optional): 301 to LANDING_HOST, same path
+#   RELEASES_HOST_ALIASES  extra release feed hosts, space-separated (optional): the SAME feed, no redirect —
+#                  installed builds have their feed host baked in (docs/06 «Домены»)
 #   RELEASES_HOST  desktop release feed (optional; empty = none): reverse proxy to a public-read S3 bucket
 #                  when S3_PUBLIC_URL is set (the bucket's public base URL, e.g. Yandex Object Storage
 #                  https://storage.yandexcloud.net/<bucket> — path-style — or a virtual-hosted URL without a
@@ -23,11 +28,17 @@ for h in "${DOMAIN_ALT:-}" "${DOMAIN_LEGACY:-}"; do
 	[ -n "$h" ] || continue
 	APP_HOSTS="$APP_HOSTS $h"
 done
+for z in ${DOMAIN_ALIASES:-}; do
+	RTC_HOSTS="$RTC_HOSTS rtc.$z" TURN_HOSTS="$TURN_HOSTS turn.$z"
+done
 # LiveKit signal origins for the web client CSP connect-src (wss signal + https /rtc/validate)
 RTC_ORIGINS=""
 for h in $RTC_HOSTS; do RTC_ORIGINS="$RTC_ORIGINS wss://$h https://$h"; done
 if [ -n "${LANDING_HOST:-}" ]; then
 	printf '%s {\n\timport landing_site\n}\n' "$LANDING_HOST" > /tmp/landing.caddy
+	for h in ${LANDING_HOST_ALIASES:-}; do
+		printf '%s {\n\tredir https://%s{uri} 301\n}\n' "$h" "$LANDING_HOST" >> /tmp/landing.caddy
+	done
 else
 	: > /tmp/landing.caddy
 fi
@@ -84,7 +95,7 @@ elif [ -n "${S3_PUBLIC_URL:-}" ]; then
 	S3_UPSTREAM="$(printf '%s' "$S3_PUBLIC_URL" | sed -E 's#^(https?://[^/]+).*#\1#')"
 	S3_PREFIX="$(printf '%s' "$S3_PUBLIC_URL" | sed -E 's#^https?://[^/]+##; s#/+$##')"
 	cat > /tmp/releases.caddy <<EOF_S3
-$RELEASES_HOST {
+$RELEASES_HOST ${RELEASES_HOST_ALIASES:-} {
 	import releases_host_headers
 $RELEASES_LISTING
 	# latest/: stable names overwritten by every release — revalidate; VERSION is read by the landing (CORS).
@@ -122,7 +133,7 @@ $RELEASES_LISTING
 }
 EOF_S3
 else
-	printf '%s {\n\timport releases_host_headers\n%s\n\timport releases_files\n}\n' "$RELEASES_HOST" "$RELEASES_LISTING" > /tmp/releases.caddy
+	printf '%s %s {\n\timport releases_host_headers\n%s\n\timport releases_files\n}\n' "$RELEASES_HOST" "${RELEASES_HOST_ALIASES:-}" "$RELEASES_LISTING" > /tmp/releases.caddy
 fi
 
 # The landing reads RELEASES_HOST/latest/VERSION (its CSP connect-src).

@@ -136,7 +136,7 @@ type Config struct {
 	SMTPTLS      string `env:"SMTP_TLS" envDefault:"starttls"` // starttls | tls | none
 	SMTPUser     string `env:"SMTP_USER"`                      // empty = no AUTH
 	SMTPPassword string `env:"SMTP_PASSWORD"`                  //
-	SMTPFrom     string `env:"SMTP_FROM"`                      // "Calab <noreply@calab.ru>"
+	SMTPFrom     string `env:"SMTP_FROM"`                      // "Calab <noreply@calab.io>"
 	// Meeting recording (ADR-0025). Needs LiveKit and the egress service; the recordings
 	// volume is RECORDINGS_PATH here and RECORDING_EGRESS_DIR in the egress container. With
 	// STORAGE_DRIVER=s3 there is no such volume: the egress uploads into the files bucket.
