@@ -1,5 +1,8 @@
 -- LDAPS sync is an eligibility source, never a password authentication mechanism.
 -- +goose Up
+-- New tables only; their foreign keys briefly lock workspaces/users. Fail fast instead of
+-- queueing behind a long transaction during a rolling deploy (see 00055).
+SET LOCAL lock_timeout = '10s';
 CREATE TABLE workspace_directories (
     id uuid PRIMARY KEY DEFAULT uuidv7(),
     workspace_id uuid NOT NULL REFERENCES workspaces(id) ON DELETE CASCADE,
@@ -73,4 +76,5 @@ CREATE TABLE directory_sync_objects (
     FOREIGN KEY (workspace_id, directory_id, run_id) REFERENCES directory_sync_runs(workspace_id, directory_id, id) ON DELETE CASCADE
 );
 -- +goose Down
+SET LOCAL lock_timeout = '10s';
 DROP TABLE directory_sync_objects, directory_objects, directory_sync_runs, workspace_directories;
