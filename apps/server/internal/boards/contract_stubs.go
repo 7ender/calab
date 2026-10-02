@@ -17,14 +17,6 @@ var contractStubRoutes = []string{
 	"PATCH /api/board-categories/{id}",
 	"DELETE /api/board-categories/{id}",
 	"PUT /api/workspaces/{id}/boards/order",
-	// §2 checklists (stage 2)
-	"POST /api/tasks/{id}/checklists",
-	"PATCH /api/checklists/{id}",
-	"DELETE /api/checklists/{id}",
-	"POST /api/checklists/{id}/items",
-	"PATCH /api/checklist-items/{id}",
-	"DELETE /api/checklist-items/{id}",
-	"POST /api/checklist-items/{id}/convert",
 	// §4 board webhook (stage 3)
 	"GET /api/boards/{id}/webhook",
 	"PUT /api/boards/{id}/webhook",
