@@ -189,7 +189,8 @@ try {
     }
   }
   if (process.platform === 'win32') {
-    for (const dir of ['Calab', join('Иван Петров', 'Calab')]) {
+    // A non-ASCII copy («Иван Петров\\Calab») could not be spawned on the runner (ENOENT): ASCII only.
+    for (const dir of ['Calab']) {
       try {
         await probeElectron([], dir);
       } catch (err) {
