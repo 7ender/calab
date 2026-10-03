@@ -30,13 +30,6 @@ const SETS = {
     { asset: 'lightning', pos: { bottom: 'var(--peek-v)', right: '6%' }, angle: 13, delay: 260 },
     { asset: 'highfive', pos: { top: '44%', left: 'var(--peek-side)' }, angle: -10, delay: 400, size: 'sm' },
   ],
-  // Small thumbnails in the capability cards: one sticker each.
-  voiceCard: [{ asset: 'headphones', pos: { top: '-26px', right: '10px' }, angle: 10, delay: 100, size: 'sm' }],
-  chatCard: [{ asset: 'chat', pos: { top: '-26px', right: '10px' }, angle: -8, delay: 100, size: 'sm' }],
-  meetingsCard: [{ asset: 'calendar', pos: { top: '-26px', right: '10px' }, angle: 9, delay: 100, size: 'sm' }],
-  boardsCard: [{ asset: 'tasks', pos: { top: '-26px', right: '10px' }, angle: -9, delay: 100, size: 'sm' }],
-  botsCard: [{ asset: 'fire', pos: { top: '-26px', right: '10px' }, angle: 8, delay: 100, size: 'sm' }],
-  companyCard: [{ asset: 'pricing', pos: { top: '-26px', right: '10px' }, angle: -8, delay: 100, size: 'sm' }],
 } as const satisfies Record<string, readonly Placement[]>;
 
 export type StickerSet = keyof typeof SETS;
