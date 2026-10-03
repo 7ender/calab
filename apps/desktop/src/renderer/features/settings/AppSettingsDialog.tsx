@@ -73,6 +73,9 @@ export function AppSettingsDialog({ tab, onClose }: { tab: string | undefined; o
     ...(guest ? [] : [{ id: 'calendar', label: t('settings.calendar'), icon: CalendarDays, content: <CalendarTab /> }]),
     { id: 'connection', label: t('settings.connection'), icon: Wifi, content: <ConnectionTab /> },
     { id: 'sessions', label: t('settings.sessions'), icon: MonitorSmartphone, content: <SessionsTab /> },
+    // «OAuth-приложения» (ADR-0054): near the end — rarely needed; Business only (PlanLock).
+    { id: 'authorized-apps', label: t('identity.grants'), icon: AppWindow, locked: !oauthApps, content: <AuthorizedApps /> },
+    // «О программе» always last (owner, 03.10).
     {
       id: 'about',
       label: t('settings.about'),
@@ -81,8 +84,6 @@ export function AppSettingsDialog({ tab, onClose }: { tab: string | undefined; o
       keywords: t('settings.aboutKeywords'),
       ...(updatePending ? { badge: t('update.badge') } : {}),
     },
-    // «OAuth-приложения» (ADR-0054): the last item — rarely needed; Business only (PlanLock).
-    { id: 'authorized-apps', label: t('identity.grants'), icon: AppWindow, locked: !oauthApps, content: <AuthorizedApps /> },
   ];
   return (
     <SettingsWindow
