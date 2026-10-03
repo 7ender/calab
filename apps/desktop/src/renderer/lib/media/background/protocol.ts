@@ -1,17 +1,12 @@
 import type { WorkerEffects } from './effects';
-import type { BackgroundKind } from './logic';
-import type { EdgeTune } from './compositor';
+import type { BackgroundKind, SegModel } from './logic';
 
-/**
- * Quality knobs (prototype / benchmarks, ADR-0035 addendum «края»): another model (URL, its input
- * size), the edge refinement, segmentation rate and mask EMA. Absent = the shipped defaults.
- */
-export interface BgTune extends Partial<EdgeTune> {
-  modelUrl?: string;
-  modelInput?: [number, number];
+/** Benchmarks and diagnostics (scripts/bg-quality.mjs, scripts/bg-probe.mjs). Absent = as shipped. */
+export interface BgTune {
+  /** Force a model on the GPU delegate (logic.ts segModel). */
+  model?: SegModel;
   segFps?: number;
-  emaTauMs?: number;
-  /** Diagnostics: make the GPU delegate fail to exercise the CPU fallback. */
+  /** Make the GPU delegate fail to exercise the CPU fallback. */
   failGpu?: boolean;
 }
 

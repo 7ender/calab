@@ -18,6 +18,8 @@ import {
   segmentStep,
   SEG_FPS,
   SEG_FPS_SOFTWARE,
+  SEG_MODELS,
+  segModel,
   uploadProblem,
   isWorkspaceImage,
   nameFromFile,
@@ -93,6 +95,17 @@ describe('segmentStep: the rate budget of a 15 fps camera', () => {
     const b = segmentStep(a.tokens, 1, SEG_FPS);
     expect(b.run).toBe(true);
     expect(segmentStep(b.tokens, 1, SEG_FPS).run).toBe(false);
+  });
+});
+
+describe('segModel: multiclass on the GPU, landscape where it would cost too much (2.1)', () => {
+  it('GPU delegate on a hardware GL → multiclass', () => expect(segModel({ delegate: 'GPU', software: false })).toBe('multiclass'));
+  it('software GL (SwiftShader / WARP) → landscape', () => expect(segModel({ delegate: 'GPU', software: true })).toBe('landscape'));
+  it('CPU delegate → landscape, whatever was asked', () => expect(segModel({ delegate: 'CPU', software: false, override: 'multiclass' })).toBe('landscape'));
+  it('benchmark override on the GPU', () => expect(segModel({ delegate: 'GPU', software: false, override: 'landscape' })).toBe('landscape'));
+  it('multiclass mask 0 is the background, edge 0.5–0.85', () => {
+    expect(SEG_MODELS.multiclass).toEqual({ input: [256, 256], edge: [0.5, 0.85], invert: true });
+    expect(SEG_MODELS.landscape.invert).toBe(false);
   });
 });
 

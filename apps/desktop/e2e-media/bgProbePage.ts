@@ -107,11 +107,15 @@ async function pictureTrack(url: string, sway: number): Promise<MediaStreamTrack
   c.height = 720;
   const g = c.getContext('2d');
   if (!g) throw new Error('no 2d');
+  // A picture of another aspect (a square avatar): centred at full height over its own stretched
+  // copy, so the person keeps their proportions and the sides still look like a room.
+  const w = Math.round((720 * img.naturalWidth) / img.naturalHeight);
   let n = 0;
   setInterval(() => {
     n++;
     const dx = sway ? Math.sin(n / 10) * sway : 0;
     g.drawImage(img, dx - sway, 0, 1280 + 2 * sway, 720);
+    if (Math.abs(w - 1280) > 8) g.drawImage(img, dx + (1280 - w) / 2, 0, w, 720);
   }, 66);
   const t = c.captureStream(15).getVideoTracks()[0];
   if (!t) throw new Error('no canvas track');
@@ -119,7 +123,7 @@ async function pictureTrack(url: string, sway: number): Promise<MediaStreamTrack
 }
 
 /**
- * Edge quality (ADR-0035 addendum «края»): `kind` over a picture of a person with `tune`; after
+ * Edge quality (ADR-0035 addendum 2.1, scripts/bg-quality.mjs): `kind` over a picture of a person with `tune`; after
  * `settleMs` returns the processed 1280×720 output as PNG and the worker's stats.
  */
 async function shoot(kind: BackgroundKind, picture: string, tune: BgTune | null, sway = 0, settleMs = 7000): Promise<{ png: string; stats: unknown; states: BackgroundStatus[] }> {

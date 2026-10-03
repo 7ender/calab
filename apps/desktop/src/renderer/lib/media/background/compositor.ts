@@ -1,16 +1,17 @@
-import { BLUR_DOWNSCALE, BLUR_MAX_RADIUS, MASK_MIN_COVERAGE, coverUv, gaussianKernel } from './logic';
+import { BLUR_DOWNSCALE, BLUR_MAX_RADIUS, MASK_MIN_COVERAGE, SEG_MODELS, coverUv, gaussianKernel, type SegModelSpec } from './logic';
 
 /**
  * The GPU half of the camera background (ADR-0035 §2), WebGL2 on the worker's OffscreenCanvas —
  * the same context MediaPipe's GPU delegate runs in, so the mask never leaves the GPU.
  *
- * Per segmentation (SEG_FPS, 8/s): the MediaPipe mask (scaled to the frame by MediaPipe) → `raw` at 256×144 (+ mipmaps: its 1×1 level is
- * the person's share of the frame) → temporal EMA into `ema` (a nearly empty mask keeps the
+ * Per segmentation (SEG_FPS, 8/s): the MediaPipe mask at the model's size (256×256 multiclass —
+ * inverted, its mask 0 is the background — or 256×144 landscape) → `raw` (+ mipmaps: its 1×1 level
+ * is the person's share of the frame) → temporal EMA into `ema` (a nearly empty mask keeps the
  * previous one while the hold is allowed — decided per pixel from the 1×1 level, no readback).
  * Per camera frame: joint bilateral smoothing of the mask at ¼ size guided by the frame's luma
  * (edges follow the picture, less halo) → for blur: separable Gaussian at ¼ size, H straight from the
  * frame with the background premultiplied by (1 − mask) so the person does not bleed into it, then
- * V → composite at full size: mix(background, camera, smoothstep(mask)). 2 passes for a picture,
+ * V → composite at full size: mix(background, camera, smoothstep(edge, mask)). 2 passes for a picture,
  * 4 for blur (docs/14 «Фон камеры»: render passes are what the GPU process pays for).
  *
  * Appearance effects (effects.ts), with or without a background: touch-up = a bilateral of the frame
@@ -87,37 +88,6 @@ void main() {
     }
   }
   o = vec4(sum / wsum, 0.0, 0.0, 1.0);
-}`;
-
-/**
- * Guided filter (He et al., «fast» variant) at ¼ size, guide = the frame's luma: per ¼-texel the
- * linear model mask ≈ a·luma + b over a (2R+1)² window. Written as (mask at ¼, a, b) into a float
- * target; the output pass applies a·luma + b with the FULL-resolution luma, so the cut-out edge
- * follows the picture's own edges at 1×, not the 256×144 model grid (the «кусками» look).
- */
-const GUIDE_R = 3;
-const FS_GUIDE = `${HEAD}
-uniform sampler2D u_mask;
-uniform sampler2D u_frame;
-uniform vec2 u_step;
-uniform float u_eps;
-const vec3 LUMA = vec3(0.299, 0.587, 0.114);
-void main() {
-  float sI = 0.0, sp = 0.0, sIp = 0.0, sII = 0.0;
-  for (int y = -${GUIDE_R}; y <= ${GUIDE_R}; y++) {
-    for (int x = -${GUIDE_R}; x <= ${GUIDE_R}; x++) {
-      vec2 uv = v_uv + vec2(float(x), float(y)) * u_step;
-      float I = dot(texture(u_frame, uv).rgb, LUMA);
-      float p = texture(u_mask, uv).r;
-      sI += I; sp += p; sIp += I * p; sII += I * I;
-    }
-  }
-  const float n = float((2 * ${GUIDE_R} + 1) * (2 * ${GUIDE_R} + 1));
-  float mI = sI / n, mp = sp / n;
-  float a = (sIp / n - mI * mp) / (sII / n - mI * mI + u_eps);
-  float b = mp - a * mI;
-  float I0 = dot(texture(u_frame, v_uv).rgb, LUMA);
-  o = vec4(clamp(a * I0 + b, 0.0, 1.0), a, b, 1.0);
 }`;
 
 /**
@@ -211,15 +181,7 @@ uniform float u_touch;
 uniform float u_range;
 uniform float u_gamma;
 uniform float u_denoise;
-uniform bool u_guided;
-uniform vec2 u_mtexel;
 const vec3 LUMA = vec3(0.299, 0.587, 0.114);
-/** The guided filter's mask at full resolution: mean of (a, b) over 4 ¼-texels × this pixel's luma. */
-float guidedMask(vec2 uv, vec3 c) {
-  vec2 ab = 0.25 * (texture(u_mask, uv + vec2(-0.5, -0.5) * u_mtexel).gb + texture(u_mask, uv + vec2(0.5, -0.5) * u_mtexel).gb
-    + texture(u_mask, uv + vec2(-0.5, 0.5) * u_mtexel).gb + texture(u_mask, uv + vec2(0.5, 0.5) * u_mtexel).gb);
-  return clamp(ab.x * dot(c, LUMA) + ab.y, 0.0, 1.0);
-}
 /** Skin tones in YCbCr (Chai & Ngan ranges, soft edges), not in deep shadow. */
 float skin(vec3 c) {
   float y = dot(c, LUMA);
@@ -238,7 +200,7 @@ vec3 lift(vec3 c) {
 void main() {
   vec2 uv = vec2(v_uv.x, 1.0 - v_uv.y);
   vec3 fg = texture(u_frame, uv).rgb;
-  float raw = u_mode == 0 ? 1.0 : (u_guided ? guidedMask(uv, fg) : texture(u_mask, uv).r);
+  float raw = u_mode == 0 ? 1.0 : texture(u_mask, uv).r;
   if (u_denoise > 0.0) {
     float lc = dot(fg, LUMA);
     vec3 s = fg;
@@ -301,30 +263,17 @@ export interface RenderOpts {
   denoise: number;
 }
 
-/** Width of the working mask: the selfie landscape model's input (256×144). */
+/** Width of the working mask: the models' input width (256, logic.ts SEG_MODELS). */
 const MASK_WIDTH = 256;
 
-/** Mask edge: below `lo` background, above `hi` person, smooth between. */
-const EDGE: [number, number] = [0.3, 0.7];
-
-/** Edge refinement (prototype switch, docs/adr ADR-0035 addendum «края»): v1 bilateral or guided. */
-export interface EdgeTune {
-  refine: 'bilateral' | 'guided';
-  edge: [number, number];
-  /** Guided filter regulariser (luma² units): smaller follows the picture's edges more closely. */
-  eps: number;
-  /** The model's confidence mask is the background's (multiclass category 0). */
-  invert: boolean;
-}
-export const EDGE_V1: EdgeTune = { refine: 'bilateral', edge: EDGE, eps: 0.001, invert: false };
+/** The model's mask: its edge (smoothstep over the person confidence) and whether it is the background's. */
+export type MaskSpec = Pick<SegModelSpec, 'edge' | 'invert'>;
 
 export class Compositor {
   readonly gl: WebGL2RenderingContext;
   private readonly vao: WebGLVertexArrayObject;
-  private readonly progs: Record<'maskIn' | 'ema' | 'refine' | 'guide' | 'blurH' | 'blur' | 'smooth' | 'out', Program>;
-  /** Float render targets (EXT_color_buffer_float): the guided filter's a, b need them. */
-  private readonly floatRT: boolean;
-  private tune: EdgeTune = EDGE_V1;
+  private readonly progs: Record<'maskIn' | 'ema' | 'refine' | 'blurH' | 'blur' | 'smooth' | 'out', Program>;
+  private maskSpec: MaskSpec = SEG_MODELS.landscape;
   private frame: WebGLTexture | null = null;
   private frameW = 0;
   private frameH = 0;
@@ -364,13 +313,11 @@ export class Compositor {
       maskIn: this.program(FS_MASK_IN, ['u_src', 'u_flip', 'u_invert']),
       ema: this.program(FS_EMA, ['u_raw', 'u_prev', 'u_alpha', 'u_hold', 'u_top', 'u_min']),
       refine: this.program(FS_REFINE, ['u_mask', 'u_frame', 'u_step']),
-      guide: this.program(FS_GUIDE, ['u_mask', 'u_frame', 'u_step', 'u_eps']),
       blurH: this.program(FS_BLUR_H, ['u_frame', 'u_mask', 'u_dir', 'u_texel', 'u_w', 'u_r']),
       blur: this.program(FS_BLUR, ['u_src', 'u_dir', 'u_w', 'u_r']),
       smooth: this.program(FS_SMOOTH, ['u_frame', 'u_texel', 'u_step', 'u_range']),
-      out: this.program(FS_OUT, ['u_frame', 'u_mask', 'u_bg', 'u_smooth', 'u_mode', 'u_bgScale', 'u_bgOffset', 'u_edge', 'u_texel', 'u_touch', 'u_range', 'u_gamma', 'u_denoise', 'u_guided', 'u_mtexel']),
+      out: this.program(FS_OUT, ['u_frame', 'u_mask', 'u_bg', 'u_smooth', 'u_mode', 'u_bgScale', 'u_bgOffset', 'u_edge', 'u_texel', 'u_touch', 'u_range', 'u_gamma', 'u_denoise']),
     };
-    this.floatRT = !!gl.getExtension('EXT_color_buffer_float');
     this.pbo = gl.createBuffer();
     gl.bindBuffer(gl.PIXEL_PACK_BUFFER, this.pbo);
     gl.bufferData(gl.PIXEL_PACK_BUFFER, 4, gl.STREAM_READ);
@@ -408,27 +355,17 @@ export class Compositor {
     return { p, u: Object.fromEntries(uniforms.map((n) => [n, gl.getUniformLocation(p, n)])) };
   }
 
-  /** Edge refinement settings; a change of the refine kind reallocates the ¼-size mask. */
-  setTune(t: EdgeTune): void {
-    const realloc = t.refine !== this.tune.refine;
-    this.tune = t;
-    if (realloc && this.frameW) {
-      const [w, h] = [this.frameW, this.frameH];
-      this.frameW = 0;
-      this.resize(w, h);
-    }
+  /** The segmentation model's mask (set once the segmenter has started). */
+  setMaskSpec(spec: MaskSpec): void {
+    this.maskSpec = spec;
   }
 
-  private get guided(): boolean {
-    return this.tune.refine === 'guided' && this.floatRT;
-  }
-
-  private texture(w: number, h: number, mipmaps = false, float = false): WebGLTexture {
+  private texture(w: number, h: number, mipmaps = false): WebGLTexture {
     const gl = this.gl;
     const tex = gl.createTexture();
     gl.bindTexture(gl.TEXTURE_2D, tex);
     const levels = mipmaps ? Math.floor(Math.log2(Math.max(w, h))) + 1 : 1;
-    gl.texStorage2D(gl.TEXTURE_2D, levels, float ? gl.RGBA16F : gl.RGBA8, w, h);
+    gl.texStorage2D(gl.TEXTURE_2D, levels, gl.RGBA8, w, h);
     gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, mipmaps ? gl.LINEAR_MIPMAP_NEAREST : gl.LINEAR);
     gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
     gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
@@ -436,9 +373,9 @@ export class Compositor {
     return tex;
   }
 
-  private target(w: number, h: number, mipmaps = false, float = false): Target {
+  private target(w: number, h: number, mipmaps = false): Target {
     const gl = this.gl;
-    const tex = this.texture(w, h, mipmaps, float);
+    const tex = this.texture(w, h, mipmaps);
     const fb = gl.createFramebuffer();
     gl.bindFramebuffer(gl.FRAMEBUFFER, fb);
     gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, tex, 0);
@@ -466,7 +403,7 @@ export class Compositor {
     this.smooth = null;
     const sw = Math.max(1, Math.ceil(w / BLUR_DOWNSCALE));
     const sh = Math.max(1, Math.ceil(h / BLUR_DOWNSCALE));
-    this.refined = this.target(sw, sh, false, this.guided);
+    this.refined = this.target(sw, sh);
     this.blurA = this.target(sw, sh);
     this.blurB = this.target(sw, sh);
   }
@@ -545,7 +482,7 @@ export class Compositor {
     this.pass(this.raw, maskIn);
     this.bind(0, mask, maskIn.u['u_src']);
     gl.uniform1i(maskIn.u['u_flip'] ?? null, this.flipMask ? 1 : 0);
-    gl.uniform1i(maskIn.u['u_invert'] ?? null, this.tune.invert ? 1 : 0);
+    gl.uniform1i(maskIn.u['u_invert'] ?? null, this.maskSpec.invert ? 1 : 0);
     this.draw();
     gl.bindTexture(gl.TEXTURE_2D, this.raw.tex);
     gl.generateMipmap(gl.TEXTURE_2D);
@@ -617,14 +554,11 @@ export class Compositor {
     this.setup();
     const { refine, blurH, blur, smooth, out } = this.progs;
 
-    const guided = this.guided;
     if (bgMode && emaA) {
-      const prog = guided ? this.progs.guide : refine;
-      this.pass(refined, prog);
-      this.bind(0, emaA.tex, prog.u['u_mask']);
-      this.bind(1, frame, prog.u['u_frame']);
-      gl.uniform2f(prog.u['u_step'] ?? null, 1 / refined.w, 1 / refined.h);
-      if (guided) gl.uniform1f(prog.u['u_eps'] ?? null, this.tune.eps);
+      this.pass(refined, refine);
+      this.bind(0, emaA.tex, refine.u['u_mask']);
+      this.bind(1, frame, refine.u['u_frame']);
+      gl.uniform2f(refine.u['u_step'] ?? null, 1 / refined.w, 1 / refined.h);
       this.draw();
     }
 
@@ -670,9 +604,7 @@ export class Compositor {
     const c = coverUv(this.imageAspect, this.frameW / this.frameH);
     gl.uniform2f(out.u['u_bgScale'] ?? null, c.scale[0], c.scale[1]);
     gl.uniform2f(out.u['u_bgOffset'] ?? null, c.offset[0], c.offset[1]);
-    gl.uniform2f(out.u['u_edge'] ?? null, this.tune.edge[0], this.tune.edge[1]);
-    gl.uniform1i(out.u['u_guided'] ?? null, guided ? 1 : 0);
-    gl.uniform2f(out.u['u_mtexel'] ?? null, 1 / refined.w, 1 / refined.h);
+    gl.uniform2f(out.u['u_edge'] ?? null, this.maskSpec.edge[0], this.maskSpec.edge[1]);
     gl.uniform2f(out.u['u_texel'] ?? null, 1 / this.frameW, 1 / this.frameH);
     gl.uniform1f(out.u['u_touch'] ?? null, opts.touchUp > 0 && this.smooth ? opts.touchUp : 0);
     gl.uniform1f(out.u['u_range'] ?? null, Math.max(0.01, opts.touchRange));

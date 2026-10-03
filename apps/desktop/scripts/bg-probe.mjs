@@ -59,6 +59,7 @@ app.whenReady().then(async () => {
   try {
     res.env = await win.webContents.executeJavaScript('new Promise((r) => { const t = setInterval(() => { if (globalThis.__probe) { clearInterval(t); r(globalThis.__probe.env()); } }, 100); })');
     for (const k of ['image', 'blur-strong']) res.kinds.push(await win.webContents.executeJavaScript('globalThis.__probe.run(' + JSON.stringify(k) + ')'));
+    res.kinds.push(await win.webContents.executeJavaScript('globalThis.__probe.run("blur-strong", 30000, { model: "multiclass" })'));
   } catch (e) {
     res.error = String(e);
   }
@@ -85,8 +86,10 @@ async function probePage(page, label, extra = {}) {
   page.on('worker', (w) => logs.push(`[worker] ${w.url().split('/').pop()}`));
   await page.waitForFunction(() => '__probe' in globalThis, null, { timeout: 30_000 });
   const run = { label, ...extra, env: await page.evaluate(() => globalThis.__probe.env()), kinds: [] };
-  // Every kind as shipped, then blur with the GPU delegate forced to fail (the CPU fallback).
-  const cases = [...KINDS.map((k) => [k, null]), ['blur-strong', { failGpu: true }]];
+  // Every kind as shipped (multiclass on a hardware GL, landscape on software GL), then blur with
+  // multiclass forced (the 16 MB model from app.asar even on WARP / SwiftShader), then blur with
+  // the GPU delegate forced to fail (the CPU fallback, landscape).
+  const cases = [...KINDS.map((k) => [k, null]), ['blur-strong', { model: 'multiclass' }], ['blur-strong', { failGpu: true }]];
   for (const [kind, tune] of cases) {
     try {
       run.kinds.push(await page.evaluate(([k, t]) => globalThis.__probe.run(k, 30_000, t), [kind, tune]));

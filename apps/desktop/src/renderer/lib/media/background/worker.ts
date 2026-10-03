@@ -4,16 +4,15 @@
  * transferred MediaStreamTrackGenerator stream; the UI thread takes no part per frame.
  *
  * A frame passes through untouched (no GL, no canvas) unless it needs work: a background (once the
- * model is loaded — segmentation at SEG_FPS, 8/s; 6/s without a GPU delegate), «Улучшить
- * внешность», or «Низкая освещённость» while the room is dark. The low-light meter reads the frame
+ * model is loaded — multiclass at SEG_FPS, 8/s; the landscape model at 6/s on software GL or the
+ * CPU delegate), «Улучшить внешность», or «Низкая освещённость» while the room is dark. The low-light meter reads the frame
  * at 256×144 once a second on the CPU (a histogram, effects.ts); a bright room stays pass-through.
  * The appearance effects need no model: the compositor alone, created on the first frame.
  */
 import { Compositor } from './compositor';
 import { METER_HEIGHT, METER_INTERVAL_MS, METER_WIDTH, NO_WORKER_EFFECTS, denoiseAmount, exposureDecision, exposureRamp, histogramMean, lumaHistogram, type WorkerEffects } from './effects';
-import { FRAME_FAILURES_MAX, MASKLESS_SEGMENTS_MAX, SEG_FPS, SEG_FPS_SOFTWARE, blurSigma, emaAlpha, errorText, maskHoldAllowed, MASK_MIN_COVERAGE, segmentStep } from './logic';
+import { FRAME_FAILURES_MAX, MASKLESS_SEGMENTS_MAX, SEG_FPS, SEG_FPS_SOFTWARE, SEG_MODELS, blurSigma, emaAlpha, errorText, maskHoldAllowed, MASK_MIN_COVERAGE, segmentStep } from './logic';
 import type { BgTune, FromWorker, ToWorker, WorkerMode } from './protocol';
-import { EDGE_V1 } from './compositor';
 import { createSegmenter, type Segmenter } from './segmenter';
 
 interface WorkerScope {
@@ -52,10 +51,9 @@ let meanLuma = -1;
 let exposureOn = false;
 let gammaTarget = 1;
 let gamma = 1;
-/** The selfie landscape model's input (tune.modelInput for another model). */
-let SEG_WIDTH = 256;
-let SEG_HEIGHT = 144;
-let emaTau: number | undefined;
+/** The model's input size (logic.ts SEG_MODELS), set when the segmenter starts. */
+let segWidth = 256;
+let segHeight = 256;
 let tune: BgTune = {};
 const stats = { frames: 0, rendered: 0, segs: 0, ms: 0, since: 0 };
 
@@ -80,7 +78,6 @@ function compositor(): Compositor | null {
   try {
     comp = new Compositor(new OffscreenCanvas(16, 16));
     comp.setImage(pendingImage);
-    comp.setTune({ refine: tune.refine ?? EDGE_V1.refine, edge: tune.edge ?? EDGE_V1.edge, eps: tune.eps ?? EDGE_V1.eps, invert: tune.invert ?? EDGE_V1.invert });
   } catch (err) {
     glFailed = true;
     console.warn('camera effects: WebGL2 unavailable', err);
@@ -97,11 +94,14 @@ function load(): Promise<void> {
       const c = compositor();
       if (!c) throw new Error('webgl2 unavailable');
       const software = c.software;
-      seg = await createSegmenter(c.canvas, tune.modelUrl, tune.failGpu);
+      seg = await createSegmenter(c.canvas, { software, ...(tune.model ? { model: tune.model } : {}), ...(tune.failGpu ? { failGpu: true } : {}) });
       if (stopped) return;
+      const spec = SEG_MODELS[seg.model];
+      [segWidth, segHeight] = spec.input;
+      c.setMaskSpec(spec);
       if (!seg.gpu || software) segFps = SEG_FPS_SOFTWARE;
       if (tune.segFps) segFps = tune.segFps;
-      const delegate = seg.gpu ? 'gpu delegate' : `cpu delegate (gpu: ${seg.gpuError})`;
+      const delegate = `${seg.model}, ${seg.gpu ? 'gpu delegate' : `cpu delegate (gpu: ${seg.gpuError})`}, ${segFps}/s`;
       post({ type: 'state', state: 'ready', software: !seg.gpu || software, detail: `${delegate}; ${c.renderer}` });
     } catch (err) {
       fail(`segmenter: ${errorText(err)}`);
@@ -180,13 +180,13 @@ async function handle(frame: VideoFrame): Promise<void> {
         const now = performance.now();
         if (coverage !== null && coverage >= MASK_MIN_COVERAGE) lastGoodAt = now;
         const segTs = Math.max(ts, lastSegTs + 1);
-        const alpha = emaAlpha(lastSegTs < 0 ? 0 : segTs - lastSegTs, emaTau);
+        const alpha = emaAlpha(lastSegTs < 0 ? 0 : segTs - lastSegTs);
         lastSegTs = segTs;
         segmented = true;
         // The model's own input size (ADR §2): scaled once here instead of MediaPipe uploading
         // the full frame and scaling its mask back up to it.
-        if (seg.small) segCtx ??= new OffscreenCanvas(SEG_WIDTH, SEG_HEIGHT).getContext('2d', { alpha: false, desynchronized: true });
-        segCtx?.drawImage(frame, 0, 0, SEG_WIDTH, SEG_HEIGHT);
+        if (seg.small) segCtx ??= new OffscreenCanvas(segWidth, segHeight).getContext('2d', { alpha: false, desynchronized: true });
+        segCtx?.drawImage(frame, 0, 0, segWidth, segHeight);
         if (++masklessSegments > MASKLESS_SEGMENTS_MAX) throw new Error(`no mask from the segmenter after ${MASKLESS_SEGMENTS_MAX} runs`);
         seg.segment(segCtx ? segCtx.canvas : frame, segTs, (tex, mw, mh) => {
           masklessSegments = 0;
@@ -270,8 +270,6 @@ scope.onmessage = (e: MessageEvent<ToWorker>) => {
   switch (m.type) {
     case 'init':
       tune = m.tune ?? {};
-      if (tune.modelInput) [SEG_WIDTH, SEG_HEIGHT] = tune.modelInput;
-      emaTau = tune.emaTauMs;
       writer = m.writable.getWriter();
       mode = m.mode;
       setEffects(m.effects);

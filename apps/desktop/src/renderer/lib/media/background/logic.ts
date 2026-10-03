@@ -159,6 +159,36 @@ export function errorText(err: unknown): string {
  */
 export const SEG_FPS = 8;
 export const SEG_FPS_SOFTWARE = 6;
+
+/**
+ * Segmentation models (ADR-0035 addendum 2.1, both MediaPipe, Apache-2.0, bundled):
+ *   multiclass — selfie_multiclass_256x256 (16 MB, float32): the default on the GPU delegate. Clean
+ *     contour, hair and ears kept. The person is 1 − the background class: it counts every person
+ *     class at once, accessories (headset, glasses) included, and is one texture — summing hair,
+ *     body, face and clothes would drop accessories and cost three more mask reads.
+ *   landscape — selfie_segmenter_landscape (256×144, 0.25 MB): software GL or the CPU delegate,
+ *     at SEG_FPS_SOFTWARE; the larger model would cost too much there.
+ * `edge`: smoothstep over the person confidence (below — background, above — person). Multiclass is
+ * confident, 0.5–0.85 keeps the edge tight without the 256-grid «saw» of 0.6–0.9; landscape is
+ * softer, 0.3–0.7 (2.0).
+ */
+export type SegModel = 'multiclass' | 'landscape';
+export interface SegModelSpec {
+  input: [number, number];
+  edge: [number, number];
+  /** The model's mask 0 is the background (person = 1 − it). */
+  invert: boolean;
+}
+export const SEG_MODELS: Record<SegModel, SegModelSpec> = {
+  multiclass: { input: [256, 256], edge: [0.5, 0.85], invert: true },
+  landscape: { input: [256, 144], edge: [0.3, 0.7], invert: false },
+};
+
+/** The model for a delegate: multiclass only on the GPU delegate over a hardware GL. */
+export function segModel(o: { delegate: 'GPU' | 'CPU'; software: boolean; override?: SegModel }): SegModel {
+  if (o.delegate === 'CPU') return 'landscape';
+  return o.override ?? (o.software ? 'landscape' : 'multiclass');
+}
 /** Token bucket cap: after a pause at most one extra segmentation, no burst. */
 const SEG_TOKENS_MAX = 2;
 

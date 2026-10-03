@@ -91,13 +91,13 @@ for (const p of pkgs.values()) {
   if (!p.texts.length && LICENSE_TEXT[p.name]) p.texts.push(readFileSync(LICENSE_TEXT[p.name], 'utf8').trim());
 }
 
-// Non-npm components shipped with every build (desktop and web): the camera background model
-// (ADR-0035, resources/mediapipe/SOURCE.txt).
+// Non-npm components shipped with every build (desktop and web): the camera background models
+// (ADR-0035: selfie_multiclass_256x256 and selfie_segmenter_landscape, resources/mediapipe/SOURCE.txt).
 const MODEL_SOURCE = join(here, '..', 'resources', 'mediapipe', 'SOURCE.txt');
 if (existsSync(MODEL_SOURCE)) {
-  pkgs.set('mediapipe-selfie-segmenter-landscape', {
-    name: 'MediaPipe Selfie Segmenter (landscape) model',
-    version: 'float16',
+  pkgs.set('mediapipe-image-segmenter-models', {
+    name: 'MediaPipe Image Segmenter models (Selfie Multiclass 256x256, Selfie Segmenter landscape)',
+    version: 'multiclass float32, landscape float16',
     license: 'Apache-2.0',
     url: 'https://ai.google.dev/edge/mediapipe/solutions/vision/image_segmenter',
     texts: [readFileSync(MODEL_SOURCE, 'utf8').trim(), readFileSync(MEDIAPIPE_LICENSE, 'utf8').trim()],

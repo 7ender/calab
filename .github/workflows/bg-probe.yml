@@ -8,7 +8,7 @@ name: camera background probe
 on:
   push:
     branches: ['spike/camera-background-*']
-    paths: ['apps/desktop/src/renderer/lib/media/background/**', 'apps/desktop/e2e-media/bg*', 'apps/desktop/scripts/bg-probe.mjs', '.github/workflows/bg-probe.yml']
+    paths: ['apps/desktop/src/renderer/lib/media/background/**', 'apps/desktop/resources/mediapipe/**', 'apps/desktop/e2e-media/bg*', 'apps/desktop/scripts/bg-probe.mjs', '.github/workflows/bg-probe.yml']
   workflow_dispatch:
     inputs:
       os:
