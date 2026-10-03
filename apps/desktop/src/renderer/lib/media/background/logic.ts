@@ -159,6 +159,20 @@ export function errorText(err: unknown): string {
  */
 export const SEG_FPS = 20;
 export const SEG_FPS_SOFTWARE = 6;
+/** The user's choice (owner, 03.10): smoothness vs CPU; prefs.cameraBgFps, default SEG_FPS. */
+export const SEG_FPS_OPTIONS = [8, 16, 20, 25] as const;
+export type SegFpsOption = (typeof SEG_FPS_OPTIONS)[number];
+/** Anything unknown (a stale or hand-edited pref) is the default. */
+export function normalizeSegFps(v: unknown): SegFpsOption {
+  return SEG_FPS_OPTIONS.find((o) => o === v) ?? SEG_FPS;
+}
+/**
+ * The rate the worker segments at: the setting, but the software / CPU-delegate fallback keeps its
+ * own lower rate whatever is chosen. (The camera's real frame rate caps it further: segmentStep.)
+ */
+export function effectiveSegFps(setting: number, fallback: boolean): number {
+  return fallback ? SEG_FPS_SOFTWARE : setting;
+}
 
 /**
  * Segmentation models (ADR-0035 addendum 2.1, both MediaPipe, Apache-2.0, bundled):

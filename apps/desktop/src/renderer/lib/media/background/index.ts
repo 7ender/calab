@@ -1,6 +1,6 @@
 import type { Track, TrackProcessor, VideoProcessorOptions } from 'livekit-client';
 import type { WorkerEffects } from './effects';
-import { BACKGROUND_PROCESSOR, type BackgroundKind } from './logic';
+import { BACKGROUND_PROCESSOR, SEG_FPS, type BackgroundKind } from './logic';
 import type { BgTune, FromWorker, ToWorker, WorkerState } from './protocol';
 
 /**
@@ -42,6 +42,8 @@ export class BackgroundProcessor implements TrackProcessor<Track.Kind.Video, Vid
   lastStats: Extract<FromWorker, { type: 'stats' }> | null = null;
   /** Quality knobs for prototypes and benchmarks (protocol.ts), set before `init`. */
   tune: BgTune | undefined;
+  /** prefs.cameraBgFps (logic.ts SEG_FPS_OPTIONS); the worker's fallback keeps its own rate. */
+  segFps = SEG_FPS;
 
   constructor(
     private mode: BackgroundKind,
@@ -76,7 +78,7 @@ export class BackgroundProcessor implements TrackProcessor<Track.Kind.Video, Vid
     const readable = new MediaStreamTrackProcessor<VideoFrame>({ track: opts.track, maxBufferSize: 2 }).readable;
     const image = this.image;
     this.image = null; // transferred
-    this.send({ type: 'init', readable, writable: generator.writable, mode: this.mode, image, effects: this.effects, ...(this.tune ? { tune: this.tune } : {}) }, image ? [readable, generator.writable, image] : [readable, generator.writable]);
+    this.send({ type: 'init', readable, writable: generator.writable, mode: this.mode, image, effects: this.effects, segFps: this.segFps, ...(this.tune ? { tune: this.tune } : {}) }, image ? [readable, generator.writable, image] : [readable, generator.writable]);
     return Promise.resolve();
   }
 
@@ -99,6 +101,13 @@ export class BackgroundProcessor implements TrackProcessor<Track.Kind.Video, Vid
   setEffects(effects: WorkerEffects): void {
     this.effects = effects;
     this.send({ type: 'effects', effects });
+  }
+
+  /** «Плавность»: the segmentation rate, without restarting anything. */
+  setSegFps(fps: number): void {
+    if (fps === this.segFps) return;
+    this.segFps = fps;
+    this.send({ type: 'segFps', fps });
   }
 
   get currentMode(): BackgroundKind {

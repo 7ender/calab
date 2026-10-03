@@ -11,7 +11,7 @@
  */
 import { Compositor } from './compositor';
 import { METER_HEIGHT, METER_INTERVAL_MS, METER_WIDTH, NO_WORKER_EFFECTS, denoiseAmount, exposureDecision, exposureRamp, histogramMean, lumaHistogram, type WorkerEffects } from './effects';
-import { FRAME_FAILURES_MAX, MASKLESS_SEGMENTS_MAX, SEG_FPS, SEG_FPS_SOFTWARE, SEG_MODELS, blurSigma, emaAlpha, errorText, maskHoldAllowed, MASK_MIN_COVERAGE, segmentStep } from './logic';
+import { FRAME_FAILURES_MAX, MASKLESS_SEGMENTS_MAX, SEG_FPS, SEG_MODELS, blurSigma, effectiveSegFps, emaAlpha, errorText, maskHoldAllowed, MASK_MIN_COVERAGE, segmentStep } from './logic';
 import type { BgTune, FromWorker, ToWorker, WorkerMode } from './protocol';
 import { createSegmenter, type Segmenter } from './segmenter';
 
@@ -33,7 +33,13 @@ let seg: Segmenter | null = null;
 let loading: Promise<void> | null = null;
 /** The segmenter could not start: no background (the appearance effects still work). */
 let failed = false;
+/** The user's setting and whether the software / CPU-delegate fallback is in use (it keeps its own rate). */
+let segSetting: number = SEG_FPS;
+let segFallback = false;
 let segFps = SEG_FPS;
+function updateSegFps(): void {
+  segFps = tune.segFps ?? effectiveSegFps(segSetting, segFallback);
+}
 let tokens = 0;
 let lastFrameTs = -1;
 let lastSegTs = -1;
@@ -99,8 +105,8 @@ function load(): Promise<void> {
       const spec = SEG_MODELS[seg.model];
       [segWidth, segHeight] = spec.input;
       c.setMaskSpec(spec);
-      if (!seg.gpu || software) segFps = SEG_FPS_SOFTWARE;
-      if (tune.segFps) segFps = tune.segFps;
+      segFallback = !seg.gpu || software;
+      updateSegFps();
       const delegate = `${seg.model}, ${seg.gpu ? 'gpu delegate' : `cpu delegate (gpu: ${seg.gpuError})`}, ${segFps}/s`;
       post({ type: 'state', state: 'ready', software: !seg.gpu || software, detail: `${delegate}; ${c.renderer}` });
     } catch (err) {
@@ -270,6 +276,8 @@ scope.onmessage = (e: MessageEvent<ToWorker>) => {
   switch (m.type) {
     case 'init':
       tune = m.tune ?? {};
+      if (m.segFps) segSetting = m.segFps;
+      updateSegFps();
       writer = m.writable.getWriter();
       mode = m.mode;
       setEffects(m.effects);
@@ -287,6 +295,10 @@ scope.onmessage = (e: MessageEvent<ToWorker>) => {
       break;
     case 'effects':
       setEffects(m.effects);
+      break;
+    case 'segFps':
+      segSetting = m.fps;
+      updateSegFps();
       break;
     case 'stop':
       stopped = true;

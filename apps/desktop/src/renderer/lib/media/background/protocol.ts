@@ -17,13 +17,15 @@ export type WorkerMode = BackgroundKind;
 
 export type ToWorker =
   /** First source: the camera frames in, the processed frames out (transferred streams). */
-  | { type: 'init'; readable: ReadableStream<VideoFrame>; writable: WritableStream<VideoFrame>; mode: WorkerMode; image: ImageBitmap | null; effects: WorkerEffects; tune?: BgTune }
+  | { type: 'init'; readable: ReadableStream<VideoFrame>; writable: WritableStream<VideoFrame>; mode: WorkerMode; image: ImageBitmap | null; effects: WorkerEffects; segFps?: number; tune?: BgTune }
   /** The camera was restarted (device switch): a new source, same output. */
   | { type: 'source'; readable: ReadableStream<VideoFrame> }
   /** Another effect / picture (the old bitmap is closed by the worker). */
   | { type: 'mode'; mode: WorkerMode; image: ImageBitmap | null }
   /** «Улучшить внешность» / «Низкая освещённость» changed (effects.ts): no reload of anything. */
   | { type: 'effects'; effects: WorkerEffects }
+  /** The segmentation rate setting (logic.ts SEG_FPS_OPTIONS), live. */
+  | { type: 'segFps'; fps: number }
   | { type: 'stop' };
 
 export type WorkerState =

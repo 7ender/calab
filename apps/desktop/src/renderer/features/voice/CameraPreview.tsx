@@ -179,8 +179,9 @@ function BackgroundLoading(): ReactNode {
 function ApplyEffects({ track }: { track: LocalVideoTrack }): null {
   const background = usePrefs((s) => s.cameraBackground);
   const effects = usePrefs((s) => s.cameraEffects);
+  const fps = usePrefs((s) => s.cameraBgFps);
   useEffect(() => {
     void applyCameraBackground(track, background, effects);
-  }, [track, background, effects]);
+  }, [track, background, effects, fps]);
   return null;
 }

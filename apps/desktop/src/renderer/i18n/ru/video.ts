@@ -29,6 +29,9 @@ export const ruVideo = {
 
   // camera background (ADR-0035)
   'video.bg.title': 'Фон',
+  'video.bg.fps': 'Плавность',
+  'video.bg.fpsUnit': 'к/с',
+  'video.bg.fpsHint': 'Выше — точнее контур в движении, но больше нагрузка',
   'video.bg.none': 'Нет',
   'video.bg.blurLight': 'Лёгкое',
   'video.bg.blurStrong': 'Сильное',
