@@ -479,6 +479,18 @@ footer { background: #0b0b0b; }
 @media(max-width:639px) { .conference-card > .photo-card-surface { padding:12px 12px 0; } .card-stickers img { width:90px; height:90px; } }
 @media(prefers-reduced-motion:reduce) { .card-stickers img { transition:none; } }
 
+/* Screenshot stickers: peek out from behind the frame; one-shot pop when StoryMotion adds .is-visible (transform/opacity only). */
+.shot-stage { --peek-v:-52px; --peek-side:-50px; position:relative; isolation:isolate; }
+.shot-stage-body { position:relative; z-index:1; }
+.shot-stickers { position:absolute; inset:0; z-index:0; pointer-events:none; }
+.shot-stickers img { position:absolute; width:96px; height:96px; max-width:none; object-fit:contain; transform:rotate(var(--a,0deg)); }
+.shot-stickers img.is-sm { width:68px; height:68px; }
+@media(max-width:639px) { .shot-stage { --peek-v:-34px; --peek-side:-10px; } .shot-stickers img { width:60px; height:60px; } .shot-stickers img.is-sm { width:44px; height:44px; } }
+@media(prefers-reduced-motion:no-preference) {
+ .shot-stage.reveal-ready .shot-stickers img { opacity:0; transform:translateY(24px) scale(.35) rotate(0deg); }
+ .shot-stage.reveal-ready.is-visible .shot-stickers img { opacity:1; transform:rotate(var(--a,0deg)); transition:transform .6s cubic-bezier(.34,1.5,.5,1) var(--d,0ms),opacity .2s var(--d,0ms); }
+}
+
 /* Access infographic: connected capabilities rather than a second pricing CTA. */
 .control-infographic { padding-top:64px; }
 .control-heading { display:flex; justify-content:space-between; align-items:flex-end; gap:40px; }
