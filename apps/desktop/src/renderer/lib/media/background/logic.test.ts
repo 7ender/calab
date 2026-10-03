@@ -82,10 +82,10 @@ describe('segmentStep: the rate budget of a 15 fps camera', () => {
   };
   it('15 fps camera, 12 fps budget → 12 segmentations a second', () => expect(run(12, 15, 150)).toBeGreaterThanOrEqual(118));
   it('never above the budget', () => expect(run(12, 15, 150)).toBeLessThanOrEqual(121));
-  it('the default (8) at 15 fps → 8 a second', () => {
-    expect(SEG_FPS).toBeLessThanOrEqual(15);
-    expect(run(SEG_FPS, 15, 150)).toBeGreaterThanOrEqual(SEG_FPS * 10 - 2);
-    expect(run(SEG_FPS, 15, 150)).toBeLessThanOrEqual(SEG_FPS * 10 + 1);
+  it('the default (20) at 30 fps → 20 a second; a 15 fps camera caps it at 15', () => {
+    expect(SEG_FPS).toBe(20);
+    expect(run(SEG_FPS, 30, 300)).toBeGreaterThanOrEqual(SEG_FPS * 10 - 2);
+    expect(run(SEG_FPS, 15, 150)).toBeLessThanOrEqual(151);
   });
   it('30 fps camera → still the budget', () => expect(run(SEG_FPS, 30, 300)).toBeLessThanOrEqual(SEG_FPS * 10 + 1));
   it('software fallback → 6', () => expect(run(SEG_FPS_SOFTWARE, 15, 150)).toBeLessThanOrEqual(61));
@@ -103,8 +103,8 @@ describe('segModel: multiclass on the GPU, landscape where it would cost too muc
   it('software GL (SwiftShader / WARP) → landscape', () => expect(segModel({ delegate: 'GPU', software: true })).toBe('landscape'));
   it('CPU delegate → landscape, whatever was asked', () => expect(segModel({ delegate: 'CPU', software: false, override: 'multiclass' })).toBe('landscape'));
   it('benchmark override on the GPU', () => expect(segModel({ delegate: 'GPU', software: false, override: 'landscape' })).toBe('landscape'));
-  it('multiclass mask 0 is the background, edge 0.5–0.85', () => {
-    expect(SEG_MODELS.multiclass).toEqual({ input: [256, 256], edge: [0.5, 0.85], invert: true });
+  it('multiclass mask 0 is the background, soft edge 0.3–0.95', () => {
+    expect(SEG_MODELS.multiclass).toEqual({ input: [256, 256], edge: [0.3, 0.95], invert: true });
     expect(SEG_MODELS.landscape.invert).toBe(false);
   });
 });
