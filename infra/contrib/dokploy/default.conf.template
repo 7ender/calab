@@ -1,7 +1,8 @@
-# Calab web client behind Dokploy/Traefik.
-# DOMAIN is substituted by the official nginx entrypoint.
-# API, gateway and LiveKit signaling are routed by Traefik directly to their containers.
+# Mirrors the web client behaviour of the Caddyfile (docs/06-deployment.md, "Web client", ADR-0015).
+# Rendered by the official nginx image's envsubst: only ${DOMAIN} is substituted.
 
+# /assets/* (hashed Vite files) are immutable; everything else (index.html, SPA routes) is no-cache.
+# add_header without "always" is not applied to 404, so a missing asset is never cached.
 map $uri $calab_cache_control {
     default     "no-cache";
     ~^/assets/  "public, max-age=31536000, immutable";
@@ -27,12 +28,12 @@ server {
     add_header X-Frame-Options "DENY" always;
     add_header Cache-Control $calab_cache_control;
 
-    # Missing asset must be a real 404, never index.html.
+    # a missing asset is a real 404, not index.html
     location /assets/ {
         try_files $uri =404;
     }
 
-    # SPA fallback for index.html and client-side routes.
+    # SPA fallback
     location / {
         try_files $uri /index.html;
     }
