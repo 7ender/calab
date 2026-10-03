@@ -34,7 +34,7 @@ export function ShowcaseRows({ locale, more }: { locale: Locale; more: string })
                   <ArrowUpRight size={16} aria-hidden="true" />
                 </a>
               </div>
-              <ShotStage set={row.key}>
+              <ShotStage set={row.key} side={index % 2 === 1 ? 'right' : 'left'}>
                 <Frame>
                   <Screen name={shots[row.key]} locale={locale} alt={row.alt} sizes="(min-width: 1024px) 700px, 92vw" />
                 </Frame>

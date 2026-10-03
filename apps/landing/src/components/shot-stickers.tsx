@@ -2,47 +2,28 @@ import type { CSSProperties, ReactNode } from 'react';
 import { stickerSrc } from '@/lib/stickers';
 import { cx } from './ui';
 
-type Placement = { asset: string; pos: CSSProperties; angle: number; delay: number; size?: 'sm' };
-
 /**
- * Deterministic per-topic sticker sets: each screenshot shows its own stickers, peeking from behind the frame edges.
- * Positions are fixed (no randomness at render, so no hydration drift); the pop-out is a one-shot CSS transition
- * driven by `.is-visible` from StoryMotion (transform/opacity only).
+ * One topic sticker per screenshot. On wide screens it slides out from behind the frame towards the text column
+ * and settles, fully visible, in the free space above or below the text (`v`); stacked (narrow) layouts show none.
+ * The slide is a one-shot CSS transition driven by `.is-visible` from StoryMotion
+ * (transform/opacity only, no scroll code). Fixed values: no hydration drift.
  */
-const SETS = {
-  voice: [
-    { asset: 'headphones', pos: { top: 'var(--peek-v)', right: '7%' }, angle: 12, delay: 120 },
-    { asset: 'video', pos: { bottom: 'var(--peek-v)', left: 'var(--peek-side)' }, angle: -14, delay: 260 },
-    { asset: 'highfive', pos: { top: '34%', right: 'var(--peek-side)' }, angle: 9, delay: 400, size: 'sm' },
-  ],
-  chat: [
-    { asset: 'chat', pos: { top: 'var(--peek-v)', left: '9%' }, angle: -10, delay: 120 },
-    { asset: 'coffee', pos: { bottom: 'var(--peek-v)', right: '8%' }, angle: 11, delay: 260 },
-    { asset: 'lightning', pos: { top: '40%', left: 'var(--peek-side)' }, angle: -8, delay: 400, size: 'sm' },
-  ],
-  calendar: [
-    { asset: 'calendar', pos: { top: 'var(--peek-v)', right: '10%' }, angle: 10, delay: 120 },
-    { asset: 'fire', pos: { bottom: 'var(--peek-v)', left: '4%' }, angle: -12, delay: 260 },
-    { asset: 'faq', pos: { top: '30%', right: 'var(--peek-side)' }, angle: 8, delay: 400, size: 'sm' },
-  ],
-  kanban: [
-    { asset: 'tasks', pos: { top: 'var(--peek-v)', left: '12%' }, angle: -9, delay: 120 },
-    { asset: 'lightning', pos: { bottom: 'var(--peek-v)', right: '6%' }, angle: 13, delay: 260 },
-    { asset: 'highfive', pos: { top: '44%', left: 'var(--peek-side)' }, angle: -10, delay: 400, size: 'sm' },
-  ],
-} as const satisfies Record<string, readonly Placement[]>;
+const STICKER = {
+  voice: { asset: 'headphones', v: 'top', angle: -10 },
+  chat: { asset: 'chat', v: 'bottom', angle: 9 },
+  calendar: { asset: 'calendar', v: 'top', angle: 8 },
+  kanban: { asset: 'tasks', v: 'bottom', angle: -9 },
+} as const satisfies Record<string, { asset: string; v: 'top' | 'bottom'; angle: number }>;
 
-export type StickerSet = keyof typeof SETS;
+export type StickerSet = keyof typeof STICKER;
 
-export function ShotStage({ set, className, children }: { set: StickerSet; className?: string; children: ReactNode }) {
-  const placements: readonly Placement[] = SETS[set];
+/** `side`: where the text column is relative to the screenshot. */
+export function ShotStage({ set, side, className, children }: { set: StickerSet; side: 'left' | 'right'; className?: string; children: ReactNode }) {
+  const s = STICKER[set];
   return (
-    <div className={cx('shot-stage', className)} data-reveal>
+    <div className={cx('shot-stage', className)} data-side={side} data-v={s.v} data-reveal>
       <span className="shot-stickers" aria-hidden="true">
-        {placements.map((p) => (
-          <img key={p.asset} className={p.size === 'sm' ? 'is-sm' : undefined} src={stickerSrc(p.asset)} alt="" width={112} height={112} loading="lazy" decoding="async" draggable={false}
-            style={{ ...p.pos, '--a': `${p.angle}deg`, '--d': `${p.delay}ms` } as CSSProperties} />
-        ))}
+        <img src={stickerSrc(s.asset)} alt="" width={128} height={128} loading="lazy" decoding="async" draggable={false} style={{ '--a': `${s.angle}deg` } as CSSProperties} />
       </span>
       <div className="shot-stage-body">{children}</div>
     </div>
