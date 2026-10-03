@@ -8,14 +8,15 @@ import { cx } from './ui';
  * The slide is a one-shot CSS transition driven by `.is-visible` from StoryMotion
  * (transform/opacity only, no scroll code). Fixed values: no hydration drift.
  */
-type Placement = { asset: string; v: 'top' | 'bottom'; angle: number };
+// `below`: under the shot's bottom edge, for short shots where the text column has no room below the text.
+type Placement = { asset: string; v: 'top' | 'bottom' | 'below'; angle: number };
 export type StickerSet = 'voice' | 'chat' | 'calendar' | 'kanban';
 
 // Chat has none: its screenshot already shows a sticker.
 const STICKER: Partial<Record<StickerSet, Placement>> = {
   voice: { asset: 'headphones', v: 'top', angle: -10 },
   calendar: { asset: 'calendar', v: 'top', angle: 8 },
-  kanban: { asset: 'tasks', v: 'bottom', angle: -9 },
+  kanban: { asset: 'tasks', v: 'below', angle: -9 },
 };
 
 /** `side`: where the text column is relative to the screenshot. */

@@ -490,6 +490,7 @@ footer { background: #0b0b0b; }
  .shot-stickers img { position:absolute; width:112px; height:112px; max-width:none; object-fit:contain; transform:rotate(var(--a,0deg)); }
  .shot-stage[data-v=top] .shot-stickers img { top:-2%; }
  .shot-stage[data-v=bottom] .shot-stickers img { bottom:-2%; }
+ .shot-stage[data-v=below] .shot-stickers img { bottom:-96px; }
  .shot-stage[data-side=left] .shot-stickers img { left:var(--out); }
  .shot-stage[data-side=right] .shot-stickers img { right:var(--out); }
 }
