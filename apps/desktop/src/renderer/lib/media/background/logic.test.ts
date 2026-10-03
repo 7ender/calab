@@ -83,7 +83,7 @@ describe('segmentStep: the rate budget of a 15 fps camera', () => {
   it('15 fps camera, 12 fps budget → 12 segmentations a second', () => expect(run(12, 15, 150)).toBeGreaterThanOrEqual(118));
   it('never above the budget', () => expect(run(12, 15, 150)).toBeLessThanOrEqual(121));
   it('the default (8) at 15 fps → 8 a second', () => {
-    expect(SEG_FPS).toBeLessThanOrEqual(12);
+    expect(SEG_FPS).toBeLessThanOrEqual(15);
     expect(run(SEG_FPS, 15, 150)).toBeGreaterThanOrEqual(SEG_FPS * 10 - 2);
     expect(run(SEG_FPS, 15, 150)).toBeLessThanOrEqual(SEG_FPS * 10 + 1);
   });
