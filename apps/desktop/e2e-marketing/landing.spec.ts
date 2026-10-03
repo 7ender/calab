@@ -27,8 +27,8 @@ import { SCENE, drawArt, seedBoard, seedMeetings, seedNotes, seedScene } from '.
 const OUT = resolve(import.meta.dirname, '../../landing/shots');
 const DIST = resolve(import.meta.dirname, '../dist-web');
 const SIZE = { width: 1440, height: 900 };
-/** chat: the window height (CSS px) of the closer chat frame (crop in apps/landing/scripts/assets.mjs). */
-const CHAT_HEIGHT = 820;
+/** chat: the window (CSS px) of the closer chat frame — a narrow feed (crop in apps/landing/scripts/assets.mjs). */
+const CHAT_WINDOW = { width: 930, height: 800 };
 const MOD = process.platform === 'darwin' ? 'Meta' : 'Control';
 
 const ALL: Short[] = ['ru', 'en', 'es', 'zh'];
@@ -185,7 +185,7 @@ const scenes: Record<string, (ctx: Ctx) => Promise<void>> = {
     await openRoom(ctx, ctx.c.rooms.general);
     // A shorter window: the bottom-anchored feed brings the mockup, the reactions, the reply and the
     // sticker right under the room header (assets.mjs crops the feed only, no members column).
-    await ctx.page.setViewportSize({ width: SIZE.width, height: CHAT_HEIGHT });
+    await ctx.page.setViewportSize(CHAT_WINDOW);
     await feedBottom(ctx.page);
     await shoot(ctx, 'chat');
   },

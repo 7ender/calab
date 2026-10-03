@@ -27,9 +27,9 @@ const MAX = 300_000;
 export const CROPS = {
   // hero: the whole window in a call — the shared slide on the stage, cameras, the room list
   voice: null,
-  // chat: the room header and the feed only (mockup with reactions, a reply, a sticker; the capture's
-  // window is 820 px tall so the feed sits right under the header), no members column
-  chat: { left: 330, top: 30, width: 870, height: 720 },
+  // chat: the room header and a narrow feed only (mockup with reactions, a reply, a sticker; the capture's
+  // window is 930×800, so the members column is hidden and the sticker sits next to the messages)
+  chat: { left: 330, top: 30, width: 600, height: 690 },
   // one-to-one call: the DM with «Звонок · 00:00 · Завершить», the island
   call: { left: 0, top: 30, width: 1440, height: 870 },
   // calendar: the day with the planning meeting's card
