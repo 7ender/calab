@@ -25,6 +25,7 @@ import { _electron as electron, chromium } from '@playwright/test';
 
 const require = createRequire(import.meta.url);
 const HERE = fileURLToPath(new URL('../e2e-media/', import.meta.url));
+process.on('exit', (code) => console.log(`bg-probe exit ${code}`));
 const argv = process.argv.slice(2);
 const outFile = argv.includes('--out') ? argv[argv.indexOf('--out') + 1] : '';
 const withChromium = !argv.includes('--no-chromium');
@@ -32,8 +33,9 @@ const flagSets = (process.env.PROBE_FLAGS ?? '').split(';').map((s) => s.trim().
 const MEDIA = ['--use-fake-device-for-media-stream', '--use-fake-ui-for-media-stream', '--mute-audio'];
 const KINDS = (process.env.PROBE_KINDS ?? 'blur-strong,image').split(',');
 
-// A non-ASCII path with a space, like a Windows profile «C:\\Users\\Иван Петров\\…».
-const work = mkdtempSync(join(tmpdir(), 'calab bg-probe Иван-'));
+const work = mkdtempSync(join(tmpdir(), 'calab-bg-probe-'));
+// The app goes under a non-ASCII path with a space, like a Windows profile «C:\\Users\\Иван Петров\\…».
+const appRoot = join(work, 'Иван Петров');
 const web = join(work, 'web');
 const report = { platform: process.platform, arch: process.arch, runs: [] };
 
@@ -86,14 +88,14 @@ async function probePage(page, label, extra = {}) {
 }
 
 async function probeElectron(flags) {
-  const app = join(work, 'app');
+  const app = join(appRoot, 'app');
   rmSync(app, { recursive: true, force: true });
   mkdirSync(app, { recursive: true });
   writeFileSync(join(app, 'package.json'), JSON.stringify({ name: 'calab-bg-probe', version: '0.0.0', main: 'main.cjs' }));
   writeFileSync(join(app, 'main.cjs'), MAIN);
   cpSync(web, join(app, 'web'), { recursive: true });
   const asar = require('@electron/asar');
-  const packed = join(work, 'app.asar');
+  const packed = join(appRoot, 'app.asar');
   rmSync(packed, { force: true });
   await asar.createPackage(app, packed);
   const mainLogs = [];
