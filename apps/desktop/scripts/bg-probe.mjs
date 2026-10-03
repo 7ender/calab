@@ -12,7 +12,8 @@
  * PROBE_FLAGS: `;`-separated Electron flag sets, one run each ('' = defaults). Used by
  * .github/workflows/bg-probe.yml (workflow_dispatch, Windows / macOS runners).
  */
-import { mkdtempSync, rmSync, writeFileSync, mkdirSync, cpSync } from 'node:fs';
+import { mkdtempSync, rmSync, writeFileSync, mkdirSync, cpSync, readFileSync } from 'node:fs';
+import { spawn } from 'node:child_process';
 import { createRequire } from 'node:module';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -51,6 +52,18 @@ app.whenReady().then(async () => {
   });
   win.webContents.session.setPermissionRequestHandler((_wc, _p, cb) => cb(true));
   await win.loadFile(join(__dirname, 'web', 'bgProbe.html'));
+  // Self-driven (no Playwright, which cannot attach to every layout): run and write the report.
+  const out = process.env.PROBE_SELF_OUT;
+  if (!out) return;
+  const res = { label: 'electron packaged (self-driven)', url: win.webContents.getURL(), gpu, kinds: [] };
+  try {
+    res.env = await win.webContents.executeJavaScript('new Promise((r) => { const t = setInterval(() => { if (globalThis.__probe) { clearInterval(t); r(globalThis.__probe.env()); } }, 100); })');
+    for (const k of ['image', 'blur-strong']) res.kinds.push(await win.webContents.executeJavaScript('globalThis.__probe.run(' + JSON.stringify(k) + ')'));
+  } catch (e) {
+    res.error = String(e);
+  }
+  require('fs').writeFileSync(out, JSON.stringify(res));
+  app.quit();
 });
 `;
 
@@ -91,8 +104,8 @@ async function probePage(page, label, extra = {}) {
  * a non-ASCII path with a space like a Windows profile «C:\\Users\\Иван Петров\\…» (Windows only:
  * the macOS bundle cannot be copied as is); otherwise `electron app.asar` from an ASCII path.
  */
-async function probeElectron(flags, packaged = false) {
-  const appRoot = packaged ? join(work, 'Иван Петров', 'Calab') : asciiRoot;
+async function probeElectron(flags, packaged = '') {
+  const appRoot = packaged ? join(work, packaged) : asciiRoot;
   const app = join(work, 'app-src');
   rmSync(app, { recursive: true, force: true });
   mkdirSync(app, { recursive: true });
@@ -112,7 +125,27 @@ async function probeElectron(flags, packaged = false) {
   rmSync(packed, { force: true });
   await asar.createPackage(app, packed);
   const mainLogs = [];
-  const eapp = await electron.launch({ executablePath: exe, args: packaged ? [...MEDIA, ...flags] : [...MEDIA, ...flags, packed], timeout: 60_000 });
+  if (packaged) {
+    const out = join(work, 'self.json');
+    const child = spawn(exe, [...MEDIA, ...flags], { env: { ...process.env, PROBE_SELF_OUT: out }, stdio: 'ignore' });
+    const code = await new Promise((r) => {
+      const t = setTimeout(() => {
+        child.kill();
+        r('timeout');
+      }, 120_000);
+      child.on('exit', (c) => {
+        clearTimeout(t);
+        r(c);
+      });
+      child.on('error', (e) => r(String(e)));
+    });
+    const res = existsSync(out) ? JSON.parse(readFileSync(out, 'utf8')) : { label: 'electron packaged (self-driven)', error: `no report, exit ${code}` };
+    res.path = appRoot;
+    report.runs.push(res);
+    console.log(JSON.stringify(res, null, 2));
+    return;
+  }
+  const eapp = await electron.launch({ executablePath: exe, args: [...MEDIA, ...flags, packed], timeout: 60_000 });
   eapp.on('console', (m) => mainLogs.push(m.text()));
   mainLogs.push(JSON.stringify(await eapp.evaluate(async ({ app }) => ({ features: app.getGPUFeatureStatus(), gpu: await app.getGPUInfo('basic').catch((e) => String(e)) }))));
   try {
@@ -155,10 +188,12 @@ try {
     }
   }
   if (process.platform === 'win32') {
-    try {
-      await probeElectron([], true);
-    } catch (err) {
-      report.runs.push({ label: 'electron packaged non-ASCII', error: String(err).slice(0, 1000) });
+    for (const dir of ['Calab', join('Иван Петров', 'Calab')]) {
+      try {
+        await probeElectron([], dir);
+      } catch (err) {
+        report.runs.push({ label: `electron packaged ${dir}`, error: String(err).slice(0, 1000) });
+      }
     }
   }
   if (withChromium) {
