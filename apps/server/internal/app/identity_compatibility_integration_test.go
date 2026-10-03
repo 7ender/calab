@@ -331,3 +331,24 @@ func TestIdentityOAuthGrantsEmptyForNewUser(t *testing.T) {
 		t.Fatalf("zero grants: %d %s, want 200 and an empty list", status, raw)
 	}
 }
+
+// Regression (2.0.1): «Администрирование» of a SUPERADMIN_EMAILS admin whose local proof is
+// older than 5 minutes answers 403 RECENT_AUTH_REQUIRED (the contract requires a fresh local
+// proof for product administration, reads included); the client's password confirmation
+// (POST /api/auth/local/reauth on the same session) must open it again.
+func TestIdentityAdminRecentAuthStepUp(t *testing.T) {
+	su := superadminUser(t)
+	if _, err := testDB.Pool.Exec(context.Background(), "UPDATE sessions SET local_authenticated_at=clock_timestamp()-interval '6 minutes' WHERE id=$1", uuid.MustParse(su.session)); err != nil {
+		t.Fatal(err)
+	}
+	auth.ForgetSessionChecks()
+	if st, e := su.apiErr("GET", "/api/admin/workspaces"); st != 403 || e.GetCode() != v1.ErrorCode_ERROR_CODE_RECENT_AUTH_REQUIRED {
+		t.Fatalf("stale proof: %d %v, want 403 RECENT_AUTH_REQUIRED", st, e)
+	}
+	status, data, _ := identityRequest(t, srv.URL, "POST", "/api/auth/local/reauth", su.token, "https://app.example.com", nil, &v1.LocalReauthRequest{CurrentPassword: "password123"})
+	if status != 200 {
+		t.Fatalf("local reauth: %d %s", status, data)
+	}
+	auth.ForgetSessionChecks()
+	su.must(200, "GET", "/api/admin/workspaces", nil, nil)
+}
