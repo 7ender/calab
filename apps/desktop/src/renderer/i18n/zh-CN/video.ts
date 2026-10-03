@@ -29,6 +29,9 @@ export const zhVideo: DictShape<typeof enVideo> = {
 
   // camera background (ADR-0035)
   'video.bg.title': '背景',
+  'video.bg.fps': '流畅度',
+  'video.bg.fpsUnit': '次/秒',
+  'video.bg.fpsHint': '越高，运动时边缘越准确，但负载越大',
   'video.bg.none': '无',
   'video.bg.blurLight': '轻度',
   'video.bg.blurStrong': '强烈',

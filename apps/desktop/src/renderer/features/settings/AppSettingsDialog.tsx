@@ -48,6 +48,8 @@ import { deviceLabel, osLabel, voicePathLabel } from './format';
 import { AfkCard } from '../shell/AfkCard';
 import { SoundSettings } from '../people/SoundSettings';
 import { CameraPreview, useCameras } from '../voice/CameraPreview';
+import { BackgroundSmoothness } from '../voice/BackgroundPicker';
+import { backgroundBlocked } from '../../services/cameraBackground';
 import { StreamCodecSelect, streamCodecHint } from '../voice/StreamCodecSelect';
 import { MyStickersCard } from './MyStickersCard';
 import { BirthdaySettings } from './BirthdaySettings';
@@ -360,6 +362,11 @@ function VoiceTab(): ReactNode {
           {/* Nested sheet: the settings stay open underneath. */}
           {preview ? <CameraPreview onClose={() => setPreview(false)} /> : null}
         </Row>
+        {p.cameraBackground.kind !== 'none' && backgroundBlocked() === null ? (
+          <Row label={t('video.bg.fps')} hint={t('video.bg.fpsHint')}>
+            <BackgroundSmoothness />
+          </Row>
+        ) : null}
         <Row label={t('video.saveTraffic')} hint={t('video.saveTrafficHint')}>
           <Toggle label={t('video.saveTraffic')} checked={p.saveTraffic} onChange={(v) => p.setPrefs({ saveTraffic: v })} />
         </Row>

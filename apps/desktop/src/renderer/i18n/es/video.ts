@@ -32,6 +32,9 @@ export const esVideo: DictShape<typeof enVideo> = {
 
   // camera background (ADR-0035)
   'video.bg.title': 'Fondo',
+  'video.bg.fps': 'Fluidez',
+  'video.bg.fpsUnit': 'f/s',
+  'video.bg.fpsHint': 'Más alto: contorno más preciso en movimiento, pero más carga',
   'video.bg.none': 'Ninguno',
   'video.bg.blurLight': 'Suave',
   'video.bg.blurStrong': 'Intenso',

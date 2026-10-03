@@ -15,6 +15,7 @@ import {
   failureKind,
   failureStopsEffects,
   hasHardwareBlur,
+  normalizeSegFps,
   staleWorkspaceChoice,
   type BackgroundEnv,
   type BgFailure,
@@ -180,6 +181,8 @@ async function apply(track: LocalVideoTrack, bg: CameraBackground, fx: CameraEff
   };
   let kind = path === 'pipeline' ? bg.kind : 'none';
   if (kind === 'none' && !effects) return stop();
+  const fps = normalizeSegFps(usePrefs.getState().cameraBgFps);
+  ours?.setSegFps(fps);
   const picture = kind === 'image' ? (bg.imageId ?? null) : null;
   const fxOut = effects ?? NO_WORKER_EFFECTS;
   // Only the effects changed (a slider drag): nothing to reload.
@@ -210,8 +213,7 @@ async function apply(track: LocalVideoTrack, bg: CameraBackground, fx: CameraEff
   }
   // The appearance effects need no model: nothing to wait for («Загружаем фон…» only for a background).
   setCameraBg({ state: kind === 'none' ? 'ready' : 'loading', software: false });
-  await track.setProcessor(
-    createBackgroundProcessor(kind, image, fxOut, onStatus, picture),
-    true,
-  );
+  const processor = createBackgroundProcessor(kind, image, fxOut, onStatus, picture);
+  processor.segFps = fps;
+  await track.setProcessor(processor, true);
 }

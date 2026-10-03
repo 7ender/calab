@@ -32,6 +32,9 @@ export const enVideo: DictShape<typeof ruVideo> = {
 
   // camera background (ADR-0035)
   'video.bg.title': 'Background',
+  'video.bg.fps': 'Smoothness',
+  'video.bg.fpsUnit': 'fps',
+  'video.bg.fpsHint': 'Higher — a more accurate edge in motion, but more load',
   'video.bg.none': 'None',
   'video.bg.blurLight': 'Light',
   'video.bg.blurStrong': 'Strong',

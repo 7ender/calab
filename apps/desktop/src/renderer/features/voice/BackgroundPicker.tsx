@@ -4,7 +4,7 @@ import { MediaImg } from '../../components/MediaImg';
 import { Segmented, Tip, cx } from '../../components/ui';
 import { t, useLocale } from '../../i18n';
 import { BUILTIN_BACKGROUNDS, addCustomBackground, listCustomBackgrounds, prepareUpload, removeCustomBackground } from '../../lib/media/background/images';
-import { MAX_CUSTOM_BACKGROUNDS, UPLOAD_TYPES, uploadProblem, workspaceImageId, type BackgroundKind, type CameraBackground } from '../../lib/media/background/logic';
+import { MAX_CUSTOM_BACKGROUNDS, SEG_FPS_OPTIONS, normalizeSegFps, type SegFpsOption, UPLOAD_TYPES, uploadProblem, workspaceImageId, type BackgroundKind, type CameraBackground } from '../../lib/media/background/logic';
 import { thumbnailPath } from '../../lib/api/endpoints';
 import { log } from '../../lib/log';
 import { useCameraBg } from '../../stores/cameraBg';
@@ -149,6 +149,7 @@ export function BackgroundPicker(): ReactNode {
             </button>
           </Tip>
         </div>
+        {kind !== 'none' ? <BackgroundSmoothness hint /> : null}
         <input
           ref={input}
           type="file"
@@ -167,6 +168,26 @@ export function BackgroundPicker(): ReactNode {
         </p>
       ) : null}
     </section>
+  );
+}
+
+/**
+ * «Плавность»: how often the mask is computed (8 · 16 · 20 · 25 per second) — a leaf with its own
+ * primitive subscription; applies live (services/voice.ts, CameraPreview follow prefs.cameraBgFps).
+ */
+export function BackgroundSmoothness({ hint = false }: { hint?: boolean }): ReactNode {
+  const fps = usePrefs((s) => s.cameraBgFps);
+  const setPrefs = usePrefs((s) => s.setPrefs);
+  const onChange = useCallback((v: string) => setPrefs({ cameraBgFps: normalizeSegFps(Number(v)) }), [setPrefs]);
+  return (
+    <div className={hint ? 'mt-3' : undefined} data-testid="camera-bg-fps">
+      <div className="flex flex-wrap items-center gap-x-3 gap-y-1.5">
+        {hint ? <span className="text-footnote text-muted">{t('video.bg.fps')}</span> : null}
+        <Segmented<string> label={t('video.bg.fps')} value={String(fps)} onChange={onChange} options={SEG_FPS_OPTIONS.map((o: SegFpsOption) => ({ value: String(o), label: String(o) }))} />
+        <span className="text-caption text-muted">{t('video.bg.fpsUnit')}</span>
+      </div>
+      {hint ? <p className="mt-1.5 text-caption text-muted">{t('video.bg.fpsHint')}</p> : null}
+    </div>
   );
 }
 

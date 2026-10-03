@@ -17,7 +17,10 @@ import {
   MASK_HOLD_MS,
   segmentStep,
   SEG_FPS,
+  SEG_FPS_OPTIONS,
   SEG_FPS_SOFTWARE,
+  effectiveSegFps,
+  normalizeSegFps,
   SEG_MODELS,
   segModel,
   uploadProblem,
@@ -240,5 +243,36 @@ describe('runtime failure → fallback (owner 2.1: never «selected but not show
   it('nothing chosen that failed: nothing to reset', () => {
     expect(failureFallback('model', { kind: 'none' }, fx)).toBeNull();
     expect(failureFallback('webgl', { kind: 'none' }, off)).toBeNull();
+  });
+});
+
+describe('segmentation rate setting', () => {
+  it('options are 8 / 16 / 20 / 25, default 20', () => {
+    expect([...SEG_FPS_OPTIONS]).toEqual([8, 16, 20, 25]);
+    expect(SEG_FPS).toBe(20);
+  });
+  it('normalizeSegFps: valid kept, anything else → 20', () => {
+    for (const o of SEG_FPS_OPTIONS) expect(normalizeSegFps(o)).toBe(o);
+    for (const bad of [undefined, null, 0, 15, 30, '20', NaN, {}]) expect(normalizeSegFps(bad)).toBe(20);
+  });
+  it('effectiveSegFps: the setting on the GPU, always 6 on the fallback', () => {
+    for (const o of SEG_FPS_OPTIONS) {
+      expect(effectiveSegFps(o, false)).toBe(o);
+      expect(effectiveSegFps(o, true)).toBe(SEG_FPS_SOFTWARE);
+    }
+  });
+  it('the camera rate still caps the setting (token bucket)', () => {
+    const run = (fps: number, cameraFps: number, frames: number): number => {
+      let tokens = 0;
+      let n = 0;
+      for (let i = 0; i < frames; i++) {
+        const st = segmentStep(tokens, 1000 / cameraFps, fps);
+        tokens = st.tokens;
+        if (st.run) n++;
+      }
+      return n;
+    };
+    expect(run(25, 15, 150)).toBeLessThanOrEqual(151);
+    expect(run(8, 30, 300)).toBeLessThanOrEqual(8 * 10 + 1);
   });
 });
