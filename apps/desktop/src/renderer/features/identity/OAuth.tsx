@@ -273,21 +273,13 @@ export const useOAuthAppsAvailable = (): boolean => useWorkspaces((s) => Object.
 
 /**
  * Settings → «OAuth-приложения»: the apps I signed in to with Calab, and revoking them. Business
- * only (ADR-0054 §5): with no Business workspace PlanLock dims a description and nothing is
- * requested; a server without identity configuration says so instead of an error.
+ * only in the cloud (ADR-0054 §5): with no Business workspace PlanLock dims a description. The
+ * list is still requested — an on-prem Enterprise workspace is entitled on any plan, and an
+ * existing grant must stay revocable — and shown whenever it has an active grant. A server
+ * without identity configuration says so instead of an error.
  */
 export function AuthorizedApps(): ReactNode {
   const available = useOAuthAppsAvailable();
-  if (!available)
-    return (
-      <PlanLock plan="business" testId="oauth-grants-lock">
-        <IdentityAbout title="identity.grants" text="identity.grantsHelp" />
-      </PlanLock>
-    );
-  return <GrantList />;
-}
-
-function GrantList(): ReactNode {
   const grants = useQuery({
     queryKey: ['oauth-grants', useSession((s) => s.sessionId)],
     queryFn: identityApi.grants,
@@ -306,8 +298,14 @@ function GrantList(): ReactNode {
     },
     [run, refetch],
   );
-  if (identityNotConfigured(grants.error)) return <IdentityNotConfigured />;
   const active = grants.data?.grants.filter((g) => !g.revokedAt);
+  if (!available && !active?.length)
+    return (
+      <PlanLock plan="business" testId="oauth-grants-lock">
+        <IdentityAbout title="identity.grants" text="identity.grantsHelp" />
+      </PlanLock>
+    );
+  if (identityNotConfigured(grants.error)) return <IdentityNotConfigured />;
   return (
     <Card title={t('identity.grants')}>
       <div className="flex flex-col gap-3 p-4">
