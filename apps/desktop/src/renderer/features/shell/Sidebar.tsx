@@ -39,7 +39,7 @@ import {
   Lock,
   Pencil,
   Plus,
-  Settings,
+  SlidersHorizontal,
   SquareKanban,
   Trash2,
   UserPlus,
@@ -756,7 +756,7 @@ function RoomActions({ room, canInvite, canSettings, active }: { room: Room; can
       {canSettings ? (
         <Tip label={t('room.settings')}>
           <button type="button" className={btn} aria-label={t('shell.roomSettingsOf', { name: room.name })} onClick={() => open({ kind: 'room-settings', roomId: room.id })}>
-            <Settings className="size-[18px]" aria-hidden />
+            <SlidersHorizontal className="size-[18px]" aria-hidden />
           </button>
         </Tip>
       ) : null}
@@ -899,7 +899,7 @@ function RoomMenu({
       case 'settings':
         return (
           <ContextMenu.Item key={id} className={menuItem} onSelect={() => open({ kind: 'room-settings', roomId: room.id })}>
-            <Settings className="size-4" /> {t('roomMenu.settings')}
+            <SlidersHorizontal className="size-4" /> {t('roomMenu.settings')}
           </ContextMenu.Item>
         );
       case 'markRead':
