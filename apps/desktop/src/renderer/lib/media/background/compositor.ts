@@ -4,7 +4,7 @@ import { BLUR_DOWNSCALE, BLUR_MAX_RADIUS, MASK_MIN_COVERAGE, SEG_MODELS, coverUv
  * The GPU half of the camera background (ADR-0035 §2), WebGL2 on the worker's OffscreenCanvas —
  * the same context MediaPipe's GPU delegate runs in, so the mask never leaves the GPU.
  *
- * Per segmentation (SEG_FPS, 8/s): the MediaPipe mask at the model's size (256×256 multiclass —
+ * Per segmentation (SEG_FPS, 15/s): the MediaPipe mask at the model's size (256×256 multiclass —
  * inverted, its mask 0 is the background — or 256×144 landscape) → `raw` (+ mipmaps: its 1×1 level
  * is the person's share of the frame) → temporal EMA into `ema` (a nearly empty mask keeps the
  * previous one while the hold is allowed — decided per pixel from the 1×1 level, no readback).

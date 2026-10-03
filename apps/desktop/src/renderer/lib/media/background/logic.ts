@@ -153,11 +153,11 @@ export function errorText(err: unknown): string {
 // ------------------------------------------------------------------ budget (ADR §2)
 
 /**
- * Segmentation rate with the GPU delegate, and without it (software WebGL / CPU delegate). ADR-0035
- * allows ≤ 12; 8 is the measured compromise on M4 (docs/14 «Фон камеры»): 12 → 8 saves ≈ 2 % of a
- * core, the mask still follows a moving head (EMA + edge smoothing hide the steps).
+ * Segmentation rate with the GPU delegate, and without it (software WebGL / CPU delegate). 15 = every
+ * frame of the 720p15 camera (owner, 03.10): at 8/s the mask lagged a turning head by ≈ 125 ms and
+ * patches of the real background showed; quality in motion is worth the ≈ +4 points of a core (VM).
  */
-export const SEG_FPS = 8;
+export const SEG_FPS = 15;
 export const SEG_FPS_SOFTWARE = 6;
 
 /**

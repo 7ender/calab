@@ -4,7 +4,7 @@
  * transferred MediaStreamTrackGenerator stream; the UI thread takes no part per frame.
  *
  * A frame passes through untouched (no GL, no canvas) unless it needs work: a background (once the
- * model is loaded — multiclass at SEG_FPS, 8/s; the landscape model at 6/s on software GL or the
+ * model is loaded — multiclass at SEG_FPS, 15/s (every camera frame); the landscape model at 6/s on software GL or the
  * CPU delegate), «Улучшить внешность», or «Низкая освещённость» while the room is dark. The low-light meter reads the frame
  * at 256×144 once a second on the CPU (a histogram, effects.ts); a bright room stays pass-through.
  * The appearance effects need no model: the compositor alone, created on the first frame.
