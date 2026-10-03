@@ -15,7 +15,7 @@ on:
         description: runner (windows-latest, macos-latest, ubuntu-latest)
         default: windows-latest
       flags:
-        description: ';'-separated Electron flag sets, one run each ('' = default flags)
+        description: "semicolon-separated Electron flag sets, one run each (empty = default flags)"
         default: ";--ignore-gpu-blocklist;--use-angle=swiftshader --enable-unsafe-swiftshader"
 
 permissions:
