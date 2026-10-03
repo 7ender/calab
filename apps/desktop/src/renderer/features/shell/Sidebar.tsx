@@ -1123,24 +1123,24 @@ function CardActions({ room }: { room: Room }): ReactNode {
 
 /**
  * «Войти» (owner, 02.10): the voice room row's way into the call (the row itself opens the chat).
- * Shown on hover / focus-within (always on touch, never in a full room without MOVE_MEMBERS); when hidden it is
- * `sr-only`, so Tab still reaches it (and focus reveals it).
+ * Shown on hover / focus-within (always on touch, never in a full room without MOVE_MEMBERS); when hidden its
+ * wrapper is `sr-only`, so Tab still reaches it (and focus reveals it). The wrapper, not the button, toggles
+ * `sr-only`/`not-sr-only`: `not-sr-only` resets padding and height, which stripped the button's own `px-2 h-5`.
  */
 const JoinButton = memo(function JoinButton({ name, onJoin, always }: { name: string; onJoin: () => void; always: boolean }): ReactNode {
   useLocale();
   return (
-    <Button
-      size="sm"
-      aria-label={t('shell.joinVoiceOf', { name })}
-      data-testid="room-join"
-      onClick={onJoin}
-      className={cx(
-        'h-5 px-2 text-micro mobile:h-6',
-        always ? '' : 'sr-only group-focus-within/row:not-sr-only group-hover/row:not-sr-only',
-      )}
-    >
-      {t('shell.joinVoiceShort')}
-    </Button>
+    <span className={cx('inline-flex shrink-0', !always && 'sr-only group-focus-within/row:not-sr-only group-hover/row:not-sr-only')}>
+      <Button
+        size="sm"
+        aria-label={t('shell.joinVoiceOf', { name })}
+        data-testid="room-join"
+        onClick={onJoin}
+        className="h-5 px-2 text-micro mobile:h-6"
+      >
+        {t('shell.joinVoiceShort')}
+      </Button>
+    </span>
   );
 });
 
