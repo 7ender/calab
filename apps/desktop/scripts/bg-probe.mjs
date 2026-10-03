@@ -19,7 +19,7 @@ import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { createServer } from 'node:http';
 import { createReadStream, existsSync, statSync } from 'node:fs';
-import { extname, normalize } from 'node:path';
+import { basename, dirname, extname, normalize } from 'node:path';
 import { build } from 'vite';
 import { _electron as electron, chromium } from '@playwright/test';
 
@@ -34,8 +34,7 @@ const MEDIA = ['--use-fake-device-for-media-stream', '--use-fake-ui-for-media-st
 const KINDS = (process.env.PROBE_KINDS ?? 'blur-strong,image').split(',');
 
 const work = mkdtempSync(join(tmpdir(), 'calab-bg-probe-'));
-// The app goes under a non-ASCII path with a space, like a Windows profile «C:\\Users\\Иван Петров\\…».
-const appRoot = join(work, 'Иван Петров');
+const asciiRoot = join(work, 'ascii');
 const web = join(work, 'web');
 const report = { platform: process.platform, arch: process.arch, runs: [] };
 
@@ -87,24 +86,38 @@ async function probePage(page, label, extra = {}) {
   console.log(JSON.stringify(run, null, 2));
 }
 
-async function probeElectron(flags) {
-  const app = join(appRoot, 'app');
+/**
+ * `packaged`: the installed layout — a copy of Electron with our app.asar in its resources, under
+ * a non-ASCII path with a space like a Windows profile «C:\\Users\\Иван Петров\\…» (Windows only:
+ * the macOS bundle cannot be copied as is); otherwise `electron app.asar` from an ASCII path.
+ */
+async function probeElectron(flags, packaged = false) {
+  const appRoot = packaged ? join(work, 'Иван Петров', 'Calab') : asciiRoot;
+  const app = join(work, 'app-src');
   rmSync(app, { recursive: true, force: true });
   mkdirSync(app, { recursive: true });
   writeFileSync(join(app, 'package.json'), JSON.stringify({ name: 'calab-bg-probe', version: '0.0.0', main: 'main.cjs' }));
   writeFileSync(join(app, 'main.cjs'), MAIN);
   cpSync(web, join(app, 'web'), { recursive: true });
   const asar = require('@electron/asar');
-  const packed = join(appRoot, 'app.asar');
+  let exe = require('electron');
+  let packed = join(appRoot, 'app.asar');
+  if (packaged) {
+    cpSync(dirname(exe), appRoot, { recursive: true });
+    exe = join(appRoot, basename(exe));
+    packed = join(appRoot, 'resources', 'app.asar');
+    rmSync(join(appRoot, 'resources', 'default_app.asar'), { force: true });
+  }
+  mkdirSync(dirname(packed), { recursive: true });
   rmSync(packed, { force: true });
   await asar.createPackage(app, packed);
   const mainLogs = [];
-  const eapp = await electron.launch({ executablePath: require('electron'), args: [...MEDIA, ...flags, packed], timeout: 60_000 });
+  const eapp = await electron.launch({ executablePath: exe, args: packaged ? [...MEDIA, ...flags] : [...MEDIA, ...flags, packed], timeout: 60_000 });
   eapp.on('console', (m) => mainLogs.push(m.text()));
   mainLogs.push(JSON.stringify(await eapp.evaluate(async ({ app }) => ({ features: app.getGPUFeatureStatus(), gpu: await app.getGPUInfo('basic').catch((e) => String(e)) }))));
   try {
     const page = await eapp.firstWindow();
-    await probePage(page, `electron file:// asar ${flags.join(' ') || '(default flags)'}`, { electron: await eapp.evaluate(() => process.versions.electron), mainLogs });
+    await probePage(page, `electron file:// asar${packaged ? ' packaged, non-ASCII path' : ''} ${flags.join(' ') || '(default flags)'}`, { electron: await eapp.evaluate(() => process.versions.electron), mainLogs });
   } finally {
     await eapp.close().catch(() => undefined);
   }
@@ -139,6 +152,13 @@ try {
     } catch (err) {
       report.runs.push({ label: `electron ${flags.join(' ')}`, error: String(err).slice(0, 1000) });
       console.log(`electron run failed: ${String(err)}`);
+    }
+  }
+  if (process.platform === 'win32') {
+    try {
+      await probeElectron([], true);
+    } catch (err) {
+      report.runs.push({ label: 'electron packaged non-ASCII', error: String(err).slice(0, 1000) });
     }
   }
   if (withChromium) {
