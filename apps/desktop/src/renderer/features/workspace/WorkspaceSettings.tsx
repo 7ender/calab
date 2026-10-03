@@ -79,14 +79,18 @@ export function WorkspaceSettingsDialog({
   const entry = useWorkspaces((s) => s.byId[workspaceId]);
   const me = useSession((s) => s.me?.user?.id ?? '');
   const myRoles = useMemberRoles(workspaceId, me);
-  // SSO / OAuth clients are Business only (ADR-0054 §5): below it the tabs are PlanLock'ed and
-  // nothing is requested; a server without identity configuration answers 409
-  // IDENTITY_NOT_CONFIGURED — «не настроено на сервере», not an error.
+  // SSO / OAuth clients are Business only in the cloud (ADR-0054 §5). The server decides: an
+  // on-prem Enterprise workspace (IDENTITY_EDITION=enterprise + allowlist) is entitled on any
+  // plan, so the status is always requested and an effective grant unlocks the tab whatever the
+  // plan says. Below Business without a grant the tab is PlanLock'ed; a server without identity
+  // configuration answers 409 IDENTITY_NOT_CONFIGURED — «не настроено на сервере», not an error.
   const identityPlan = useWorkspaces((s) => planHasIdentity(s.byId[workspaceId]?.ws.plan));
-  const identityStatus = useQuery({ queryKey: ['identity', workspaceId], queryFn: () => identityApi.status(workspaceId), enabled: !!entry && identityPlan, retry: false, refetchOnWindowFocus: false });
+  const identityStatus = useQuery({ queryKey: ['identity', workspaceId], queryFn: () => identityApi.status(workspaceId), enabled: !!entry, retry: false, refetchOnWindowFocus: false });
   const identityOff = identityNotConfigured(identityStatus.error);
   const grants = identityStatus.data?.access?.entitlements?.grants;
-  const featureLocked = (feature: IdentityFeature): boolean => !!grants && !grants.some((g) => g.feature === feature && g.enabled && (!g.validUntil || timestampDate(g.validUntil).getTime() > Date.now()));
+  const entitled = (feature: IdentityFeature): boolean => !!grants?.some((g) => g.feature === feature && g.enabled && (!g.validUntil || timestampDate(g.validUntil).getTime() > Date.now()));
+  const featureLocked = (feature: IdentityFeature): boolean => !!grants && !entitled(feature);
+  const planLocked = (feature: IdentityFeature): boolean => !identityPlan && !entitled(feature);
   if (!entry) return null;
   // Tabs by right, as the server checks (ADR-0048, lib/permissions settingsAccess): «Общие»,
   // «Звук», «Фоны» — MANAGE_WORKSPACE; «Роли» — MANAGE_ROLES; «Стикеры» — MANAGE_STICKERS; «Бейджи»,
@@ -99,14 +103,14 @@ export function WorkspaceSettingsDialog({
   const manageStickers = access.stickers;
   const inviter = access.invites;
   const identityPanel = (feature: IdentityFeature, about: ReactNode, content: ReactNode): ReactNode =>
-    !identityPlan ? (
-      <PlanLock plan="business" testId={feature === IdentityFeature.OAUTH_PROVIDER ? 'oauth-plan-lock' : 'sso-plan-lock'}>
-        {about}
-      </PlanLock>
-    ) : identityStatus.isPending ? (
+    identityStatus.isPending ? (
       <div className="grid place-items-center py-6">
         <Spinner />
       </div>
+    ) : planLocked(feature) ? (
+      <PlanLock plan="business" testId={feature === IdentityFeature.OAUTH_PROVIDER ? 'oauth-plan-lock' : 'sso-plan-lock'}>
+        {about}
+      </PlanLock>
     ) : identityOff ? (
       <IdentityNotConfigured />
     ) : (
@@ -150,7 +154,7 @@ export function WorkspaceSettingsDialog({
       id: 'identity',
       label: t('identity.settingsTitle'),
       icon: KeyRound,
-      locked: !identityPlan || featureLocked(IdentityFeature.CORPORATE_SSO),
+      locked: planLocked(IdentityFeature.CORPORATE_SSO) || featureLocked(IdentityFeature.CORPORATE_SSO),
       content: identityPanel(
         IdentityFeature.CORPORATE_SSO,
         <IdentityAbout title="identity.title" text="identity.ssoAbout" />,
@@ -163,7 +167,7 @@ export function WorkspaceSettingsDialog({
             id: 'oauth',
             label: t('identity.oauth'),
             icon: AppWindow,
-            locked: !identityPlan || featureLocked(IdentityFeature.OAUTH_PROVIDER),
+            locked: planLocked(IdentityFeature.OAUTH_PROVIDER) || featureLocked(IdentityFeature.OAUTH_PROVIDER),
             content: identityPanel(
               IdentityFeature.OAUTH_PROVIDER,
               <IdentityAbout title="identity.oauth" text="identity.oauthEmptyHelp" />,

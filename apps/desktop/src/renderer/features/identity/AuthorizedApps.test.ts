@@ -1,5 +1,5 @@
 import { create } from '@bufbuild/protobuf';
-import { Plan, WorkspacePlanSchema, WorkspaceSchema } from '@calaba/protocol';
+import { ListOAuthGrantsResponseSchema, OAuthGrantSchema, Plan, WorkspacePlanSchema, WorkspaceSchema } from '@calaba/protocol';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { createElement } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
@@ -16,6 +16,7 @@ const workspaces: { byId: Record<string, unknown> } = { byId: {} };
 vi.mock('../../stores/workspaces', () => ({ useWorkspaces: (sel: (s: typeof workspaces) => unknown) => sel(workspaces) }));
 
 const { AuthorizedApps } = await import('./OAuth');
+const { useSession } = await import('../../stores/session');
 const { IdentityNotConfigured } = await import('./IdentityGate');
 
 const withPlan = (plan: Plan): void => {
@@ -30,13 +31,21 @@ describe('Settings → «OAuth-приложения»', () => {
     grants.mockClear();
   });
 
-  it('below Business: the plan lock over a description, and no request', () => {
+  it('below Business with no active grant: the plan lock over a description', () => {
     withPlan(Plan.TEAM);
     const h = html();
     expect(h).toContain('data-testid="oauth-grants-lock"');
     expect(h).toContain('Доступно на тарифе Business');
     expect(h).toContain('OAuth-приложения');
-    expect(grants).not.toHaveBeenCalled();
+  });
+
+  it('below Business but with an active grant (on-prem Enterprise is entitled on any plan): the list, no lock', () => {
+    withPlan(Plan.FREE);
+    const client = new QueryClient();
+    client.setQueryData(['oauth-grants', useSession.getState().sessionId], create(ListOAuthGrantsResponseSchema, { grants: [create(OAuthGrantSchema, { id: 'g1' })] }));
+    const h = renderToStaticMarkup(createElement(QueryClientProvider, { client }, createElement(AuthorizedApps)));
+    expect(h).not.toContain('oauth-grants-lock');
+    expect(h).not.toContain('oauth-grants-empty');
   });
 
   it('a Business workspace: the list is loaded, no lock', () => {
