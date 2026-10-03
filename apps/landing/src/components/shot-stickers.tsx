@@ -22,7 +22,7 @@ const SETS = {
   ],
   calendar: [
     { asset: 'calendar', pos: { top: 'var(--peek-v)', right: '10%' }, angle: 10, delay: 120 },
-    { asset: 'rocket', pos: { bottom: 'var(--peek-v)', left: '4%' }, angle: -12, delay: 260 },
+    { asset: 'fire', pos: { bottom: 'var(--peek-v)', left: '4%' }, angle: -12, delay: 260 },
     { asset: 'faq', pos: { top: '30%', right: 'var(--peek-side)' }, angle: 8, delay: 400, size: 'sm' },
   ],
   kanban: [
@@ -35,7 +35,7 @@ const SETS = {
   chatCard: [{ asset: 'chat', pos: { top: '-26px', right: '10px' }, angle: -8, delay: 100, size: 'sm' }],
   meetingsCard: [{ asset: 'calendar', pos: { top: '-26px', right: '10px' }, angle: 9, delay: 100, size: 'sm' }],
   boardsCard: [{ asset: 'tasks', pos: { top: '-26px', right: '10px' }, angle: -9, delay: 100, size: 'sm' }],
-  botsCard: [{ asset: 'rocket', pos: { top: '-26px', right: '10px' }, angle: 8, delay: 100, size: 'sm' }],
+  botsCard: [{ asset: 'fire', pos: { top: '-26px', right: '10px' }, angle: 8, delay: 100, size: 'sm' }],
   companyCard: [{ asset: 'pricing', pos: { top: '-26px', right: '10px' }, angle: -8, delay: 100, size: 'sm' }],
 } as const satisfies Record<string, readonly Placement[]>;
 
