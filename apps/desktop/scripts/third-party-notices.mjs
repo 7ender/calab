@@ -28,11 +28,12 @@ const roots = new Set();
 for (const f of bundledFiles) if (existsSync(f)) for (const r of JSON.parse(readFileSync(f, 'utf8'))) roots.add(r);
 
 if (withProd) {
-  // Run pnpm through node when we were started by pnpm (npm_execpath = pnpm.cjs): on Windows there is only a
+  // Run pnpm through node only when npm_execpath is its JS entry (pnpm.cjs; the native @pnpm/exe binary is
+  // spawned directly): on Windows there is only a
   // pnpm.cmd shim, which execFileSync cannot spawn without a shell (pnpm/action-setup v6 no longer adds pnpm.exe).
   const pnpmArgs = ['licenses', 'list', '--json', '--prod'];
   const execPath = process.env.npm_execpath;
-  const [cmd, argv] = execPath && /pnpm/i.test(execPath) && !/\.(cmd|exe)$/i.test(execPath)
+  const [cmd, argv] = execPath && /pnpm/i.test(execPath) && /\.c?js$/i.test(execPath)
     ? [process.execPath, [execPath, ...pnpmArgs]]
     : ['pnpm', pnpmArgs];
   const json = JSON.parse(
