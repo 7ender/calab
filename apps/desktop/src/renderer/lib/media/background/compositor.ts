@@ -82,7 +82,7 @@ void main() {
     for (int x = -2; x <= 2; x++) {
       vec2 uv = v_uv + vec2(float(x), float(y)) * u_step;
       float dl = dot(texture(u_frame, uv).rgb, LUMA) - lc;
-      float w = exp(-float(x * x + y * y) / 4.5 - dl * dl / 0.0128);
+      float w = exp(-float(x * x + y * y) / 8.0 - dl * dl / 0.04);
       sum += w * texture(u_mask, uv).r;
       wsum += w;
     }

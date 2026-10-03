@@ -153,11 +153,11 @@ export function errorText(err: unknown): string {
 // ------------------------------------------------------------------ budget (ADR §2)
 
 /**
- * Segmentation rate with the GPU delegate, and without it (software WebGL / CPU delegate). 15 = every
- * frame of the 720p15 camera (owner, 03.10): at 8/s the mask lagged a turning head by ≈ 125 ms and
- * patches of the real background showed; quality in motion is worth the ≈ +4 points of a core (VM).
+ * Segmentation rate with the GPU delegate, and without it (software WebGL / CPU delegate). 20 (owner,
+ * 03.10, after the 2.1 previews): at 8/s the mask lagged a turning head by ≈ 125 ms and patches of
+ * the real background showed; 15 was better but not enough. Capped by the camera's own rate.
  */
-export const SEG_FPS = 15;
+export const SEG_FPS = 20;
 export const SEG_FPS_SOFTWARE = 6;
 
 /**
@@ -169,7 +169,7 @@ export const SEG_FPS_SOFTWARE = 6;
  *   landscape — selfie_segmenter_landscape (256×144, 0.25 MB): software GL or the CPU delegate,
  *     at SEG_FPS_SOFTWARE; the larger model would cost too much there.
  * `edge`: smoothstep over the person confidence (below — background, above — person). Multiclass is
- * confident, 0.5–0.85 keeps the edge tight without the 256-grid «saw» of 0.6–0.9; landscape is
+ * confident; 0.3–0.95 gives a soft feathered edge (owner, 03.10: 0.5–0.85 looked cut out); landscape is
  * softer, 0.3–0.7 (2.0).
  */
 export type SegModel = 'multiclass' | 'landscape';
@@ -180,7 +180,7 @@ export interface SegModelSpec {
   invert: boolean;
 }
 export const SEG_MODELS: Record<SegModel, SegModelSpec> = {
-  multiclass: { input: [256, 256], edge: [0.5, 0.85], invert: true },
+  multiclass: { input: [256, 256], edge: [0.3, 0.95], invert: true },
   landscape: { input: [256, 144], edge: [0.3, 0.7], invert: false },
 };
 
