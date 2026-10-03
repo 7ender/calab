@@ -1,7 +1,7 @@
 import type { Track, TrackProcessor, VideoProcessorOptions } from 'livekit-client';
 import type { WorkerEffects } from './effects';
 import { BACKGROUND_PROCESSOR, type BackgroundKind } from './logic';
-import type { FromWorker, ToWorker, WorkerState } from './protocol';
+import type { BgTune, FromWorker, ToWorker, WorkerState } from './protocol';
 
 /**
  * The camera background and appearance effects as a LiveKit track processor (ADR-0035 §1 and the
@@ -40,6 +40,8 @@ export class BackgroundProcessor implements TrackProcessor<Track.Kind.Video, Vid
   private generator: MediaStreamTrackGenerator<VideoFrame> | null = null;
   /** The worker's last 5 s report (frames, segmentations, ms per frame): e2e and benchmarks. */
   lastStats: Extract<FromWorker, { type: 'stats' }> | null = null;
+  /** Quality knobs for prototypes and benchmarks (protocol.ts), set before `init`. */
+  tune: BgTune | undefined;
 
   constructor(
     private mode: BackgroundKind,
@@ -74,7 +76,7 @@ export class BackgroundProcessor implements TrackProcessor<Track.Kind.Video, Vid
     const readable = new MediaStreamTrackProcessor<VideoFrame>({ track: opts.track, maxBufferSize: 2 }).readable;
     const image = this.image;
     this.image = null; // transferred
-    this.send({ type: 'init', readable, writable: generator.writable, mode: this.mode, image, effects: this.effects }, image ? [readable, generator.writable, image] : [readable, generator.writable]);
+    this.send({ type: 'init', readable, writable: generator.writable, mode: this.mode, image, effects: this.effects, ...(this.tune ? { tune: this.tune } : {}) }, image ? [readable, generator.writable, image] : [readable, generator.writable]);
     return Promise.resolve();
   }
 

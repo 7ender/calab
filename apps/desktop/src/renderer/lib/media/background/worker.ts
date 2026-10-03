@@ -12,7 +12,8 @@
 import { Compositor } from './compositor';
 import { METER_HEIGHT, METER_INTERVAL_MS, METER_WIDTH, NO_WORKER_EFFECTS, denoiseAmount, exposureDecision, exposureRamp, histogramMean, lumaHistogram, type WorkerEffects } from './effects';
 import { FRAME_FAILURES_MAX, MASKLESS_SEGMENTS_MAX, SEG_FPS, SEG_FPS_SOFTWARE, blurSigma, emaAlpha, errorText, maskHoldAllowed, MASK_MIN_COVERAGE, segmentStep } from './logic';
-import type { FromWorker, ToWorker, WorkerMode } from './protocol';
+import type { BgTune, FromWorker, ToWorker, WorkerMode } from './protocol';
+import { EDGE_V1 } from './compositor';
 import { createSegmenter, type Segmenter } from './segmenter';
 
 interface WorkerScope {
@@ -51,9 +52,11 @@ let meanLuma = -1;
 let exposureOn = false;
 let gammaTarget = 1;
 let gamma = 1;
-/** The selfie landscape model's input. */
-const SEG_WIDTH = 256;
-const SEG_HEIGHT = 144;
+/** The selfie landscape model's input (tune.modelInput for another model). */
+let SEG_WIDTH = 256;
+let SEG_HEIGHT = 144;
+let emaTau: number | undefined;
+let tune: BgTune = {};
 const stats = { frames: 0, rendered: 0, segs: 0, ms: 0, since: 0 };
 
 function count(ms: number, rendered: boolean, segmented: boolean): void {
@@ -77,6 +80,7 @@ function compositor(): Compositor | null {
   try {
     comp = new Compositor(new OffscreenCanvas(16, 16));
     comp.setImage(pendingImage);
+    comp.setTune({ refine: tune.refine ?? EDGE_V1.refine, edge: tune.edge ?? EDGE_V1.edge, eps: tune.eps ?? EDGE_V1.eps, invert: tune.invert ?? EDGE_V1.invert });
   } catch (err) {
     glFailed = true;
     console.warn('camera effects: WebGL2 unavailable', err);
@@ -93,9 +97,10 @@ function load(): Promise<void> {
       const c = compositor();
       if (!c) throw new Error('webgl2 unavailable');
       const software = c.software;
-      seg = await createSegmenter(c.canvas);
+      seg = await createSegmenter(c.canvas, tune.modelUrl, tune.failGpu);
       if (stopped) return;
       if (!seg.gpu || software) segFps = SEG_FPS_SOFTWARE;
+      if (tune.segFps) segFps = tune.segFps;
       const delegate = seg.gpu ? 'gpu delegate' : `cpu delegate (gpu: ${seg.gpuError})`;
       post({ type: 'state', state: 'ready', software: !seg.gpu || software, detail: `${delegate}; ${c.renderer}` });
     } catch (err) {
@@ -175,7 +180,7 @@ async function handle(frame: VideoFrame): Promise<void> {
         const now = performance.now();
         if (coverage !== null && coverage >= MASK_MIN_COVERAGE) lastGoodAt = now;
         const segTs = Math.max(ts, lastSegTs + 1);
-        const alpha = emaAlpha(lastSegTs < 0 ? 0 : segTs - lastSegTs);
+        const alpha = emaAlpha(lastSegTs < 0 ? 0 : segTs - lastSegTs, emaTau);
         lastSegTs = segTs;
         segmented = true;
         // The model's own input size (ADR §2): scaled once here instead of MediaPipe uploading
@@ -264,6 +269,9 @@ scope.onmessage = (e: MessageEvent<ToWorker>) => {
   const m = e.data;
   switch (m.type) {
     case 'init':
+      tune = m.tune ?? {};
+      if (tune.modelInput) [SEG_WIDTH, SEG_HEIGHT] = tune.modelInput;
+      emaTau = tune.emaTauMs;
       writer = m.writable.getWriter();
       mode = m.mode;
       setEffects(m.effects);

@@ -24,17 +24,26 @@ export interface Segmenter {
   close(): void;
 }
 
-export async function createSegmenter(canvas: OffscreenCanvas): Promise<Segmenter> {
+/** `failGpu`: diagnostics only — the GPU attempt gets a missing model, so the CPU fallback is exercised. */
+export async function createSegmenter(canvas: OffscreenCanvas, modelOverride?: string, failGpu = false): Promise<Segmenter> {
   const fileset = { wasmLoaderPath: new URL(wasmLoaderUrl, self.location.href).href, wasmBinaryPath: new URL(wasmBinaryUrl, self.location.href).href };
-  const model = new URL(modelUrl, self.location.href).href;
-  const make = (delegate: 'GPU' | 'CPU'): Promise<ImageSegmenter> =>
-    ImageSegmenter.createFromOptions(fileset, {
-      baseOptions: { modelAssetPath: model, delegate },
+  const model = new URL(modelOverride ?? modelUrl, self.location.href).href;
+  // MediaPipe loads the WASM loader with import() and then takes (and clears) the global
+  // `ModuleFactory` it sets. A module is evaluated once per worker, so a second attempt — the CPU
+  // delegate after a failed GPU one — found no factory («ModuleFactory not set») and the background
+  // failed instead of falling back (2.0.x). Import it ourselves and hand the factory to every attempt.
+  const loader = (await import(/* @vite-ignore */ fileset.wasmLoaderPath)) as { default?: unknown };
+  const g = globalThis as unknown as { ModuleFactory?: unknown };
+  const make = (delegate: 'GPU' | 'CPU'): Promise<ImageSegmenter> => {
+    g.ModuleFactory ??= loader.default ?? g.ModuleFactory;
+    return ImageSegmenter.createFromOptions(fileset, {
+      baseOptions: { modelAssetPath: failGpu && delegate === 'GPU' ? `${model}.missing` : model, delegate },
       canvas,
       runningMode: 'VIDEO',
       outputConfidenceMasks: true,
       outputCategoryMask: false,
     });
+  };
   let gpu = true;
   let gpuError = '';
   let seg: ImageSegmenter;

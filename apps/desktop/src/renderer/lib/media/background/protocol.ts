@@ -1,5 +1,19 @@
 import type { WorkerEffects } from './effects';
 import type { BackgroundKind } from './logic';
+import type { EdgeTune } from './compositor';
+
+/**
+ * Quality knobs (prototype / benchmarks, ADR-0035 addendum «края»): another model (URL, its input
+ * size), the edge refinement, segmentation rate and mask EMA. Absent = the shipped defaults.
+ */
+export interface BgTune extends Partial<EdgeTune> {
+  modelUrl?: string;
+  modelInput?: [number, number];
+  segFps?: number;
+  emaTauMs?: number;
+  /** Diagnostics: make the GPU delegate fail to exercise the CPU fallback. */
+  failGpu?: boolean;
+}
 
 /** Messages between the processor (main thread, index.ts) and the worker (worker.ts). */
 
@@ -8,7 +22,7 @@ export type WorkerMode = BackgroundKind;
 
 export type ToWorker =
   /** First source: the camera frames in, the processed frames out (transferred streams). */
-  | { type: 'init'; readable: ReadableStream<VideoFrame>; writable: WritableStream<VideoFrame>; mode: WorkerMode; image: ImageBitmap | null; effects: WorkerEffects }
+  | { type: 'init'; readable: ReadableStream<VideoFrame>; writable: WritableStream<VideoFrame>; mode: WorkerMode; image: ImageBitmap | null; effects: WorkerEffects; tune?: BgTune }
   /** The camera was restarted (device switch): a new source, same output. */
   | { type: 'source'; readable: ReadableStream<VideoFrame> }
   /** Another effect / picture (the old bitmap is closed by the worker). */

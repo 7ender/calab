@@ -9,6 +9,7 @@ import { createBackgroundProcessor, type BackgroundStatus } from '../src/rendere
 import { BUILTIN_BACKGROUNDS, loadBackgroundBitmap } from '../src/renderer/lib/media/background/images';
 import { NO_WORKER_EFFECTS } from '../src/renderer/lib/media/background/effects';
 import type { BackgroundKind } from '../src/renderer/lib/media/background/logic';
+import type { BgTune } from '../src/renderer/lib/media/background/protocol';
 
 function env(): Record<string, unknown> {
   const w = globalThis as unknown as Record<string, unknown>;
@@ -72,7 +73,7 @@ function compare(a: Float32Array, b: Float32Array): { meanIn: number; meanOut: n
   return { meanIn: mi / n, meanOut: mo / n, diff: diff / n, edgesIn: ei / n, edgesOut: eo / n };
 }
 
-async function run(kind: BackgroundKind, waitMs = 30_000): Promise<Record<string, unknown>> {
+async function run(kind: BackgroundKind, waitMs = 30_000, tune: BgTune | null = null): Promise<Record<string, unknown>> {
   const s = await navigator.mediaDevices.getUserMedia({ video: { width: 1280, height: 720, frameRate: 15 } });
   const raw = s.getVideoTracks()[0];
   if (!raw) throw new Error('no camera');
@@ -81,6 +82,7 @@ async function run(kind: BackgroundKind, waitMs = 30_000): Promise<Record<string
   const image = kind === 'image' ? await loadBackgroundBitmap(BUILTIN_BACKGROUNDS[2]?.id ?? BUILTIN_BACKGROUNDS[0]?.id) : null;
   const t0 = performance.now();
   const proc = createBackgroundProcessor(kind, image, NO_WORKER_EFFECTS, (st) => states.push({ ...st }));
+  if (tune) proc.tune = tune;
   await proc.init({ track: raw, kind: 'video' } as unknown as Parameters<typeof proc.init>[0]);
   const until = performance.now() + waitMs;
   while (performance.now() < until && !states.some((x) => x.state === 'ready' || x.state === 'failed')) await new Promise((r) => setTimeout(r, 200));
@@ -89,10 +91,59 @@ async function run(kind: BackgroundKind, waitMs = 30_000): Promise<Record<string
   await new Promise((r) => setTimeout(r, 6000));
   const out = proc.processedTrack;
   const cmp = out ? compare(await grab(raw), await grab(out)) : null;
-  const res = { kind, readyMs, states, stats: proc.lastStats, compare: cmp, cameraBackgroundBlur: caps['backgroundBlur'] ?? null, settings: raw.getSettings() };
+  const res = { kind, tune, readyMs, states, stats: proc.lastStats, compare: cmp, cameraBackgroundBlur: caps['backgroundBlur'] ?? null, settings: raw.getSettings() };
   await proc.destroy();
   raw.stop();
   return res;
 }
 
-(window as unknown as { __probe: unknown }).__probe = { env, run };
+/** A picture as a 15 fps camera; `sway` px of slow sideways motion (a person on a call), 0 = still. */
+async function pictureTrack(url: string, sway: number): Promise<MediaStreamTrack> {
+  const img = new Image();
+  img.src = url;
+  await img.decode();
+  const c = document.createElement('canvas');
+  c.width = 1280;
+  c.height = 720;
+  const g = c.getContext('2d');
+  if (!g) throw new Error('no 2d');
+  let n = 0;
+  setInterval(() => {
+    n++;
+    const dx = sway ? Math.sin(n / 10) * sway : 0;
+    g.drawImage(img, dx - sway, 0, 1280 + 2 * sway, 720);
+  }, 66);
+  const t = c.captureStream(15).getVideoTracks()[0];
+  if (!t) throw new Error('no canvas track');
+  return t;
+}
+
+/**
+ * Edge quality (ADR-0035 addendum «края»): `kind` over a picture of a person with `tune`; after
+ * `settleMs` returns the processed 1280×720 output as PNG and the worker's stats.
+ */
+async function shoot(kind: BackgroundKind, picture: string, tune: BgTune | null, sway = 0, settleMs = 7000): Promise<{ png: string; stats: unknown; states: BackgroundStatus[] }> {
+  const raw = await pictureTrack(picture, sway);
+  const states: BackgroundStatus[] = [];
+  const image = kind === 'image' ? await loadBackgroundBitmap(BUILTIN_BACKGROUNDS[2]?.id ?? BUILTIN_BACKGROUNDS[0]?.id) : null;
+  const proc = createBackgroundProcessor(kind, image, NO_WORKER_EFFECTS, (st) => states.push({ ...st }));
+  if (tune) proc.tune = tune;
+  await proc.init({ track: raw, kind: 'video' } as unknown as Parameters<typeof proc.init>[0]);
+  await new Promise((r) => setTimeout(r, settleMs));
+  const v = document.createElement('video');
+  v.muted = true;
+  v.srcObject = new MediaStream(proc.processedTrack ? [proc.processedTrack] : []);
+  await v.play();
+  await new Promise((r) => setTimeout(r, 300));
+  const c = document.createElement('canvas');
+  c.width = v.videoWidth;
+  c.height = v.videoHeight;
+  c.getContext('2d')?.drawImage(v, 0, 0);
+  v.srcObject = null;
+  const res = { png: c.toDataURL('image/png'), stats: proc.lastStats, states };
+  await proc.destroy();
+  raw.stop();
+  return res;
+}
+
+(window as unknown as { __probe: unknown }).__probe = { env, run, shoot };

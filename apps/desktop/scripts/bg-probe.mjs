@@ -32,7 +32,8 @@ const flagSets = (process.env.PROBE_FLAGS ?? '').split(';').map((s) => s.trim().
 const MEDIA = ['--use-fake-device-for-media-stream', '--use-fake-ui-for-media-stream', '--mute-audio'];
 const KINDS = (process.env.PROBE_KINDS ?? 'blur-strong,image').split(',');
 
-const work = mkdtempSync(join(tmpdir(), 'calab-bg-probe-'));
+// A non-ASCII path with a space, like a Windows profile «C:\\Users\\Иван Петров\\…».
+const work = mkdtempSync(join(tmpdir(), 'calab bg-probe Иван-'));
 const web = join(work, 'web');
 const report = { platform: process.platform, arch: process.arch, runs: [] };
 
@@ -70,11 +71,13 @@ async function probePage(page, label, extra = {}) {
   page.on('worker', (w) => logs.push(`[worker] ${w.url().split('/').pop()}`));
   await page.waitForFunction(() => '__probe' in globalThis, null, { timeout: 30_000 });
   const run = { label, ...extra, env: await page.evaluate(() => globalThis.__probe.env()), kinds: [] };
-  for (const kind of KINDS) {
+  // Every kind as shipped, then blur with the GPU delegate forced to fail (the CPU fallback).
+  const cases = [...KINDS.map((k) => [k, null]), ['blur-strong', { failGpu: true }]];
+  for (const [kind, tune] of cases) {
     try {
-      run.kinds.push(await page.evaluate((k) => globalThis.__probe.run(k), kind));
+      run.kinds.push(await page.evaluate(([k, t]) => globalThis.__probe.run(k, 30_000, t), [kind, tune]));
     } catch (err) {
-      run.kinds.push({ kind, error: String(err).slice(0, 600) });
+      run.kinds.push({ kind, tune, error: String(err).slice(0, 600) });
     }
   }
   run.logs = logs;
@@ -95,8 +98,8 @@ async function probeElectron(flags) {
   await asar.createPackage(app, packed);
   const mainLogs = [];
   const eapp = await electron.launch({ executablePath: require('electron'), args: [...MEDIA, ...flags, packed], timeout: 60_000 });
-  eapp.process().stdout?.on('data', (d) => mainLogs.push(String(d).trim()));
   eapp.on('console', (m) => mainLogs.push(m.text()));
+  mainLogs.push(JSON.stringify(await eapp.evaluate(async ({ app }) => ({ features: app.getGPUFeatureStatus(), gpu: await app.getGPUInfo('basic').catch((e) => String(e)) }))));
   try {
     const page = await eapp.firstWindow();
     await probePage(page, `electron file:// asar ${flags.join(' ') || '(default flags)'}`, { electron: await eapp.evaluate(() => process.versions.electron), mainLogs });
