@@ -51,11 +51,28 @@ export interface BackgroundEnv {
 }
 
 /**
- * Whether the «Фон» choice is shown at all. Safari / Firefox (no breakout box), phones, low-end
- * mode and machines without WebGL2 do not get it — also when the camera could blur by itself.
+ * Why «Фон» cannot be chosen here (null = it can). Owner, 2.1: a background is never «selected but
+ * not shown» — the section stays visible but disabled with this reason, checked BEFORE a choice:
+ *   browser — Safari / Firefox (no MediaStreamTrackProcessor / Generator, VideoFrame);
+ *   mobile  — phone or tablet web (CPU and battery);
+ *   lowEnd  — «Слабый компьютер» (docs/09 #44);
+ *   webgl   — no WebGL2 context on an OffscreenCanvas (probed once per session, not guessed);
+ *   failed  — the pipeline already failed in this session (model, worker, frames): see `failure`.
  */
-export function backgroundSupported(env: BackgroundEnv): boolean {
-  return env.breakoutBox && env.webgl2 && !env.mobile && !env.lowEnd;
+export type BgUnavailable = 'browser' | 'mobile' | 'lowEnd' | 'webgl' | 'failed';
+
+export function backgroundUnavailable(env: BackgroundEnv & { failed?: boolean }): BgUnavailable | null {
+  if (env.mobile) return 'mobile';
+  if (!env.breakoutBox) return 'browser';
+  if (env.lowEnd) return 'lowEnd';
+  if (!env.webgl2) return 'webgl';
+  if (env.failed) return 'failed';
+  return null;
+}
+
+/** The choice can be applied (no reason against it). */
+export function backgroundSupported(env: BackgroundEnv & { failed?: boolean }): boolean {
+  return backgroundUnavailable(env) === null;
 }
 
 /**
@@ -88,6 +105,42 @@ export function hasHardwareBlur(supported: Record<string, unknown> | undefined, 
  */
 export const FRAME_FAILURES_MAX = 30;
 export const MASKLESS_SEGMENTS_MAX = 24;
+
+/**
+ * A runtime failure, by the worker's `detail` prefix (worker.ts): `webgl` (no GL context — nothing
+ * can render), `worker` (the worker script died), `effects` (the GL passes keep throwing without a
+ * background), `model` (MediaPipe / WASM / model did not start), `frames` (frames keep throwing or
+ * no mask comes). The first three take the appearance effects down too.
+ */
+export type BgFailure = 'webgl' | 'worker' | 'effects' | 'model' | 'frames';
+
+export function failureKind(detail: string | undefined): BgFailure {
+  const d = detail ?? '';
+  if (d.startsWith('webgl2:')) return 'webgl';
+  if (d.startsWith('worker:')) return 'worker';
+  if (d.startsWith('effects:')) return 'effects';
+  if (d.startsWith('frames:')) return 'frames';
+  return 'model';
+}
+
+/** Whether a failure also takes «Улучшить внешность» / «Низкая освещённость» down (same GL / worker). */
+export const failureStopsEffects = (f: BgFailure): boolean => f === 'webgl' || f === 'worker' || f === 'effects';
+
+/**
+ * The fallback after a runtime failure (owner, 2.1): the camera goes on plain, and the choice that
+ * cannot be shown is reset — the background to «Нет», the effects off too when they died with it.
+ * Returns only what changes (null = nothing chosen that failed).
+ */
+export function failureFallback<Fx extends { touchUp: boolean; lowLight: boolean }>(
+  failure: BgFailure,
+  bg: CameraBackground,
+  fx: Fx,
+): { cameraBackground?: CameraBackground; cameraEffects?: Fx } | null {
+  const out: { cameraBackground?: CameraBackground; cameraEffects?: Fx } = {};
+  if (bg.kind !== 'none') out.cameraBackground = NO_BACKGROUND;
+  if (failureStopsEffects(failure) && (fx.touchUp || fx.lowLight)) out.cameraEffects = { ...fx, touchUp: false, lowLight: false };
+  return out.cameraBackground || out.cameraEffects ? out : null;
+}
 
 /** An error as one log line (MediaPipe throws Errors, strings and Events). */
 export function errorText(err: unknown): string {

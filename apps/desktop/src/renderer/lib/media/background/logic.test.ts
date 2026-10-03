@@ -2,6 +2,10 @@ import { describe, expect, it } from 'vitest';
 import {
   backgroundPath,
   backgroundSupported,
+  backgroundUnavailable,
+  failureFallback,
+  failureKind,
+  failureStopsEffects,
   blurSigma,
   errorText,
   coverCrop,
@@ -185,5 +189,43 @@ describe('errorText', () => {
     expect(errorText('abort')).toBe('abort');
     expect(errorText({ type: 'error' })).toBe('event error');
     expect(errorText(42)).toBe('42');
+  });
+});
+
+describe('backgroundUnavailable (owner 2.1: disabled with a reason, never hidden)', () => {
+  it('a working desktop: available', () => expect(backgroundUnavailable(DESKTOP)).toBeNull());
+  it('phone web first, then the browser, low-end, WebGL2, a failure in this session', () => {
+    expect(backgroundUnavailable({ ...DESKTOP, mobile: true, breakoutBox: false })).toBe('mobile');
+    expect(backgroundUnavailable({ ...DESKTOP, breakoutBox: false, webgl2: false })).toBe('browser');
+    expect(backgroundUnavailable({ ...DESKTOP, lowEnd: true })).toBe('lowEnd');
+    expect(backgroundUnavailable({ ...DESKTOP, webgl2: false })).toBe('webgl');
+    expect(backgroundUnavailable({ ...DESKTOP, failed: true })).toBe('failed');
+    expect(backgroundSupported({ ...DESKTOP, failed: true })).toBe(false);
+  });
+});
+
+describe('runtime failure → fallback (owner 2.1: never «selected but not shown»)', () => {
+  const fx = { touchUp: true, touchUpStrength: 40, lowLight: true };
+  const off = { touchUp: false, touchUpStrength: 40, lowLight: false };
+  it('classifies the worker detail', () => {
+    expect(failureKind('webgl2: Error: webgl2 unavailable')).toBe('webgl');
+    expect(failureKind('worker: script error')).toBe('worker');
+    expect(failureKind('effects: Error: x')).toBe('effects');
+    expect(failureKind('frames: Error: no mask from the segmenter after 24 runs')).toBe('frames');
+    expect(failureKind('segmenter: TypeError: Failed to fetch')).toBe('model');
+    expect(failureKind(undefined)).toBe('model');
+  });
+  it('a model / frames failure resets the background only', () => {
+    expect(failureFallback('model', { kind: 'image', imageId: 'bg-01' }, fx)).toEqual({ cameraBackground: { kind: 'none' } });
+    expect(failureFallback('frames', { kind: 'blur-strong' }, off)).toEqual({ cameraBackground: { kind: 'none' } });
+    expect(failureStopsEffects('model')).toBe(false);
+  });
+  it('a GL / worker failure resets the effects too', () => {
+    expect(failureFallback('webgl', { kind: 'blur-light' }, fx)).toEqual({ cameraBackground: { kind: 'none' }, cameraEffects: off });
+    expect(failureFallback('worker', { kind: 'none' }, fx)).toEqual({ cameraEffects: off });
+  });
+  it('nothing chosen that failed: nothing to reset', () => {
+    expect(failureFallback('model', { kind: 'none' }, fx)).toBeNull();
+    expect(failureFallback('webgl', { kind: 'none' }, off)).toBeNull();
   });
 });
