@@ -1,4 +1,5 @@
 import { ImageSegmenter } from '@mediapipe/tasks-vision';
+import { errorText } from './logic';
 // Bundled with the app (ADR-0035 §1): no CDN, the renderer has no external network. The ES-module
 // loader variant: a module worker cannot importScripts, MediaPipe then falls back to import().
 import wasmLoaderUrl from '@mediapipe/tasks-vision/vision_wasm_module_internal.js?url';
@@ -14,6 +15,8 @@ import modelUrl from '../../../../../resources/mediapipe/selfie_segmenter_landsc
 export interface Segmenter {
   /** false = the CPU delegate (or a software GL): segment less often. */
   readonly gpu: boolean;
+  /** Why the GPU delegate was not used ('' = it was): for the app log. */
+  readonly gpuError: string;
   /** The segmenter takes a model-size input (256×144) without resizing the shared canvas. */
   readonly small: boolean;
   /** Segments `frame`; `onMask` runs synchronously with a texture valid only inside it. */
@@ -33,12 +36,14 @@ export async function createSegmenter(canvas: OffscreenCanvas): Promise<Segmente
       outputCategoryMask: false,
     });
   let gpu = true;
+  let gpuError = '';
   let seg: ImageSegmenter;
   try {
     seg = await make('GPU');
   } catch (err) {
     console.warn('camera background: GPU delegate failed, using the CPU one', err);
     gpu = false;
+    gpuError = errorText(err);
     seg = await make('CPU');
   }
   // Our input is the 256×144 model-size picture, the canvas is the compositor's full-size output:
@@ -48,6 +53,7 @@ export async function createSegmenter(canvas: OffscreenCanvas): Promise<Segmente
   if (small) resize.call((seg as unknown as { g: unknown }).g, false);
   return {
     gpu,
+    gpuError,
     small,
     segment(frame, ts, onMask) {
       seg.segmentForVideo(frame, ts, (result) => {

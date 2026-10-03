@@ -29,6 +29,8 @@ export interface BackgroundStatus {
   state: WorkerState | 'idle';
   /** No GPU delegate / software WebGL: 6 fps and the «нагружает процессор» hint. */
   software: boolean;
+  /** `failed`: why (for the log; the UI shows a generic hint). `ready`: delegate and GL renderer. */
+  detail?: string;
 }
 
 export class BackgroundProcessor implements TrackProcessor<Track.Kind.Video, VideoProcessorOptions> {
@@ -58,12 +60,13 @@ export class BackgroundProcessor implements TrackProcessor<Track.Kind.Video, Vid
     generator.contentHint = 'motion';
     const worker = new Worker(new URL('./worker.ts', import.meta.url), { type: 'module', name: 'camera-background' });
     worker.onmessage = (e: MessageEvent<FromWorker>) => {
-      if (e.data.type === 'state') this.onStatus({ state: e.data.state, software: e.data.software ?? false });
+      if (e.data.type === 'state') this.onStatus({ state: e.data.state, software: e.data.software ?? false, ...(e.data.detail ? { detail: e.data.detail } : {}) });
       else this.lastStats = e.data;
     };
+    // The worker script itself failed (load, syntax, an uncaught throw): never silent.
     worker.onerror = (e) => {
-      console.warn('camera background worker error', e.message);
-      this.onStatus({ state: 'failed', software: false });
+      e.preventDefault();
+      this.onStatus({ state: 'failed', software: false, detail: `worker: ${e.message || 'script error'}` });
     };
     this.worker = worker;
     this.generator = generator;

@@ -78,6 +78,25 @@ export function hasHardwareBlur(supported: Record<string, unknown> | undefined, 
   return Array.isArray(c) && c.includes(true);
 }
 
+// ------------------------------------------------------------------ failures (never silent)
+
+/**
+ * The worker gives up on the background — state `failed`, frames pass through, the reason goes to
+ * the app log and the UI shows «Фон недоступен» — when frames keep throwing (`FRAME_FAILURES_MAX`
+ * in a row, 2 s at 15 fps) or the segmenter keeps returning no mask (`MASKLESS_SEGMENTS_MAX` runs in
+ * a row, ≈ 3 s at 8/s). Before 2.1 both passed the raw camera on with the state `ready`.
+ */
+export const FRAME_FAILURES_MAX = 30;
+export const MASKLESS_SEGMENTS_MAX = 24;
+
+/** An error as one log line (MediaPipe throws Errors, strings and Events). */
+export function errorText(err: unknown): string {
+  if (err instanceof Error) return `${err.name}: ${err.message}`;
+  if (typeof err === 'string') return err;
+  if (err && typeof err === 'object' && 'type' in err) return `event ${String(err.type)}`;
+  return String(err);
+}
+
 // ------------------------------------------------------------------ budget (ADR §2)
 
 /**

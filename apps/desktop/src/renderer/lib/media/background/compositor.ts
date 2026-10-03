@@ -319,12 +319,16 @@ export class Compositor {
     gl.bindBuffer(gl.PIXEL_PACK_BUFFER, null);
   }
 
-  /** The renderer string: SwiftShader / llvmpipe / «Basic Render» = software WebGL (ADR §2). */
-  get software(): boolean {
+  /** The GL renderer string (ANGLE backend and GPU), for the app log. */
+  get renderer(): string {
     const gl = this.gl;
     const ext = gl.getExtension('WEBGL_debug_renderer_info');
-    const name = String(gl.getParameter(ext ? ext.UNMASKED_RENDERER_WEBGL : gl.RENDERER));
-    return /swiftshader|llvmpipe|softpipe|software|basic render/i.test(name);
+    return String(gl.getParameter(ext ? ext.UNMASKED_RENDERER_WEBGL : gl.RENDERER));
+  }
+
+  /** SwiftShader / llvmpipe / «Basic Render» = software WebGL (ADR §2). */
+  get software(): boolean {
+    return /swiftshader|llvmpipe|softpipe|software|basic render/i.test(this.renderer);
   }
 
   private program(fs: string, uniforms: string[]): Program {

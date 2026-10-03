@@ -25,7 +25,8 @@ export type WorkerState =
   | 'failed';
 
 export type FromWorker =
-  | { type: 'state'; state: WorkerState; software?: boolean; error?: string }
+  /** `detail`: why it failed, or (ready) the delegate and the GL renderer — for the app log. */
+  | { type: 'state'; state: WorkerState; software?: boolean; detail?: string }
   /**
    * Every 5 s while the processor runs: frames out, frames rendered on the GPU (the rest passed
    * through), segmentations, worker ms per frame; the low-light meter's last mean luma (0..1, -1 =

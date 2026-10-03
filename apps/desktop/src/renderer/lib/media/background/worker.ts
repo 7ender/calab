@@ -11,7 +11,7 @@
  */
 import { Compositor } from './compositor';
 import { METER_HEIGHT, METER_INTERVAL_MS, METER_WIDTH, NO_WORKER_EFFECTS, denoiseAmount, exposureDecision, exposureRamp, histogramMean, lumaHistogram, type WorkerEffects } from './effects';
-import { SEG_FPS, SEG_FPS_SOFTWARE, blurSigma, emaAlpha, maskHoldAllowed, MASK_MIN_COVERAGE, segmentStep } from './logic';
+import { FRAME_FAILURES_MAX, MASKLESS_SEGMENTS_MAX, SEG_FPS, SEG_FPS_SOFTWARE, blurSigma, emaAlpha, errorText, maskHoldAllowed, MASK_MIN_COVERAGE, segmentStep } from './logic';
 import type { FromWorker, ToWorker, WorkerMode } from './protocol';
 import { createSegmenter, type Segmenter } from './segmenter';
 
@@ -40,6 +40,9 @@ let lastSegTs = -1;
 let lastGoodAt: number | null = null;
 let pendingImage: ImageBitmap | null = null;
 let stopped = false;
+/** Frames that threw in a row, segmentations without a mask in a row (logic.ts: never silent). */
+let frameFailures = 0;
+let masklessSegments = 0;
 let segCtx: OffscreenCanvasRenderingContext2D | null = null;
 /** Low light: the meter's canvas (CPU-backed, read once a second), its state, the curve in use. */
 let meterCtx: OffscreenCanvasRenderingContext2D | null = null;
@@ -77,7 +80,7 @@ function compositor(): Compositor | null {
   } catch (err) {
     glFailed = true;
     console.warn('camera effects: WebGL2 unavailable', err);
-    post({ type: 'state', state: 'failed', error: String(err) });
+    post({ type: 'state', state: 'failed', detail: `webgl2: ${errorText(err)}` });
   }
   return comp;
 }
@@ -93,14 +96,21 @@ function load(): Promise<void> {
       seg = await createSegmenter(c.canvas);
       if (stopped) return;
       if (!seg.gpu || software) segFps = SEG_FPS_SOFTWARE;
-      post({ type: 'state', state: 'ready', software: !seg.gpu || software });
+      const delegate = seg.gpu ? 'gpu delegate' : `cpu delegate (gpu: ${seg.gpuError})`;
+      post({ type: 'state', state: 'ready', software: !seg.gpu || software, detail: `${delegate}; ${c.renderer}` });
     } catch (err) {
-      failed = true;
-      console.warn('camera background: segmentation unavailable', err);
-      post({ type: 'state', state: 'failed', error: String(err) });
+      fail(`segmenter: ${errorText(err)}`);
     }
   })();
   return loading;
+}
+
+/** The background gives up (frames pass through, effects go on): the state and the reason, once. */
+function fail(detail: string): void {
+  if (failed) return;
+  failed = true;
+  console.warn('camera background: unavailable', detail);
+  post({ type: 'state', state: 'failed', detail });
 }
 
 function setImage(image: ImageBitmap | null): void {
@@ -172,7 +182,11 @@ async function handle(frame: VideoFrame): Promise<void> {
         // the full frame and scaling its mask back up to it.
         if (seg.small) segCtx ??= new OffscreenCanvas(SEG_WIDTH, SEG_HEIGHT).getContext('2d', { alpha: false, desynchronized: true });
         segCtx?.drawImage(frame, 0, 0, SEG_WIDTH, SEG_HEIGHT);
-        seg.segment(segCtx ? segCtx.canvas : frame, segTs, (tex, mw, mh) => c.pushMask(tex, mw, mh, alpha, maskHoldAllowed(lastGoodAt, now)));
+        if (++masklessSegments > MASKLESS_SEGMENTS_MAX) throw new Error(`no mask from the segmenter after ${MASKLESS_SEGMENTS_MAX} runs`);
+        seg.segment(segCtx ? segCtx.canvas : frame, segTs, (tex, mw, mh) => {
+          masklessSegments = 0;
+          c.pushMask(tex, mw, mh, alpha, maskHoldAllowed(lastGoodAt, now));
+        });
       }
     }
     const bg = bgOn && c.ready ? (mode === 'image' ? ({ kind: 'image' } as const) : ({ kind: 'blur', sigma: blurSigma(mode === 'blur-light' ? 'blur-light' : 'blur-strong', frame.displayHeight) } as const)) : null;
@@ -181,8 +195,20 @@ async function handle(frame: VideoFrame): Promise<void> {
       c.render({ bg, touchUp: fx.touchUp, touchRange: fx.touchRange, gamma, denoise: denoiseAmount(gamma) });
       out = new VideoFrame(c.canvas, { timestamp: frame.timestamp, alpha: 'discard' });
     }
+    frameFailures = 0;
   } catch (err) {
-    console.warn('camera background: frame failed, passing through', err);
+    // Passes through; a persistent failure turns the background off with its reason (never silent).
+    out?.close();
+    out = null;
+    if (++frameFailures === 1) console.warn('camera background: frame failed, passing through', err);
+    if (frameFailures >= FRAME_FAILURES_MAX || masklessSegments > MASKLESS_SEGMENTS_MAX) {
+      if (bgOn) fail(`frames: ${errorText(err)}`);
+      else {
+        glFailed = true;
+        post({ type: 'state', state: 'failed', detail: `effects: ${errorText(err)}` });
+      }
+      frameFailures = 0;
+    }
   }
   count(performance.now() - t0, !!out, segmented);
   if (out) {

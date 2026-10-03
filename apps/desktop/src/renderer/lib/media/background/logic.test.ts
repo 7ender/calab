@@ -3,6 +3,7 @@ import {
   backgroundPath,
   backgroundSupported,
   blurSigma,
+  errorText,
   coverCrop,
   coverUv,
   emaAlpha,
@@ -175,5 +176,14 @@ describe('nameFromFile', () => {
     expect(nameFromFile('  logo.final.png ')).toBe('logo.final');
     expect(nameFromFile('a\u0001b.webp')).toBe('a b');
     expect(nameFromFile(`${'я'.repeat(50)}.png`)).toBe('я'.repeat(40));
+  });
+});
+
+describe('errorText', () => {
+  it('formats Errors, strings and events as one line', () => {
+    expect(errorText(new TypeError('Failed to fetch'))).toBe('TypeError: Failed to fetch');
+    expect(errorText('abort')).toBe('abort');
+    expect(errorText({ type: 'error' })).toBe('event error');
+    expect(errorText(42)).toBe('42');
   });
 });

@@ -18,6 +18,9 @@ import {
 } from '../lib/media/background/logic';
 import { usePrefs } from '../stores/prefs';
 import { setCameraBg } from '../stores/cameraBg';
+import { toast } from '../stores/toasts';
+import { t } from '../i18n';
+import type { BackgroundStatus } from '../lib/media/background';
 import { findBackground } from '../stores/workspaces';
 
 /**
@@ -63,6 +66,23 @@ export function dropStaleWorkspaceBackground(): void {
 }
 
 let chain: Promise<void> = Promise.resolve();
+/** «Фон недоступен» is toasted once per run of the app (the preview also shows it as a hint). */
+let failureToasted = false;
+
+/**
+ * The processor's state → the UI store, and every transition with its reason → the app log:
+ * a background that cannot run must never fail silently (2.0.x on Windows did).
+ */
+function onStatus(s: BackgroundStatus): void {
+  if (s.state === 'failed') {
+    log.warn('camera background unavailable', s.detail ?? 'no detail');
+    if (!failureToasted) {
+      failureToasted = true;
+      toast.info(t('video.bg.failed'));
+    }
+  } else if (s.state === 'ready' && s.detail) log.info('camera background ready', s.detail);
+  setCameraBg({ state: s.state, software: s.software });
+}
 
 export function applyCameraBackground(track: LocalVideoTrack, bg: CameraBackground, fx: CameraEffects = DEFAULT_CAMERA_EFFECTS): Promise<void> {
   chain = chain.then(
@@ -120,7 +140,7 @@ async function apply(track: LocalVideoTrack, bg: CameraBackground, fx: CameraEff
   // The appearance effects need no model: nothing to wait for («Загружаем фон…» only for a background).
   setCameraBg({ state: kind === 'none' ? 'ready' : 'loading', software: false });
   await track.setProcessor(
-    createBackgroundProcessor(kind, image, fxOut, (s) => setCameraBg({ state: s.state, software: s.software }), picture),
+    createBackgroundProcessor(kind, image, fxOut, onStatus, picture),
     true,
   );
 }
