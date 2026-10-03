@@ -70,7 +70,7 @@ const caps: Record<Locale, Capabilities> = {
           { t: 'Веб-приложения пространства (Grafana, вики, CRM) прямо в окне Calab' },
           { t: 'Звонки на телефон через вашего SIP-провайдера', plan: 'business' },
         ] },
-      { key: 'company', title: 'Для компаний и безопасность', alt: 'Доступ под вашим контролем',
+      { key: 'company', title: 'On-premise', alt: 'Доступ под вашим контролем',
         lines: [
           { t: 'Свой сервер: один docker compose, данные остаются у вас' },
           { t: 'Корпоративный вход (SSO, OpenID Connect)', plan: 'business' },
@@ -135,7 +135,7 @@ const caps: Record<Locale, Capabilities> = {
           { t: 'Workspace web apps (Grafana, wiki, CRM) right inside Calab' },
           { t: 'Phone calls through your own SIP provider', plan: 'business' },
         ] },
-      { key: 'company', title: 'For companies and security', alt: 'Access under your control',
+      { key: 'company', title: 'On-premise', alt: 'Access under your control',
         lines: [
           { t: 'Your own server: one docker compose, your data stays with you' },
           { t: 'Corporate sign-in (SSO, OpenID Connect)', plan: 'business' },
@@ -200,7 +200,7 @@ const caps: Record<Locale, Capabilities> = {
           { t: 'Aplicaciones web del espacio (Grafana, wiki, CRM) dentro de Calab' },
           { t: 'Llamadas a teléfono con tu propio proveedor SIP', plan: 'business' },
         ] },
-      { key: 'company', title: 'Para empresas y seguridad', alt: 'Acceso bajo tu control',
+      { key: 'company', title: 'On-premise', alt: 'Acceso bajo tu control',
         lines: [
           { t: 'Tu servidor: un docker compose, los datos se quedan contigo' },
           { t: 'Acceso corporativo (SSO, OpenID Connect)', plan: 'business' },
@@ -265,7 +265,7 @@ const caps: Record<Locale, Capabilities> = {
           { t: '空间网页应用（Grafana、Wiki、CRM）直接在 Calab 内打开' },
           { t: '通过你自己的 SIP 服务商拨打电话', plan: 'business' },
         ] },
-      { key: 'company', title: '企业与安全', alt: '由你掌控的访问权限',
+      { key: 'company', title: 'On-premise', alt: '由你掌控的访问权限',
         lines: [
           { t: '自有服务器：一条 docker compose，数据留在你手中' },
           { t: '企业登录（SSO，OpenID Connect）', plan: 'business' },

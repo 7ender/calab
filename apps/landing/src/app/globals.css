@@ -398,9 +398,10 @@ footer { background: #0b0b0b; }
 }
 @media(max-width:639px) { .topbar-action { padding:0 10px; font-size:14px; gap:7px; } }
 @media(prefers-reduced-motion:reduce) { .locale-globe svg,.topbar-action,.topbar-action-label,.topbar-action-dots i { transition:none; } .locale-globe:hover svg,.locale-globe:focus-visible svg { transform:none; } }
-.nav-wordmark { display:block; width:120px; height:auto; }
+/* The wordmark carries a 6-unit dark outline (public/calab-wordmark.svg), so the glyphs stay 120/96 px wide. */
+.nav-wordmark { display:block; width:125px; height:auto; }
 .footer-wordmark { display:block; width:240px; max-width:100%; height:auto; }
-@media(max-width:639px) { .nav-wordmark { width:96px; } .footer-wordmark { width:190px; } }
+@media(max-width:639px) { .nav-wordmark { width:100px; } .footer-wordmark { width:190px; } }
 .download-platform[data-current-os=true] { border-color:#397cff; background:#101b31; }
 
 /* Isolated reference-style discover link: no generic span styles. */
