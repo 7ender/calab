@@ -127,6 +127,7 @@ async function probeElectron(flags, packaged = '') {
   const mainLogs = [];
   if (packaged) {
     const out = join(work, 'self.json');
+    rmSync(out, { force: true });
     const child = spawn(exe, [...MEDIA, ...flags], { env: { ...process.env, PROBE_SELF_OUT: out }, stdio: 'ignore' });
     const code = await new Promise((r) => {
       const t = setTimeout(() => {
