@@ -346,7 +346,7 @@ Deployment `calab-prod` с digest обоих образов в payload: API и �
 Контракт: [ADR-0054](adr/0054-workspace-identity.md), [Identity v1](plans/release-2.0-identity.md).
 Фактическая инфраструктура и оставшиеся operator inputs:
 [production preflight](plans/identity-v2-operator-preflight.md). Ревью пройдены (2.0.0); включение в проде —
-отдельный шаг оператора: без `IDENTITY_*`/`OAUTH_*` identity выключена (эндпоинты 503), политика пространств
+отдельный шаг оператора: без `IDENTITY_*`/`OAUTH_*` identity выключена (`/api/*` identity-маршруты — 409 `CONFLICT` reason `IDENTITY_NOT_CONFIGURED`, клиент показывает «не настроено на сервере»; `/oidc/*` — 503 `server_error`), политика пространств
 по умолчанию «Выключена» — пилот `optional`, `enforced` только после проверки recovery (ADR-0054).
 
 #### Grants, тарифы и ключи
@@ -374,7 +374,7 @@ ADR-0054, не дополнительное подтверждение влад�
 Ключи предоставляет оператор, отдельно от `JWT_SECRET`; здесь нет secret values.
 Никаких insecure TLS, proxy-env обходов, loopback/metadata целей в production или
 редиректов upstream transport. Семь dependency env полностью отсутствуют → новый
-бинарник в существующей установке запускается с identity routes, возвращающими 503; частичная/невалидная
+бинарник в существующей установке запускается с identity routes, возвращающими 409 `IDENTITY_NOT_CONFIGURED` (`/oidc/*` — 503 `server_error`); частичная/невалидная
 конфигурация запрещает startup. Network arrays можно оставить пустыми, когда
 частные IdP/каталог не нужны, но origin и оба keyring с active kid нужны вместе.
 

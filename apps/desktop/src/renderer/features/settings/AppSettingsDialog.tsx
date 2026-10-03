@@ -1,9 +1,9 @@
-import { AuthorizedApps } from '../identity/OAuth';
+import { AuthorizedApps, useOAuthAppsAvailable } from '../identity/OAuth';
 import { localAuthority } from '../identity/model';
 import { AUDIO_TIERS_KBPS, audioTierKbps } from '@calaba/protocol';
 import { timestampDate } from '@bufbuild/protobuf/wkt';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { Bell, CalendarDays, CircleUser, Headphones, Info, Keyboard, Mic, MonitorSmartphone, SlidersHorizontal, Trash2, Wifi } from 'lucide-react';
+import { AppWindow, Bell, CalendarDays, CircleUser, Headphones, Info, Keyboard, Mic, MonitorSmartphone, SlidersHorizontal, Trash2, Wifi } from 'lucide-react';
 import { useCallback, useEffect, useState, type ReactNode } from 'react';
 import type { AppInfo, AppSettings, PermissionStatus } from '../../../shared/ipc';
 import { Avatar } from '../../components/Avatar';
@@ -60,8 +60,8 @@ export function AppSettingsDialog({ tab, onClose }: { tab: string | undefined; o
   // «Обновление» on «О программе» while an update waits (docs/09 #125); a boolean selector.
   const updatePending = useSession(selectUpdatePending);
   const local = useSession((s) => localAuthority(s.authority));
+  const oauthApps = useOAuthAppsAvailable();
   const sections: SettingsSection[] = [
-    { id: 'authorized-apps', label: t('identity.grants'), icon: CircleUser, content: <AuthorizedApps /> },
     // «Основное» first (owner, 29.09): theme, language, startup / updates. The web has no startup /
     // updates, but the theme and the language live here too (ADR-0022).
     { id: 'general', label: t('settings.general'), icon: SlidersHorizontal, content: <GeneralTab /> },
@@ -73,6 +73,9 @@ export function AppSettingsDialog({ tab, onClose }: { tab: string | undefined; o
     ...(guest ? [] : [{ id: 'calendar', label: t('settings.calendar'), icon: CalendarDays, content: <CalendarTab /> }]),
     { id: 'connection', label: t('settings.connection'), icon: Wifi, content: <ConnectionTab /> },
     { id: 'sessions', label: t('settings.sessions'), icon: MonitorSmartphone, content: <SessionsTab /> },
+    // «OAuth-приложения» (ADR-0054): near the end — rarely needed; Business only (PlanLock).
+    { id: 'authorized-apps', label: t('identity.grants'), icon: AppWindow, locked: !oauthApps, content: <AuthorizedApps /> },
+    // «О программе» always last (owner, 03.10).
     {
       id: 'about',
       label: t('settings.about'),
